@@ -1,0 +1,11 @@
+{
+  "name": "@voxgig/struct",
+  "version": "0.0.1",
+  "description": "Data structure manipulations",
+  "main": "src/struct.js",
+  "scripts": {
+    "test": "node --test test/struct.test.js"
+  },
+  "author": "",
+  "license": "MIT"
+}
