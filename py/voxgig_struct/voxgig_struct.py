@@ -103,6 +103,6 @@ def walk(val, apply, key=None, parent=None, path=None):
 
     if val is not None and isinstance(val, (dict, list)):
         for k, v in (val.items() if isinstance(val, dict) else enumerate(val)):
-            val[k] = walk(v, apply, k, val, (path or []) + [k])
+            val[k] = walk(v, apply, k, val, (path or []) + [str(k)])
 
     return apply(key, val, parent, path or [])

@@ -1,6 +1,6 @@
 # voxgig_struct init
 
-from .voxgig_struct import merge
+from .voxgig_struct import merge, walk
 
-__all__ = ["merge"]
+__all__ = ["merge", "walk"]
 

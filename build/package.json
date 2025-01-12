@@ -4,7 +4,8 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test-model": "voxgig-model test/test.jsonic"
+    "test-model": "voxgig-model test/test.jsonic",
+    "test-model-watch": "voxgig-model -w test/test.jsonic"
   },
   "author": "",
   "license": "MIT",

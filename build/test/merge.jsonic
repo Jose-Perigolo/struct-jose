@@ -46,7 +46,7 @@ children: {
 array: {
   set: [
     # FIX: raw null causes crash!
-    { in: [], out: '$UNDEFINED' }
+    { in: [] }
     { in: [ [1] ], out: [ 1 ] }
     { in: [ [1],[11] ], out: [ 11 ] }
     { in: [{}, {a:[1]} ], out: { a: [ 1 ] } }

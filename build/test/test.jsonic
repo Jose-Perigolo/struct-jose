@@ -1,3 +1,5 @@
 
 merge: @"merge.jsonic"
 
+walk: @"walk.jsonic"
+
