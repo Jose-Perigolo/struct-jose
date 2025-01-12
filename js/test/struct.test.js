@@ -1,3 +1,4 @@
+
 const { test, describe } = require('node:test')
 const { equal, deepEqual } = require('node:assert')
 
@@ -8,6 +9,11 @@ const {
 } = require('../')
 
 
+const TESTSPEC = require('../../build/test/test.json')
+
+function clone(obj) {
+  return JSON.parse(JSON.stringify(obj))
+}
 
 
 describe('struct', ()=>{
@@ -57,58 +63,24 @@ describe('struct', ()=>{
     */
 
   test('merge-basic', ()=>{
-    deepEqual(merge([
-      {a:1,b:2},
-      {b:3,d:4},
-    ]),{
-      a: 1, b: 3, d: 4
-    })
+    const test = clone(TESTSPEC.merge.basic)
+    deepEqual(merge(test.in), test.out)
   })
 
+
   test('merge-children', ()=>{
-    deepEqual(merge([
-      {a:1,b:2},
-      {b:3,d:{e:4,ee:5},f:6},
-      {x:{y:{z:7,zz:8}},q:{u:9,uu:10},v:11},
-    ]),{
-      a: 1,
-      b: 3,
-      d: { e: 4, ee: 5 },
-      f: 6,
-      x: { y: { z: 7, zz: 8 } },
-      q: { u: 9, uu: 10 },
-      v: 11
-    })
+    const test = clone(TESTSPEC.merge.children)
+    deepEqual(merge(test.in), test.out)
   })
 
   
   test('merge-array', ()=>{
-    deepEqual(merge([
-    ]), undefined)
-
-    deepEqual(merge([
-      [1],
-    ]), [ 1 ])
-
-    deepEqual(merge([
-      [1],
-      [11],
-    ]), [ 11 ])
-
-    deepEqual(merge([
-      {},
-      {a:[1]},
-    ]), { a: [ 1 ] })
-
-    deepEqual(merge([
-      {},
-      {a:[{b:1}], c:[{d:[2]}]},
-    ]), { a: [ { b: 1 } ], c: [ { d: [2] } ] })
-
-    deepEqual(merge([
-      {a:[1,2], b:{c:3,d:4}},
-      {a:[11],  b:{c:33}},
-    ]), { a: [ 11, 2 ], b: { c: 33, d: 4 } })
+    const test = clone(TESTSPEC.merge.array)
+    let i = 0
+    
+    for(set of test.set) {
+      deepEqual(merge(set.in) || '$UNDEFINED', set.out)
+    }
   })
   
 })
