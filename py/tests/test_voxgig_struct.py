@@ -14,13 +14,14 @@ def clone(obj):
     return json.loads(json.dumps(obj))
 
 
-def testset(tests: dict, apply: callable):
-    for entry in tests.get("set", []):
-        assert apply(entry.get("in")) == entry.get("out")
-
-
 class TestVoxgigStruct(unittest.TestCase):
-    def test_exists(self):
+
+    def testset(self, tests: dict, apply: callable):
+        for entry in tests.get("set", []):
+            self.assertEqual(apply(entry.get("in")), entry.get("out"))
+
+
+    def test_merge_exists(self):
         self.assertEqual(type(merge).__name__, 'function')
 
         
@@ -32,18 +33,16 @@ class TestVoxgigStruct(unittest.TestCase):
         test = clone(TESTSPEC['merge']['children'])
         self.assertEqual(merge(test['in']), test['out'])
 
-    # def test_merge_array(self):
-    #     test = clone(TESTSPEC['merge']['array'])
-    #     for set_data in test['set']:
-    #         result = merge(set_data['in']) or '$UNDEFINED'
-    #         self.assertEqual(result, set_data['out'])
+    def test_merge_array(self):
+        test = clone(TESTSPEC['merge']['array'])
+        self.testset(test, lambda vin: merge(vin))
 
 
     def test_walk_exists(self):
         self.assertEqual('function', type(merge).__name__)
 
     def test_walk_basic(self):
-        testset(clone(TESTSPEC["walk"]["basic"]), lambda vin: walk(vin, walkpath))
+        self.testset(clone(TESTSPEC["walk"]["basic"]), lambda vin: walk(vin, walkpath))
 
 
 def walkpath(_key: str | None, val: any, _parent: any, path: list[str]) -> any:
