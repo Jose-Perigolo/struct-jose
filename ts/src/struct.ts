@@ -291,7 +291,10 @@ function clone(val: any) {
 
 function merge(objs: any[]): any {
   let out: any = undefined
-  if (1 === objs.length) {
+  if (null == objs || !Array.isArray(objs)) {
+    return objs
+  }
+  else if (1 === objs.length) {
     return objs[0]
   }
   else if (1 < objs.length) {
@@ -310,9 +313,7 @@ function merge(objs: any[]): any {
               cur[cI] = (Array.isArray(parent) ? [] : {})
             }
 
-            const valobj = null != val && 'object' === typeof val
-
-            if (valobj && null != key) {
+            if (null != val && 'object' === typeof val) {
               cur[cI][key] = cur[cI + 1]
               cur[cI + 1] = undefined
             }
@@ -330,8 +331,8 @@ function merge(objs: any[]): any {
 }
 
 
-function getpath(path: string | string[], store: Record<string, any>, build?: boolean) {
-  if (null == path || '' === path) {
+function getpath(path: string | string[], store: Record<string, any>) {
+  if (null == path || null == store || '' === path) {
     return store
   }
 
@@ -342,28 +343,20 @@ function getpath(path: string | string[], store: Record<string, any>, build?: bo
     val = store
     for (let pI = 0; pI < parts.length; pI++) {
       const part = parts[pI]
-      let nval: any = val[part]
-      if (undefined === nval) {
-        if (build && pI < parts.length - 1) {
-          // console.log('GPB', pI, part, parts, val)
-          nval = val[part] = -1 < parseInt(parts[pI + 1]) ? [] : {}
-        }
-        else {
-          val = undefined
-          break
-        }
+      val = val[part]
+      if (null == val) {
+        break
       }
-      val = nval
     }
   }
 
   return val
-
 }
 
 
 type WalkApply = (key: string | undefined, val: any, parent: any, path: string[]) => any
 
+// Walk a data strcture depth first.
 function walk(val: any, apply: WalkApply, key?: string, parent?: any, path?: string[]): any {
   const valtype = typeof val
 

@@ -1,0 +1,53 @@
+
+
+basic: {
+  set: [
+    { in: { path: 'a', store: {a:1} }, out: 1 }
+    { in: { path: 'a.b', store: {a:{b:1}} }, out: 1 }
+    { in: { path: 'a.b.c', store: {a:{b:{c:1}}} }, out: 1 }
+    { in: { path: 'a.b.c.d', store: {a:{b:{c:{d:1}}}} }, out: 1 }
+    { in: { path: 'a.b.c.d.e', store: {a:{b:{c:{d:{e:1}}}}} }, out: 1 }
+
+    { in: { path: 'a', store: {x:2,a:1} }, out: 1 }
+    { in: { path: 'a.b', store: {x:2,a:{b:1}} }, out: 1 }
+    { in: { path: 'a.b.c', store: {x:2,a:{b:{c:1}}} }, out: 1 }
+    { in: { path: 'a.b.c.d', store: {x:2,a:{b:{c:{d:1}}}} }, out: 1 }
+    { in: { path: 'a.b.c.d.e', store: {x:2,a:{b:{c:{d:{e:1}}}}} }, out: 1 }
+
+    { in: { path: 'a', store: {a:1,y:3} }, out: 1 }
+    { in: { path: 'a.b', store: {a:{b:1},y:3} }, out: 1 }
+    { in: { path: 'a.b.c', store: {a:{b:{c:1}},y:3} }, out: 1 }
+    { in: { path: 'a.b.c.d', store: {a:{b:{c:{d:1}}},y:3} }, out: 1 }
+    { in: { path: 'a.b.c.d.e', store: {a:{b:{c:{d:{e:1}}}},y:3} }, out: 1 }
+
+    { in: { path: 'a', store: {x:2,a:1,y:3} }, out: 1 }
+    { in: { path: 'a.b', store: {x:2,a:{b:1},y:3} }, out: 1 }
+    { in: { path: 'a.b.c', store: {x:2,a:{b:{c:1}},y:3} }, out: 1 }
+    { in: { path: 'a.b.c.d', store: {x:2,a:{b:{c:{d:1}}},y:3} }, out: 1 }
+    { in: { path: 'a.b.c.d.e', store: {x:2,a:{b:{c:{d:{e:1}}}},y:3} }, out: 1 }
+
+    { in: { path: 'a.b', store: {x:{y:2},a:{b:1}} }, out: 1 }
+    { in: { path: 'x.y', store: {x:{y:2},a:{b:1}} }, out: 2 }
+
+    { in: { path: '0', store: ['a'] }, out: 'a' }
+    { in: { path: '0.0', store: [['a']] }, out: 'a' }
+    { in: { path: '0.0.0', store: [[['a']]] }, out: 'a' }
+    { in: { path: '0.0.0.0', store: [[[['a']]]] }, out: 'a' }
+    { in: { path: '0.0.0.0.0', store: [[[[['a']]]]] }, out: 'a' }
+
+    { in: { path: 'a.0', store: {a:['x']} }, out: 'x' }
+    { in: { path: 'a.0.b', store: {a:[{b:'x'}]} }, out: 'x' }
+    { in: { path: 'a.0.b.0', store: {a:[{b:['x']}]} }, out: 'x' }
+
+    { in: { path: '1', store: ['a','b'] }, out: 'b' }
+    { in: { path: '2', store: ['a','b'] } }
+
+    { in: { path: 'b', store: {a:1} } }
+    { in: { path: '', store: {a:1} }, out: {a:1} }
+    { in: { store: {a:1} }, out: {a:1} }
+    { in: { path: 'a' } }
+    { in: { } }
+
+    ]
+}
+

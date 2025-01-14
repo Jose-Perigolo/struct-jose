@@ -8,6 +8,7 @@ import { equal, deepEqual } from 'node:assert'
 import {
   walk,
   merge,
+  getpath,
 } from '../dist/struct'
 
 
@@ -53,6 +54,15 @@ describe('struct', () => {
 
   test('walk-basic', () => {
     testset(clone(TESTSPEC.walk.basic), (vin: any) => walk(vin, walkpath))
+  })
+
+
+  test('getpath-exists', () => {
+    equal('function', typeof getpath)
+  })
+
+  test('getpath-basic', () => {
+    testset(clone(TESTSPEC.getpath.basic), (vin: any) => getpath(vin.path, vin.store))
   })
 
 

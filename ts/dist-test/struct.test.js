@@ -35,6 +35,12 @@ function testset(tests, apply) {
     (0, node_test_1.test)('walk-basic', () => {
         testset(clone(TESTSPEC.walk.basic), (vin) => (0, struct_1.walk)(vin, walkpath));
     });
+    (0, node_test_1.test)('getpath-exists', () => {
+        (0, node_assert_1.equal)('function', typeof struct_1.getpath);
+    });
+    (0, node_test_1.test)('getpath-basic', () => {
+        testset(clone(TESTSPEC.getpath.basic), (vin) => (0, struct_1.getpath)(vin.path, vin.store));
+    });
     // test('transform', async ()=>{
     //   // deepEqual(transform({a:1},{a:'`a`'}), {a:1})
     //   const src = {

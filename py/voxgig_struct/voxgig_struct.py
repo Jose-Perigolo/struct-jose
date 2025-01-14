@@ -2,103 +2,85 @@
 
 
 def merge(objs):
-    """
-    Merges a list of objects deeply, handling nested structures.
+    # print("objs ", repr(objs))
 
-    :param objs: List of objects to merge
-    :return: A merged object
-    """
+    if not isinstance(objs, list):
+        return objs
+
     out = None
 
     if len(objs) == 1:
         return objs[0]
-    
     elif len(objs) > 1:
         out = objs[0] or {}
 
-        for obj_index in range(1, len(objs)):
-            obj = objs[obj_index]
-
-            if obj is not None and isinstance(obj, dict):
-                current = [out]
-                current_index = 0
+        for obj in objs[1:]:
+            if obj is not None and isinstance(obj, (dict, list)):
+                cur = [out]
 
                 def walker(key, val, parent, path):
-                    nonlocal current, current_index
+                    # print("WALK", repr(key), repr(val), repr(cur))
 
                     if key is not None:
-                        current_index = len(path) - 1
+                        cI = len(path) - 1
+
+                        if len(cur) <= cI:
+                            cur.extend([None] * (1+cI-len(cur)))
+
+                        if cur[cI] is None:
+                            cur[cI] = getpath(path[:-1], out)
                         
-                        # Ensure current has enough elements
-                        while len(current) <= current_index:
-                            current.append(None)
+                        if cur[cI] is None or not isinstance(cur[cI], (dict, list)):
+                            cur[cI] = [] if isinstance(parent, list) else {}
 
-                        # Get or build the path
-                        current[current_index] = (
-                            current[current_index] or
-                            getpath(path[:-1], out)
-                        )
-
-                        if current[current_index] is None or not isinstance(current[current_index], dict):
-                            current[current_index] = [] if isinstance(parent, list) else {}
-
-                        is_val_object = val is not None and isinstance(val, dict)
-
-                        if is_val_object and key is not None:
-                            current[current_index][key] = current[current_index + 1]
-                            while len(current) <= current_index + 1:
-                                current.append(None)
-                            current[current_index + 1] = None
+                        if( isinstance(cur[cI], list) and
+                            isinstance(key, int) and
+                            len(cur[cI]) <= key
+                           ):
+                            cur[cI].extend([None] * (1+key-len(cur[cI])))
+                            
+                        if val is not None and isinstance(val, (dict,list)):
+                            cur[cI][key] = cur[cI + 1]
+                            cur[cI + 1] = None
                         else:
-                            current[current_index][key] = val
-
-                    return val
+                            cur[cI][key] = val
 
                 walk(obj, walker)
 
     return out
 
 
-def getpath(path, store, build=False):
-    """
-    Retrieves or builds a nested path in a dictionary or list.
-
-    :param path: List or dot-separated string representing the path
-    :param store: The dictionary or list to traverse
-    :param build: Whether to build missing parts of the path
-    :return: The value at the path or None
-    """
-    if path is None or path == '':
+def getpath(path, store):
+    if path is None or store is None or path == '':
         return store
 
     parts = path if isinstance(path, list) else path.split('.')
-    val = store
+    val = None
 
-    for index, part in enumerate(parts):
-        nval = val.get(part) if isinstance(val, dict) else None
-
-        if nval is None:
-            if build and index < len(parts) - 1:
-                nval = val[part] = [] if parts[index + 1].isdigit() else {}
+    if len(parts) > 0:
+        val = store
+        for part in parts:
+            if isinstance(val, dict):
+                val = val.get(part)
+            elif isinstance(val, list):
+                try:
+                    index = int(part)
+                    val = val[index]
+                except (ValueError, IndexError):
+                    val = None
+                    break
             else:
-                return None
+                val = None
+                break
 
-        val = nval
+            if val is None:
+                break
 
     return val
 
 
+# Walk a data strcture depth first.
 def walk(val, apply, key=None, parent=None, path=None):
-    """
-    Walks through a dictionary or list and applies a function at each node.
-
-    :param val: The current value
-    :param apply: Function to apply (key, value, parent, path)
-    :param key: The current key
-    :param parent: The parent container
-    :param path: The path to the current value
-    :return: The result of the apply function
-    """
     valtype = type(val)
 
     if val is not None and isinstance(val, (dict, list)):
