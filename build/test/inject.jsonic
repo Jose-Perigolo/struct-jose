@@ -1,0 +1,7 @@
+
+basic: {
+  in: { store: {a:1}, val: {x: '`a`'} }
+  out: {x:1}
+}
+
+

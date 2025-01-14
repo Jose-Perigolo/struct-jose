@@ -9,6 +9,8 @@ import {
   walk,
   merge,
   getpath,
+  inject,
+  transform,
 } from '../dist/struct'
 
 
@@ -63,6 +65,31 @@ describe('struct', () => {
 
   test('getpath-basic', () => {
     testset(clone(TESTSPEC.getpath.basic), (vin: any) => getpath(vin.path, vin.store))
+  })
+
+
+  test('inject-exists', () => {
+    equal('function', typeof inject)
+  })
+
+  test('inject-basic', () => {
+    const test = clone(TESTSPEC.inject.basic)
+    deepEqual(inject(test.in.val, test.in.store), test.out)
+  })
+
+
+  test('transform-exists', () => {
+    equal('function', typeof transform)
+  })
+
+  test('transform-basic', () => {
+    const test = clone(TESTSPEC.transform.basic)
+    deepEqual(transform(test.in.data, test.in.spec, test.in.store), test.out)
+  })
+
+  test('transform-paths', () => {
+    testset(clone(TESTSPEC.transform.paths), (vin: any) =>
+      transform(vin.data, vin.spec, vin.store))
   })
 
 

@@ -138,7 +138,7 @@ function transform(
 function inject(
   val: any,
   store: Record<string, any>,
-  modify: Function | undefined,
+  modify?: Function | undefined,
   key?: string,
   parent?: any,
   path?: string[],
@@ -152,7 +152,6 @@ function inject(
   current = (null == path || path.length < 2) ? current : current[path[path.length - 2]]
 
   if (null != val && 'object' === valtype) {
-    // for(let origkey in val) {
     for (let origkey of Object.keys(val)) {
 
       let key = injection('key:pre', origkey, val[origkey], val,
@@ -259,7 +258,6 @@ function injection(
       res = null == res ? orig : res
 
       if (key !== res) {
-        // console.log('CKEY', key, res)
         if ('string' === typeof key) {
           parent[res] = parent[key]
           delete parent[key]
@@ -274,9 +272,13 @@ function injection(
       }
     }
 
-    // if('string' === typeof key) {
     if ('val' === mode && 'string' === typeof key) {
-      parent[key] = res
+      if (undefined === res) {
+        delete parent[key]
+      }
+      else {
+        parent[key] = res
+      }
     }
   }
 

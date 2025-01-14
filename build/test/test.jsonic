@@ -6,3 +6,8 @@ walk: @"walk.jsonic"
 
 getpath: @"getpath.jsonic"
 
+inject: @"inject.jsonic"
+
+transform: @"transform.jsonic"
+
+
