@@ -1,7 +1,18 @@
 
 basic: {
-  in: { store: {a:1}, val: {x: '`a`'} }
+  in: { val: {x: '`a`'}, store: {a:1} }
   out: {x:1}
+}
+
+
+deep: {
+  set: [
+    { in: { val: {x: '`a`',y:'`c.d`',z:'`e`'}, store: {a:{b:1},c:{d:2},e:[33,44]} }
+      out: { x: { b: 1 }, y: 2, z: [ 33, 44 ]} }
+
+    { in: { val: ['`0`','`1`'], store: [11,22,33] },
+      out: [11,22] }
+  ]
 }
 
 

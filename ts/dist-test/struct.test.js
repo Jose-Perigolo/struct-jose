@@ -9,7 +9,7 @@ const TESTSPEC = JSON.parse((0, node_fs_1.readFileSync)((0, node_path_1.join)(__
 function clone(obj) {
     return JSON.parse(JSON.stringify(obj));
 }
-function testset(tests, apply) {
+function test_set(tests, apply) {
     for (let entry of tests.set) {
         (0, node_assert_1.deepEqual)(apply(entry.in), entry.out);
     }
@@ -27,19 +27,19 @@ function testset(tests, apply) {
         (0, node_assert_1.deepEqual)((0, struct_1.merge)(test.in), test.out);
     });
     (0, node_test_1.test)('merge-array', () => {
-        testset(clone(TESTSPEC.merge.array), struct_1.merge);
+        test_set(clone(TESTSPEC.merge.array), struct_1.merge);
     });
     (0, node_test_1.test)('walk-exists', () => {
         (0, node_assert_1.equal)('function', typeof struct_1.merge);
     });
     (0, node_test_1.test)('walk-basic', () => {
-        testset(clone(TESTSPEC.walk.basic), (vin) => (0, struct_1.walk)(vin, walkpath));
+        test_set(clone(TESTSPEC.walk.basic), (vin) => (0, struct_1.walk)(vin, walkpath));
     });
     (0, node_test_1.test)('getpath-exists', () => {
         (0, node_assert_1.equal)('function', typeof struct_1.getpath);
     });
     (0, node_test_1.test)('getpath-basic', () => {
-        testset(clone(TESTSPEC.getpath.basic), (vin) => (0, struct_1.getpath)(vin.path, vin.store));
+        test_set(clone(TESTSPEC.getpath.basic), (vin) => (0, struct_1.getpath)(vin.path, vin.store));
     });
     (0, node_test_1.test)('inject-exists', () => {
         (0, node_assert_1.equal)('function', typeof struct_1.inject);
@@ -47,6 +47,9 @@ function testset(tests, apply) {
     (0, node_test_1.test)('inject-basic', () => {
         const test = clone(TESTSPEC.inject.basic);
         (0, node_assert_1.deepEqual)((0, struct_1.inject)(test.in.val, test.in.store), test.out);
+    });
+    (0, node_test_1.test)('inject-deep', () => {
+        test_set(clone(TESTSPEC.inject.deep), (vin) => (0, struct_1.inject)(vin.val, vin.store));
     });
     (0, node_test_1.test)('transform-exists', () => {
         (0, node_assert_1.equal)('function', typeof struct_1.transform);
@@ -56,7 +59,16 @@ function testset(tests, apply) {
         (0, node_assert_1.deepEqual)((0, struct_1.transform)(test.in.data, test.in.spec, test.in.store), test.out);
     });
     (0, node_test_1.test)('transform-paths', () => {
-        testset(clone(TESTSPEC.transform.paths), (vin) => (0, struct_1.transform)(vin.data, vin.spec, vin.store));
+        test_set(clone(TESTSPEC.transform.paths), (vin) => (0, struct_1.transform)(vin.data, vin.spec, vin.store));
+    });
+    (0, node_test_1.test)('transform-cmds', () => {
+        test_set(clone(TESTSPEC.transform.cmds), (vin) => (0, struct_1.transform)(vin.data, vin.spec, vin.store));
+    });
+    (0, node_test_1.test)('transform-each', () => {
+        test_set(clone(TESTSPEC.transform.each), (vin) => (0, struct_1.transform)(vin.data, vin.spec, vin.store));
+    });
+    (0, node_test_1.test)('transform-pack', () => {
+        test_set(clone(TESTSPEC.transform.pack), (vin) => (0, struct_1.transform)(vin.data, vin.spec, vin.store));
     });
     // test('transform', async ()=>{
     //   // deepEqual(transform({a:1},{a:'`a`'}), {a:1})

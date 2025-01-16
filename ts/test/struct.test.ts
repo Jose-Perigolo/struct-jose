@@ -22,7 +22,7 @@ function clone(obj: any): any {
 }
 
 
-function testset(tests: { set: any[] }, apply: Function) {
+function test_set(tests: { set: any[] }, apply: Function) {
   for (let entry of tests.set) {
     deepEqual(apply(entry.in), entry.out)
   }
@@ -46,7 +46,7 @@ describe('struct', () => {
   })
 
   test('merge-array', () => {
-    testset(clone(TESTSPEC.merge.array), merge)
+    test_set(clone(TESTSPEC.merge.array), merge)
   })
 
 
@@ -55,7 +55,7 @@ describe('struct', () => {
   })
 
   test('walk-basic', () => {
-    testset(clone(TESTSPEC.walk.basic), (vin: any) => walk(vin, walkpath))
+    test_set(clone(TESTSPEC.walk.basic), (vin: any) => walk(vin, walkpath))
   })
 
 
@@ -64,7 +64,7 @@ describe('struct', () => {
   })
 
   test('getpath-basic', () => {
-    testset(clone(TESTSPEC.getpath.basic), (vin: any) => getpath(vin.path, vin.store))
+    test_set(clone(TESTSPEC.getpath.basic), (vin: any) => getpath(vin.path, vin.store))
   })
 
 
@@ -75,6 +75,10 @@ describe('struct', () => {
   test('inject-basic', () => {
     const test = clone(TESTSPEC.inject.basic)
     deepEqual(inject(test.in.val, test.in.store), test.out)
+  })
+
+  test('inject-deep', () => {
+    test_set(clone(TESTSPEC.inject.deep), (vin: any) => inject(vin.val, vin.store))
   })
 
 
@@ -88,7 +92,22 @@ describe('struct', () => {
   })
 
   test('transform-paths', () => {
-    testset(clone(TESTSPEC.transform.paths), (vin: any) =>
+    test_set(clone(TESTSPEC.transform.paths), (vin: any) =>
+      transform(vin.data, vin.spec, vin.store))
+  })
+
+  test('transform-cmds', () => {
+    test_set(clone(TESTSPEC.transform.cmds), (vin: any) =>
+      transform(vin.data, vin.spec, vin.store))
+  })
+
+  test('transform-each', () => {
+    test_set(clone(TESTSPEC.transform.each), (vin: any) =>
+      transform(vin.data, vin.spec, vin.store))
+  })
+
+  test('transform-pack', () => {
+    test_set(clone(TESTSPEC.transform.pack), (vin: any) =>
       transform(vin.data, vin.spec, vin.store))
   })
 
