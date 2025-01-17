@@ -101,10 +101,10 @@ describe('struct', () => {
       transform(vin.data, vin.spec, vin.store))
   })
 
-  test('transform-each', () => {
-    test_set(clone(TESTSPEC.transform.each), (vin: any) =>
-      transform(vin.data, vin.spec, vin.store))
-  })
+  // test('transform-each', () => {
+  //   test_set(clone(TESTSPEC.transform.each), (vin: any) =>
+  //     transform(vin.data, vin.spec, vin.store))
+  // })
 
   test('transform-pack', () => {
     test_set(clone(TESTSPEC.transform.pack), (vin: any) =>

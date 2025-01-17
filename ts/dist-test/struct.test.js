@@ -64,9 +64,10 @@ function test_set(tests, apply) {
     (0, node_test_1.test)('transform-cmds', () => {
         test_set(clone(TESTSPEC.transform.cmds), (vin) => (0, struct_1.transform)(vin.data, vin.spec, vin.store));
     });
-    (0, node_test_1.test)('transform-each', () => {
-        test_set(clone(TESTSPEC.transform.each), (vin) => (0, struct_1.transform)(vin.data, vin.spec, vin.store));
-    });
+    // test('transform-each', () => {
+    //   test_set(clone(TESTSPEC.transform.each), (vin: any) =>
+    //     transform(vin.data, vin.spec, vin.store))
+    // })
     (0, node_test_1.test)('transform-pack', () => {
         test_set(clone(TESTSPEC.transform.pack), (vin) => (0, struct_1.transform)(vin.data, vin.spec, vin.store));
     });

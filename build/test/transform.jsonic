@@ -29,6 +29,7 @@ paths: {
 cmds: {
   set: [
     { in: { data:{a:{b:1}}, spec:{a:'`$COPY`'} }, out: {a:{b:1}} }
+
     { in: { data:{a:{b:2}}, spec:{a:{b:'`$COPY`'}} }, out: {a:{b:2}} }
     { in: { data:{a:[21,22]}, spec:{a:'`$COPY`'} }, out: {a:[21,22]} }
     { in: { data:{a23:true}, spec:{a23:'`$COPY`', a24:'`$COPY`'} },
@@ -125,7 +126,22 @@ each: {
 
 pack: {
   set: [
-    # { in: { data:[{y:0},{y:1}], spec:{'`$PACK`x':{y:'`$COPY`'}} }, out: {x:{}} }
+    { in: { data: {x:[{y:0,k:'K0'},{y:1,k:'K1'}]},
+            spec: {z:{'`$PACK`':['x',{'`$KEY`':'k', y:'`$COPY`',q:'Q0'}]}} },
+      out: {z:{K0:{y:0,q:'Q0'},K1:{y:1,q:'Q0'}}} }
+
+    { in: { data: {x:[{y:0,k:'K0'},{y:1,k:'K1'}]},
+            spec: {'`$PACK`':['x',{'`$KEY`':'k', y:'`$COPY`',q:'Q1'}]} },
+      out: {K0:{y:0,q:'Q1'},K1:{y:1,q:'Q1'}} }
+
+    { in: { data: [{y:0,k:'K0'},{y:1,k:'K1'}],
+            spec: {'`$PACK`':['',{'`$KEY`':'k', y:'`$COPY`',q:'Q2'}]} },
+      out: {K0:{y:0,q:'Q2'},K1:{y:1,q:'Q2'}} }
+
+    { in: { data: [{y:0,k:'K0'},{y:1,k:'K1'}],
+            spec: {z:{'`$PACK`':['',{'`$KEY`':'k', y:'`$COPY`',q:'Q3'}]}} },
+      out: {z:{K0:{y:0,q:'Q3'},K1:{y:1,q:'Q3'}}} }
+      
   ]
 }
 

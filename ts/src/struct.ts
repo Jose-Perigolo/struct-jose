@@ -46,7 +46,7 @@ function transform(
 ) {
   const cd = clone((data || {}))
   const fullstore: FullStore<string> = {
-    ...cd,
+    // ...cd,
 
     $DATA: cd,
 
@@ -67,13 +67,16 @@ function transform(
       if ('key:pre' === mode) { return key }
 
       if ('key:post' === mode) {
-        // console.log('MERGE', mode, key, val, 'p=', parent, path, nodes)
+        // // // console.log('MERGE', mode, key, val, 'p=', parent, path, nodes)
         if (null != key) {
           delete parent[key]
         }
         if ('' === val) {
-          val = data
+          val = cd
         }
+
+        // console.log('MERGE', val)
+
         merge([parent, ...(Array.isArray(val) ? val : [val])])
         return key
       }
@@ -83,7 +86,7 @@ function transform(
 
     $COPY: ((mode, key, val, parent, path, nodes, current, store) => {
       if (mode.startsWith('key')) { return key }
-      console.log('COPY', key, current == store ? 'STORE' : current)
+      // // console.log('COPY', key, current == store ? 'STORE' : current)
       return null != current && null != key ? current[key] : undefined
     }) as FoundInjection,
 
@@ -96,51 +99,61 @@ function transform(
           keys.length = 1
         }
 
-        const src = getpath(parent[1], store || {})
+        const srcpath = parent[1]
+        const child = clone(parent[2])
+
+        const src = null != store ?
+          null != store.$DATA ? getpath(srcpath, store.$DATA) :
+            getpath(srcpath, store) :
+          undefined
 
         if (null != path && null != nodes) {
           const tkey = path[path.length - 2]
           const pkey = path[path.length - 3]
 
-          let target = nodes[path.length - 2]
+          const target = nodes[path.length - 2] || nodes[path.length - 1]
+          // let target = nodes[path.length - 2]
 
           if ('object' === typeof src) {
             let tval
 
             if (Array.isArray(src)) {
-              tval = src.map(() => clone(parent[2]))
+              tval = src.map(() => clone(child))
             }
             else {
               tval = Object.entries(src).map(n => ({
-                ...clone(parent[2]),
+                ...clone(child),
                 '`$META`': { KEY: n[0] }
               }))
             }
 
-            let tcurrent
+            let tcurrent: any = Object.values(src)
 
-            target[tkey] = tval
-            tcurrent = { [tkey]: Object.values(src) }
+            if (null != tkey) {
+              tcurrent = { [tkey]: tcurrent }
+              target[tkey] = tval
+            }
+
             if (null != pkey) {
               tcurrent = { [pkey]: tcurrent }
             }
 
-            console.log('EACH inject before',
-              keyI,
-              keys,
-              pkey,
-              tkey,
-              tval,
-              path.slice(0, path.length - 1).join('.'),
-              // nodes[path.length - 3],
-              tcurrent)
+            // // // console.log('EACH inject before',
+            // keyI,
+            //   keys,
+            //   pkey,
+            //   tkey,
+            //   tval,
+            //   path.slice(0, path.length - 1).join('.'),
+            //   // nodes[path.length - 3],
+            //   tcurrent)
 
             tval = inject(
               tval,
               store,
               modify,
-              keyI,
-              keys,
+              -1, // keyI,
+              undefined, // keys,
               tkey,
               nodes[path.length - 3],
               path.slice(0, path.length - 1),
@@ -148,20 +161,17 @@ function transform(
               tcurrent,
             )
 
-            console.log('EACH inject after', tkey, tval, 'T=', target)
+            // // // console.log('EACH inject after', tkey, tval, 'T=', target)
 
-            // if (null != tkey) {
-            target[tkey] = tval
-            // }
-            // else {
-            //   tval.map((n: any, i: number) => (tcurrent as any)[i] = n)
-            //   tcurrent.length = tval.length
-            // }
+            if (null != tkey) {
+              target[tkey] = tval
+            }
+            else {
+              tval.map((n: any, i: number) => (target as any)[i] = n)
+              target.length = tval.length
+            }
 
-            // console.log('CCC', tval, parent, tcurrent)
-          }
-          else {
-            target[tkey] = []
+            // // // console.log('CCC', tval, parent, tcurrent)
           }
         }
       }
@@ -169,43 +179,96 @@ function transform(
       return ''
     }) as FoundInjection,
 
-    $PACK: ((mode, key, val, parent, _path, _nodes, current) => {
-      if ('val' === mode) { return val }
 
-      if ('key:pre' === mode && 'string' === typeof key) {
-        const cleankey = key.replace(/`([^`]+)`/g, '')
-        const src = current[cleankey]
+    $PACK: ((mode, key, val, parent, path, nodes, _current, store, keyI, keys, _mpath, modify) => {
+      // if ('val' === mode) { return val }
 
-        const entry = clone(parent[key])
+      if ('key:pre' === mode && 'string' === typeof key && null != path && null != nodes) {
+        const args = parent[key]
+        const srcpath = args[0]
+        const child = clone(args[1])
 
-        parent[key] = src.reduce((a: any, _n: any, i: number) =>
-        (a[src[i][parent[key]['`$KEY`']]] = {
-          ...clone(entry),
-        }, a), {})
+        const keyprop = child['`$KEY`']
+        const tkey = path[path.length - 2]
 
-        // console.log('PACK', mode, key, path, src, parent[key])
+        // const pkey = 4 < path.length ? path[path.length - 3] : undefined
+        const pkey = path[path.length - 3]
+        // // console.log('****** PACK', tkey, pkey, 'p=', path.join('.'))
 
-        current[cleankey] = src.reduce((a: any, n: any, i: number) =>
-          (a[src[i][entry['`$KEY`']]] = n, a), {})
+        const target = nodes[path.length - 2] || nodes[path.length - 1]
+        // // console.log('NODES', nodes)
+        // const target = nodes[path.length - 1]
 
-        // console.log('PACK-CLEAN', mode, key, path, current[cleankey])
+        const src = null != store ?
+          null != store.$DATA ? getpath(srcpath, store.$DATA) :
+            getpath(srcpath, store) :
+          undefined
+
+        // // // console.log('PACK ARGS', key, path, target)
+        // // console.log('PACK', path.join('.'), srcpath, 's=', src)
+
+        // TODO: also accept objects
+        if (Array.isArray(src)) {
+          let tval = src.reduce((a: any, n: any) => {
+            a[n[keyprop]] = {
+              ...clone(child),
+            }
+            return a
+          }, {})
+
+          let tcurrent = src.reduce((a: any, n: any) =>
+            (a[n[keyprop]] = n, a), {})
+
+
+          if (null != tkey) {
+            tcurrent = { [tkey]: tcurrent }
+          }
+
+          if (null != pkey) {
+            tcurrent = { [pkey]: tcurrent }
+          }
+
+
+          // // console.log('PACK TARGET', tkey, tval, path, tcurrent)
+
+          // // console.log('PACK INJECT', path.join('.'), tval, tcurrent)
+          tval = inject(
+            tval,
+            store,
+            modify,
+            -1, // keyI,
+            undefined, // keys,
+            tkey,
+            nodes[path.length - 3],
+            path.slice(0, path.length - 1),
+            nodes.slice(0, path.length - 1),
+            tcurrent,
+          )
+
+          // // console.log('PACK TARGET', tkey, target, tval)
+          if (null != tkey) {
+            target[tkey] = tval
+          }
+          else {
+            delete target[key]
+            Object.assign(target, tval)
+          }
+          // // console.log('===PACK inject after', tkey, 'T=', target)
+
+          // return key
+        }
+        // else {
+        //   target[tkey] = {}
+        // }
       }
 
-      return ''
+      return undefined
     }) as FoundInjection,
 
+
     $KEY: ((mode, _key, _val, parent, path) => {
-      // console.log('KEY', mode, mpath, key, val, 'p=', parent, path, current)
-
       if ('key:pre' === mode) {
-        // let k = current[path[path.length-1]][parent[key]]
-        // nodes[nodes.length-1][k] = parent
-
-        // delete nodes[nodes.length-1][path[path.length-1]]
         delete parent['`$KEY`']
-
-        // console.log('KEY:PRE', parent)
-
         return undefined
       }
       else if ('key:post' === mode) {
@@ -217,7 +280,7 @@ function transform(
     }) as FoundInjection,
 
     $META: ((_mode, _key, _val, parent) => {
-      // console.log('META',mode,key,val,parent,path)
+      // // // console.log('META',mode,key,val,parent,path)
       delete parent['`$META`']
       return undefined
     }) as FoundInjection,
@@ -243,30 +306,39 @@ function inject(
   parent?: any,
   path?: string[],
   nodes?: any[],
-  current?: any // Current store entry containing key
+  current?: any // Current store node
 ) {
-  // console.log('INJECT', // 'k=', key,
   //  'v=', val,
   // 'p=', path, 'sk=', path?.[path.length - 2], 'n=', nodes, 's=', !!store, 'c=', current
   // )
   const valtype = typeof val
   path = null == path ? [] : path
 
-  const parentkey = path[path.length - 2]
-
-  // current = null == key || null == current ? store : current
-
-  console.log('INJECT', path.join('.'), parentkey, key, 'c=', store === current ? 'STORE' : current)
-  current = null == current ? store : current
-  current = null == parentkey ? current : current[parentkey]
-
-  const origkey = key
-
-  if (null == key) {
+  // if (null == key) {
+  // if (null == current) {
+  if (null == keyI) {
     key = '$TOP'
-    val = { [key]: val }
+    path = []
+    // path = [key]
+    // val = { [key]: val }
+    // current = { [key]: (null != store.$DATA ? store.$DATA : store) }
+    current = (null != store.$DATA ? store.$DATA : store)
+    nodes = []
+  }
+  else {
+
+    // const parentkey = 2 < path.length ? path[path.length - 2] : undefined
+    const parentkey = path[path.length - 2]
+
+    // // // console.log('INJECT', path.join('.'), parentkey, key, 'c=', store === current ? 'STORE' : current)
+    current = null == current ? (null != store.$DATA ? store.$DATA : store) : current
+    current = null == parentkey ? current : current[parentkey]
+
   }
 
+  // // console.log('INJECT', path?.join('.'), key, val, current)
+
+  const origkey = key
 
   if (null != val && 'object' === valtype) {
     const origkeys = [
@@ -277,7 +349,7 @@ function inject(
     // for (let origkey of origkeys) {
     for (let okI = 0; okI < origkeys.length; okI++) {
       const origkey = origkeys[okI]
-      console.log('ORIGKEY', origkey)
+      // console.log('ORIGKEY', origkey, typeof origkey)
 
       let prekey = injection(
         'key:pre',
@@ -293,9 +365,12 @@ function inject(
         modify
       )
 
+      // console.log('PREKEY', prekey, typeof prekey, 'ok=', origkey)
+
       if ('string' === typeof prekey) {
         let child = val[prekey]
 
+        // console.log('CHILD', prekey, child, current)
         inject(
           child,
           store,
@@ -312,7 +387,7 @@ function inject(
 
       injection(
         'key:post',
-        prekey,
+        undefined == prekey ? origkey : prekey,
         val[prekey],
         val,
         path,
@@ -327,8 +402,8 @@ function inject(
   }
 
   else if ('string' === valtype) {
-    console.log('VAL-INJECTION', key, val, path.join('.'), 'pk=', parentkey,
-      'c=', current == store ? 'STORE' : current)
+    // // console.log('VAL-INJECTION', key, val, path.join('.'), 'pk=', parentkey,
+    // 'c=', current == store ? 'STORE' : current)
 
     const newval = injection(
       'val',
@@ -349,9 +424,11 @@ function inject(
     }
   }
 
-  if (null == origkey) {
-    val = val.$TOP
-  }
+  // if (null == origkey) {
+  //   val = val.$TOP
+  // }
+
+  // // console.log('INJECT', path?.join('.'), nodes?.[0])
 
   return val
 }
@@ -362,6 +439,7 @@ function inject(
 function injection(
   mode: InjectionMode,
   key: string | undefined,
+  // key: string,
   val: any,
   parent: any,
   path: string[] | undefined,
@@ -373,20 +451,22 @@ function injection(
   modify: ModifyInjection | undefined
 ) {
   if ('val' === mode) {
-    console.log('INJECTION', mode, key, val, path?.join('.'), 'C=', current == store ? 'STORE' : current)
+    // console.log('INJECTION', mode, key, val, path?.join('.'), 'C=', current == store ? 'STORE' : current)
   }
 
   const find = (_full: string, mpath: string) => {
     mpath = mpath.replace(/^\$[\d]+/, '$')
-    // console.log('FIND', mpath)
 
     let found: FoundInjection = 'string' === typeof mpath ?
       mpath.startsWith('.') ?
         getpath(mpath.substring(1), current) :
-        getpath(mpath, store) :
+        (getpath(mpath, store)) :
       undefined
 
-    // console.log('FOUND', mpath, found, store)
+    found =
+      (undefined === found && null != store.$DATA) ? getpath(mpath, store.$DATA) : found
+
+    // console.log('FINDER', mpath, found)
 
     if ('function' === typeof found) {
       found = found(
@@ -413,11 +493,11 @@ function injection(
   let res
 
 
-  // console.log('ORIG', orig)
+  // // // console.log('ORIG', orig)
 
 
   const m = orig.match(/^`([^`]+)`$/)
-  // console.log('M', mode, key, m)
+  // // // console.log('M', mode, key, m)
 
   if (m) {
     res = find(m[0], m[1])
@@ -428,26 +508,17 @@ function injection(
 
   // console.log('FIND', mode, key, val, 'f=', orig, res, 'p=', parent)
 
-  // if ('function' === typeof key) {
-  //   key(val, res, parent, store)
-  // }
-  // else
   if (null != parent) {
     if (iskeymode) {
-      res = null == res ? orig : res
+      //res = null == res ? orig : res
 
-      if (key !== res) {
+      if (key !== res && 'string' === typeof res) {
         if ('string' === typeof key) {
           parent[res] = parent[key]
           delete parent[key]
         }
 
-        if ('string' === typeof res) {
-          key = res
-        }
-        else {
-          key = undefined
-        }
+        key = res
       }
     }
 
@@ -461,6 +532,7 @@ function injection(
     }
   }
 
+  // console.log('RES', mode, key, typeof key, res, parent)
   return res
 }
 
