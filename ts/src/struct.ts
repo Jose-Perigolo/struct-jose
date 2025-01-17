@@ -37,23 +37,30 @@ type FullStore<T extends string> = {
 
 
 
-
+// Transform data using spec.
+// Only operates on static JSONifiable data.
+// Array are treated as if they are objects with indices as keys.
 function transform(
-  data: any,
-  spec: any,
-  store: any,
-  modify?: ModifyInjection
+  data: any, // Source data to transform into new data (original not mutated)
+  spec: any, // Transform specification; output follows this shape
+  extra: any, // Additional store of data
+  modify?: ModifyInjection // Optionally modify individual values.
 ) {
-  const cd = clone((data || {}))
+  const dataClone = merge([clone(extra || {}), clone(data || {})])
+
+  // Define a top level store that provides transform operations.
   const fullstore: FullStore<string> = {
-    // ...cd,
 
-    $DATA: cd,
+    // Source data.
+    $DATA: dataClone,
 
+    // Escape backtick,
     $BT: '`',
 
+    // Insert current date and time as an ISO string.
     $WHEN: () => new Date().toISOString(),
 
+    // Delete a key-value pair.
     $DELETE: ((_mode, key, _val, parent) => {
       if (null != key) {
         delete parent[key]
@@ -61,27 +68,32 @@ function transform(
       return undefined
     }) as FoundInjection,
 
-    $PRINT: ((...args) => console.log('PRINT', ...args)) as FoundInjection,
 
+    // Merge a list of objects into the current object. 
+    // Must be a key in an object. The value is merged over the current object.
+    // If the value is an array, the elements are first merged using `merge`. 
+    // If the value is the empty string, merge the top level store.
     $MERGE: ((mode, key, val, parent) => {
       if ('key:pre' === mode) { return key }
 
+      // Operate after child values have been transformed.
       if ('key:post' === mode) {
-        // console.log('MERGE', mode, key, val, 'p=', parent, path, nodes)
+
+        // Remove self from parent.
         if (null != key) {
           delete parent[key]
         }
+
         if ('' === val) {
-          val = cd
+          val = dataClone
         }
 
-        // console.log('MERGE', val)
-
         merge([parent, ...(Array.isArray(val) ? val : [val])])
+
         return key
       }
 
-      return val
+      return undefined
     }) as FoundInjection,
 
     $COPY: ((mode, key, val, parent, path, nodes, current, store) => {
@@ -321,8 +333,6 @@ function transform(
       delete parent['`$META`']
       return undefined
     }) as FoundInjection,
-
-    ...(store || {})
   }
 
   const out = inject(spec, fullstore, modify)
@@ -675,6 +685,7 @@ function walk(val: any, apply: WalkApply, key?: string, parent?: any, path?: str
 
 
 export {
+  clone,
   getpath,
   inject,
   merge,

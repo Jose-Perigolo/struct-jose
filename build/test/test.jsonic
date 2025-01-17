@@ -1,13 +1,9 @@
 
-
-merge: @"merge.jsonic"
-
-walk: @"walk.jsonic"
-
+clone: @"clone.jsonic"
 getpath: @"getpath.jsonic"
-
 inject: @"inject.jsonic"
-
+merge: @"merge.jsonic"
 transform: @"transform.jsonic"
+walk: @"walk.jsonic"
 
 

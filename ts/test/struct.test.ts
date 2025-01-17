@@ -6,6 +6,7 @@ import { equal, deepEqual } from 'node:assert'
 
 
 import {
+  clone,
   getpath,
   inject,
   merge,
@@ -17,9 +18,9 @@ import {
 const TESTSPEC =
   JSON.parse(readFileSync(join(__dirname, '..', '..', 'build/test/test.json'), 'utf8'))
 
-function clone(obj: any): any {
-  return JSON.parse(JSON.stringify(obj))
-}
+// function clone(obj: any): any {
+//   return JSON.parse(JSON.stringify(obj))
+// }
 
 
 function test_set(tests: { set: any[] }, apply: Function) {
@@ -30,6 +31,16 @@ function test_set(tests: { set: any[] }, apply: Function) {
 
 
 describe('struct', () => {
+
+  test('clone-exists', () => {
+    equal('function', typeof clone)
+  })
+
+  test('clone-basic', () => {
+    const test = clone(TESTSPEC.clone.basic)
+    deepEqual(clone(test.in), test.out)
+  })
+
 
   test('merge-exists', () => {
     equal('function', typeof merge)
