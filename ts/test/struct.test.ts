@@ -6,11 +6,11 @@ import { equal, deepEqual } from 'node:assert'
 
 
 import {
-  walk,
-  merge,
   getpath,
   inject,
+  merge,
   transform,
+  walk,
 } from '../dist/struct'
 
 
@@ -101,10 +101,10 @@ describe('struct', () => {
       transform(vin.data, vin.spec, vin.store))
   })
 
-  // test('transform-each', () => {
-  //   test_set(clone(TESTSPEC.transform.each), (vin: any) =>
-  //     transform(vin.data, vin.spec, vin.store))
-  // })
+  test('transform-each', () => {
+    test_set(clone(TESTSPEC.transform.each), (vin: any) =>
+      transform(vin.data, vin.spec, vin.store))
+  })
 
   test('transform-pack', () => {
     test_set(clone(TESTSPEC.transform.pack), (vin: any) =>
@@ -112,48 +112,16 @@ describe('struct', () => {
   })
 
 
-
-  // test('transform', async ()=>{
-  //   // deepEqual(transform({a:1},{a:'`a`'}), {a:1})
-
-  //   const src = {
-  //     a: 1,
-  //     c: {x:'X',y:'Y'},
-  //     d: 'D',
-  //     e: 2,
-  //     f: {m:'M',n:'N'},
-  //     ff: {m:'MM',l:'LL'},
-  //     x: {x0:{y:0}, x1:{y:1}},
-  //     y:[{k:'x0',x:0},{k:'x1',x:1}]
-  //   }
-
-  //   const pat = {
-  //     a:'`$COPY`',
-  //     aa:'`a`',
-  //     b: 'B',
-  //     q: '<`a``d`>',
-  //     '`d`': '`c`',
-  //     e: '`$DELETE`',
-  //     o:{p:'`$KEY`'},
-  //     '`$MERGE`': ['`f`','`ff`'],
-  //     g: { '`$MERGE`': '`f`' },
-  //     '`$EACH`x': {z:'Z', y:'`$COPY`',k:'`$KEY`'},
-  //     '`$PACK`y': {z:'Z', x:'`$COPY`','`$KEY`':'k',i:'`$KEY`',ii:'`.k`'},
-  //   }
-
-  //   console.log('src',src)
-  //   console.log('pat',pat)
-  //   console.log('out',transform(src,pat))
-  //   // console.log('src',src)
-  // })
-
-
-  /*
- 
- 
- 
-    */
-
+  test('transform-modify', () => {
+    test_set(clone(TESTSPEC.transform.modify), (vin: any) =>
+      transform(vin.data, vin.spec, vin.store,
+        (key: any, _val: any, newval: any, parent: any) => {
+          if (null != key && null != parent && 'string' === typeof newval) {
+            parent[key] = '@' + newval
+          }
+        }
+      ))
+  })
 
 })
 
