@@ -355,22 +355,18 @@ function inject(
   nodes?: any[],
   current?: any // Current store node
 ) {
-  const mark = ('' + Math.random()).substring(2, 8)
+  // const mark = ('' + Math.random()).substring(2, 8)
   // console.log('INJECT-START', mark, path?.join('.'), keyI, val, nodes)
 
-  //  'v=', val,
-  // 'p=', path, 'sk=', path?.[path.length - 2], 'n=', nodes, 's=', !!store, 'c=', current
-  // )
   const valtype = typeof val
   path = null == path ? [] : path
 
-  // if (null == key) {
-  // if (null == current) {
   if (null == keyI) {
     key = '$TOP'
     path = []
     current = (null != store.$DATA ? store.$DATA : store)
     nodes = []
+    parent = { [key]: val }
   }
   else {
 
@@ -460,8 +456,7 @@ function inject(
   }
 
   else if ('string' === valtype) {
-    // console.log('VAL-INJECTION', key, val, path.join('.'), 'pk=', parentkey,
-    // 'c=', current == store ? 'STORE' : current)
+    // console.log('VAL-INJECTION', key, val, path.join('.'), 'c=', current == store ? 'STORE' : current)
 
     // console.log('INJECT-VAL-A', mark, val, nodes)
     const newval = injection(
@@ -477,10 +472,12 @@ function inject(
       keys,
       modify
     )
-    // console.log('INJECT-VAL-B', mark, val, nodes)
+    // console.log('INJECT-VAL-B', mark, val, newval, nodes)
+
+    val = newval
 
     if (modify) {
-      modify(key, val, newval, parent, path, nodes, current, store, keyI, keys)
+      val = modify(key, val, newval, parent, path, nodes, current, store, keyI, keys)
     }
   }
 
@@ -506,9 +503,9 @@ function injection(
   keys: string[] | undefined,
   modify: ModifyInjection | undefined
 ) {
-  if ('val' === mode) {
-    // console.log('INJECTION', mode, key, val, path?.join('.'), 'C=', current == store ? 'STORE' : current)
-  }
+  // if ('val' === mode) {
+  //   console.log('INJECTION', mode, key, val, path?.join('.'), 'C=', current == store ? 'STORE' : current)
+  // }
 
   const find = (_full: string, mpath: string) => {
     mpath = mpath.replace(/^\$[\d]+/, '$')
@@ -549,7 +546,7 @@ function injection(
   let res
 
 
-  // console.log('ORIG', orig)
+  // console.log('ORIG', orig, 'parent=', parent)
 
 
   const m = orig.match(/^`([^`]+)`$/)

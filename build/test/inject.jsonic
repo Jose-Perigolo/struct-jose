@@ -7,6 +7,9 @@ basic: {
 
 deep: {
   set: [
+    { in: { val: '`a`', store: {a:{b:0}} },
+      out: {b:0} }
+  
     { in: { val: {x: '`a`',y:'`c.d`',z:'`e`'}, store: {a:{b:1},c:{d:2},e:[33,44]} }
       out: { x: { b: 1 }, y: 2, z: [ 33, 44 ]} }
 
