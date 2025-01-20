@@ -48,6 +48,11 @@ basic: {
     { in: { path: 'a' } }
     { in: { } }
 
+    { in: { path: 'a', store: [] } }
+    { in: { path: '0', store: [] } }
+    { in: { path: 'a', store: {} } }
+    { in: { path: '0', store: {} } }
+    
     ]
 }
 

@@ -1,6 +1,29 @@
 # voxgig_struct init
 
-from .voxgig_struct import merge, walk, getpath
 
-__all__ = ["merge", "walk", "getpath"]
+from .voxgig_struct import (
+    clone,
+    isnode,
+    ismap,
+    islist,
+    items,
+
+    getpath,
+    inject,
+    merge,
+    walk,
+)
+
+
+__all__ = [
+    "clone",
+    "isnode",
+    "ismap",
+    "islist",
+    "items",
+    "getpath",
+    "inject",
+    "merge",
+    "walk"
+]
 

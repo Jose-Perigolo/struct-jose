@@ -98,7 +98,6 @@ function transform(
 
     $COPY: ((mode, key, val, parent, path, nodes, current, store) => {
       if (mode.startsWith('key')) { return key }
-      // console.log('COPY', key, current == store ? 'STORE' : current)
       return null != current && null != key ? current[key] : undefined
     }) as FoundInjection,
 
@@ -114,9 +113,6 @@ function transform(
         return undefined
       }
 
-      // console.log('EACH', keys, parent)
-
-      // EACH Arguments: [EACH, sercpath, child]
       const srcpath = parent[1] // Path to source data
       const child = clone(parent[2]) // Child spec
 
@@ -125,9 +121,6 @@ function transform(
           getpath(srcpath, store) :
         undefined
 
-      // console.log('SRC', src, 'PATH', path.join('.'))
-      // console.log('NODES', nodes)
-
       let tcurrent: any = []
       let tval: any = []
 
@@ -135,14 +128,9 @@ function transform(
       const pkey = path[path.length - 3]
       const target = nodes[path.length - 2] || nodes[path.length - 1]
 
-      if ('object' === typeof src) {
-        // if (null != path && null != nodes) {
+      if (isnode(src)) {
 
-        // console.log('TARGET', pkey, tkey, target)
-
-        // if ('object' === typeof src) {
-
-        if (Array.isArray(src)) {
+        if (islist(src)) {
           tval = src.map(() => clone(child))
         }
         else {
@@ -155,8 +143,6 @@ function transform(
         tcurrent = Object.values(src)
       }
 
-      // console.log('TVAL', tval, tcurrent)
-
       if (null != tkey) {
         tcurrent = { [tkey]: tcurrent }
         target[tkey] = tval
@@ -166,24 +152,12 @@ function transform(
         tcurrent = { [pkey]: tcurrent }
       }
 
-      // console.log('EACH inject before',
-      // keyI,
-      //   keys,
-      //   pkey,
-      //   tkey,
-      //   tval,
-      //   path.slice(0, path.length - 1).join('.'),
-      //   // nodes[path.length - 3],
-      //   tcurrent)
-
-      // console.log('TCUR', tcurrent)
-
       tval = inject(
         tval,
         store,
         modify,
-        -1, // keyI,
-        undefined, // keys,
+        -1,
+        undefined,
         tkey,
         nodes[path.length - 3],
         path.slice(0, path.length - 1),
@@ -191,22 +165,13 @@ function transform(
         tcurrent,
       )
 
-      // console.log('TVAL-B', tkey, tval)
-
       if (null != tkey) {
         target[tkey] = tval
       }
       else {
-        // console.log('TARGET-A', target)
         tval.map((n: any, i: number) => (target as any)[i] = n)
-        // console.log('TARGET-B', target)
-
         target.length = tval.length
-        // console.log('TARGET-C', target)
       }
-
-      // console.log('DONE', mode, tkey, target, nodes)
-
 
       return undefined
     }) as FoundInjection,
@@ -224,26 +189,16 @@ function transform(
 
       const keyprop = child['`$KEY`']
       const tkey = path[path.length - 2]
-
-      // const pkey = 4 < path.length ? path[path.length - 3] : undefined
       const pkey = path[path.length - 3]
-      // console.log('****** PACK', tkey, pkey, 'p=', path.join('.'))
-
       const target = nodes[path.length - 2] || nodes[path.length - 1]
-      // console.log('NODES', nodes)
-      // const target = nodes[path.length - 1]
 
       let src = null != store ?
         null != store.$DATA ? getpath(srcpath, store.$DATA) :
           getpath(srcpath, store) :
         undefined
 
-      // console.log('PACK ARGS', key, path, target)
-      // console.log('PACK', path.join('.'), srcpath, 's=', src)
-
-      // TODO: also accept objects
-      src = Array.isArray(src) ? src :
-        'object' === typeof src ? Object.entries(src)
+      src = islist(src) ? src :
+        ismap(src) ? Object.entries(src)
           .reduce((a: any[], n: any) =>
             (n[1]['`$META`'] = { KEY: n[0] }, a.push(n[1]), a), []) :
           undefined
@@ -251,10 +206,6 @@ function transform(
       if (null == src) {
         return undefined
       }
-
-      // if (Array.isArray(src)) {
-
-      // console.log('SRC', src)
 
       let tval = src.reduce((a: any, n: any) => {
         let kn = null == child['`$KEY`'] ? n[keyprop] : n[child['`$KEY`']]
@@ -275,8 +226,6 @@ function transform(
         return a
       }, {})
 
-      // console.log('T', tval, tcurrent)
-
       if (null != tkey) {
         tcurrent = { [tkey]: tcurrent }
       }
@@ -285,16 +234,12 @@ function transform(
         tcurrent = { [pkey]: tcurrent }
       }
 
-
-      // console.log('PACK TARGET', tkey, tval, path, tcurrent)
-
-      // console.log('PACK INJECT', path.join('.'), tval, tcurrent)
       tval = inject(
         tval,
         store,
         modify,
-        -1, // keyI,
-        undefined, // keys,
+        -1,
+        undefined,
         tkey,
         nodes[path.length - 3],
         path.slice(0, path.length - 1),
@@ -329,7 +274,6 @@ function transform(
     }) as FoundInjection,
 
     $META: ((_mode, _key, _val, parent) => {
-      // console.log('META',mode,key,val,parent,path)
       delete parent['`$META`']
       return undefined
     }) as FoundInjection,
@@ -355,9 +299,6 @@ function inject(
   nodes?: any[],
   current?: any // Current store node
 ) {
-  // const mark = ('' + Math.random()).substring(2, 8)
-  // console.log('INJECT-START', mark, path?.join('.'), keyI, val, nodes)
-
   const valtype = typeof val
   path = null == path ? [] : path
 
@@ -369,32 +310,20 @@ function inject(
     parent = { [key]: val }
   }
   else {
-
-    // const parentkey = 2 < path.length ? path[path.length - 2] : undefined
     const parentkey = path[path.length - 2]
 
-    // console.log('INJECT', path.join('.'), parentkey, key, 'c=', store === current ? 'STORE' : current)
     current = null == current ? (null != store.$DATA ? store.$DATA : store) : current
     current = null == parentkey ? current : current[parentkey]
-
   }
 
-  // console.log('INJECT-NODES', mark, path?.join('.'), nodes)
-
-  // const origkey = key
-
-  if (null != val && 'object' === valtype) {
-    // console.log('INJECT-KEYS-A', mark, path?.join('.'), val, nodes)
-
+  if (isnode(val)) {
     const origkeys = [
       ...Object.keys(val).filter(k => !k.includes('$')),
       ...Object.keys(val).filter(k => k.includes('$')).sort(),
     ]
 
-    // for (let origkey of origkeys) {
     for (let okI = 0; okI < origkeys.length; okI++) {
       const origkey = origkeys[okI]
-      // console.log('ORIGKEY', origkey, typeof origkey)
 
       let prekey = injection(
         'key:pre',
@@ -410,15 +339,11 @@ function inject(
         modify
       )
 
-      // console.log('PREKEY', prekey, typeof prekey, 'ok=', origkey)
-
-      // console.log('INJECT-KEYS-B', mark, path?.join('.'), val, nodes)
-
       if ('string' === typeof prekey) {
         let child = val[prekey]
         let childpath = [...(path || []), prekey]
         let childnodes = [...(nodes || []), val]
-        // console.log('CHILD', path?.join('.'), child, prekey, current, childpath.join('.'), childnodes)
+
         inject(
           child,
           store,
@@ -431,11 +356,7 @@ function inject(
           childnodes,
           current
         )
-
-        // console.log('INJECT-KEYS-C', mark, path?.join('.'), val, nodes)
       }
-
-
 
       injection(
         'key:post',
@@ -451,15 +372,10 @@ function inject(
         modify
       )
     }
-
-    // console.log('INJECT-KEYS-D', mark, path?.join('.'), val, nodes)
   }
 
   else if ('string' === valtype) {
-    // console.log('VAL-INJECTION', key, val, path.join('.'), 'c=', current == store ? 'STORE' : current)
-
-    // console.log('INJECT-VAL-A', mark, val, nodes)
-    const newval = injection(
+    let newval = injection(
       'val',
       key,
       val,
@@ -472,27 +388,21 @@ function inject(
       keys,
       modify
     )
-    // console.log('INJECT-VAL-B', mark, val, newval, nodes)
-
-    val = newval
 
     if (modify) {
-      val = modify(key, val, newval, parent, path, nodes, current, store, keyI, keys)
+      newval = modify(key, val, newval, parent, path, nodes, current, store, keyI, keys)
     }
-  }
 
-  // console.log('INJECT-END', mark, path?.join('.'), val, nodes)
+    val = newval
+  }
 
   return val
 }
 
 
-
-
 function injection(
   mode: InjectionMode,
   key: string | undefined,
-  // key: string,
   val: any,
   parent: any,
   path: string[] | undefined,
@@ -503,10 +413,6 @@ function injection(
   keys: string[] | undefined,
   modify: ModifyInjection | undefined
 ) {
-  // if ('val' === mode) {
-  //   console.log('INJECTION', mode, key, val, path?.join('.'), 'C=', current == store ? 'STORE' : current)
-  // }
-
   const find = (_full: string, mpath: string) => {
     mpath = mpath.replace(/^\$[\d]+/, '$')
 
@@ -518,8 +424,6 @@ function injection(
 
     found =
       (undefined === found && null != store.$DATA) ? getpath(mpath, store.$DATA) : found
-
-    // console.log('FINDER', mpath, found)
 
     if ('function' === typeof found) {
       found = found(
@@ -545,12 +449,7 @@ function injection(
   const orig = iskeymode ? key : val
   let res
 
-
-  // console.log('ORIG', orig, 'parent=', parent)
-
-
   const m = orig.match(/^`([^`]+)`$/)
-  // console.log('M', mode, key, m)
 
   if (m) {
     res = find(m[0], m[1])
@@ -558,10 +457,6 @@ function injection(
   else {
     res = orig.replace(/`([^`]+)`/g, find)
   }
-
-  // console.log('FIND', mode, key, val, 'f=', orig, res, 'p=', parent)
-
-  // console.log('RES-SET', mode, orig, key, typeof key, res, parent)
 
   if (null != parent) {
     if (iskeymode) {
@@ -589,10 +484,27 @@ function injection(
     }
   }
 
-  // console.log('RES-END', mode, orig, key, typeof key, res, parent)
   return res
 }
 
+
+function isnode(val: any) {
+  return null != val && 'object' == typeof val
+}
+
+function ismap(val: any) {
+  return null != val && 'object' == typeof val && !Array.isArray(val)
+}
+
+function islist(val: any) {
+  return Array.isArray(val)
+}
+
+function items(val: any) {
+  return ismap(val) ? Object.entries(val) :
+    islist(val) ? val.map((n: any, i: number) => [i, n]) :
+      []
+}
 
 function clone(val: any) {
   return undefined === val ? undefined : JSON.parse(JSON.stringify(val))
@@ -601,7 +513,8 @@ function clone(val: any) {
 
 function merge(objs: any[]): any {
   let out: any = undefined
-  if (null == objs || !Array.isArray(objs)) {
+
+  if (!islist(objs)) {
     return objs
   }
   else if (1 === objs.length) {
@@ -611,7 +524,8 @@ function merge(objs: any[]): any {
     out = objs[0] || {}
     for (let oI = 1; oI < objs.length; oI++) {
       let obj = objs[oI]
-      if (null != obj && 'object' === typeof obj) {
+
+      if (isnode(obj)) {
         let cur = [out]
         let cI = 0
         walk(obj, (key, val, parent, path) => {
@@ -620,10 +534,10 @@ function merge(objs: any[]): any {
             cur[cI] = cur[cI] || getpath(path.slice(0, path.length - 1), out)
 
             if (null == cur[cI] || 'object' !== typeof cur[cI]) {
-              cur[cI] = (Array.isArray(parent) ? [] : {})
+              cur[cI] = islist(parent) ? [] : {}
             }
 
-            if (null != val && 'object' === typeof val) {
+            if (isnode(val)) {
               cur[cI][key] = cur[cI + 1]
               cur[cI + 1] = undefined
             }
@@ -646,7 +560,7 @@ function getpath(path: string | string[], store: Record<string, any>) {
     return store
   }
 
-  const parts = Array.isArray(path) ? path : path.split('.')
+  const parts = islist(path) ? path : 'string' === typeof path ? path.split('.') : []
   let val = undefined
 
   if (0 < parts.length) {
@@ -668,11 +582,9 @@ type WalkApply = (key: string | undefined, val: any, parent: any, path: string[]
 
 // Walk a data strcture depth first.
 function walk(val: any, apply: WalkApply, key?: string, parent?: any, path?: string[]): any {
-  const valtype = typeof val
-
-  if (null != val && 'object' === valtype) {
-    for (let k in val) {
-      val[k] = walk(val[k], apply, k, val, [...(path || []), k])
+  if (isnode(val)) {
+    for (let [ckey, child] of items(val)) {
+      val[ckey] = walk(child, apply, ckey, val, [...(path || []), ckey])
     }
   }
 
@@ -683,6 +595,11 @@ function walk(val: any, apply: WalkApply, key?: string, parent?: any, path?: str
 
 export {
   clone,
+  isnode,
+  ismap,
+  islist,
+  items,
+
   getpath,
   inject,
   merge,

@@ -7,6 +7,11 @@ import { equal, deepEqual } from 'node:assert'
 
 import {
   clone,
+  isnode,
+  ismap,
+  islist,
+  items,
+
   getpath,
   inject,
   merge,
@@ -18,10 +23,6 @@ import {
 const TESTSPEC =
   JSON.parse(readFileSync(join(__dirname, '..', '..', 'build/test/test.json'), 'utf8'))
 
-// function clone(obj: any): any {
-//   return JSON.parse(JSON.stringify(obj))
-// }
-
 
 function test_set(tests: { set: any[] }, apply: Function) {
   for (let entry of tests.set) {
@@ -32,13 +33,32 @@ function test_set(tests: { set: any[] }, apply: Function) {
 
 describe('struct', () => {
 
-  test('clone-exists', () => {
+  test('minor-exists', () => {
     equal('function', typeof clone)
+    equal('function', typeof isnode)
+    equal('function', typeof ismap)
+    equal('function', typeof islist)
+    equal('function', typeof items)
   })
 
-  test('clone-basic', () => {
-    const test = clone(TESTSPEC.clone.basic)
-    deepEqual(clone(test.in), test.out)
+  test('minor-clone', () => {
+    test_set(clone(TESTSPEC.minor.clone), clone)
+  })
+
+  test('minor-isnode', () => {
+    test_set(clone(TESTSPEC.minor.isnode), isnode)
+  })
+
+  test('minor-ismap', () => {
+    test_set(clone(TESTSPEC.minor.ismap), ismap)
+  })
+
+  test('minor-islist', () => {
+    test_set(clone(TESTSPEC.minor.islist), islist)
+  })
+
+  test('minor-items', () => {
+    test_set(clone(TESTSPEC.minor.items), items)
   })
 
 
