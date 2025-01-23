@@ -97,8 +97,20 @@ function transform(
     }) as FoundInjection,
 
     $COPY: ((mode, key, val, parent, path, nodes, current, store) => {
-      if (mode.startsWith('key')) { return key }
-      return null != current && null != key ? current[key] : undefined
+      let out
+      if (mode.startsWith('key')) {
+        out = key
+      }
+      else {
+        out = null != current && null != key ? current[key] : undefined
+
+        // TODO: how to do this?
+        parent[key as string] = out
+      }
+      console.log('$COPY', mode, key, val, 'o=', out, 'p=', parent, path, nodes, current)
+
+
+      return out
     }) as FoundInjection,
 
 
@@ -155,14 +167,17 @@ function transform(
       tval = inject(
         tval,
         store,
-        modify,
-        -1,
-        undefined,
-        tkey,
-        nodes[path.length - 3],
-        path.slice(0, path.length - 1),
-        nodes.slice(0, path.length - 1),
         tcurrent,
+        {
+          mode,
+          keyI: -1,
+          keys: [],
+          key: tkey,
+          parent: nodes[path.length - 3],
+          path: path.slice(0, path.length - 1),
+          nodes: nodes.slice(0, path.length - 1),
+          handler: injecthandler,
+        }
       )
 
       if (null != tkey) {
@@ -237,14 +252,26 @@ function transform(
       tval = inject(
         tval,
         store,
-        modify,
-        -1,
-        undefined,
-        tkey,
-        nodes[path.length - 3],
-        path.slice(0, path.length - 1),
-        nodes.slice(0, path.length - 1),
         tcurrent,
+        {
+          mode,
+          keyI: -1,
+          keys: [],
+          key: tkey,
+          parent: nodes[path.length - 3],
+          path: path.slice(0, path.length - 1),
+          nodes: nodes.slice(0, path.length - 1),
+          handler: injecthandler,
+        }
+
+        // modify,
+        // -1,
+        // undefined,
+        // tkey,
+        // nodes[path.length - 3],
+        // path.slice(0, path.length - 1),
+        // nodes.slice(0, path.length - 1),
+        // tcurrent,
       )
 
       // console.log('PACK TARGET', tkey, target, tval)
@@ -279,13 +306,13 @@ function transform(
     }) as FoundInjection,
   }
 
-  const out = inject(spec, fullstore, modify)
+  const out = inject(spec, fullstore)
   return out
 }
 
-
-function inject(
-  //  These arguments are the public interface.
+/*
+function injectany(
+  // These arguments are the public interface.
   val: any,
   store: any,
   modify?: ModifyInjection | undefined,
@@ -311,7 +338,6 @@ function inject(
   }
   else {
     const parentkey = path[path.length - 2]
-
     current = null == current ? (null != store.$DATA ? store.$DATA : store) : current
     current = null == parentkey ? current : current[parentkey]
   }
@@ -344,7 +370,7 @@ function inject(
         let childpath = [...(path || []), prekey]
         let childnodes = [...(nodes || []), val]
 
-        inject(
+        injectany(
           child,
           store,
           modify,
@@ -486,6 +512,248 @@ function injection(
 
   return res
 }
+*/
+
+
+function inject(
+  // These arguments are the public interface.
+  val: any,
+  store: any,
+
+  current?: any,
+  state?: {
+    mode: string, // 'val' | 'key:pre' | 'key:post',
+    keyI: number,
+    keys: string[],
+    key: string,
+    parent: any,
+    path: string[],
+    nodes: any[],
+    handler: any,
+  }
+) {
+  const valtype = typeof val
+  console.log('INJECT-START', val, current)
+
+  if (null == state) {
+    // store = prop(store, '$DATA', store)
+    state = {
+      mode: 'val',
+      keyI: 0,
+      keys: ['$TOP'],
+      key: '$TOP',
+      parent: { '$TOP': val },
+      path: [],
+      nodes: [],
+      handler: injecthandler,
+    }
+    current = (ismap(store) && null != store.$DATA) ? store.$DATA : store
+  }
+  else {
+    const parentkey = state.path[state.path.length - 2]
+    // current = (null != current.$DATA ? store.$DATA : store) : current
+    current = null == parentkey ? current : current[parentkey]
+  }
+
+  console.log('INJECT-CURRENT', 'p=' + state.path.join('.'), 'c=', current)
+
+  if (isnode(val)) {
+    const origkeys = [
+      ...Object.keys(val).filter(k => !k.includes('$')),
+      ...Object.keys(val).filter(k => k.includes('$')).sort(),
+    ]
+
+    for (let okI = 0; okI < origkeys.length; okI++) {
+      const origkey = '' + origkeys[okI]
+
+      let childpath = [...(state.path || []), origkey]
+      let childnodes = [...(state.nodes || []), val]
+
+      const childstate = {
+        mode: 'key:pre',
+        keyI: okI,
+        keys: origkeys,
+        key: origkey,
+        parent: val,
+        path: childpath,
+        nodes: childnodes,
+        handler: injecthandler,
+      }
+
+      const prekey = injectstr(origkey, store, current, childstate)
+
+      if (null != prekey) {
+
+        let child = val[prekey]
+        childstate.mode = 'val'
+
+        inject(
+          child,
+          store,
+          current,
+          childstate,
+        )
+
+        childstate.mode = 'key:post'
+        injectstr(origkey, store, current, childstate)
+      }
+
+      // console.log('ORIGKEY', okI, origkey)
+
+      // let prekey = injection(
+      //   'key:pre',
+      //   origkey,
+      //   val[origkey],
+      //   val,
+      //   [...(path || []), origkey],
+      //   [...(nodes || []), val],
+      //   current,
+      //   store,
+      //   okI,
+      //   origkeys,
+      //   modify
+      // )
+
+      // if ('string' === typeof prekey) {
+
+
+      // }
+
+      // injection(
+      //   'key:post',
+      //   undefined == prekey ? origkey : prekey,
+      //   val[prekey],
+      //   val,
+      //   path,
+      //   nodes,
+      //   current,
+      //   store,
+      //   okI,
+      //   origkeys,
+      //   modify
+      // )
+    }
+  }
+
+  else if ('string' === valtype) {
+    state.mode = 'val'
+    const newval = injectstr(val, store, current, state)
+    console.log('INJECT-STRING', val, newval, store, current, state)
+    val = newval
+  }
+
+  return val
+}
+
+function injecthandler(val: any, parts: string[], store: any, current: any, state: any) {
+  // console.log('HANDLER', val, parts.join('.'), state)
+
+  if ('function' === typeof val) {
+    console.log('STATE', state)
+    let res = val(
+      state.mode,
+      state.key,
+      val,
+      state.parent,
+      state.path,
+      state.nodes,
+      current,
+      store,
+      state.keyI,
+      state.keys,
+    )
+
+    console.log('RES', val, res)
+  }
+  else if ('val' === state.mode) {
+
+    if (state.full) {
+      if (undefined === val) {
+        delete state.parent[state.key]
+      }
+      else {
+        state.parent[state.key] = val
+      }
+    }
+  }
+
+  return val
+}
+
+
+function injectstr(val: string, store: any, current?: any, state?: any): any {
+  if ('string' !== typeof val) {
+    return ''
+  }
+
+  let out: any = val
+  const m = val.match(/^`([^`]+)`$/)
+  console.log('INJECT-MATCH', val, m)
+
+  if (m) {
+    if (state) {
+      state.full = true
+    }
+    out = getpath(m[1], store, current, state)
+  }
+  else {
+    out = val.replace(/`([^`]+)`/g,
+      (_m: string, p1: string) => {
+        if (state) {
+          state.full = false
+        }
+        const found = getpath(p1, store, current, state)
+        return undefined == found ? '' :
+          'object' === typeof found ? JSON.stringify(found) :
+            found
+      })
+
+    if (state.handler) {
+      state.full = true
+      state.handler(out, state.path, store, current, state)
+    }
+  }
+
+  // console.log('INJECTSTR', val, out)
+
+  return out
+}
+
+/*
+const injectfind = (full: string, path: string) => {
+  mpath = mpath.replace(/^\$[\d]+/, '$')
+ 
+  let found: FoundInjection = 'string' === typeof mpath ?
+    mpath.startsWith('.') ?
+      getpath(mpath.substring(1), current) :
+      (getpath(mpath, store)) :
+    undefined
+ 
+  found =
+    (undefined === found && null != store.$DATA) ? getpath(mpath, store.$DATA) : found
+ 
+  if ('function' === typeof found) {
+    found = found(
+      mode,
+      key,
+      val,
+      parent,
+      path,
+      nodes,
+      current,
+      store,
+      keyI,
+      keys,
+      mpath,
+      modify
+    )
+  }
+ 
+  return found
+}
+*/
+
+
 
 
 function isnode(val: any) {
@@ -504,6 +772,11 @@ function items(val: any) {
   return ismap(val) ? Object.entries(val) :
     islist(val) ? val.map((n: any, i: number) => [i, n]) :
       []
+}
+
+function prop(val: any, key: any, alt?: any) {
+  let out = undefined === val ? alt : undefined === key ? alt : val[key]
+  return undefined == out ? alt : out
 }
 
 function clone(val: any) {
@@ -555,7 +828,9 @@ function merge(objs: any[]): any {
 }
 
 
-function getpath(path: string | string[], store: Record<string, any>) {
+function getpath(path: string | string[], store: any, current?: any, state?: any) {
+  console.log('GETPATH-IN', path, store, current, state)
+
   if (null == path || null == store || '' === path) {
     return store
   }
@@ -564,14 +839,38 @@ function getpath(path: string | string[], store: Record<string, any>) {
   let val = undefined
 
   if (0 < parts.length) {
-    val = store
-    for (let pI = 0; pI < parts.length; pI++) {
+    let pI = 0
+    if ('' === parts[0]) {
+      pI = 1
+      val = current
+    }
+    else {
+      val = store
+    }
+
+    for (; pI < parts.length; pI++) {
       const part = parts[pI]
-      val = val[part]
-      if (null == val) {
-        break
+      let newval: any = val[part]
+      if (undefined === newval) {
+        if (0 === pI && ismap(val) && null != val.$DATA) {
+          newval = val.$DATA[part]
+        }
+
+        val = newval
+        if (undefined == val) {
+          break
+        }
+      }
+      else {
+        val = newval
       }
     }
+  }
+
+  console.log('GETPATH', path, val, store)
+
+  if (null != state && 'function' === typeof state.handler) {
+    val = state.handler(val, parts, store, current, state)
   }
 
   return val
@@ -599,6 +898,7 @@ export {
   ismap,
   islist,
   items,
+  prop,
 
   getpath,
   inject,

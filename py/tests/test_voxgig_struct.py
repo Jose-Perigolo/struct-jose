@@ -3,8 +3,18 @@ import os
 import unittest
 import json
 
-from voxgig_struct import clone, isnode, ismap, islist, items, getpath, inject, merge, walk
-
+from voxgig_struct import (
+    clone,
+    isnode,
+    ismap,
+    islist,
+    items,
+    prop,
+    getpath,
+    inject,
+    merge,
+    walk
+)
 
 with open(os.path.join(os.path.dirname(os.path.abspath(__file__)),
                        '../../build/test/test.json'), 'r') as file:
@@ -16,8 +26,9 @@ def clone(obj):
 
 class TestVoxgigStruct(unittest.TestCase):
 
-    def set_test(self, tests, apply):
+    def set_test(self, tests, apply, show=False):
         for entry in tests.get("set", []):
+            print('TEST-ENTRY', entry) if show else None
             self.assertEqual(apply(entry.get("in")), entry.get("out"))
 
 
@@ -27,6 +38,7 @@ class TestVoxgigStruct(unittest.TestCase):
         self.assertEqual(type(ismap).__name__, 'function')
         self.assertEqual(type(islist).__name__, 'function')
         self.assertEqual(type(items).__name__, 'function')
+        self.assertEqual(type(prop).__name__, 'function')
 
     def test_minor_clone(self):
         test = clone(TESTSPEC['minor']['clone'])
@@ -48,6 +60,9 @@ class TestVoxgigStruct(unittest.TestCase):
         test = clone(TESTSPEC['minor']['items'])
         self.set_test(test, lambda vin: [list(item) for item in items(vin)])
 
+    def test_minor_prop(self):
+        test = clone(TESTSPEC['minor']['prop'])
+        self.set_test(test, lambda vin: prop(vin['val'], vin['key'], vin.get('alt')))
         
     def test_merge_exists(self):
         self.assertEqual(type(merge).__name__, 'function')
@@ -86,9 +101,9 @@ class TestVoxgigStruct(unittest.TestCase):
     def test_inject_basic(self):
         self.set_test(clone(TESTSPEC["inject"]["basic"]), lambda vin: inject(vin, walkpath))
 
-    # def test_inject_deep(self):
-    #     self.set_test(clone(TESTSPEC["inject"]["deep"]),
-    #                   lambda vin: inject(vin.get("val"), vin.get("store")))
+    def test_inject_deep(self):
+        self.set_test(clone(TESTSPEC["inject"]["deep"]),
+                      lambda vin: inject(vin.get("val"), vin.get("store")), True)
 
 
 

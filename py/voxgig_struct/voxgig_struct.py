@@ -21,6 +21,24 @@ def items(val: Any) -> list:
     else:
         return []
 
+def prop(val: Any, key: Any, alt: Any = None) -> Any:
+    if ismap(val):
+        return val.get(str(key), alt)
+    
+    if islist(val):
+        try:
+            key = int(key)
+        except (ValueError, TypeError):
+            return alt
+
+        if 0 <= key < len(val):
+            return val[key]
+        else:
+            return alt
+
+    return alt
+
+    
 def clone(val: Any) -> Any:
     return None if val is None else copy.deepcopy(val)
 
@@ -61,9 +79,12 @@ def getpath(path: Union[str, list[str]], store: dict) -> Any:
 
 
 def inject(
+    # These arguments are the public interface.
     val,
     store,
     modify=None,
+
+    # These arguments are for recursive calls.
     keyI=None,
     keys=None,
     key=None,
@@ -72,34 +93,36 @@ def inject(
     nodes=None,
     current=None
 ):
-    valtype = type(val)
+    # valtype = type(val)
     path = [] if path is None else path
 
     if keyI is None:
         key = '$TOP'
         path = []
-        current = store.get('$DATA', store) if isinstance(store,dict) else store
+        current = prop(store, '$DATA', store)
         nodes = []
         parent = {key: val}
     else:
         parentkey = path[-2] if len(path) > 1 else None
-        current = store.get('$DATA', store) if current is None else current
+        current = prop(store, '$DATA', store) if current is None else current
         current = current if parentkey is None else current[parentkey]
 
-    if val is not None and (isinstance(val, dict) or isinstance(val, list)):
-        if isinstance(val, dict):
+    if isnode(val):
+        if ismap(val):
             origkeys = sorted(
                 [k for k in val.keys() if '$' not in k] +
                 [k for k in val.keys() if '$' in k]
             )
-        elif isinstance(val, list):
-            origkeys = list(range(len(val)))  # List of indices for lists
+        elif islist(val):
+            origkeys = list(range(len(val)))
 
+        print('ORIGKEYS', origkeys, val)
+            
         for okI, origkey in enumerate(origkeys):
             prekey = injection(
                 'key:pre',
                 origkey,
-                val[origkey],
+                prop(val, origkey),
                 val,
                 path + [origkey],
                 (nodes or []) + [val],
@@ -110,11 +133,16 @@ def inject(
                 modify
             )
 
-            if isinstance(prekey, str):
-                child = val[prekey]
+            print('PREKEY', origkey, type(origkey), prekey, type(prekey), val, prop(val, prekey))
+            
+            # if isinstance(prekey, str):
+            if prekey is not None:
+                child = prop(val, prekey)
                 childpath = path + [prekey]
                 childnodes = (nodes or []) + [val]
 
+                print('CHILD', child)
+                
                 inject(
                     child,
                     store,
@@ -131,7 +159,7 @@ def inject(
             injection(
                 'key:post',
                 origkey if prekey is None else prekey,
-                val.get(prekey),
+                prop(val, prekey),
                 val,
                 path,
                 nodes,
@@ -186,10 +214,10 @@ def injection(
             if mpath.startswith('.'):
                 found = getpath(mpath[1:], current)
             else:
-                found = getpath(mpath, store)
+                found = getpath(mpath, prop(store, '$DATA', store))
 
-        if found is None and store.get('$DATA') is not None:
-            found = getpath(mpath, store['$DATA'])
+            # if found is None and prop(store,'$DATA') is not None:
+            # found = getpath(mpath, store['$DATA'])
 
         if callable(found):
             found = found(
@@ -202,12 +230,15 @@ def injection(
         return found
 
     iskeymode = mode.startswith('key')
-    orig = key if iskeymode else val
+    if iskeymode and isinstance(key, int):
+        return key
+    
+    orig = str(key if iskeymode else val)
     res = None
 
     m = re.match(r'^`([^`]+)`$', orig) if isinstance(orig, str) else None
 
-    print('MATCH', orig, m)
+    print('MATCH', mode, orig, type(orig), m)
     
     if m:
         res = find(m.group(0), m.group(1))
@@ -217,9 +248,11 @@ def injection(
     if parent is not None:
         if iskeymode:
             if key != res and isinstance(res, str):
-                if isinstance(key, str):
-                    parent[res] = parent[key]
-                    del parent[key]
+                pval = prop(parent, key)
+                if key is not None and pval is not None:
+                    parent[int(res) if islist(parent) else res] = pval
+                    if pval is not None:
+                        del parent[int(key) if islist(parent) else key]
                 key = res
 
         if mode == 'val' and isinstance(key, str):
@@ -227,7 +260,7 @@ def injection(
                 if orig != '`$EACH`':
                     parent.pop(key, None)
             else:
-                parent[key] = res
+                parent[int(key) if islist(parent) else key] = res
 
     return res
 
@@ -259,7 +292,7 @@ def merge(objs):
                             cur[cI] = getpath(path[:-1], out)
                         
                         if not isnode(cur[cI]):
-                            cur[cI] = [] if isinstance(parent, list) else {}
+                            cur[cI] = [] if islist(parent) else {}
 
                             # if( isinstance(cur[cI], list) and
                             if( islist(cur[cI]) and

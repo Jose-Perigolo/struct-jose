@@ -53,6 +53,27 @@ basic: {
     { in: { path: 'a', store: {} } }
     { in: { path: '0', store: {} } }
     
-    ]
+  ]
 }
 
+
+current: {
+  set: [
+    { in: { path: '.b', store: {a:{b:1}}, current: {b:1} }, out: 1 }
+    { in: { path: 'a.b', store: {a:{b:1}}, current: {b:1} }, out: 1 }
+    { in: { path: 'a', store: {a:{b:1}}, current: {b:1} }, out: {b:1} }
+
+    { in: { path: '.1', store: {a:[11,22,33] }, current: [11,22,33] }, out: 22 }
+    { in: { path: 'a.1', store: {a:[11,22,33] }, current: [11,22,33] }, out: 22 }
+    { in: { path: 'a', store: {a:[11,22,33] }, current: [11,22,33] }, out: [11,22,33] }
+  ]
+}
+
+
+state: {
+  set: [
+    { in: { path: 'a', store: {a:11} }, out: '0:a:11' }
+    { in: { path: 'a.b', store: {a:{b:22}} }, out: '1:a.b:22' }
+    { in: { path: '.b', store: {a:{b:33}}, current:{b:333} }, out: '2:.b:333' }
+  ]
+}

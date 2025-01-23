@@ -11,6 +11,7 @@ import {
   ismap,
   islist,
   items,
+  prop,
 
   getpath,
   inject,
@@ -39,6 +40,7 @@ describe('struct', () => {
     equal('function', typeof ismap)
     equal('function', typeof islist)
     equal('function', typeof items)
+    equal('function', typeof prop)
   })
 
   test('minor-clone', () => {
@@ -59,6 +61,11 @@ describe('struct', () => {
 
   test('minor-items', () => {
     test_set(clone(TESTSPEC.minor.items), items)
+  })
+
+  test('minor-prop', () => {
+    test_set(clone(TESTSPEC.minor.prop), (vin: any) =>
+      null == vin.alt ? prop(vin.val, vin.key) : prop(vin.val, vin.key, vin.alt))
   })
 
 
@@ -98,6 +105,26 @@ describe('struct', () => {
     test_set(clone(TESTSPEC.getpath.basic), (vin: any) => getpath(vin.path, vin.store))
   })
 
+  test('getpath-current', () => {
+    test_set(clone(TESTSPEC.getpath.current), (vin: any) =>
+      getpath(vin.path, vin.store, vin.current))
+  })
+
+  test('getpath-state', () => {
+    const state = {
+      handler: (val: any, parts: string[], store: any, current: any, state: any) => {
+        state.last = state.step + ':' + parts.join('.') + ':' + val
+        state.step++
+        return state.last
+      },
+      step: 0,
+      last: undefined
+    }
+    test_set(clone(TESTSPEC.getpath.state), (vin: any) =>
+      getpath(vin.path, vin.store, vin.current, state))
+  })
+
+
 
   test('inject-exists', () => {
     equal('function', typeof inject)
@@ -106,6 +133,11 @@ describe('struct', () => {
   test('inject-basic', () => {
     const test = clone(TESTSPEC.inject.basic)
     deepEqual(inject(test.in.val, test.in.store), test.out)
+  })
+
+  test('inject-string', () => {
+    test_set(clone(TESTSPEC.inject.string), (vin: any) =>
+      inject(vin.val, vin.store, vin.current))
   })
 
   test('inject-deep', () => {

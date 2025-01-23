@@ -7,7 +7,8 @@ from .voxgig_struct import (
     ismap,
     islist,
     items,
-
+    prop,
+    
     getpath,
     inject,
     merge,
@@ -21,6 +22,7 @@ __all__ = [
     "ismap",
     "islist",
     "items",
+    "prop",
     "getpath",
     "inject",
     "merge",

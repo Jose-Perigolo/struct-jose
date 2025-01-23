@@ -5,19 +5,53 @@ basic: {
 }
 
 
+string: {
+  set: [
+    { in: { val: 'a', store: {a:1} }, out: 'a' }
+    { in: { val: '`a`', store: {a:1} }, out: 1 }
+    { in: { val: 'x`a`', store: {a:1} }, out: 'x1' }
+    { in: { val: '`a`y', store: {a:1} }, out: '1y' }
+    { in: { val: 'x`a`y', store: {a:1} }, out: 'x1y' }
+    { in: { val: '`a`x`a`y', store: {a:1} }, out: '1x1y' }
+    { in: { val: '`a`x`a`y`a`', store: {a:1} }, out: '1x1y1' }
+
+    { in: { val: '`a`x`b`y`c`', store: {a:1,b:2,c:3} }, out: '1x2y3' }
+    { in: { val: '`a`x`b`y`c`', store: {a:'A',b:false} }, out: 'Axfalsey' }
+    { in: { val: '`a`x`b`y`c`', store: {a:{k:4},b:['B']} }, out: '{"k":4}x["B"]y' }
+
+    { in: { val: '`a`', store: {a:'A'} }, out: 'A' }
+    { in: { val: '`a`', store: {a:true} }, out: true }
+    { in: { val: '`a`', store: {a:false} }, out: false }
+    { in: { val: '`a`', store: {a:{x:1}} }, out: {x:1} }
+    { in: { val: '`a`', store: {a:[2]} }, out: [2] }
+  ]
+}
+
+
+
 deep: {
   set: [
-    { in: { val: '`a`', store: {a:{b:0}} },
-      out: {b:0} }
-  
+    { in: { val: { x: '`a`'}, store: {a:1} }, out: {x:1} }
+    { in: { val: '`a`', store: {a:{b:2}} }, out: {b:2} }
+
+    { in: { val: { x: '`0`'}, store: [3] }, out: {x:3} }
+    { in: { val: '`0`', store: [4] }, out: 4 }
+
+    { in: { val: { x: '`a.b`'}, store: {a:{b:5}} }, out: {x:5} }
+    { in: { val: { x: '`a.b`'}, store: {a:{b:{c:6}}} }, out: {x:{c:6}} }
+    { in: { val: { x: '`a.b`'}, store: {a:{b:[7]}} }, out: {x:[7]} }
+    { in: { val: { x: '`a.b`'}, store: {a:{b:true}} }, out: {x:true} }
+
+    { in: { val: '`a.b`', store: {a:{b:5}} }, out: 5 }
+    { in: { val: '`a.b`', store: {a:{b:{c:6}}} }, out: {c:6} }
+    { in: { val: '`a.b`', store: {a:{b:[7]}} }, out: [7] }
+    { in: { val: '`a.b`', store: {a:{b:true}} }, out: true }
+    
     { in: { val: {x: '`a`',y:'`c.d`',z:'`e`'}, store: {a:{b:1},c:{d:2},e:[33,44]} }
       out: { x: { b: 1 }, y: 2, z: [ 33, 44 ]} }
 
     { in: { val: ['`0`','`1`'], store: [11,22,33] },
       out: [11,22] }
-
-    { in: { val: {x:'`a`'}, store: {'$DATA': {a:3}} },
-      out: {x:3} }
   ]
 }
 

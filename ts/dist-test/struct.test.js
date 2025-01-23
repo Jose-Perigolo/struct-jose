@@ -18,6 +18,7 @@ function test_set(tests, apply) {
         (0, node_assert_1.equal)('function', typeof struct_1.ismap);
         (0, node_assert_1.equal)('function', typeof struct_1.islist);
         (0, node_assert_1.equal)('function', typeof struct_1.items);
+        (0, node_assert_1.equal)('function', typeof struct_1.prop);
     });
     (0, node_test_1.test)('minor-clone', () => {
         test_set((0, struct_1.clone)(TESTSPEC.minor.clone), struct_1.clone);
@@ -33,6 +34,9 @@ function test_set(tests, apply) {
     });
     (0, node_test_1.test)('minor-items', () => {
         test_set((0, struct_1.clone)(TESTSPEC.minor.items), struct_1.items);
+    });
+    (0, node_test_1.test)('minor-prop', () => {
+        test_set((0, struct_1.clone)(TESTSPEC.minor.prop), (vin) => null == vin.alt ? (0, struct_1.prop)(vin.val, vin.key) : (0, struct_1.prop)(vin.val, vin.key, vin.alt));
     });
     (0, node_test_1.test)('merge-exists', () => {
         (0, node_assert_1.equal)('function', typeof struct_1.merge);
@@ -60,12 +64,30 @@ function test_set(tests, apply) {
     (0, node_test_1.test)('getpath-basic', () => {
         test_set((0, struct_1.clone)(TESTSPEC.getpath.basic), (vin) => (0, struct_1.getpath)(vin.path, vin.store));
     });
+    (0, node_test_1.test)('getpath-current', () => {
+        test_set((0, struct_1.clone)(TESTSPEC.getpath.current), (vin) => (0, struct_1.getpath)(vin.path, vin.store, vin.current));
+    });
+    (0, node_test_1.test)('getpath-state', () => {
+        const state = {
+            handler: (val, parts, store, current, state) => {
+                state.last = state.step + ':' + parts.join('.') + ':' + val;
+                state.step++;
+                return state.last;
+            },
+            step: 0,
+            last: undefined
+        };
+        test_set((0, struct_1.clone)(TESTSPEC.getpath.state), (vin) => (0, struct_1.getpath)(vin.path, vin.store, vin.current, state));
+    });
     (0, node_test_1.test)('inject-exists', () => {
         (0, node_assert_1.equal)('function', typeof struct_1.inject);
     });
     (0, node_test_1.test)('inject-basic', () => {
         const test = (0, struct_1.clone)(TESTSPEC.inject.basic);
         (0, node_assert_1.deepEqual)((0, struct_1.inject)(test.in.val, test.in.store), test.out);
+    });
+    (0, node_test_1.test)('inject-string', () => {
+        test_set((0, struct_1.clone)(TESTSPEC.inject.string), (vin) => (0, struct_1.inject)(vin.val, vin.store, vin.current));
     });
     (0, node_test_1.test)('inject-deep', () => {
         test_set((0, struct_1.clone)(TESTSPEC.inject.deep), (vin) => (0, struct_1.inject)(vin.val, vin.store));
