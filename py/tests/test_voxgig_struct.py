@@ -46,7 +46,7 @@ class TestVoxgigStruct(unittest.TestCase):
 
     def test_minor_items(self):
         test = clone(TESTSPEC['minor']['items'])
-        self.set_test(test, lambda vin: items(vin))
+        self.set_test(test, lambda vin: [list(item) for item in items(vin)])
 
         
     def test_merge_exists(self):
@@ -80,11 +80,11 @@ class TestVoxgigStruct(unittest.TestCase):
                       lambda vin: getpath(vin.get("path"), vin.get("store")))
 
         
-    # def test_inject_exists(self):
-    #     self.assertEqual('function', type(inject).__name__)
+    def test_inject_exists(self):
+        self.assertEqual('function', type(inject).__name__)
 
-    # def test_inject_basic(self):
-    #     self.set_test(clone(TESTSPEC["inject"]["basic"]), lambda vin: inject(vin, walkpath))
+    def test_inject_basic(self):
+        self.set_test(clone(TESTSPEC["inject"]["basic"]), lambda vin: inject(vin, walkpath))
 
     # def test_inject_deep(self):
     #     self.set_test(clone(TESTSPEC["inject"]["deep"]),

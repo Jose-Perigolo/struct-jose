@@ -1,46 +1,49 @@
 
+from typing import *
+import json
 import re
 
 
+def isnode(val: Any) -> bool:
+    return ismap(val) or islist(val)
 
-def clone(val):
-    return None if val is None else json.loads(json.dumps(val))
+def ismap(val: Any) -> bool:
+    return isinstance(val, dict)
 
-def isnode(val):
-    return val is not None and (isinstance(val, dict) or isinstance(val, list))
-
-def ismap(val):
-    return val is not None and isinstance(val, dict)
-
-def islist(val):
+def islist(val: Any) -> bool:
     return isinstance(val, list)
 
-def items(val):
+def items(val: Any) -> list:
     if ismap(val):
-        # return list(val.items())
-        # return val.items()
-        return [[i, n] for i, n in val.items()] 
+        return [(i, n) for i, n in val.items()] 
     elif islist(val):
-        return [[i, n] for i, n in enumerate(val)]
+        return [(i, n) for i, n in enumerate(val)]
     else:
         return []
 
+def clone(val: Any) -> Any:
+    return None if val is None else copy.deepcopy(val)
 
 
-
-def getpath(path, store):
+def getpath(path: Union[str, list[str]], store: dict) -> Any:
     if path is None or store is None or path == '':
         return store
 
-    parts = path if isinstance(path, list) else path.split('.')
+    if islist(path):
+        parts = path
+    elif isinstance(path, str):
+        parts = path.split('.')
+    else:
+        parts = []
+
     val = None
 
-    if len(parts) > 0:
+    if 0 < len(parts):
         val = store
         for part in parts:
-            if isinstance(val, dict):
+            if ismap(val):
                 val = val.get(part)
-            elif isinstance(val, list):
+            elif islist(val):
                 try:
                     index = int(part)
                     val = val[index]
@@ -55,8 +58,6 @@ def getpath(path, store):
                 break
 
     return val
-
-
 
 
 def inject(
@@ -279,7 +280,13 @@ def merge(objs):
 
 
 # Walk a data strcture depth first.
-def walk(val, apply, key=None, parent=None, path=None):
+def walk(
+    val: Any,
+    apply: Callable[[Optional[Union[str, int]], Any, Optional[Any], List[str]], Any],
+    key: Optional[Union[str, int]] = None,
+    parent: Optional[Any] = None,
+    path: Optional[List[str]] = None
+) -> Any:
     if isnode(val):
         for ckey, child in items(val):
             val[ckey] = walk(child, apply, ckey, val, (path or []) + [str(ckey)])
