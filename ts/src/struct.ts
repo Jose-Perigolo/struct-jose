@@ -37,6 +37,76 @@ type FullStore<T extends string> = {
 
 
 
+
+
+function isnode(val: any) {
+  return null != val && 'object' == typeof val
+}
+
+function ismap(val: any) {
+  return null != val && 'object' == typeof val && !Array.isArray(val)
+}
+
+function islist(val: any) {
+  return Array.isArray(val)
+}
+
+function iskey(key: any) {
+  const keytype = typeof key
+  return ('string' === keytype && '' !== key) || 'number' === keytype
+}
+
+function items(val: any) {
+  return ismap(val) ? Object.entries(val) :
+    islist(val) ? val.map((n: any, i: number) => [i, n]) :
+      []
+}
+
+function getprop(val: any, key: any, alt?: any) {
+  let out = undefined === val ? alt : undefined === key ? alt : val[key]
+  return undefined == out ? alt : out
+}
+
+function setprop(parent: any, key: any, val: any) {
+  if (iskey(key)) {
+    if (ismap(parent)) {
+      if (undefined === val) {
+        delete parent[key]
+      }
+      else {
+        parent[key] = val
+      }
+    }
+    else if (islist(parent)) {
+      const keyI = +key
+      if (undefined === val) {
+        if (0 <= keyI && keyI < parent.length) {
+          for (let pI = keyI; pI < parent.length - 1; pI++) {
+            parent[pI] = parent[pI + 1]
+          }
+          parent.length = parent.length - 1
+        }
+      }
+      else if (0 <= keyI) {
+        parent[parent.length < keyI ? parent.length : keyI] = val
+      }
+      else {
+        parent.unshift(val)
+      }
+    }
+  }
+  return parent
+}
+
+
+function clone(val: any) {
+  return undefined === val ? undefined : JSON.parse(JSON.stringify(val))
+}
+
+
+
+
+
 // Transform data using spec.
 // Only operates on static JSONifiable data.
 // Array are treated as if they are objects with indices as keys.
@@ -755,35 +825,6 @@ const injectfind = (full: string, path: string) => {
 
 
 
-
-function isnode(val: any) {
-  return null != val && 'object' == typeof val
-}
-
-function ismap(val: any) {
-  return null != val && 'object' == typeof val && !Array.isArray(val)
-}
-
-function islist(val: any) {
-  return Array.isArray(val)
-}
-
-function items(val: any) {
-  return ismap(val) ? Object.entries(val) :
-    islist(val) ? val.map((n: any, i: number) => [i, n]) :
-      []
-}
-
-function prop(val: any, key: any, alt?: any) {
-  let out = undefined === val ? alt : undefined === key ? alt : val[key]
-  return undefined == out ? alt : out
-}
-
-function clone(val: any) {
-  return undefined === val ? undefined : JSON.parse(JSON.stringify(val))
-}
-
-
 function merge(objs: any[]): any {
   let out: any = undefined
 
@@ -897,8 +938,10 @@ export {
   isnode,
   ismap,
   islist,
+  iskey,
   items,
-  prop,
+  getprop,
+  setprop,
 
   getpath,
   inject,

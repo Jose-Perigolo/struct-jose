@@ -8,7 +8,21 @@ const struct_1 = require("../dist/struct");
 const TESTSPEC = JSON.parse((0, node_fs_1.readFileSync)((0, node_path_1.join)(__dirname, '..', '..', 'build/test/test.json'), 'utf8'));
 function test_set(tests, apply) {
     for (let entry of tests.set) {
-        (0, node_assert_1.deepEqual)(apply(entry.in), entry.out);
+        try {
+            (0, node_assert_1.deepEqual)(apply(entry.in), entry.out);
+        }
+        catch (err) {
+            if (null != entry.err) {
+                if (true === entry.err || (err.message.includes(entry.err))) {
+                    break;
+                }
+                entry.thrown = err.message;
+                (0, node_assert_1.fail)(JSON.stringify(entry));
+            }
+            else {
+                throw err;
+            }
+        }
     }
 }
 (0, node_test_1.describe)('struct', () => {
@@ -17,8 +31,10 @@ function test_set(tests, apply) {
         (0, node_assert_1.equal)('function', typeof struct_1.isnode);
         (0, node_assert_1.equal)('function', typeof struct_1.ismap);
         (0, node_assert_1.equal)('function', typeof struct_1.islist);
+        (0, node_assert_1.equal)('function', typeof struct_1.iskey);
         (0, node_assert_1.equal)('function', typeof struct_1.items);
-        (0, node_assert_1.equal)('function', typeof struct_1.prop);
+        (0, node_assert_1.equal)('function', typeof struct_1.getprop);
+        (0, node_assert_1.equal)('function', typeof struct_1.setprop);
     });
     (0, node_test_1.test)('minor-clone', () => {
         test_set((0, struct_1.clone)(TESTSPEC.minor.clone), struct_1.clone);
@@ -32,11 +48,17 @@ function test_set(tests, apply) {
     (0, node_test_1.test)('minor-islist', () => {
         test_set((0, struct_1.clone)(TESTSPEC.minor.islist), struct_1.islist);
     });
+    (0, node_test_1.test)('minor-iskey', () => {
+        test_set((0, struct_1.clone)(TESTSPEC.minor.iskey), struct_1.iskey);
+    });
     (0, node_test_1.test)('minor-items', () => {
         test_set((0, struct_1.clone)(TESTSPEC.minor.items), struct_1.items);
     });
-    (0, node_test_1.test)('minor-prop', () => {
-        test_set((0, struct_1.clone)(TESTSPEC.minor.prop), (vin) => null == vin.alt ? (0, struct_1.prop)(vin.val, vin.key) : (0, struct_1.prop)(vin.val, vin.key, vin.alt));
+    (0, node_test_1.test)('minor-getprop', () => {
+        test_set((0, struct_1.clone)(TESTSPEC.minor.getprop), (vin) => null == vin.alt ? (0, struct_1.getprop)(vin.val, vin.key) : (0, struct_1.getprop)(vin.val, vin.key, vin.alt));
+    });
+    (0, node_test_1.test)('minor-setprop', () => {
+        test_set((0, struct_1.clone)(TESTSPEC.minor.setprop), (vin) => (0, struct_1.setprop)(vin.parent, vin.key, vin.val));
     });
     (0, node_test_1.test)('merge-exists', () => {
         (0, node_assert_1.equal)('function', typeof struct_1.merge);
@@ -69,7 +91,7 @@ function test_set(tests, apply) {
     });
     (0, node_test_1.test)('getpath-state', () => {
         const state = {
-            handler: (val, parts, store, current, state) => {
+            handler: (val, parts, _store, _current, state) => {
                 state.last = state.step + ':' + parts.join('.') + ':' + val;
                 state.step++;
                 return state.last;

@@ -2,7 +2,7 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { test, describe } from 'node:test'
-import { equal, deepEqual } from 'node:assert'
+import { equal, deepEqual, fail } from 'node:assert'
 
 
 import {
@@ -10,8 +10,10 @@ import {
   isnode,
   ismap,
   islist,
+  iskey,
   items,
-  prop,
+  getprop,
+  setprop,
 
   getpath,
   inject,
@@ -27,7 +29,21 @@ const TESTSPEC =
 
 function test_set(tests: { set: any[] }, apply: Function) {
   for (let entry of tests.set) {
-    deepEqual(apply(entry.in), entry.out)
+    try {
+      deepEqual(apply(entry.in), entry.out)
+    }
+    catch (err: any) {
+      if (null != entry.err) {
+        if (true === entry.err || (err.message.includes(entry.err))) {
+          break
+        }
+        entry.thrown = err.message
+        fail(JSON.stringify(entry))
+      }
+      else {
+        throw err
+      }
+    }
   }
 }
 
@@ -39,8 +55,10 @@ describe('struct', () => {
     equal('function', typeof isnode)
     equal('function', typeof ismap)
     equal('function', typeof islist)
+    equal('function', typeof iskey)
     equal('function', typeof items)
-    equal('function', typeof prop)
+    equal('function', typeof getprop)
+    equal('function', typeof setprop)
   })
 
   test('minor-clone', () => {
@@ -59,14 +77,24 @@ describe('struct', () => {
     test_set(clone(TESTSPEC.minor.islist), islist)
   })
 
+  test('minor-iskey', () => {
+    test_set(clone(TESTSPEC.minor.iskey), iskey)
+  })
+
   test('minor-items', () => {
     test_set(clone(TESTSPEC.minor.items), items)
   })
 
-  test('minor-prop', () => {
-    test_set(clone(TESTSPEC.minor.prop), (vin: any) =>
-      null == vin.alt ? prop(vin.val, vin.key) : prop(vin.val, vin.key, vin.alt))
+  test('minor-getprop', () => {
+    test_set(clone(TESTSPEC.minor.getprop), (vin: any) =>
+      null == vin.alt ? getprop(vin.val, vin.key) : getprop(vin.val, vin.key, vin.alt))
   })
+
+  test('minor-setprop', () => {
+    test_set(clone(TESTSPEC.minor.setprop), (vin: any) =>
+      setprop(vin.parent, vin.key, vin.val))
+  })
+
 
 
   test('merge-exists', () => {
@@ -112,7 +140,7 @@ describe('struct', () => {
 
   test('getpath-state', () => {
     const state = {
-      handler: (val: any, parts: string[], store: any, current: any, state: any) => {
+      handler: (val: any, parts: string[], _store: any, _current: any, state: any) => {
         state.last = state.step + ':' + parts.join('.') + ':' + val
         state.step++
         return state.last

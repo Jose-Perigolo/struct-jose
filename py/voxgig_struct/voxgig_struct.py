@@ -7,11 +7,19 @@ import re
 def isnode(val: Any) -> bool:
     return ismap(val) or islist(val)
 
+
 def ismap(val: Any) -> bool:
     return isinstance(val, dict)
 
+
 def islist(val: Any) -> bool:
     return isinstance(val, list)
+
+
+def iskey(key):
+    return ((isinstance(key, str) and key != "")
+            or isinstance(key, int))
+
 
 def items(val: Any) -> list:
     if ismap(val):
@@ -21,7 +29,11 @@ def items(val: Any) -> list:
     else:
         return []
 
-def prop(val: Any, key: Any, alt: Any = None) -> Any:
+    
+def getprop(val: Any, key: Any, alt: Any = None) -> Any:
+    if not isnode(val) or not iskey(key):
+        return alt
+    
     if ismap(val):
         return val.get(str(key), alt)
     
@@ -38,7 +50,37 @@ def prop(val: Any, key: Any, alt: Any = None) -> Any:
 
     return alt
 
-    
+
+def setprop(parent: Any, key: Any, val: Any):
+    if iskey(key):
+        if ismap(parent):
+            if val is not None:
+                parent[str(key)] = val
+            else:
+                try:
+                    del parent[str(key)]
+                except:
+                    pass
+
+        elif islist(parent):
+            try:
+                keyI = int(key)
+            except ValError:
+                keyI = None
+
+            if keyI is not None and 0 <= keyI <= len(parent):
+                if val is None and keyI < parent.length:
+                    for pI in range(keyI, len(parent) - 1):
+                        parent[pI] = parent[pI + 1]
+                    parent.pop()
+
+                elif keyI == len(parent):
+                    parent.append(val)
+                else:
+                    parent[keyI] = val
+    return parent
+
+
 def clone(val: Any) -> Any:
     return None if val is None else copy.deepcopy(val)
 

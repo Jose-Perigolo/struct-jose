@@ -10,6 +10,6 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
-    "@voxgig/model": "^5.3.0"
+    "@voxgig/model": "^5.6.0"
   }
 }
