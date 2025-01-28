@@ -162,13 +162,37 @@ function transform(
         out = key
       }
       else {
-        console.log('KEY', current)
+        // console.log('KEY', current)
         out = null != current && null != key ? current[key] : undefined
 
         setprop(parent, key, out)
       }
 
       return out
+    },
+
+
+    $KEY: (state: InjectState, _val: any, current: any) => {
+      const { mode, path, parent } = state
+
+      if ('val' !== mode) {
+        return undefined
+      }
+
+      const keyspec = getprop(parent, '`$KEY`')
+      if (undefined !== keyspec) {
+        setprop(parent, '`$KEY`', undefined)
+        return getprop(current, keyspec)
+      }
+
+      return getprop(getprop(parent, '`$META`'), 'KEY', getprop(path, path.length - 2))
+    },
+
+
+    $META: (state: InjectState) => {
+      const { parent } = state
+      setprop(parent, '`$META`', undefined)
+      return undefined
     },
 
 
@@ -197,7 +221,7 @@ function transform(
     },
 
 
-    $EACH: (state: InjectState, val: any, _current: any, store: any) => {
+    $EACH: (state: InjectState, val: any, current: any, store: any) => {
       const { mode, keys, path, parent, nodes } = state
 
       // Remove arguments to avoid spurious processing.
@@ -213,23 +237,15 @@ function transform(
       const srcpath = parent[1] // Path to source data
       const child = clone(parent[2]) // Child spec
 
-      // console.log('EACH', state.path.join('.'), srcpath, child, store)
-
-      const src = getpath(srcpath, store)
-
-      // console.log('SRC', src)
+      const src = getpath(srcpath, store, current, state)
 
       let tcurrent: any = []
       let tval: any = []
 
       const tkey = path[path.length - 2]
-      const pkey = path[path.length - 3]
       const target = nodes[path.length - 2] || nodes[path.length - 1]
 
-      // console.log('TARGET', tkey, pkey, target)
-
       if (isnode(src)) {
-
         if (islist(src)) {
           tval = src.map(() => clone(child))
         }
@@ -243,67 +259,28 @@ function transform(
         tcurrent = Object.values(src)
       }
 
-      // console.log('TVAL', tval)
-      // console.log('TCUR', tcurrent)
-
-      if (null != tkey) {
-        tcurrent = { [tkey]: tcurrent }
-        target[tkey] = tval
-      }
-
-      if (null != pkey) {
-        tcurrent = { [pkey]: tcurrent }
-      }
-
-      // console.log('TARGET', target)
-      // console.log('TCURRENT', tcurrent)
-
-      const tstate = {
-        mode,
-        full: false,
-        keyI: -1,
-        keys: [],
-        key: tkey,
-        val,
-        parent: nodes[path.length - 3],
-        path: path.slice(0, path.length - 1),
-        nodes: nodes.slice(0, path.length - 1),
-        handler: injecthandler,
-      }
-
-      // console.log('TSTATE')
-      // console.dir(tstate, { depth: null })
+      tcurrent = { $TOP: tcurrent }
 
       tval = inject(
         tval,
         store,
         modify,
         tcurrent,
-        tstate
       )
 
-      // console.log('TVAL-B', tval)
+      setprop(target, tkey, tval)
 
-      // console.log('TARGET-AA', tkey, target)
+      return tval[0]
 
-      if (null != tkey) {
-        target[tkey] = tval
-      }
-      else {
-        tval.map((n: any, i: number) => (target as any)[i] = n)
-        target.length = tval.length
-      }
+      // const list: any[] = getprop(target, tkey)
+      // tval.map((n: any, i: number) => list[i] = n)
+      // list.length = tval.length
 
-      // console.log('TARGET-BB', target)
-
-      // console.log('STATE')
-      // console.dir(state, { depth: null })
-
-      return undefined
+      // return list[0]
     },
 
 
-    $PACK: (state: InjectState, val: any, _current: any, store: any) => {
+    $PACK: (state: InjectState, _val: any, current: any, store: any) => {
       const { mode, key, path, parent, nodes } = state
 
       // Defensive context checks.
@@ -317,10 +294,11 @@ function transform(
 
       const keyprop = child['`$KEY`']
       const tkey = path[path.length - 2]
-      const pkey = path[path.length - 3]
       const target = nodes[path.length - 2] || nodes[path.length - 1]
 
-      let src = getpath(srcpath, store)
+      let src = getpath(srcpath, store, current, state)
+
+      // console.log('SRC', JSON.stringify(srcpath), src)
 
       src = islist(src) ? src :
         ismap(src) ? Object.entries(src)
@@ -332,8 +310,9 @@ function transform(
         return undefined
       }
 
-      let childkey: PropKey | undefined = getprop(child, '`KEY`')
+      let childkey: PropKey | undefined = getprop(child, '`$KEY`')
       let keyname = undefined === childkey ? keyprop : childkey
+      setprop(child, '`$KEY`', undefined)
 
       let tval: any = {}
       tval = src.reduce((a: any, n: any) => {
@@ -351,64 +330,29 @@ function transform(
         return a
       }, tcurrent)
 
-      if (null != tkey) {
-        tcurrent = { [tkey]: tcurrent }
-      }
+      tcurrent = { $TOP: tcurrent }
 
-      if (null != pkey) {
-        tcurrent = { [pkey]: tcurrent }
-      }
 
       tval = inject(
         tval,
         store,
         modify,
         tcurrent,
-        {
-          mode,
-          full: false,
-          keyI: -1,
-          keys: [],
-          key: tkey,
-          val,
-          parent: nodes[path.length - 3],
-          path: path.slice(0, path.length - 1),
-          nodes: nodes.slice(0, path.length - 1),
-          handler: injecthandler,
-        }
       )
 
-      if (null != tkey) {
-        setprop(target, tkey, tval)
-      }
-      else {
-        setprop(target, key, undefined)
-        Object.assign(target, tval)
-      }
+      // console.log('TCURRENT', tcurrent)
+      // console.log('TVAL', tval)
+      // console.log('TARGET', tkey, target)
 
-      return undefined
-    },
+      setprop(target, tkey, tval)
 
+      // console.log('TARGET2', tkey, target)
+      // console.log('NODES')
+      // console.dir(state.nodes, { depth: null })
 
-    $KEY: (state: InjectState) => {
-      const { mode, path, parent } = state
+      // const map: any = getprop(target, key)
+      // Object.assign(map, tval)
 
-      if ('key:pre' === mode) {
-        setprop(parent, '`$KEY`', undefined)
-        return undefined
-      }
-      else if ('key:post' === mode) {
-        return undefined
-      }
-
-      const meta = getprop(parent, '`$META`')
-      return null != meta ? meta.KEY : null != path ? path[path.length - 2] : undefined
-    },
-
-
-    $META: (state: InjectState) => {
-      const { parent } = state
-      setprop(parent, '`$META`', undefined)
       return undefined
     },
   }
@@ -466,10 +410,12 @@ function inject(
   }
   else {
     const parentkey = state.path[state.path.length - 2]
+    // console.log('PARENTKEY', parentkey, state.path)
     current = null == parentkey ? current : getprop(current, parentkey)
   }
 
-  // console.log('INJECT-START', state, current)
+  // console.log('INJECT-START', current)
+  // console.dir(state, { depth: null })
 
   if (isnode(val)) {
     // val.mark = mark
@@ -482,6 +428,9 @@ function inject(
       ...Object.keys(val).filter(k => !k.includes('$')),
       ...Object.keys(val).filter(k => k.includes('$')).sort(),
     ] : val.map((_n: any, i: number) => i)
+
+
+    // console.log('ORIGKEYS', origkeys, current)
 
     for (let okI = 0; okI < origkeys.length; okI++) {
       const origkey = '' + origkeys[okI]
@@ -545,9 +494,10 @@ function inject(
     )
   }
 
-  // console.log('INJECT-OUT', mark, state.key, val)
+  // console.log('INJECT-OUT', val, state)
 
-  return val
+  // return val
+  return state.parent.$TOP
 }
 
 
@@ -643,20 +593,18 @@ function merge(objs: any[]): any {
 
 function getpath(path: string | string[], store: any, current?: any, state?: InjectState) {
   if (null == path || null == store || '' === path) {
-    return store
+    return getprop(store, getprop(state, 'base'), store)
   }
 
   const parts = islist(path) ? path : 'string' === typeof path ? path.split('.') : []
   let val = store
 
-  // if (undefined !== state && undefined !== state.base) {
-  //   let baseval = getprop(store, state.base)
-  //   val = undefined === baseval ? store : baseval
-  // }
-
   if (0 < parts.length) {
     let pI = 0
     if ('' === parts[0]) {
+      if (1 === parts.length) {
+        return getprop(store, getprop(state, 'base'), store)
+      }
       pI = 1
       val = current
     }

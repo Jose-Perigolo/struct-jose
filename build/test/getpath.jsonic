@@ -52,7 +52,13 @@ basic: {
     { in: { path: '0', store: [] } }
     { in: { path: 'a', store: {} } }
     { in: { path: '0', store: {} } }
-    
+
+
+    { in: { path: ['a'], store: {a:1} }, out: 1 }
+    { in: { path: ['a','b'], store: {a:{b:2}} }, out: 2 }
+    { in: { path: ['a','b','c'], store: {a:{b:{c:3}}} }, out: 3 }
+
+    { in: { path: [''], store: {a:1} }, out: {a:1} }
   ]
 }
 
@@ -66,6 +72,8 @@ current: {
     { in: { path: '.1', store: {a:[11,22,33] }, current: [11,22,33] }, out: 22 }
     { in: { path: 'a.1', store: {a:[11,22,33] }, current: [11,22,33] }, out: 22 }
     { in: { path: 'a', store: {a:[11,22,33] }, current: [11,22,33] }, out: [11,22,33] }
+
+    { in: { path: ['','b'], store: {a:{b:1}}, current: {b:1} }, out: 1 }
   ]
 }
 
