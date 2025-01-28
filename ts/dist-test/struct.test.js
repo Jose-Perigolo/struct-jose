@@ -96,6 +96,16 @@ function test_set(tests, apply) {
                 return out;
             },
             step: 0,
+            mode: 'val',
+            full: false,
+            keyI: 0,
+            keys: ['$TOP'],
+            key: '$TOP',
+            val: '',
+            parent: {},
+            path: ['$TOP'],
+            nodes: [{}],
+            base: '$TOP'
         };
         test_set((0, struct_1.clone)(TESTSPEC.getpath.state), (vin) => (0, struct_1.getpath)(vin.path, vin.store, vin.current, state));
     });
@@ -137,6 +147,18 @@ function test_set(tests, apply) {
                 val = parent[key] = '@' + val;
             }
         }));
+    });
+    (0, node_test_1.test)('transform-extra', () => {
+        (0, node_assert_1.deepEqual)((0, struct_1.transform)({ a: 1 }, { x: '`a`', b: '`$COPY`', c: '`$UPPER`' }, {
+            b: 2, $UPPER: (state) => {
+                const { path } = state;
+                return ('' + (0, struct_1.getprop)(path, path.length - 1)).toUpperCase();
+            }
+        }), {
+            x: 1,
+            b: 2,
+            c: 'C'
+        });
     });
 });
 function walkpath(_key, val, _parent, path) {

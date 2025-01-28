@@ -13,10 +13,12 @@
  * - items: list entries of a map or list as [key, value] pairs
  * - getprop: safely get a property value by key
  * - setprop: safely set a property value by key
-
- 
+ * - getpath: get the value at a key path deep inside an object
+ * - merge: merge multiple nodes, overriding values in earlier nodes.
+ * - walk: walk a node tree, applying a function at each node and leaf.
+ * - inject: inject values from a data store into a new data structure.
+ * - transform: transform a data structure to an example structure.
  */
-
 
 
 // Keys are strings for maps, or integers for lists.
@@ -70,21 +72,25 @@ function isnode(val: any) {
   return null != val && 'object' == typeof val
 }
 
+
 // Value is a defined map (hash) with string keys.
 function ismap(val: any) {
   return null != val && 'object' == typeof val && !Array.isArray(val)
 }
+
 
 // Value is a defined list (array) with integer keys (indexes).
 function islist(val: any) {
   return Array.isArray(val)
 }
 
+
 // Value is a defined string (non-empty) or integer key.
 function iskey(key: any) {
   const keytype = typeof key
   return ('string' === keytype && '' !== key) || 'number' === keytype
 }
+
 
 // List the keys of a map or list as an array of tuples of the form [key, value].
 function items(val: any) {
@@ -93,10 +99,12 @@ function items(val: any) {
       []
 }
 
+
 // Clone a JSON-like data structure.
 function clone(val: any) {
   return undefined === val ? undefined : JSON.parse(JSON.stringify(val))
 }
+
 
 // Safely get a property of a node. Undefined arguments return undefined.
 // If the key is not found, return the alternative value.
@@ -104,6 +112,7 @@ function getprop(val: any, key: any, alt?: any) {
   let out = undefined === val ? alt : undefined === key ? alt : val[key]
   return undefined == out ? alt : out
 }
+
 
 // Safely set a property. Undefined arguments and invalid keys are ignored.
 // Returns the (possible modified) parent.
@@ -126,7 +135,7 @@ function setprop<PARENT>(parent: PARENT, key: any, val: any): PARENT {
     }
   }
   else if (islist(parent)) {
-    // Ensure key is an integer
+    // Ensure key is an integer.
     let keyI = +key
 
     if (isNaN(keyI)) {
@@ -166,16 +175,24 @@ function setprop<PARENT>(parent: PARENT, key: any, val: any): PARENT {
 function transform(
   data: any, // Source data to transform into new data (original not mutated)
   spec: any, // Transform specification; output follows this shape
-  extra: any, // Additional store of data
+  extra: any, // Additional store of data and transforms.
   modify?: Modify // Optionally modify individual values.
 ) {
+  const extraTransforms: any = {}
+  const extraData = null == extra ? {} : items(extra)
+    .reduce((a: any, n: any[]) =>
+      (n[0].startsWith('$') ? extraTransforms[n[0]] = n[1] : (a[n[0]] = n[1]), a), {})
+
   const dataClone = merge([
-    clone(undefined === extra ? {} : extra),
+    clone(undefined === extraData ? {} : extraData),
     clone(undefined === data ? {} : data),
   ])
 
   // Define a top level store that provides transform operations.
   const store = {
+
+    // Custom extra transforms, if any.
+    ...extraTransforms,
 
     // The inject function recognises this special location for the root of the source data.
     // NOTE: to escape data that contains "`$FOO`" keys at the top level,
@@ -191,12 +208,14 @@ function transform(
     // Insert current date and time as an ISO string.
     $WHEN: () => new Date().toISOString(),
 
+
     // Delete a key from a map or list.
     $DELETE: (state: InjectState) => {
       const { key, parent } = state
       setprop(parent, key, undefined)
       return undefined
     },
+
 
     // Copy value from source data.
     $COPY: (state: InjectState, _val: any, current: any) => {
@@ -213,6 +232,7 @@ function transform(
 
       return out
     },
+
 
     // As a value, inject the key of the parent node.
     // As a key, defined the name of the key property in the source object.
@@ -233,6 +253,7 @@ function transform(
     },
 
 
+    // Store meta data about a node.
     $META: (state: InjectState) => {
       const { parent } = state
       setprop(parent, '`$META`', undefined)
@@ -244,6 +265,7 @@ function transform(
     // Must be a key in an object. The value is merged over the current object.
     // If the value is an array, the elements are first merged using `merge`. 
     // If the value is the empty string, merge the top level store.
+    // Format: { '`$MERGE`': '`source-path`' | ['`source-paths`', ...] }
     $MERGE: (state: InjectState) => {
       const { mode, key, parent } = state
 
@@ -253,12 +275,9 @@ function transform(
       if ('key:post' === mode) {
 
         let args = getprop(parent, key)
-        // console.log('ARGS', parent, key, args)
         args = '' === args ? [dataClone] : Array.isArray(args) ? args : [args]
 
         merge([parent, ...args])
-        // console.log('MP', parent)
-
         setprop(parent, key, undefined)
 
         return key
@@ -268,6 +287,8 @@ function transform(
     },
 
 
+    // Convert a node to a list.
+    // Format: ['`$EACH`', '`source-path-of-node`', child-template]
     $EACH: (state: InjectState, _val: any, current: any, store: any) => {
       const { mode, keys, path, parent, nodes } = state
 
@@ -281,11 +302,15 @@ function transform(
         return undefined
       }
 
-      const srcpath = parent[1] // Path to source data
-      const child = clone(parent[2]) // Child spec
+      // Get arguments.
+      const srcpath = parent[1] // Path to source data.
+      const child = clone(parent[2]) // Child template.
 
+      // Source data
       const src = getpath(srcpath, store, current, state)
 
+      // Create parallel data structures:
+      // source entries :: child templates
       let tcurrent: any = []
       let tval: any = []
 
@@ -299,6 +324,8 @@ function transform(
         else {
           tval = Object.entries(src).map(n => ({
             ...clone(child),
+
+            // Make a note of the key for $KEY transforms
             '`$META`': { KEY: n[0] }
           }))
         }
@@ -306,8 +333,10 @@ function transform(
         tcurrent = Object.values(src)
       }
 
+      // Parent structure.
       tcurrent = { $TOP: tcurrent }
 
+      // Build the substructure.
       tval = inject(
         tval,
         store,
@@ -317,16 +346,13 @@ function transform(
 
       setprop(target, tkey, tval)
 
+      // Prevent callee from damaging first list entry (since we are in `val` mode).
       return tval[0]
-
-      // const list: any[] = getprop(target, tkey)
-      // tval.map((n: any, i: number) => list[i] = n)
-      // list.length = tval.length
-
-      // return list[0]
     },
 
 
+    // Convert a node to a map.
+    // Format: { '`$PACK`':['`source-path`', child-template]}
     $PACK: (state: InjectState, _val: any, current: any, store: any) => {
       const { mode, key, path, parent, nodes } = state
 
@@ -335,18 +361,20 @@ function transform(
         return undefined
       }
 
+      // Get arguments.
       const args = parent[key]
-      const srcpath = args[0]
-      const child = clone(args[1])
+      const srcpath = args[0] // Path to source data.
+      const child = clone(args[1]) // Child template.
 
+      // Find key and target node.
       const keyprop = child['`$KEY`']
       const tkey = path[path.length - 2]
       const target = nodes[path.length - 2] || nodes[path.length - 1]
 
+      // Source data
       let src = getpath(srcpath, store, current, state)
 
-      // console.log('SRC', JSON.stringify(srcpath), src)
-
+      // Prepare source as a list.
       src = islist(src) ? src :
         ismap(src) ? Object.entries(src)
           .reduce((a: any[], n: any) =>
@@ -357,10 +385,12 @@ function transform(
         return undefined
       }
 
+      // Get key if specified.
       let childkey: PropKey | undefined = getprop(child, '`$KEY`')
       let keyname = undefined === childkey ? keyprop : childkey
       setprop(child, '`$KEY`', undefined)
 
+      // Build parallel target object.
       let tval: any = {}
       tval = src.reduce((a: any, n: any) => {
         let kn = getprop(n, keyname)
@@ -370,6 +400,7 @@ function transform(
         return a
       }, tval)
 
+      // Build parallel source object.
       let tcurrent: any = {}
       src.reduce((a: any, n: any) => {
         let kn = getprop(n, keyname)
@@ -379,7 +410,7 @@ function transform(
 
       tcurrent = { $TOP: tcurrent }
 
-
+      // Build substructure.
       tval = inject(
         tval,
         store,
@@ -387,26 +418,15 @@ function transform(
         tcurrent,
       )
 
-      // console.log('TCURRENT', tcurrent)
-      // console.log('TVAL', tval)
-      // console.log('TARGET', tkey, target)
-
       setprop(target, tkey, tval)
 
-      // console.log('TARGET2', tkey, target)
-      // console.log('NODES')
-      // console.dir(state.nodes, { depth: null })
-
-      // const map: any = getprop(target, key)
-      // Object.assign(map, tval)
-
+      // Drop transform key.
       return undefined
     },
   }
 
   const out = inject(spec, store, modify, store)
 
-  // console.log('TRANSFORM', out, '\n')
   return out
 }
 
@@ -432,7 +452,6 @@ function inject(
   current?: any,
   state?: InjectState,
 ) {
-  const mark = 'M' + ('' + Math.random()).substring(2, 6)
   const valtype = typeof val
 
   if (undefined === state) {
@@ -738,7 +757,6 @@ export {
   items,
   getprop,
   setprop,
-
   getpath,
   inject,
   merge,

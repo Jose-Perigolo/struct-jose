@@ -145,6 +145,16 @@ describe('struct', () => {
         return out
       },
       step: 0,
+      mode: ('val' as any),
+      full: false,
+      keyI: 0,
+      keys: ['$TOP'],
+      key: '$TOP',
+      val: '',
+      parent: {},
+      path: ['$TOP'],
+      nodes: [{}],
+      base: '$TOP'
     }
     test_set(clone(TESTSPEC.getpath.state), (vin: any) =>
       getpath(vin.path, vin.store, vin.current, state))
@@ -210,6 +220,23 @@ describe('struct', () => {
           }
         }
       ))
+  })
+
+  test('transform-extra', () => {
+    deepEqual(transform(
+      { a: 1 },
+      { x: '`a`', b: '`$COPY`', c: '`$UPPER`' },
+      {
+        b: 2, $UPPER: (state: any) => {
+          const { path } = state
+          return ('' + getprop(path, path.length - 1)).toUpperCase()
+        }
+      }
+    ), {
+      x: 1,
+      b: 2,
+      c: 'C'
+    })
   })
 
 })
