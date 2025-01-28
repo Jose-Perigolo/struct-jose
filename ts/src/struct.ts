@@ -1,23 +1,54 @@
+/* Copyright (c) 2025 Voxgig Ltd. */
 
+/* Voxgig Struct
+ * =============
+ *
+ * Utility functions to manipulate in-memory JSON-like data
+ * structures.  The general design principle is
+ * "by-example". Transform specifications mirror the desired output.
+ * This implementation is desgined for porting to multiple language.
+ *
+ * - isnode, islist, islist, iskey: identify value kinds
+ * - clone: create a copy of a JSON-like data structure
+ * - items: list entries of a map or list as [key, value] pairs
+ * - getprop: safely get a property value by key
+ * - setprop: safely set a property value by key
+
+ 
+ */
+
+
+
+// Keys are strings for maps, or integers for lists.
 type PropKey = string | number
 
+
+// For each key in a node (map or list), perform value injections in
+// three phases: on key value, before child, and then on key value again.
+// This mode is passed via the InjectState.
 type InjectMode = 'key:pre' | 'key:post' | 'val'
 
+
+// Handle value injections using backtick escape sequences:
+// - `a.b.c`: insert value at {a:{b:{c:1}}}
+// - `$FOO`: apply transform FOO
 type InjectHandler = (
   state: InjectState,
-  val: any,
-  current: any,
-  store: any,
+  val: any, // Injection value specification.
+  current: any, // Current source parent value.
+  store: any, // Current source root value.
 ) => any
 
+
+// Injection state used for recursive injection into JSON-like data structures.
 type InjectState = {
   mode: InjectMode,
-  full: boolean,
-  keyI: number,
-  keys: string[],
-  key: string,
-  val: any,
-  parent: any,
+  full: boolean,  // Transform escape was full key name.
+  keyI: number,   // Index of parent key in list of parent keys.
+  keys: string[], // List of parent keys.
+  key: string,    // Current parent key.
+  val: any,       // Current child value.
+  parent: any,    // Current parent (in transform specification).
   path: string[],
   nodes: any[],
   handler: InjectHandler,
@@ -34,79 +65,104 @@ type Modify = (
 ) => void
 
 
-type FullStore<T extends string> = {
-  [K in T]: K extends `$${string}` ? InjectHandler : any
-}
-
-
+// Value is a node - defined, and a map (hash) or list (array).
 function isnode(val: any) {
   return null != val && 'object' == typeof val
 }
 
+// Value is a defined map (hash) with string keys.
 function ismap(val: any) {
   return null != val && 'object' == typeof val && !Array.isArray(val)
 }
 
+// Value is a defined list (array) with integer keys (indexes).
 function islist(val: any) {
   return Array.isArray(val)
 }
 
+// Value is a defined string (non-empty) or integer key.
 function iskey(key: any) {
   const keytype = typeof key
   return ('string' === keytype && '' !== key) || 'number' === keytype
 }
 
+// List the keys of a map or list as an array of tuples of the form [key, value].
 function items(val: any) {
   return ismap(val) ? Object.entries(val) :
     islist(val) ? val.map((n: any, i: number) => [i, n]) :
       []
 }
 
+// Clone a JSON-like data structure.
+function clone(val: any) {
+  return undefined === val ? undefined : JSON.parse(JSON.stringify(val))
+}
+
+// Safely get a property of a node. Undefined arguments return undefined.
+// If the key is not found, return the alternative value.
 function getprop(val: any, key: any, alt?: any) {
   let out = undefined === val ? alt : undefined === key ? alt : val[key]
   return undefined == out ? alt : out
 }
 
+// Safely set a property. Undefined arguments and invalid keys are ignored.
+// Returns the (possible modified) parent.
+// If the value is undefined it the key will be deleted from the parent.
+// If the parent is a list, and the key is negative, prepend the value.
+// If the key is above the list size, append the value.
+// If the value is undefined, remove the list element at index key, and shift the
+// remaining elements down.  These rules avoids "holes" in the list.
 function setprop<PARENT>(parent: PARENT, key: any, val: any): PARENT {
-  if (iskey(key)) {
-    if (ismap(parent)) {
-      if (undefined === val) {
-        delete (parent as any)[key]
-      }
-      else {
-        (parent as any)[key] = val
-      }
+  if (!iskey(key)) {
+    return parent
+  }
+
+  if (ismap(parent)) {
+    if (undefined === val) {
+      delete (parent as any)[key]
     }
-    else if (islist(parent)) {
-      const keyI = +key
-      if (undefined === val) {
-        if (0 <= keyI && keyI < parent.length) {
-          for (let pI = keyI; pI < parent.length - 1; pI++) {
-            parent[pI] = parent[pI + 1]
-          }
-          parent.length = parent.length - 1
-        }
-      }
-      else if (0 <= keyI) {
-        parent[parent.length < keyI ? parent.length : keyI] = val
-      }
-      else {
-        parent.unshift(val)
-      }
+    else {
+      (parent as any)[key] = val
     }
   }
+  else if (islist(parent)) {
+    // Ensure key is an integer
+    let keyI = +key
+
+    if (isNaN(keyI)) {
+      return parent
+    }
+
+    keyI = Math.floor(keyI)
+
+    // Delete list element at position keyI, shifting later elements down.
+    if (undefined === val) {
+      if (0 <= keyI && keyI < parent.length) {
+        for (let pI = keyI; pI < parent.length - 1; pI++) {
+          parent[pI] = parent[pI + 1]
+        }
+        parent.length = parent.length - 1
+      }
+    }
+
+    // Set or append value at position keyI, or append if keyI out of bounds.
+    else if (0 <= keyI) {
+      parent[parent.length < keyI ? parent.length : keyI] = val
+    }
+
+    // Prepend value if keyI is negative
+    else {
+      parent.unshift(val)
+    }
+  }
+
   return parent
 }
 
 
-function clone(val: any) {
-  return undefined === val ? undefined : JSON.parse(JSON.stringify(val))
-}
-
-
 // Transform data using spec.
-// Only operates on static JSONifiable data.
-// Array are treated as if they are objects with indices as keys.
+// Only operates on static JSON-like data.
+// Arrays are treated as if they are objects with indices as keys.
 function transform(
   data: any, // Source data to transform into new data (original not mutated)
   spec: any, // Transform specification; output follows this shape
@@ -118,42 +174,31 @@ function transform(
     clone(undefined === data ? {} : data),
   ])
 
-  // if (ismap(dataClone)) {
-  //   for (let [k, n] of items(dataClone)) {
-  //     if ('string' === typeof k && k.startsWith('$')) {
-  //       dataClone['$' + k] = n
-  //       delete dataClone[k]
-  //     }
-  //   }
-  // }
-
   // Define a top level store that provides transform operations.
-  // const fullstore: FullStore<string> = {
-
   const store = {
 
+    // The inject function recognises this special location for the root of the source data.
+    // NOTE: to escape data that contains "`$FOO`" keys at the top level,
+    // place that data inside a holding map: { myholder: mydata }.
     $TOP: dataClone,
 
-    // Escape backtick,
+    // Escape backtick (this also works inside backticks).
     $BT: () => '`',
 
-    // Escape dollar sign,
+    // Escape dollar sign (this also works inside backticks).
     $DS: () => '$',
 
     // Insert current date and time as an ISO string.
     $WHEN: () => new Date().toISOString(),
 
-    // Delete a key-value pair.
+    // Delete a key from a map or list.
     $DELETE: (state: InjectState) => {
       const { key, parent } = state
-      if (null != key) {
-        // delete parent[key]
-        setprop(parent, key, undefined)
-      }
+      setprop(parent, key, undefined)
       return undefined
     },
 
-
+    // Copy value from source data.
     $COPY: (state: InjectState, _val: any, current: any) => {
       const { mode, key, parent } = state
 
@@ -162,16 +207,15 @@ function transform(
         out = key
       }
       else {
-        // console.log('KEY', current)
-        out = null != current && null != key ? current[key] : undefined
-
+        out = getprop(current, key)
         setprop(parent, key, out)
       }
 
       return out
     },
 
-
+    // As a value, inject the key of the parent node.
+    // As a key, defined the name of the key property in the source object.
     $KEY: (state: InjectState, _val: any, current: any) => {
       const { mode, path, parent } = state
 
@@ -209,9 +253,12 @@ function transform(
       if ('key:post' === mode) {
 
         let args = getprop(parent, key)
+        // console.log('ARGS', parent, key, args)
         args = '' === args ? [dataClone] : Array.isArray(args) ? args : [args]
 
         merge([parent, ...args])
+        // console.log('MP', parent)
+
         setprop(parent, key, undefined)
 
         return key
@@ -221,7 +268,7 @@ function transform(
     },
 
 
-    $EACH: (state: InjectState, val: any, current: any, store: any) => {
+    $EACH: (state: InjectState, _val: any, current: any, store: any) => {
       const { mode, keys, path, parent, nodes } = state
 
       // Remove arguments to avoid spurious processing.
@@ -507,19 +554,22 @@ function injectstr(val: string, store: any, current?: any, state?: any): any {
   }
 
   let out: any = val
-  const m = val.match(/^`([^`]+)`$/)
+  const m = val.match(/^`(\$[^`0-9]+|[^`]+)[0-9]*`$/)
 
   if (m) {
     if (state) {
       state.full = true
     }
-    const ref = m[1] // .replace(/^$[0-9]+/, '$')
+    let ref = m[1]
+    ref = 3 < ref.length ? ref.replace(/\$BT/g, '`').replace(/\$DS/g, '$') : ref
+
+    // console.log('REF-A', ref)
     out = getpath(ref, store, current, state)
   }
   else {
     out = val.replace(/`([^`]+)`/g,
       (_m: string, ref: string) => {
-        // const ref = p1.replace(/^$[0-9]+/, '$')
+        ref = 3 < ref.length ? ref.replace(/\$BT/g, '`').replace(/\$DS/g, '$') : ref
         if (state) {
           state.full = false
         }

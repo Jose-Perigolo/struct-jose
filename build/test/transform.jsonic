@@ -51,6 +51,9 @@ paths: {
 
     { in: { data: {a:{b:'B',c:'C'}}, spec: {a:{d:'`.b`'}} }, out: {a:{d:'B'}} }
     { in: { data: {a:{b:{c:'C'}}}, spec: {a:{d:'`.b.c`'}} }, out: {a:{d:'C'}} }
+
+    { in: { data: {hold:{'`$COPY`':111, '$TOP':222}},
+            spec: {a:'`hold.$BT$COPY$BT`', b:'`hold.$TOP`'} }, out: {a:111,b:222} }
   ]
 }
 
@@ -82,10 +85,10 @@ cmds: {
 
     { in: { data: {a:{b:74},c:{b:84}}, spec: {x:{'`$MERGE`':'`a`'}} }, out: {x:{b:74}} }
 
-    # { in: { data: {a:{b:75},c:{b:85}}, spec: {x:{'`$0MERGE`':'`a`','`$1MERGE`':'`c`'}} },
-    #   out: {x:{b:85}} }
-    # { in: { data: {a:{b:76},c:{b:86}}, spec: {x:{'`$1MERGE`':'`a`','`$0MERGE`':'`c`'}} },
-    #   out: {x:{b:76}} }
+    { in: { data: {a:{b:75},c:{b:85}}, spec: {x:{'`$MERGE0`':'`a`','`$MERGE1`':'`c`'}} },
+      out: {x:{b:85}} }
+    { in: { data: {a:{b:76},c:{b:86}}, spec: {x:{'`$MERGE1`':'`a`','`$MERGE0`':'`c`'}} },
+      out: {x:{b:76}} }
       
     { in: { data: {a:{b:7}}, spec: {a:{'`$MERGE`':['`a`',{b:71}]}} }, out: {a:{b:71}} }
 

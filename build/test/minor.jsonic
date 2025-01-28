@@ -156,6 +156,8 @@ setprop: {
 
     { in: { parent: {x:32}, key: x }, out: {} }
     { in: { parent: {x:33,y:34}, key: y }, out: {x:33} }
+
+    { in: { parent: [], key: 'a' }, out: [] }
   ]
 }
 
