@@ -106,9 +106,8 @@ describe('struct', () => {
     deepEqual(merge(test.in), test.out)
   })
 
-  test('merge-children', () => {
-    const test = clone(TESTSPEC.merge.children)
-    deepEqual(merge(test.in), test.out)
+  test('merge-cases', () => {
+    test_set(clone(TESTSPEC.merge.cases), merge)
   })
 
   test('merge-array', () => {
@@ -140,13 +139,12 @@ describe('struct', () => {
 
   test('getpath-state', () => {
     const state = {
-      handler: (val: any, parts: string[], _store: any, _current: any, state: any) => {
-        state.last = state.step + ':' + parts.join('.') + ':' + val
+      handler: (state: any, val: any, _current: any, _store: any) => {
+        let out = state.step + ':' + val
         state.step++
-        return state.last
+        return out
       },
       step: 0,
-      last: undefined
     }
     test_set(clone(TESTSPEC.getpath.state), (vin: any) =>
       getpath(vin.path, vin.store, vin.current, state))
@@ -206,9 +204,9 @@ describe('struct', () => {
   test('transform-modify', () => {
     test_set(clone(TESTSPEC.transform.modify), (vin: any) =>
       transform(vin.data, vin.spec, vin.store,
-        (key: any, _val: any, newval: any, parent: any) => {
-          if (null != key && null != parent && 'string' === typeof newval) {
-            parent[key] = '@' + newval
+        (key: any, val: any, parent: any) => {
+          if (null != key && null != parent && 'string' === typeof val) {
+            val = parent[key] = '@' + val
           }
         }
       ))

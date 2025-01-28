@@ -67,9 +67,8 @@ function test_set(tests, apply) {
         const test = (0, struct_1.clone)(TESTSPEC.merge.basic);
         (0, node_assert_1.deepEqual)((0, struct_1.merge)(test.in), test.out);
     });
-    (0, node_test_1.test)('merge-children', () => {
-        const test = (0, struct_1.clone)(TESTSPEC.merge.children);
-        (0, node_assert_1.deepEqual)((0, struct_1.merge)(test.in), test.out);
+    (0, node_test_1.test)('merge-cases', () => {
+        test_set((0, struct_1.clone)(TESTSPEC.merge.cases), struct_1.merge);
     });
     (0, node_test_1.test)('merge-array', () => {
         test_set((0, struct_1.clone)(TESTSPEC.merge.array), struct_1.merge);
@@ -91,13 +90,12 @@ function test_set(tests, apply) {
     });
     (0, node_test_1.test)('getpath-state', () => {
         const state = {
-            handler: (val, parts, _store, _current, state) => {
-                state.last = state.step + ':' + parts.join('.') + ':' + val;
+            handler: (state, val, _current, _store) => {
+                let out = state.step + ':' + val;
                 state.step++;
-                return state.last;
+                return out;
             },
             step: 0,
-            last: undefined
         };
         test_set((0, struct_1.clone)(TESTSPEC.getpath.state), (vin) => (0, struct_1.getpath)(vin.path, vin.store, vin.current, state));
     });
@@ -134,9 +132,9 @@ function test_set(tests, apply) {
         test_set((0, struct_1.clone)(TESTSPEC.transform.pack), (vin) => (0, struct_1.transform)(vin.data, vin.spec, vin.store));
     });
     (0, node_test_1.test)('transform-modify', () => {
-        test_set((0, struct_1.clone)(TESTSPEC.transform.modify), (vin) => (0, struct_1.transform)(vin.data, vin.spec, vin.store, (key, _val, newval, parent) => {
-            if (null != key && null != parent && 'string' === typeof newval) {
-                parent[key] = '@' + newval;
+        test_set((0, struct_1.clone)(TESTSPEC.transform.modify), (vin) => (0, struct_1.transform)(vin.data, vin.spec, vin.store, (key, val, parent) => {
+            if (null != key && null != parent && 'string' === typeof val) {
+                val = parent[key] = '@' + val;
             }
         }));
     });
