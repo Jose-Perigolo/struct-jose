@@ -97,7 +97,11 @@ cmds: {
 
     { in: { data: {a:{b:73}}, spec: {x:{'`$MERGE`':'`a`',b:74,c:75}} },
       out: {x:{b:74,c:75}} }
-    
+
+    { in: { data: {a:{b:76},d:77}, spec: {x:{'`$MERGE`':'`a`',b:'`d`',c:78}} },
+      out: {x:{b:77,c:78}} }
+
+      
     { in: { data: {a:{b:8}}, spec: {a:{b:'`$DELETE`'}} }, out: {a:{}} }
     { in: { data: {a:{b:8}}, spec: {a:'`$DELETE`'} }, out: {} }
 
