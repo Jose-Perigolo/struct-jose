@@ -67,6 +67,9 @@ type Modify = (
 ) => void
 
 
+type WalkApply = (key: string | undefined, val: any, parent: any, path: string[]) => any
+
+
 // Value is a node - defined, and a map (hash) or list (array).
 function isnode(val: any) {
   return null != val && 'object' == typeof val
@@ -169,6 +172,335 @@ function setprop<PARENT>(parent: PARENT, key: any, val: any): PARENT {
 }
 
 
+
+// Walk a data strcture depth first.
+function walk(val: any, apply: WalkApply, key?: string, parent?: any, path?: string[]): any {
+  if (isnode(val)) {
+    for (let [ckey, child] of items(val)) {
+      setprop(val, ckey, walk(child, apply, ckey, val, [...(path || []), ckey]))
+    }
+  }
+
+  return apply(key, val, parent, path || [])
+}
+
+
+
+
+function merge(objs: any[]): any {
+  let out: any = undefined
+
+  if (!islist(objs)) {
+    return objs
+  }
+  else if (1 === objs.length) {
+    return objs[0]
+  }
+  else if (1 < objs.length) {
+    out = objs[0] || {}
+    for (let oI = 1; oI < objs.length; oI++) {
+      let obj = objs[oI]
+
+      if (isnode(obj)) {
+        if ((ismap(obj) && islist(out)) || (islist(obj) && ismap(out))) {
+          out = obj
+        }
+        let cur = [out]
+        let cI = 0
+        walk(obj, (key, val, parent, path) => {
+          if (null != key) {
+            cI = path.length - 1
+            if (undefined === cur[cI]) {
+              cur[cI] = getpath(path.slice(0, path.length - 1), out)
+            }
+
+            if (!isnode(cur[cI])) {
+              cur[cI] = islist(parent) ? [] : {}
+            }
+
+            if (isnode(val)) {
+              setprop(cur[cI], key, cur[cI + 1])
+              cur[cI + 1] = undefined
+            }
+            else {
+              setprop(cur[cI], key, val)
+            }
+          }
+
+          return val
+        })
+      }
+      else {
+        out = obj
+      }
+    }
+  }
+  return out
+}
+
+
+function getpath(path: string | string[], store: any, current?: any, state?: InjectState) {
+  if (null == path || null == store || '' === path) {
+    return getprop(store, getprop(state, 'base'), store)
+  }
+
+  const parts = islist(path) ? path : 'string' === typeof path ? path.split('.') : []
+  let val = store
+
+  if (0 < parts.length) {
+    let pI = 0
+    if ('' === parts[0]) {
+      if (1 === parts.length) {
+        return getprop(store, getprop(state, 'base'), store)
+      }
+      pI = 1
+      val = current
+    }
+
+    for (; pI < parts.length; pI++) {
+      const part = parts[pI]
+      let newval: any = getprop(val, part)
+      if (undefined === newval && 0 === pI && undefined !== state && undefined !== state.base) {
+        newval = getprop(getprop(val, state.base), part)
+      }
+
+      if (undefined === newval) {
+        // if (0 === pI && null != val && 'function' === typeof val.$DATA) {
+        if (0 === pI && null != val) {
+          const data = val // .$DATA()
+          newval = getprop(data, part)
+        }
+
+        val = newval
+        if (undefined == val) {
+          break
+        }
+      }
+      else {
+        val = newval
+      }
+    }
+  }
+
+  if (null != state && 'function' === typeof state.handler) {
+    let newval = state.handler(state, val, current, store)
+    val = newval
+  }
+
+  return val
+}
+
+
+function injectstr(val: string, store: any, current?: any, state?: any): any {
+  if ('string' !== typeof val) {
+    return ''
+  }
+
+  let out: any = val
+  const m = val.match(/^`(\$[^`0-9]+|[^`]+)[0-9]*`$/)
+
+  if (m) {
+    if (state) {
+      state.full = true
+    }
+    let ref = m[1]
+    ref = 3 < ref.length ? ref.replace(/\$BT/g, '`').replace(/\$DS/g, '$') : ref
+
+    // console.log('REF-A', ref)
+    out = getpath(ref, store, current, state)
+  }
+  else {
+    out = val.replace(/`([^`]+)`/g,
+      (_m: string, ref: string) => {
+        ref = 3 < ref.length ? ref.replace(/\$BT/g, '`').replace(/\$DS/g, '$') : ref
+        if (state) {
+          state.full = false
+        }
+        const found = getpath(ref, store, current, state)
+        return undefined == found ? '' :
+          'object' === typeof found ? JSON.stringify(found) :
+            found
+      })
+
+    if (state.handler) {
+      state.full = true
+      out = state.handler(state, out, current, store)
+    }
+  }
+
+  return out
+}
+
+
+function inject(
+  val: any,
+  store: any,
+  modify?: Modify,
+  current?: any,
+  state?: InjectState,
+) {
+  const valtype = typeof val
+
+  if (undefined === state) {
+    const parent = { '$TOP': val }
+    state = {
+      mode: 'val',
+      full: false,
+      keyI: 0,
+      keys: ['$TOP'],
+      key: '$TOP',
+      val,
+      parent,
+      path: ['$TOP'],
+      nodes: [parent],
+      handler: injecthandler,
+      base: '$TOP'
+    }
+  }
+
+  if (undefined === current) {
+    current = { $TOP: store }
+  }
+  else {
+    const parentkey = state.path[state.path.length - 2]
+    // console.log('PARENTKEY', parentkey, state.path)
+    current = null == parentkey ? current : getprop(current, parentkey)
+  }
+
+  // console.log('INJECT-START', current)
+  // console.dir(state, { depth: null })
+
+  if (isnode(val)) {
+    // val.mark = mark
+  }
+  // console.log('INJECT-START', mark, state.key, val)
+  // console.dir(state.nodes, { depth: null })
+
+  if (isnode(val)) {
+    const origkeys = ismap(val) ? [
+      ...Object.keys(val).filter(k => !k.includes('$')),
+      ...Object.keys(val).filter(k => k.includes('$')).sort(),
+    ] : val.map((_n: any, i: number) => i)
+
+
+    // console.log('ORIGKEYS', origkeys, current)
+
+    for (let okI = 0; okI < origkeys.length; okI++) {
+      const origkey = '' + origkeys[okI]
+
+      let childpath = [...(state.path || []), origkey]
+      let childnodes = [...(state.nodes || []), val]
+
+      const childstate: InjectState = {
+        mode: 'key:pre',
+        full: false,
+        keyI: okI,
+        keys: origkeys,
+        key: origkey,
+        val,
+        parent: val,
+        path: childpath,
+        nodes: childnodes,
+        handler: injecthandler,
+        base: state.base,
+      }
+
+      const prekey = injectstr(origkey, store, current, childstate)
+
+      if (null != prekey) {
+
+        let child = val[prekey]
+        childstate.mode = 'val'
+
+        inject(
+          child,
+          store,
+          modify,
+          current,
+          childstate,
+        )
+
+        // console.log('INJECT-CHILD-VAL', mark, prekey, child, state)
+
+        childstate.mode = 'key:post'
+        injectstr(origkey, store, current, childstate)
+      }
+    }
+  }
+
+  else if ('string' === valtype) {
+    state.mode = 'val'
+    const newval = injectstr(val, store, current, state)
+    val = newval
+
+    setprop(state.parent, state.key, newval)
+  }
+
+  if (modify) {
+    modify(
+      state.key,
+      val,
+      state.parent,
+      state,
+      current,
+      store
+    )
+  }
+
+  // console.log('INJECT-OUT', val, state)
+
+  // return val
+  return state.parent.$TOP
+}
+
+
+const injecthandler: InjectHandler = (state: any, val: any, current: any, store: any): any => {
+  let out = val
+
+  if ('function' === typeof val) {
+    out = val(state, val, current, store)
+  }
+  else if ('val' === state.mode && state.full) {
+    setprop(state.parent, state.key, val)
+  }
+
+  return out
+}
+
+
+// Merge a list of objects into the current object. 
+// Must be a key in an object. The value is merged over the current object.
+// If the value is an array, the elements are first merged using `merge`. 
+// If the value is the empty string, merge the top level store.
+// Format: { '`$MERGE`': '`source-path`' | ['`source-paths`', ...] }
+const transform_MERGE: InjectHandler = (
+  state: InjectState, _val: any, store: any
+) => {
+  const { mode, key, parent } = state
+
+  if ('key:pre' === mode) { return key }
+
+  // Operate after child values have been transformed.
+  if ('key:post' === mode) {
+
+    let args = getprop(parent, key)
+    args = '' === args ? [store.$TOP] : Array.isArray(args) ? args : [args]
+
+    setprop(parent, key, undefined)
+    const mergelist = [parent, ...args, clone(parent)]
+    // console.log('ML', mergelist)
+
+    const out = merge(mergelist)
+    // console.log('MO', out, mergelist)
+
+    return key
+  }
+
+  return undefined
+}
+
+
+
 // Transform data using spec.
 // Only operates on static JSON-like data.
 // Arrays are treated as if they are objects with indices as keys.
@@ -261,31 +593,7 @@ function transform(
     },
 
 
-    // Merge a list of objects into the current object. 
-    // Must be a key in an object. The value is merged over the current object.
-    // If the value is an array, the elements are first merged using `merge`. 
-    // If the value is the empty string, merge the top level store.
-    // Format: { '`$MERGE`': '`source-path`' | ['`source-paths`', ...] }
-    $MERGE: (state: InjectState) => {
-      const { mode, key, parent } = state
-
-      if ('key:pre' === mode) { return key }
-
-      // Operate after child values have been transformed.
-      if ('key:post' === mode) {
-
-        let args = getprop(parent, key)
-        args = '' === args ? [dataClone] : Array.isArray(args) ? args : [args]
-
-        merge([parent, ...args])
-        setprop(parent, key, undefined)
-
-        return key
-      }
-
-      return undefined
-    },
-
+    $MERGE: transform_MERGE,
 
     // Convert a node to a list.
     // Format: ['`$EACH`', '`source-path-of-node`', child-template]
@@ -431,320 +739,7 @@ function transform(
 }
 
 
-const injecthandler: InjectHandler = (state: any, val: any, current: any, store: any): any => {
-  let out = val
 
-  if ('function' === typeof val) {
-    out = val(state, val, current, store)
-  }
-  else if ('val' === state.mode && state.full) {
-    setprop(state.parent, state.key, val)
-  }
-
-  return out
-}
-
-
-function inject(
-  val: any,
-  store: any,
-  modify?: Modify,
-  current?: any,
-  state?: InjectState,
-) {
-  const valtype = typeof val
-
-  if (undefined === state) {
-    const parent = { '$TOP': val }
-    state = {
-      mode: 'val',
-      full: false,
-      keyI: 0,
-      keys: ['$TOP'],
-      key: '$TOP',
-      val,
-      parent,
-      path: ['$TOP'],
-      nodes: [parent],
-      handler: injecthandler,
-      base: '$TOP'
-    }
-  }
-
-  if (undefined === current) {
-    current = { $TOP: store }
-  }
-  else {
-    const parentkey = state.path[state.path.length - 2]
-    // console.log('PARENTKEY', parentkey, state.path)
-    current = null == parentkey ? current : getprop(current, parentkey)
-  }
-
-  // console.log('INJECT-START', current)
-  // console.dir(state, { depth: null })
-
-  if (isnode(val)) {
-    // val.mark = mark
-  }
-  // console.log('INJECT-START', mark, state.key, val)
-  // console.dir(state.nodes, { depth: null })
-
-  if (isnode(val)) {
-    const origkeys = ismap(val) ? [
-      ...Object.keys(val).filter(k => !k.includes('$')),
-      ...Object.keys(val).filter(k => k.includes('$')).sort(),
-    ] : val.map((_n: any, i: number) => i)
-
-
-    // console.log('ORIGKEYS', origkeys, current)
-
-    for (let okI = 0; okI < origkeys.length; okI++) {
-      const origkey = '' + origkeys[okI]
-
-      let childpath = [...(state.path || []), origkey]
-      let childnodes = [...(state.nodes || []), val]
-
-      const childstate: InjectState = {
-        mode: 'key:pre',
-        full: false,
-        keyI: okI,
-        keys: origkeys,
-        key: origkey,
-        val,
-        parent: val,
-        path: childpath,
-        nodes: childnodes,
-        handler: injecthandler,
-        base: state.base,
-      }
-
-      const prekey = injectstr(origkey, store, current, childstate)
-
-      if (null != prekey) {
-
-        let child = val[prekey]
-        childstate.mode = 'val'
-
-        inject(
-          child,
-          store,
-          modify,
-          current,
-          childstate,
-        )
-
-        // console.log('INJECT-CHILD-VAL', mark, prekey, child, state)
-
-        childstate.mode = 'key:post'
-        injectstr(origkey, store, current, childstate)
-      }
-    }
-  }
-
-  else if ('string' === valtype) {
-    state.mode = 'val'
-    const newval = injectstr(val, store, current, state)
-    val = newval
-
-    setprop(state.parent, state.key, newval)
-  }
-
-  if (modify) {
-    modify(
-      state.key,
-      val,
-      state.parent,
-      state,
-      current,
-      store
-    )
-  }
-
-  // console.log('INJECT-OUT', val, state)
-
-  // return val
-  return state.parent.$TOP
-}
-
-
-function injectstr(val: string, store: any, current?: any, state?: any): any {
-  if ('string' !== typeof val) {
-    return ''
-  }
-
-  let out: any = val
-  const m = val.match(/^`(\$[^`0-9]+|[^`]+)[0-9]*`$/)
-
-  if (m) {
-    if (state) {
-      state.full = true
-    }
-    let ref = m[1]
-    ref = 3 < ref.length ? ref.replace(/\$BT/g, '`').replace(/\$DS/g, '$') : ref
-
-    // console.log('REF-A', ref)
-    out = getpath(ref, store, current, state)
-  }
-  else {
-    out = val.replace(/`([^`]+)`/g,
-      (_m: string, ref: string) => {
-        ref = 3 < ref.length ? ref.replace(/\$BT/g, '`').replace(/\$DS/g, '$') : ref
-        if (state) {
-          state.full = false
-        }
-        const found = getpath(ref, store, current, state)
-        return undefined == found ? '' :
-          'object' === typeof found ? JSON.stringify(found) :
-            found
-      })
-
-    if (state.handler) {
-      state.full = true
-      out = state.handler(state, out, current, store)
-    }
-  }
-
-  return out
-}
-
-
-function merge(objs: any[]): any {
-  let out: any = undefined
-
-  if (!islist(objs)) {
-    return objs
-  }
-  else if (1 === objs.length) {
-    return objs[0]
-  }
-  else if (1 < objs.length) {
-    out = objs[0] || {}
-    for (let oI = 1; oI < objs.length; oI++) {
-      let obj = objs[oI]
-
-      if (isnode(obj)) {
-        if ((ismap(obj) && islist(out)) || (islist(obj) && ismap(out))) {
-          out = obj
-        }
-        let cur = [out]
-        let cI = 0
-        walk(obj, (key, val, parent, path) => {
-          if (null != key) {
-            cI = path.length - 1
-            if (undefined === cur[cI]) {
-              cur[cI] = getpath(path.slice(0, path.length - 1), out)
-            }
-
-            if (!isnode(cur[cI])) {
-              cur[cI] = islist(parent) ? [] : {}
-            }
-
-            if (isnode(val)) {
-              setprop(cur[cI], key, cur[cI + 1])
-              cur[cI + 1] = undefined
-            }
-            else {
-              setprop(cur[cI], key, val)
-            }
-          }
-
-          return val
-        })
-      }
-      else {
-        out = obj
-      }
-    }
-  }
-  return out
-}
-
-
-function getpath(path: string | string[], store: any, current?: any, state?: InjectState) {
-  if (null == path || null == store || '' === path) {
-    return getprop(store, getprop(state, 'base'), store)
-  }
-
-  const parts = islist(path) ? path : 'string' === typeof path ? path.split('.') : []
-  let val = store
-
-  if (0 < parts.length) {
-    let pI = 0
-    if ('' === parts[0]) {
-      if (1 === parts.length) {
-        return getprop(store, getprop(state, 'base'), store)
-      }
-      pI = 1
-      val = current
-    }
-    /*
-    else if (1 === parts.length && 'string' === typeof parts[0]) {
-      const m = parts[0].match(/^\$[0-9]+(.+)/)
-      if (m) {
-        pI = 1
-        const data = store
-        val = getprop(data, '$' + m[1])
-      }
-      else {
-        val = store
-      }
-      }
-
-    else if (undefined !== state && undefined !== state.base) {
-      let baseval = getprop(store, state.base)
-      val = undefined === baseval ? store : baseval
-    }
-    else {
-      val = store
-    }
-    */
-
-    for (; pI < parts.length; pI++) {
-      const part = parts[pI]
-      let newval: any = getprop(val, part)
-      if (undefined === newval && 0 === pI && undefined !== state && undefined !== state.base) {
-        newval = getprop(getprop(val, state.base), part)
-      }
-
-      if (undefined === newval) {
-        // if (0 === pI && null != val && 'function' === typeof val.$DATA) {
-        if (0 === pI && null != val) {
-          const data = val // .$DATA()
-          newval = getprop(data, part)
-        }
-
-        val = newval
-        if (undefined == val) {
-          break
-        }
-      }
-      else {
-        val = newval
-      }
-    }
-  }
-
-  if (null != state && 'function' === typeof state.handler) {
-    let newval = state.handler(state, val, current, store)
-    val = newval
-  }
-
-  return val
-}
-
-
-type WalkApply = (key: string | undefined, val: any, parent: any, path: string[]) => any
-
-// Walk a data strcture depth first.
-function walk(val: any, apply: WalkApply, key?: string, parent?: any, path?: string[]): any {
-  if (isnode(val)) {
-    for (let [ckey, child] of items(val)) {
-      setprop(val, ckey, walk(child, apply, ckey, val, [...(path || []), ckey]))
-    }
-  }
-
-  return apply(key, val, parent, path || [])
-}
 
 
 
