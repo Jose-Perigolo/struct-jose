@@ -1,31 +1,35 @@
 # voxgig_struct init
 
-
 from .voxgig_struct import (
-    clone,
     isnode,
     ismap,
     islist,
+    iskey,
     items,
-    prop,
-    
+    clone,
+    getprop,
+    setprop,
+    walk,
+    merge,
     getpath,
     inject,
-    merge,
-    walk,
+    transform,
 )
 
 
 __all__ = [
-    "clone",
-    "isnode",
-    "ismap",
-    "islist",
-    "items",
-    "prop",
-    "getpath",
-    "inject",
-    "merge",
-    "walk"
+    'isnode',
+    'ismap',
+    'islist',
+    'iskey',
+    'items',
+    'clone',
+    'getprop',
+    'setprop',
+    'walk',
+    'merge',
+    'getpath',
+    'inject',
+    'transform',
 ]
 

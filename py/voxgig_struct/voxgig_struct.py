@@ -1,369 +1,745 @@
+# Copyright (c) 2025 Voxgig Ltd.
+#
+# Voxgig Struct
+# =============
+#
+# Utility functions to manipulate in-memory JSON-like data structures.
+# This Python version follows the same design and logic as the original
+# TypeScript version, using "by-example" transformation of data.
+#
+# - isnode, ismap, islist, iskey: identify value kinds
+# - clone: create a copy of a JSON-like data structure
+# - items: list entries of a map or list as [key, value] pairs
+# - getprop: safely get a property value by key
+# - setprop: safely set a property value by key
+# - getpath: get the value at a key path deep inside an object
+# - merge: merge multiple nodes, overriding values in earlier nodes
+# - walk: walk a node tree, applying a function at each node and leaf
+# - inject: inject values from a data store into a new data structure
+# - transform: transform a data structure to an example structure
 
-from typing import *
-import json
-import re
+# -----------------------------------------------------------------------------
+# Constants
+
+S = {
+    'MKEYPRE': 'key:pre',
+    'MKEYPOST': 'key:post',
+    'MVAL': 'val',
+    'MKEY': 'key',
+
+    'TKEY': '`$KEY`',
+    'TMETA': '`$META`',
+
+    'KEY': 'KEY',
+
+    'DTOP': '$TOP',
+
+    'object': 'object',
+    'number': 'number',
+    'string': 'string',
+    'function': 'function',
+    'empty': '',
+    'base': 'base',
+
+    'BT': '`',
+    'DS': '$',
+    'DT': '.',
+}
+
+# Type hints (commented out for clarity, but you can uncomment if using Python 3.9+)
+# from typing import Any, Callable, Dict, List, Union
+
+# -----------------------------------------------------------------------------
+# Kinds of data checks
 
 
-def isnode(val: Any) -> bool:
-    return ismap(val) or islist(val)
+def isnode(val):
+    """
+    Return True if val is a non-None dict or list (JSON-like node).
+    """
+    return val is not None and isinstance(val, (dict, list))
 
 
-def ismap(val: Any) -> bool:
-    return isinstance(val, dict)
+def ismap(val):
+    """
+    Return True if val is a non-None dict (map).
+    """
+    return val is not None and isinstance(val, dict)
 
 
-def islist(val: Any) -> bool:
+def islist(val):
+    """
+    Return True if val is a list.
+    """
     return isinstance(val, list)
 
 
 def iskey(key):
-    return ((isinstance(key, str) and key != "")
-            or isinstance(key, int))
+    """
+    Return True if key is a non-empty string or a number (int).
+    """
+    if isinstance(key, str):
+        return len(key) > 0
+    if isinstance(key, int):
+        return True
+    return False
 
 
-def items(val: Any) -> list:
+def items(val):
+    """
+    List the keys of a map or list as an array of [key, value] tuples.
+    """
     if ismap(val):
-        return [(i, n) for i, n in val.items()] 
+        return list(val.items())
     elif islist(val):
-        return [(i, n) for i, n in enumerate(val)]
+        return list(enumerate(val))
     else:
         return []
 
-    
-def getprop(val: Any, key: Any, alt: Any = None) -> Any:
-    if not isnode(val) or not iskey(key):
+
+# -----------------------------------------------------------------------------
+# Basic utilities
+
+
+def clone(val):
+    """
+    Clone a JSON-like data structure using a deep copy (via JSON).
+    """
+    import json
+    if val is None:
+        return None
+    return json.loads(json.dumps(val))
+
+
+def getprop(val, key, alt=None):
+    """
+    Safely get a property from a dictionary or list. Return `alt` if not found or invalid.
+    """
+    if val is None or key is None:
         return alt
-    
-    if ismap(val):
-        return val.get(str(key), alt)
-    
-    if islist(val):
-        try:
-            key = int(key)
-        except (ValueError, TypeError):
-            return alt
+    try:
+        return val[key]
+    except (KeyError, IndexError, TypeError):
+        return alt
 
-        if 0 <= key < len(val):
-            return val[key]
+
+def setprop(parent, key, val):
+    """
+    Safely set a property on a dictionary or list.
+    - If `val` is None, delete the key from parent.
+    - For lists, negative key -> prepend.
+    - For lists, key > len(list) -> append.
+    - For lists, None value -> remove and shift down.
+    """
+    if not iskey(key):
+        return parent
+
+    if ismap(parent):
+        if val is None:
+            parent.pop(key, None)
         else:
-            return alt
+            parent[key] = val
 
-    return alt
+    elif islist(parent):
+        # Convert key to int
+        try:
+            key_i = int(key)
+        except ValueError:
+            return parent
 
-
-def setprop(parent: Any, key: Any, val: Any):
-    if iskey(key):
-        if ismap(parent):
-            if val is not None:
-                parent[str(key)] = val
-            else:
-                try:
-                    del parent[str(key)]
-                except:
-                    pass
-
-        elif islist(parent):
-            try:
-                keyI = int(key)
-            except ValError:
-                keyI = None
-
-            if keyI is not None and 0 <= keyI <= len(parent):
-                if val is None and keyI < parent.length:
-                    for pI in range(keyI, len(parent) - 1):
-                        parent[pI] = parent[pI + 1]
-                    parent.pop()
-
-                elif keyI == len(parent):
+        # Delete an element
+        if val is None:
+            if 0 <= key_i < len(parent):
+                # Shift items left
+                for pI in range(key_i, len(parent) - 1):
+                    parent[pI] = parent[pI + 1]
+                parent.pop()
+        else:
+            # Non-empty insert
+            if key_i >= 0:
+                if key_i >= len(parent):
+                    # Append if out of range
                     parent.append(val)
                 else:
-                    parent[keyI] = val
+                    parent[key_i] = val
+            else:
+                # Prepend if negative
+                parent.insert(0, val)
+
     return parent
 
 
-def clone(val: Any) -> Any:
-    return None if val is None else copy.deepcopy(val)
-
-
-def getpath(path: Union[str, list[str]], store: dict) -> Any:
-    if path is None or store is None or path == '':
-        return store
-
-    if islist(path):
-        parts = path
-    elif isinstance(path, str):
-        parts = path.split('.')
-    else:
-        parts = []
-
-    val = None
-
-    if 0 < len(parts):
-        val = store
-        for part in parts:
-            if ismap(val):
-                val = val.get(part)
-            elif islist(val):
-                try:
-                    index = int(part)
-                    val = val[index]
-                except (ValueError, IndexError):
-                    val = None
-                    break
-            else:
-                val = None
-                break
-
-            if val is None:
-                break
-
-    return val
-
-
-def inject(
-    # These arguments are the public interface.
-    val,
-    store,
-    modify=None,
-
-    # These arguments are for recursive calls.
-    keyI=None,
-    keys=None,
-    key=None,
-    parent=None,
-    path=None,
-    nodes=None,
-    current=None
-):
-    # valtype = type(val)
-    path = [] if path is None else path
-
-    if keyI is None:
-        key = '$TOP'
+def walk(val, apply, key=None, parent=None, path=None):
+    """
+    Walk a data structure depth-first, calling apply at each node (after children).
+    """
+    if path is None:
         path = []
-        current = prop(store, '$DATA', store)
-        nodes = []
-        parent = {key: val}
-    else:
-        parentkey = path[-2] if len(path) > 1 else None
-        current = prop(store, '$DATA', store) if current is None else current
-        current = current if parentkey is None else current[parentkey]
-
     if isnode(val):
-        if ismap(val):
-            origkeys = sorted(
-                [k for k in val.keys() if '$' not in k] +
-                [k for k in val.keys() if '$' in k]
-            )
-        elif islist(val):
-            origkeys = list(range(len(val)))
+        for (ckey, child) in items(val):
+            setprop(val, ckey, walk(child, apply, ckey, val, path + [ckey]))
 
-        print('ORIGKEYS', origkeys, val)
-            
-        for okI, origkey in enumerate(origkeys):
-            prekey = injection(
-                'key:pre',
-                origkey,
-                prop(val, origkey),
-                val,
-                path + [origkey],
-                (nodes or []) + [val],
-                current,
-                store,
-                okI,
-                origkeys,
-                modify
-            )
-
-            print('PREKEY', origkey, type(origkey), prekey, type(prekey), val, prop(val, prekey))
-            
-            # if isinstance(prekey, str):
-            if prekey is not None:
-                child = prop(val, prekey)
-                childpath = path + [prekey]
-                childnodes = (nodes or []) + [val]
-
-                print('CHILD', child)
-                
-                inject(
-                    child,
-                    store,
-                    modify,
-                    okI,
-                    origkeys,
-                    prekey,
-                    val,
-                    childpath,
-                    childnodes,
-                    current
-                )
-
-            injection(
-                'key:post',
-                origkey if prekey is None else prekey,
-                prop(val, prekey),
-                val,
-                path,
-                nodes,
-                current,
-                store,
-                okI,
-                origkeys,
-                modify
-            )
-
-    elif isinstance(val, str):
-        newval = injection(
-            'val',
-            key,
-            val,
-            parent,
-            path,
-            nodes,
-            current,
-            store,
-            keyI,
-            keys,
-            modify
-        )
-
-        if modify:
-            newval = modify(key, val, newval, parent, path, nodes, current, store, keyI, keys)
-
-        val = newval
-
-    return val
-
-
-def injection(
-    mode,
-    key,
-    val,
-    parent,
-    path,
-    nodes,
-    current,
-    store,
-    keyI,
-    keys,
-    modify
-):
-    def find(_full, mpath):
-        mpath = re.sub(r'^\$[\d]+', '$', mpath)
-
-        found = None
-        if isinstance(mpath, str):
-            if mpath.startswith('.'):
-                found = getpath(mpath[1:], current)
-            else:
-                found = getpath(mpath, prop(store, '$DATA', store))
-
-            # if found is None and prop(store,'$DATA') is not None:
-            # found = getpath(mpath, store['$DATA'])
-
-        if callable(found):
-            found = found(
-                mode, key, val, parent, path, nodes,
-                current, store, keyI, keys, mpath, modify
-            )
-
-        print('FOUND', mpath, found)
-            
-        return found
-
-    iskeymode = mode.startswith('key')
-    if iskeymode and isinstance(key, int):
-        return key
-    
-    orig = str(key if iskeymode else val)
-    res = None
-
-    m = re.match(r'^`([^`]+)`$', orig) if isinstance(orig, str) else None
-
-    print('MATCH', mode, orig, type(orig), m)
-    
-    if m:
-        res = find(m.group(0), m.group(1))
-    elif isinstance(orig, str):
-        res = re.sub(r'`([^`]+)`', lambda m: find(m.group(0), m.group(1)), orig)
-
-    if parent is not None:
-        if iskeymode:
-            if key != res and isinstance(res, str):
-                pval = prop(parent, key)
-                if key is not None and pval is not None:
-                    parent[int(res) if islist(parent) else res] = pval
-                    if pval is not None:
-                        del parent[int(key) if islist(parent) else key]
-                key = res
-
-        if mode == 'val' and isinstance(key, str):
-            if res is None:
-                if orig != '`$EACH`':
-                    parent.pop(key, None)
-            else:
-                parent[int(key) if islist(parent) else key] = res
-
-    return res
-
+    # Apply function after children
+    return apply(key, val, parent, path)
 
 
 def merge(objs):
-    if not isinstance(objs, list):
+    """
+    Merge a list of values into each other (first is mutated).
+    Later values have precedence. Node types override scalars.
+    Kinds also override each other (dict vs list).
+    """
+    if not islist(objs):
         return objs
-
-    out = None
-
     if len(objs) == 1:
         return objs[0]
-    elif len(objs) > 1:
-        out = objs[0] or {}
 
-        for obj in objs[1:]:
-            if isnode(obj):
-                cur = [out]
+    out = objs[0] or {}
 
-                def walker(key, val, parent, path):
-                    if key is not None:
-                        cI = len(path) - 1
-
-                        if len(cur) <= cI:
-                            cur.extend([None] * (1+cI-len(cur)))
-
-                        if cur[cI] is None:
-                            cur[cI] = getpath(path[:-1], out)
-                        
-                        if not isnode(cur[cI]):
-                            cur[cI] = [] if islist(parent) else {}
-
-                            # if( isinstance(cur[cI], list) and
-                            if( islist(cur[cI]) and
-                                isinstance(key, int) and
-                                len(cur[cI]) <= key
-                            ):
-                                cur[cI].extend([None] * (1+key-len(cur[cI])))
-                            
-                        if isnode(val):
-                            cur[cI][key] = cur[cI + 1]
-                            cur[cI + 1] = None
+    # Merge remaining
+    for i in range(1, len(objs)):
+        obj = objs[i]
+        if isnode(obj):
+            # If obj is dict or list but out is not compatible, override.
+            if (not isnode(out) or (ismap(obj) and islist(out)) or (islist(obj) and ismap(out))):
+                out = obj
+            else:
+                # Merge fields
+                def merge_apply(k, v, p, path):
+                    if k is not None:
+                        # Create parent node if needed
+                        target_parent = getpath(path[:-1], out)
+                        if not isnode(target_parent):
+                            if islist(p):
+                                target_parent = []
+                            else:
+                                target_parent = {}
+                            setprop(out, path[-2], target_parent)
+                        if isnode(v):
+                            # If child is node, ensure we have it in output
+                            existing_child = getprop(target_parent, k)
+                            if not isnode(existing_child):
+                                if islist(v):
+                                    existing_child = []
+                                else:
+                                    existing_child = {}
+                            setprop(target_parent, k, existing_child)
                         else:
-                            cur[cI][key] = val
+                            setprop(target_parent, k, v)
+                    return v
 
-                walk(obj, walker)
+                walk(obj, merge_apply)
+        else:
+            # Scalar or None -> override
+            out = obj
 
     return out
 
 
-# Walk a data strcture depth first.
-def walk(
-    val: Any,
-    apply: Callable[[Optional[Union[str, int]], Any, Optional[Any], List[str]], Any],
-    key: Optional[Union[str, int]] = None,
-    parent: Optional[Any] = None,
-    path: Optional[List[str]] = None
-) -> Any:
-    if isnode(val):
-        for ckey, child in items(val):
-            val[ckey] = walk(child, apply, ckey, val, (path or []) + [str(ckey)])
+def getpath(path, store, current=None, state=None):
+    """
+    Get a value deep inside 'store' using a path (string or list).
+    - If path is a dotted string, split on '.'.
+    - If path begins with '.', treat it as relative to 'current' (if given).
+    - If the path is empty, just return store (or store[state.base] if set).
+    - state.handler can modify the found value (for injections).
+    """
+    # If path or store is None or empty, return store or store[state.base].
+    if path is None or store is None or path == S['empty']:
+        if state is not None:
+            base = getprop(state, S['base'])
+            if base is not None:
+                return getprop(store, base, store)
+        return store
 
-    return apply(key, val, parent, path or [])
+    if isinstance(path, str):
+        parts = path.split(S['DT'])
+    else:
+        parts = path[:]  # assume list of keys
+
+    val = store
+    if len(parts) > 0:
+        p_idx = 0
+        # Relative path -> first part is '' => use current
+        if parts[0] == S['empty']:
+            if len(parts) == 1:
+                if state is not None:
+                    base = getprop(state, S['base'])
+                    if base is not None:
+                        return getprop(store, base, store)
+                return store
+            p_idx = 1
+            val = current
+
+        if val is None:
+            return None
+
+        # Attempt to descend
+        while p_idx < len(parts) and val is not None:
+            part = parts[p_idx]
+            val = getprop(val, part)
+            p_idx += 1
+
+    # If a custom handler is specified, apply it.
+    if state is not None and callable(getprop(state, 'handler')):
+        handler = getprop(state, 'handler')
+        val = handler(state, val, current, store)
+
+    return val
+
+
+def _injectstr(val, store, current=None, state=None):
+    """
+    Internal helper. Inject store values into a string with backtick syntax:
+    - Full injection if it matches ^`([^`]+)`$
+    - Partial injection for occurrences of `path` inside the string.
+    """
+    if not isinstance(val, str):
+        return S['empty']
+
+    import re
+
+    pattern_full = re.compile(r'^`(\$[A-Z]+|[^`]+)[0-9]*`$')
+    pattern_part = re.compile(r'`([^`]+)`')
+
+    m = pattern_full.match(val)
+    if m:
+        # Full string is an injection
+        if state is not None:
+            state['full'] = True
+        ref = m.group(1)
+
+        # Handle special escapes
+        if len(ref) > 3:
+            ref = ref.replace(r'$BT', S['BT']).replace(r'$DS', S['DS'])
+
+        out = getpath(ref, store, current, state)
+    else:
+        # Check partial injections
+        def replace_injection(mobj):
+            ref_local = mobj.group(1)
+            if len(ref_local) > 3:
+                ref_local = ref_local.replace(r'$BT', S['BT']).replace(r'$DS', S['DS'])
+            if state is not None:
+                state['full'] = False
+            found = getpath(ref_local, store, current, state)
+            if found is None:
+                return S['empty']
+            if isinstance(found, (dict, list)):
+                import json
+                return json.dumps(found)
+            return str(found)
+
+        out = pattern_part.sub(replace_injection, val)
+
+        # Also call handler on entire string
+        if state is not None and callable(getprop(state, 'handler')):
+            state['full'] = True
+            handler = getprop(state, 'handler')
+            out = handler(state, out, current, store)
+
+    return out
+
+
+def inject(val, store, modify=None, current=None, state=None):
+    """
+    Inject values from `store` into `val` recursively, respecting backtick syntax.
+    `modify` is an optional function(key, val, parent, state, current, store)
+    that is called after each injection.
+    """
+    if state is None:
+        # Create a root-level state
+        parent = {S['DTOP']: val}
+        state = {
+            'mode': S['MVAL'],
+            'full': False,
+            'keyI': 0,
+            'keys': [S['DTOP']],
+            'key': S['DTOP'],
+            'val': val,
+            'parent': parent,
+            'path': [S['DTOP']],
+            'nodes': [parent],
+            'handler': _injecthandler,
+            'base': S['DTOP'],
+            'modify': modify
+        }
+
+    # For local paths, we keep track of the current node in `current`.
+    if current is None:
+        current = {S['DTOP']: store}
+    else:
+        parentkey = state['path'][-2] if len(state['path']) > 1 else None
+        if parentkey is not None:
+            current = getprop(current, parentkey, current)
+
+    # Descend into node
+    if isnode(val):
+        # Sort keys (transforms with `$...` go last).
+        if ismap(val):
+            normal_keys = [k for k in val.keys() if S['DS'] not in k]
+            transform_keys = [k for k in val.keys() if S['DS'] in k]
+            transform_keys.sort()
+            origkeys = normal_keys + transform_keys
+        else:
+            origkeys = list(range(len(val)))
+
+        for okI, origkey in enumerate(origkeys):
+            childpath = state['path'] + [str(origkey)]
+            childnodes = state['nodes'] + [val]
+
+            # Phase 1: key-pre
+            child_state = {
+                'mode': S['MKEYPRE'],
+                'full': False,
+                'keyI': okI,
+                'keys': origkeys,
+                'key': str(origkey),
+                'val': val,
+                'parent': val,
+                'path': childpath,
+                'nodes': childnodes,
+                'handler': _injecthandler,
+                'base': state.get('base'),
+            }
+
+            prekey = _injectstr(str(origkey), store, current, child_state)
+            if prekey is not None:
+                # Phase 2: val
+                child_val = getprop(val, prekey)
+                child_state['mode'] = S['MVAL']
+                inject(child_val, store, modify, current, child_state)
+
+                # Phase 3: key-post
+                child_state['mode'] = S['MKEYPOST']
+                _injectstr(str(origkey), store, current, child_state)
+
+    elif isinstance(val, str):
+        state['mode'] = S['MVAL']
+        newval = _injectstr(val, store, current, state)
+        setprop(state['parent'], state['key'], newval)
+        val = newval
+
+    # Custom modification
+    if modify is not None:
+        modify(state['key'], val, state['parent'], state, current, store)
+
+    return state['parent'].get(S['DTOP'], None)
+
+
+# Default injection handler (used by `inject`).
+def _injecthandler(state, val, current, store):
+    """
+    Default injection handler. If val is a callable, call it.
+    Otherwise, if this is a 'full' injection in 'val' mode, set val in parent.
+    """
+    if callable(val):
+        return val(state, val, current, store)
+    else:
+        if state['mode'] == S['MVAL'] and state['full']:
+            setprop(state['parent'], state['key'], val)
+        return val
+
+
+# -----------------------------------------------------------------------------
+# Transform helper functions (these are injection handlers).
+
+
+def transform_DELETE(state, val, current, store):
+    """
+    Injection handler to delete a key from a map/list.
+    """
+    setprop(state['parent'], state['key'], None)
+    return None
+
+
+def transform_COPY(state, val, current, store):
+    """
+    Injection handler to copy a value from source data under the same key.
+    """
+    mode = state['mode']
+    key = state['key']
+    parent = state['parent']
+
+    out = None
+    if mode.startswith('key'):
+        out = key
+    else:
+        out = getprop(current, key)
+        setprop(parent, key, out)
+
+    return out
+
+
+def transform_KEY(state, val, current, store):
+    """
+    Injection handler to inject the parent's key (or a specified key).
+    """
+    mode = state['mode']
+    path = state['path']
+    parent = state['parent']
+
+    if mode != S['MVAL']:
+        return None
+
+    keyspec = getprop(parent, S['TKEY'])
+    if keyspec is not None:
+        setprop(parent, S['TKEY'], None)
+        return getprop(current, keyspec)
+
+    meta = getprop(parent, S['TMETA'])
+    return getprop(meta, S['KEY'], getprop(path, len(path) - 2))
+
+
+def transform_META(state, val, current, store):
+    """
+    Injection handler that removes the `'$META'` key (after capturing if needed).
+    """
+    parent = state['parent']
+    setprop(parent, S['TMETA'], None)
+    return None
+
+
+def transform_MERGE(state, val, current, store):
+    """
+    Injection handler to merge a list of objects onto the parent object.
+    If the transform data is an empty string, merge the top-level store.
+    """
+    mode = state['mode']
+    key = state['key']
+    parent = state['parent']
+
+    if mode == S['MKEYPRE']:
+        return key
+
+    if mode == S['MKEYPOST']:
+        args = getprop(parent, key)
+        if args == S['empty']:
+            args = [store[S['DTOP']]]
+        elif not islist(args):
+            args = [args]
+
+        setprop(parent, key, None)
+
+        # Merge them on top of parent
+        mergelist = [parent] + args + [clone(parent)]
+        merge(mergelist)
+        return key
+
+    return None
+
+
+def transform_EACH(state, val, current, store):
+    """
+    Injection handler to convert the current node into a list by iterating over
+    a source node. Format: ['`$EACH`','`source-path`', child-template]
+    """
+    mode = state['mode']
+    keys_ = state.get('keys')
+    path = state['path']
+    parent = state['parent']
+    nodes_ = state['nodes']
+
+    if keys_ is not None:
+        # Only keep the transform item (first). Avoid further spurious keys.
+        keys_[:] = keys_[:1]
+
+    if mode != S['MVAL'] or path is None or nodes_ is None:
+        return None
+
+    # parent here is the array [ '$EACH', 'source-path', {... child ...} ]
+    srcpath = parent[1] if len(parent) > 1 else None
+    child_template = clone(parent[2]) if len(parent) > 2 else None
+
+    # source data
+    src = getpath(srcpath, store, current, state)
+
+    # The key in the parent's parent
+    tkey = path[-2] if len(path) >= 2 else None
+    target = nodes_[-2] if len(nodes_) >= 2 else nodes_[-1]
+
+    if isnode(src):
+        if islist(src):
+            tval = [clone(child_template) for _ in src]
+        else:
+            # Convert dict to a list of child templates
+            tval = []
+            for k, v in src.items():
+                # Keep key in meta for usage by `$KEY`
+                copy_child = clone(child_template)
+                copy_child[S['TMETA']] = {S['KEY']: k}
+                tval.append(copy_child)
+        tcurrent = list(src.values()) if ismap(src) else src
+    else:
+        # Not a node, do nothing
+        return None
+
+    # Build parallel "current"
+    tcurrent = {S['DTOP']: tcurrent}
+
+    # Inject to build substructure
+    tval = inject(tval, store, state.get('modify'), tcurrent)
+
+    setprop(target, tkey, tval)
+    return tval[0] if tval else None
+
+
+def transform_PACK(state, val, current, store):
+    """
+    Injection handler to convert the current node into a dict by "packing"
+    a source list or dict. Format: { '`$PACK`': [ 'source-path', {... child ...} ] }
+    """
+    mode = state['mode']
+    key = state['key']
+    path = state['path']
+    parent = state['parent']
+    nodes_ = state['nodes']
+
+    if (mode != S['MKEYPRE'] or not isinstance(key, str) or path is None or nodes_ is None):
+        return None
+
+    args = parent[key]
+    if not args or not islist(args):
+        return None
+
+    srcpath = args[0] if len(args) > 0 else None
+    child_template = clone(args[1]) if len(args) > 1 else None
+
+    tkey = path[-2] if len(path) >= 2 else None
+    target = nodes_[-2] if len(nodes_) >= 2 else nodes_[-1]
+
+    # source data
+    src = getpath(srcpath, store, current, state)
+
+    # Convert dict -> list with meta keys or pass through if already list
+    if islist(src):
+        pass
+    elif ismap(src):
+        new_src = []
+        for k, v in src.items():
+            if ismap(v):
+                # Keep KEY meta
+                v_copy = clone(v)
+                v_copy[S['TMETA']] = {S['KEY']: k}
+                new_src.append(v_copy)
+        src = new_src
+    else:
+        return None
+
+    if src is None:
+        return None
+
+    # Child key from template
+    childkey = getprop(child_template, S['TKEY'])
+    # Remove the transform key from template
+    setprop(child_template, S['TKEY'], None)
+
+    # Build a new dict in parallel with the source
+    tval = {}
+    for elem in src:
+        if childkey is not None:
+            kn = getprop(elem, childkey)
+        else:
+            # fallback
+            kn = getprop(elem, S['TKEY'])
+        if kn is None:
+            # Possibly from meta
+            meta = getprop(elem, S['TMETA'], {})
+            kn = getprop(meta, S['KEY'], None)
+
+        if kn is not None:
+            tval[kn] = clone(child_template)
+            # Transfer meta if present
+            tmeta = getprop(elem, S['TMETA'])
+            if tmeta is not None:
+                tval[kn][S['TMETA']] = tmeta
+
+    # Build parallel "current"
+    tcurrent = {}
+    for elem in src:
+        if childkey is not None:
+            kn = getprop(elem, childkey)
+        else:
+            kn = getprop(elem, S['TKEY'])
+        if kn is None:
+            meta = getprop(elem, S['TMETA'], {})
+            kn = getprop(meta, S['KEY'], None)
+        if kn is not None:
+            tcurrent[kn] = elem
+
+    tcurrent = {S['DTOP']: tcurrent}
+
+    # Inject children
+    tval = inject(tval, store, state.get('modify'), tcurrent)
+    setprop(target, tkey, tval)
+
+    # Drop the transform
+    return None
+
+
+# -----------------------------------------------------------------------------
+# Main transform function
+
+
+def transform(data, spec, extra=None, modify=None):
+    """
+    Transform `data` into a new data structure defined by `spec`.
+    Additional transforms or data can be provided in `extra`.
+    """
+    # Separate out custom transforms from data.
+    extra_transforms = {}
+    extra_data = {}
+
+    if extra is not None:
+        for k, v in items(extra):
+            if isinstance(k, str) and k.startswith(S['DS']):
+                extra_transforms[k] = v
+            else:
+                extra_data[k] = v
+
+    # Combine extra data with user data
+    data_clone = merge([clone(extra_data), clone(data)])
+
+    # Top-level store used by inject
+    store = {
+        # Custom transforms
+        **extra_transforms,
+        # Original data
+        S['DTOP']: data_clone,
+        # Escape helpers
+        '$BT': lambda: S['BT'],
+        '$DS': lambda: S['DS'],
+        # Current date/time
+        '$WHEN': lambda: __import__('datetime').datetime.utcnow().isoformat(),
+        # Built-in transform handlers
+        '$DELETE': transform_DELETE,
+        '$COPY': transform_COPY,
+        '$KEY': transform_KEY,
+        '$META': transform_META,
+        '$MERGE': transform_MERGE,
+        '$EACH': transform_EACH,
+        '$PACK': transform_PACK,
+    }
+
+    out = inject(spec, store, modify, store)
+    return out
+
+
+# -----------------------------------------------------------------------------
+# If you want to expose the functions from this module, you can list them here:
+
+__all__ = [
+    'isnode',
+    'ismap',
+    'islist',
+    'iskey',
+    'items',
+    'clone',
+    'getprop',
+    'setprop',
+    'walk',
+    'merge',
+    'getpath',
+    'inject',
+    'transform',
+]
