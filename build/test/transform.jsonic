@@ -112,9 +112,13 @@ cmds: {
 
 each: {
   set: [
+    { in: { data: [],
+            spec: [{t:'T9',c:'`$COPY`'},{t:'T9',c:'`$COPY`'}] },
+      out: [{t:'T9'},{t:'T9'}] }
+
     { in: { data: [{w:'W10',c:'C10'},{w:'W11',c:'C11'}],
-              spec: [{t:'T10',c:'`$COPY`'},{t:'T10',c:'`$COPY`'}] },
-        out: [{t:'T10',c:'C10'},{t:'T10',c:'C11'}] }
+            spec: [{t:'T10',c:'`$COPY`'},{t:'T10',c:'`$COPY`'}] },
+      out: [{t:'T10',c:'C10'},{t:'T10',c:'C11'}] }
 
     { in: { data: [{w:'W20',c:'C20'},{w:'W21',c:'C21'}],
             spec: [{t:'T20',c:'`$COPY`',k:'`$KEY`'},{t:'T20',c:'`$COPY`',k:'`$KEY`'}] },
@@ -135,7 +139,7 @@ each: {
 
       
     { in: { data: {}, spec: {z:['`$EACH`','x',{y:'`$COPY`',q:'Q0'}]} },
-     out: {z:[]} }
+      out: {z:[]} }
 
     { in: { data: {x:{}}, spec: {z:['`$EACH`','x',{y:'`$COPY`',q:'Q1'}]} },
       out: {z:[]} }

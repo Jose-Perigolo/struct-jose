@@ -594,11 +594,18 @@ def transform_EACH(state, val, current, store):
 
     # source data
     src = getpath(srcpath, store, current, state)
+    
+    # Create parallel data structures:
+    # source entries :: child templates
+    tcurrent = []
+    tval = []
 
-    # The key in the parent's parent
     tkey = path[-2] if len(path) >= 2 else None
     target = nodes_[-2] if len(nodes_) >= 2 else nodes_[-1]
 
+    # print('CHILD', child_template, 'TKEY', tkey, 'TARGET', target)
+    # print('SP', srcpath, 'SRC', src)
+    
     if isnode(src):
         if islist(src):
             tval = [clone(child_template) for _ in src]
@@ -611,9 +618,9 @@ def transform_EACH(state, val, current, store):
                 copy_child[S['TMETA']] = {S['KEY']: k}
                 tval.append(copy_child)
         tcurrent = list(src.values()) if ismap(src) else src
-    else:
-        # Not a node, do nothing
-        return None
+    #else:
+    #    # Not a node, do nothing
+    #    return None
 
     # Build parallel "current"
     tcurrent = {S['DTOP']: tcurrent}
