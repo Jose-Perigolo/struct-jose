@@ -308,25 +308,24 @@ function merge(objs: any[]): any {
 // The state argument allows for custom handling when called from `inject` or `transform`.
 function getpath(path: string | string[], store: any, current?: any, state?: InjectState) {
 
-  // An empty path (incl empty string) just finds the store.
-  if (null == path || null == store || S.empty === path) {
-
-    // The actual store data may be in a store sub property, defined by state.base.
-    return getprop(store, getprop(state, S.base), store)
-  }
-
   const parts = islist(path) ? path : S.string === typeof path ? path.split(S.DT) : []
+
   let root = store
   let val = store
 
-  if (0 < parts.length) {
+  // An empty path (incl empty string) just finds the store.
+  if (null == path || null == store || (1 === parts.length && S.empty === parts[0])) {
+    // The actual store data may be in a store sub property, defined by state.base.
+    val = getprop(store, getprop(state, S.base), store)
+  }
+  else if (0 < parts.length) {
     let pI = 0
 
     // Relative path uses `current` argument.
     if (S.empty === parts[0]) {
-      if (1 === parts.length) {
-        return getprop(store, getprop(state, S.base), store)
-      }
+      // if (1 === parts.length) {
+      //   return getprop(store, getprop(state, S.base), store)
+      // }
       pI = 1
       root = current
     }
@@ -531,7 +530,7 @@ function inject(
   }
 
   // Original val reference may no longer be correct.
-  return state.parent.$TOP
+  return getprop(state.parent, S.DTOP)
 }
 
 

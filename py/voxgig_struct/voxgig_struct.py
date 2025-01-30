@@ -20,6 +20,7 @@
 
 
 from typing import *
+from datetime import datetime
 import json
 import re
 
@@ -274,42 +275,45 @@ def getpath(path, store, current=None, state=None):
     - If the path is empty, just return store (or store[state.base] if set).
     - state.handler can modify the found value (for injections).
     """
-    # If path or store is None or empty, return store or store[state.base].
-    if path is None or store is None or path == S['empty']:
-        if state is not None:
-            base = getprop(state, S['base'])
-            if base is not None:
-                return getprop(store, base, store)
-        return store
 
     if isinstance(path, str):
         parts = path.split(S['DT'])
+    elif islist(path):
+        parts = path[:]
     else:
-        parts = path[:]  # assume list of keys
-
+        parts = []
+        
+    root = store
     val = store
-    if len(parts) > 0:
-        p_idx = 0
-        # Relative path -> first part is '' => use current
+        
+    # If path or store is None or empty, return store or store[state.base].
+    if path is None or store is None or (1==len(parts) and parts[0] == S['empty']):
+        val = getprop(store, getprop(state, S['base']), store)
+
+    elif len(parts) > 0:
+        pI = 0
+            
+        # Relative path uses `current` argument
         if parts[0] == S['empty']:
             if len(parts) == 1:
-                if state is not None:
-                    base = getprop(state, S['base'])
-                    if base is not None:
-                        return getprop(store, base, store)
-                return store
-            p_idx = 1
-            val = current
+                return getprop(store, getprop(state, S['base']), store)
+            pI = 1
+            root = current
 
-        if val is None:
-            return None
+        part = parts[pI] if pI < len(parts) else None
+        first = getprop(root, part)
 
-        # Attempt to descend
-        while p_idx < len(parts) and val is not None:
-            part = parts[p_idx]
+        val = first
+        if None == first and 0 == pI: 
+            val = getprop(getprop(root, getprop(state, S['base'])), part)
+
+        pI += 1
+        
+        while pI < len(parts) and val is not None:
+            part = parts[pI]
             val = getprop(val, part)
-            p_idx += 1
-
+            pI += 1
+            
     # If a custom handler is specified, apply it.
     if state is not None and callable(getprop(state, 'handler')):
         handler = getprop(state, 'handler')
@@ -333,6 +337,7 @@ def _injectstr(val, store, current=None, state=None):
     pattern_part = re.compile(r'`([^`]+)`')
 
     m = pattern_full.match(val)
+
     if m:
         # Full string is an injection
         if state is not None:
@@ -344,6 +349,7 @@ def _injectstr(val, store, current=None, state=None):
             ref = ref.replace(r'$BT', S['BT']).replace(r'$DS', S['DS'])
 
         out = getpath(ref, store, current, state)
+        
     else:
         # Check partial injections
         def replace_injection(mobj):
@@ -357,7 +363,12 @@ def _injectstr(val, store, current=None, state=None):
                 return S['empty']
             if isinstance(found, (dict, list)):
                 import json
-                return json.dumps(found)
+                return json.dumps(found, separators=(',', ':'))
+            if type(found) is bool:
+                if True == found:
+                    return "true"
+                if False == found:
+                    return "false"
             return str(found)
 
         out = pattern_part.sub(replace_injection, val)
@@ -454,7 +465,7 @@ def inject(val, store, modify=None, current=None, state=None):
     if modify is not None:
         modify(state['key'], val, state['parent'], state, current, store)
 
-    return state['parent'].get(S['DTOP'], None)
+    return getprop(state['parent'], S['DTOP'])
 
 
 # Default injection handler (used by `inject`).
@@ -737,10 +748,10 @@ def transform(data, spec, extra=None, modify=None):
         # Original data
         S['DTOP']: data_clone,
         # Escape helpers
-        '$BT': lambda: S['BT'],
-        '$DS': lambda: S['DS'],
+        '$BT': lambda state, val, current, store: S['BT'],
+        '$DS': lambda state, val, current, store: S['DS'],
         # Current date/time
-        '$WHEN': lambda: __import__('datetime').datetime.utcnow().isoformat(),
+        '$WHEN': lambda state, val, current, store: datetime.utcnow().isoformat(),
         # Built-in transform handlers
         '$DELETE': transform_DELETE,
         '$COPY': transform_COPY,
@@ -753,23 +764,3 @@ def transform(data, spec, extra=None, modify=None):
 
     out = inject(spec, store, modify, store)
     return out
-
-
-# -----------------------------------------------------------------------------
-# If you want to expose the functions from this module, you can list them here:
-
-__all__ = [
-    'isnode',
-    'ismap',
-    'islist',
-    'iskey',
-    'items',
-    'clone',
-    'getprop',
-    'setprop',
-    'walk',
-    'merge',
-    'getpath',
-    'inject',
-    'transform',
-]

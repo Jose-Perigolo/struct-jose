@@ -1,9 +1,11 @@
+
+# RUN: python -m unittest discover -s tests
+# RUN-SOME: python -m unittest discover -s tests -k getpath
+
 import os
 import json
 import unittest
 
-# Suppose your converted Python code is in a file called struct.py
-# Adjust the import path as needed.
 from voxgig_struct import (
     clone,
     isnode,
@@ -20,9 +22,9 @@ from voxgig_struct import (
     walk,
 )
 
-########################################
-# Utilities for testing
-########################################
+
+# Test utilities
+# ==============
 
 def walkpath(_key, val, _parent, path):
     """
@@ -39,24 +41,18 @@ def test_set(testcase, tests, test_fn):
     """
     for entry in tests.get('set', []):
         try:
-            # The original code used deepEqual(apply(entry.in), entry.out).
-            # In Python, assertEqual will do a deep comparison of lists/dicts.
             input_data = entry.get('in')
             result = test_fn(input_data)
             testcase.assertEqual(result, entry.get('out'))
+
         except Exception as err:
             entry_err = entry.get('err')
-            # If an error is expected in the entry
             if entry_err is not None:
-                # If err == True or the error message includes the expected substring
                 if entry_err == True or (entry.get('err') in str(err)):
-                    # That means the error is expected. We're done for this entry.
                     continue
-                # Otherwise, record the actual error message and fail.
                 entry['thrown'] = str(err)
                 testcase.fail(msg=f"Unexpected error: {json.dumps(entry)}")
             else:
-                # No error expected, so re-raise
                 raise
 
 def fixnull(obj):
@@ -71,18 +67,9 @@ def fixnull(obj):
 
     
 class TestStruct(unittest.TestCase):
-    """
-    Translation of the Node.js test suite into Python unittest.
-    """
 
     @classmethod
     def setUpClass(cls):
-        """
-        Loads the TESTSPEC JSON once for all tests.
-        Mirrors: 
-          JSON.parse(readFileSync(join(__dirname, '..', '..', 'build/test/test.json'), 'utf8'))
-        """
-        # Adjust to your folder structure as needed:
         test_json_path = os.path.join(
             os.path.dirname(__file__),
             '..', '..', 'build', 'test', 'test.json'
@@ -179,184 +166,153 @@ class TestStruct(unittest.TestCase):
         test_set(self, testspec_data, merge)
 
 
-    # ########################################
-    # # getpath tests
-    # ########################################
-    # def test_getpath_exists(self):
-    #     self.assertTrue(callable(getpath))
+    # getpath tests
+    # =============
+    
+    def test_getpath_exists(self):
+        self.assertTrue(callable(getpath))
 
-    # def test_getpath_basic(self):
-    #     def apply_fn(vin):
-    #         return getpath(vin['path'], vin['store'])
+    def test_getpath_basic(self):
+        def apply_fn(vin):
+            return getpath(vin.get('path'), vin.get('store'))
 
-    #     testspec_data = clone(self.TESTSPEC['getpath']['basic'])
-    #     test_set(self, testspec_data, apply_fn)
+        testspec_data = clone(self.TESTSPEC['getpath']['basic'])
+        test_set(self, testspec_data, apply_fn)
 
-    # def test_getpath_current(self):
-    #     def apply_fn(vin):
-    #         return getpath(vin['path'], vin['store'], vin['current'])
+    def test_getpath_current(self):
+        def apply_fn(vin):
+            return getpath(vin.get('path'), vin.get('store'), vin.get('current'))
 
-    #     testspec_data = clone(self.TESTSPEC['getpath']['current'])
-    #     test_set(self, testspec_data, apply_fn)
+        testspec_data = clone(self.TESTSPEC['getpath']['current'])
+        test_set(self, testspec_data, apply_fn)
 
-    # def test_getpath_state(self):
-    #     # The state object in TypeScript:
-    #     # ...
-    #     # we replicate the same structure in Python
-    #     state = {
-    #         'handler': lambda s, val, _c, _st: f"{s['step']}:{val}" if not isinstance(val, dict) else val,
-    #         'step': 0,
-    #         'mode': 'val',
-    #         'full': False,
-    #         'keyI': 0,
-    #         'keys': ['$TOP'],
-    #         'key': '$TOP',
-    #         'val': '',
-    #         'parent': {},
-    #         'path': ['$TOP'],
-    #         'nodes': [{}],
-    #         'base': '$TOP',
-    #     }
+    def test_getpath_state(self):
+        state = {
+            'handler': lambda s, val, _c, _st: f"{s['step']}:{val}" if not isinstance(val, dict) else val,
+            'step': 0,
+            'mode': 'val',
+            'full': False,
+            'keyI': 0,
+            'keys': ['$TOP'],
+            'key': '$TOP',
+            'val': '',
+            'parent': {},
+            'path': ['$TOP'],
+            'nodes': [{}],
+            'base': '$TOP',
+        }
 
-    #     def handler_wrapper(s, val, current, store):
-    #         out = f"{s['step']}:{val}"
-    #         s['step'] += 1
-    #         return out
+        def handler_wrapper(s, val, current, store):
+            out = f"{s['step']}:{val}"
+            s['step'] += 1
+            return out
 
-    #     state['handler'] = handler_wrapper
+        state['handler'] = handler_wrapper
 
-    #     def apply_fn(vin):
-    #         return getpath(vin['path'], vin['store'], vin['current'], state)
+        def apply_fn(vin):
+            return getpath(vin.get('path'), vin.get('store'), vin.get('current'), state)
 
-    #     testspec_data = clone(self.TESTSPEC['getpath']['state'])
-    #     test_set(self, testspec_data, apply_fn)
+        testspec_data = clone(self.TESTSPEC['getpath']['state'])
+        test_set(self, testspec_data, apply_fn)
 
-    # ########################################
-    # # inject tests
-    # ########################################
-    # def test_inject_exists(self):
-    #     self.assertTrue(callable(inject))
+        
+    # inject tests
+    # ============
 
-    # def test_inject_basic(self):
-    #     test_data = clone(self.TESTSPEC['inject']['basic'])
-    #     # deepEqual(inject(test.in.val, test.in.store), test.out)
-    #     result = inject(test_data['in']['val'], test_data['in']['store'])
-    #     self.assertEqual(result, test_data['out'])
+    def test_inject_exists(self):
+        self.assertTrue(callable(inject))
 
-    # def test_inject_string(self):
-    #     def apply_fn(vin):
-    #         # inject(vin.val, vin.store, vin.current)
-    #         # The original code passes 3 arguments but in the TS code:
-    #         #   inject(val, store, modify, current)
-    #         # We'll match usage: (val, store, modify=None, current=None)
-    #         return inject(vin.get('val'), vin['store'], None, vin.get('current'))
+    def test_inject_basic(self):
+        test_data = clone(self.TESTSPEC['inject']['basic'])
+        # deepEqual(inject(test.in.val, test.in.store), test.out)
+        result = inject(test_data['in']['val'], test_data['in'].get('store'))
+        self.assertEqual(result, test_data['out'])
 
-    #     testspec_data = clone(self.TESTSPEC['inject']['string'])
-    #     test_set(self, testspec_data, apply_fn)
+    def test_inject_string(self):
+        def apply_fn(vin):
+            return inject(vin.get('val'), vin.get('store'), None, vin.get('current'))
 
-    # def test_inject_deep(self):
-    #     testspec_data = clone(self.TESTSPEC['inject']['deep'])
-    #     def apply_fn(vin):
-    #         return inject(vin.get('val'), vin['store'])
-    #     test_set(self, testspec_data, apply_fn)
+        testspec_data = clone(self.TESTSPEC['inject']['string'])
+        test_set(self, testspec_data, apply_fn)
 
-    # ########################################
-    # # transform tests
-    # ########################################
-    # def test_transform_exists(self):
-    #     self.assertTrue(callable(transform))
+    def test_inject_deep(self):
+        testspec_data = clone(self.TESTSPEC['inject']['deep'])
+        def apply_fn(vin):
+            return inject(vin.get('val'), vin.get('store'))
+        test_set(self, testspec_data, apply_fn)
 
-    # def test_transform_basic(self):
-    #     test_data = clone(self.TESTSPEC['transform']['basic'])
-    #     result = transform(
-    #         test_data['in']['data'],
-    #         test_data['in']['spec'],
-    #         test_data['in']['store']
-    #     )
-    #     self.assertEqual(result, test_data['out'])
+        
+    # transform tests
+    # ===============
 
-    # def test_transform_paths(self):
-    #     def apply_fn(vin):
-    #         return transform(vin['data'], vin['spec'], vin['store'])
+    def test_transform_exists(self):
+        self.assertTrue(callable(transform))
 
-    #     testspec_data = clone(self.TESTSPEC['transform']['paths'])
-    #     test_set(self, testspec_data, apply_fn)
+    def test_transform_basic(self):
+        test_data = clone(self.TESTSPEC['transform']['basic'])
+        result = transform(
+            test_data['in'].get('data'),
+            test_data['in'].get('spec'),
+            test_data['in'].get('store')
+        )
+        self.assertEqual(result, test_data['out'])
 
-    # def test_transform_cmds(self):
-    #     def apply_fn(vin):
-    #         return transform(vin['data'], vin['spec'], vin['store'])
+    def test_transform_paths(self):
+        testspec_data = clone(self.TESTSPEC['transform']['paths'])
+        test_set(self, testspec_data,
+                 lambda vin: transform(vin.get('data'), vin.get('spec'), vin.get('store')))
 
-    #     testspec_data = clone(self.TESTSPEC['transform']['cmds'])
-    #     test_set(self, testspec_data, apply_fn)
+    def test_transform_cmds(self):
+        testspec_data = clone(self.TESTSPEC['transform']['cmds'])
+        test_set(self, testspec_data,
+                 lambda vin: transform(vin.get('data'), vin.get('spec'), vin.get('store')))
 
-    # def test_transform_each(self):
-    #     def apply_fn(vin):
-    #         return transform(vin['data'], vin['spec'], vin['store'])
+    def test_transform_each(self):
+        testspec_data = clone(self.TESTSPEC['transform']['each'])
+        test_set(self, testspec_data,
+                 lambda vin: transform(vin.get('data'), vin.get('spec'), vin.get('store')))
 
-    #     testspec_data = clone(self.TESTSPEC['transform']['each'])
-    #     test_set(self, testspec_data, apply_fn)
+    def test_transform_pack(self):
+        testspec_data = clone(self.TESTSPEC['transform']['pack'])
+        test_set(self, testspec_data,
+                 lambda vin: transform(vin.get('data'), vin.get('spec'), vin.get('store')))
 
-    # def test_transform_pack(self):
-    #     def apply_fn(vin):
-    #         return transform(vin['data'], vin['spec'], vin['store'])
+    def test_transform_modify(self):
+        """
+        Tests a custom modify function passed to transform.
+        If val is a string, prefix it with '@'.
+        """
+        def modify_fn(key, val, parent, *args):
+            if key is not None and parent is not None and isinstance(val, str):
+                parent[key] = '@' + val
 
-    #     testspec_data = clone(self.TESTSPEC['transform']['pack'])
-    #     test_set(self, testspec_data, apply_fn)
+        def apply_fn(vin):
+            return transform(vin['data'], vin['spec'], vin.get('store'), modify=modify_fn)
 
-    # def test_transform_modify(self):
-    #     """
-    #     Tests a custom modify function passed to transform.
-    #     If val is a string, prefix it with '@'.
-    #     """
-    #     def modify_fn(key, val, parent, *args):
-    #         if key is not None and parent is not None and isinstance(val, str):
-    #             parent[key] = '@' + val
+        testspec_data = clone(self.TESTSPEC['transform']['modify'])
+        test_set(self, testspec_data, apply_fn)
 
-    #     def apply_fn(vin):
-    #         return transform(vin['data'], vin['spec'], vin['store'], modify=modify_fn)
+    def test_transform_extra(self):
+        def upper_transform_fn(state, val, current, store):
+            """
+            This transform function returns the uppercase name
+            of the current path element.
+            getprop(path, path.length - 1) is the last element
+            of the path array
+            """
+            path = state.get('path', [])
+            if len(path) == 0:
+                return ''
+            last_key = path[-1]
+            return str(last_key).upper()
 
-    #     testspec_data = clone(self.TESTSPEC['transform']['modify'])
-    #     test_set(self, testspec_data, apply_fn)
+        result = transform(
+            {'a': 1},
+            {'x': '`a`', 'b': '`$COPY`', 'c': '`$UPPER`'},
+            {
+                'b': 2,
+                '$UPPER': upper_transform_fn
+            }
+        )
+        self.assertEqual(result, {'x': 1, 'b': 2, 'c': 'C'})
 
-    # def test_transform_extra(self):
-    #     """
-    #     The 'transform-extra' test:
-    #     deepEqual(transform({ a: 1 },
-    #       { x: '`a`', b: '`$COPY`', c: '`$UPPER`' },
-    #       {
-    #         b: 2,
-    #         $UPPER: (state: any) => { ... }
-    #       }
-    #     ), { x: 1, b: 2, c: 'C' })
-    #     """
-    #     def upper_transform_fn(state):
-    #         """
-    #         This transform function returns the uppercase name
-    #         of the current path element.
-    #         getprop(path, path.length - 1) is the last element
-    #         of the path array
-    #         """
-    #         path = state.get('path', [])
-    #         if len(path) == 0:
-    #             return ''
-    #         # The TypeScript code does:
-    #         #   return ('' + getprop(path, path.length - 1)).toUpperCase()
-    #         # But in Python, we can do:
-    #         last_key = path[-1]
-    #         return str(last_key).upper()
-
-    #     result = transform(
-    #         {'a': 1},
-    #         {'x': '`a`', 'b': '`$COPY`', 'c': '`$UPPER`'},
-    #         {
-    #             'b': 2,
-    #             '$UPPER': upper_transform_fn
-    #         }
-    #     )
-    #     self.assertEqual(result, {'x': 1, 'b': 2, 'c': 'C'})
-
-
-# If you want to run from the command line:
-# python -m unittest test_struct.py
-#
-# Adjust the module/class name as needed.
