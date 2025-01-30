@@ -226,29 +226,37 @@ def merge(objs: List[Any]):
             if (not isnode(out) or (ismap(obj) and islist(out)) or (islist(obj) and ismap(out))):
                 out = obj
             else:
-                # Merge fields
-                def merge_apply(k, v, p, path):
-                    if k is not None:
-                        # Create parent node if needed
-                        target_parent = getpath(path[:-1], out)
-                        if not isnode(target_parent):
-                            if islist(p):
-                                target_parent = []
-                            else:
-                                target_parent = {}
-                            setprop(out, path[-2], target_parent)
-                        if isnode(v):
-                            # If child is node, ensure we have it in output
-                            existing_child = getprop(target_parent, k)
-                            if not isnode(existing_child):
-                                if islist(v):
-                                    existing_child = []
-                                else:
-                                    existing_child = {}
-                            setprop(target_parent, k, existing_child)
+                cur = [out]
+                
+                def merge_apply(key, val, parent, path):
+                    if key is not None:
+                        # cI is the current depth index within path
+                        cI = len(path) - 1
+
+                        # Ensure the cur list has at least cI elements
+                        cur.extend([None]*(1+cI-len(cur)))
+                        
+                        # If we haven't set cur[cI] yet, get it from out along the path
+                        if cur[cI] is None:
+                            cur[cI] = getpath(path[:-1], out)
+
+                        # Create node if needed
+                        if not isnode(cur[cI]):
+                            cur[cI] = [] if islist(parent) else {}
+
+                        # Node child is just ahead of us on the stack.
+                        if isnode(val):
+                            # Ensure the cur list has at least cI+1 elements
+                            cur.extend([None] * (2+cI+len(cur)))
+                
+                            setprop(cur[cI], key, cur[cI + 1])
+                            cur[cI + 1] = None
+
                         else:
-                            setprop(target_parent, k, v)
-                    return v
+                            # Scalar child.
+                            setprop(cur[cI], key, val)
+
+                    return val
 
                 walk(obj, merge_apply)
         else:
