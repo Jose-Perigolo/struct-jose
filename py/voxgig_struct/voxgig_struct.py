@@ -18,8 +18,11 @@
 # - inject: inject values from a data store into a new data structure
 # - transform: transform a data structure to an example structure
 
-# -----------------------------------------------------------------------------
-# Constants
+
+from typing import *
+import json
+import re
+
 
 S = {
     'MKEYPRE': 'key:pre',
@@ -46,46 +49,43 @@ S = {
     'DT': '.',
 }
 
-# Type hints (commented out for clarity, but you can uncomment if using Python 3.9+)
-# from typing import Any, Callable, Dict, List, Union
 
-# -----------------------------------------------------------------------------
-# Kinds of data checks
-
-
-def isnode(val):
+def isnode(val: Any):
     """
     Return True if val is a non-None dict or list (JSON-like node).
     """
     return val is not None and isinstance(val, (dict, list))
 
 
-def ismap(val):
+def ismap(val: Any):
     """
     Return True if val is a non-None dict (map).
     """
     return val is not None and isinstance(val, dict)
 
 
-def islist(val):
+def islist(val: Any):
     """
     Return True if val is a list.
     """
     return isinstance(val, list)
 
 
-def iskey(key):
+def iskey(key: Any):
     """
     Return True if key is a non-empty string or a number (int).
     """
     if isinstance(key, str):
         return len(key) > 0
+    # Exclude bool (which is a subclass of int)
+    if isinstance(key, bool):
+        return False
     if isinstance(key, int):
         return True
     return False
 
 
-def items(val):
+def items(val: Any):
     """
     List the keys of a map or list as an array of [key, value] tuples.
     """
@@ -97,11 +97,7 @@ def items(val):
         return []
 
 
-# -----------------------------------------------------------------------------
-# Basic utilities
-
-
-def clone(val):
+def clone(val: Any):
     """
     Clone a JSON-like data structure using a deep copy (via JSON).
     """
@@ -111,19 +107,31 @@ def clone(val):
     return json.loads(json.dumps(val))
 
 
-def getprop(val, key, alt=None):
+def getprop(val: Any, key: Any, alt: Any = None) -> Any:
     """
     Safely get a property from a dictionary or list. Return `alt` if not found or invalid.
     """
-    if val is None or key is None:
+    if not isnode(val) or not iskey(key):
         return alt
-    try:
-        return val[key]
-    except (KeyError, IndexError, TypeError):
-        return alt
+    
+    if ismap(val):
+        return val.get(str(key), alt)
+    
+    if islist(val):
+        try:
+            key = int(key)
+        except (ValueError, TypeError):
+            return alt
+
+        if 0 <= key < len(val):
+            return val[key]
+        else:
+            return alt
+
+    return alt
 
 
-def setprop(parent, key, val):
+def setprop(parent: Any, key: Any, val: Any):
     """
     Safely set a property on a dictionary or list.
     - If `val` is None, delete the key from parent.
@@ -135,6 +143,7 @@ def setprop(parent, key, val):
         return parent
 
     if ismap(parent):
+        key = str(key)
         if val is None:
             parent.pop(key, None)
         else:
@@ -169,7 +178,16 @@ def setprop(parent, key, val):
     return parent
 
 
-def walk(val, apply, key=None, parent=None, path=None):
+def walk(
+        # These arguments are the public interface.
+        val: Any,
+        apply: Any,
+
+        # These areguments are used for recursive state.
+        key: Any = None,
+        parent: Any = None,
+        path: Any = None
+):
     """
     Walk a data structure depth-first, calling apply at each node (after children).
     """
@@ -177,13 +195,14 @@ def walk(val, apply, key=None, parent=None, path=None):
         path = []
     if isnode(val):
         for (ckey, child) in items(val):
-            setprop(val, ckey, walk(child, apply, ckey, val, path + [ckey]))
+            setprop(val, ckey, walk(child, apply, ckey, val, path + [str(ckey)]))
 
-    # Apply function after children
+    # Nodes are applied *after* their children.
+    # For the root node, key and parent will be None.
     return apply(key, val, parent, path)
 
 
-def merge(objs):
+def merge(objs: List[Any]):
     """
     Merge a list of values into each other (first is mutated).
     Later values have precedence. Node types override scalars.
@@ -191,16 +210,19 @@ def merge(objs):
     """
     if not islist(objs):
         return objs
+    if len(objs) == 0:
+        return None
     if len(objs) == 1:
         return objs[0]
-
-    out = objs[0] or {}
+        
+    out = getprop(objs, 0, {})
 
     # Merge remaining
     for i in range(1, len(objs)):
         obj = objs[i]
         if isnode(obj):
-            # If obj is dict or list but out is not compatible, override.
+
+            # Nodes win, also over nodes of a different kind
             if (not isnode(out) or (ismap(obj) and islist(out)) or (islist(obj) and ismap(out))):
                 out = obj
             else:
@@ -230,7 +252,7 @@ def merge(objs):
 
                 walk(obj, merge_apply)
         else:
-            # Scalar or None -> override
+            # Nodes win.
             out = obj
 
     return out

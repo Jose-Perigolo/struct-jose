@@ -33,8 +33,9 @@ function test_set(tests: { set: any[] }, apply: Function) {
       deepEqual(apply(entry.in), entry.out)
     }
     catch (err: any) {
-      if (null != entry.err) {
-        if (true === entry.err || (err.message.includes(entry.err))) {
+      const entry_err = entry.err
+      if (null != entry_err) {
+        if (true === entry_err || (err.message.includes(entry_err))) {
           break
         }
         entry.thrown = err.message
@@ -47,8 +48,15 @@ function test_set(tests: { set: any[] }, apply: Function) {
   }
 }
 
+function walkpath(_key: string | undefined, val: any, _parent: any, path: string[]) {
+  return 'string' === typeof val ? val + '~' + path.join('.') : val
+}
+
 
 describe('struct', () => {
+
+  // minor tests
+  // ===========
 
   test('minor-exists', () => {
     equal('function', typeof clone)
@@ -96,6 +104,20 @@ describe('struct', () => {
   })
 
 
+  // walk tests
+  // ==========
+
+  test('walk-exists', () => {
+    equal('function', typeof merge)
+  })
+
+  test('walk-basic', () => {
+    test_set(clone(TESTSPEC.walk.basic), (vin: any) => walk(vin, walkpath))
+  })
+
+
+  // merge tests
+  // ===========
 
   test('merge-exists', () => {
     equal('function', typeof merge)
@@ -112,15 +134,6 @@ describe('struct', () => {
 
   test('merge-array', () => {
     test_set(clone(TESTSPEC.merge.array), merge)
-  })
-
-
-  test('walk-exists', () => {
-    equal('function', typeof merge)
-  })
-
-  test('walk-basic', () => {
-    test_set(clone(TESTSPEC.walk.basic), (vin: any) => walk(vin, walkpath))
   })
 
 
@@ -242,6 +255,3 @@ describe('struct', () => {
 })
 
 
-function walkpath(_key: string | undefined, val: any, _parent: any, path: string[]) {
-  return 'string' === typeof val ? val + '~' + path.join('.') : val
-}

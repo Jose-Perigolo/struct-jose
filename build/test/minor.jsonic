@@ -94,7 +94,6 @@ getprop: {
     { in: { val: ['a'], key: 'x' } }
     { in: { val: [{x:11},{x:22}], key: 1 }, out: {x:22} }
     { in: { val: [[111],[222]], key: 1 }, out: [222] }
-
     { in: { val: {x:1}, key: x, alt: 9 }, out: 1 }
     { in: { val: {x:[11]}, key: x, alt: 'A' }, out: [11] }
     { in: { val: {x:{z:22}}, key: x, alt: true }, out: {z:22} }

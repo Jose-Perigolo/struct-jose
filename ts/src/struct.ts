@@ -161,6 +161,7 @@ function setprop<PARENT>(parent: PARENT, key: any, val: any): PARENT {
   }
 
   if (ismap(parent)) {
+    key = S.empty + key
     if (undefined === val) {
       delete (parent as any)[key]
     }
@@ -216,7 +217,7 @@ function walk(
 ): any {
   if (isnode(val)) {
     for (let [ckey, child] of items(val)) {
-      setprop(val, ckey, walk(child, apply, ckey, val, [...(path || []), ckey]))
+      setprop(val, ckey, walk(child, apply, ckey, val, [...(path || []), S.empty + ckey]))
     }
   }
 
@@ -235,60 +236,62 @@ function merge(objs: any[]): any {
   if (!islist(objs)) {
     return objs
   }
+  else if (0 === objs.length) {
+    return undefined
+  }
   else if (1 === objs.length) {
     return objs[0]
   }
-  else if (1 < objs.length) {
-    out = objs[0] || {}
 
-    // Merge remaining down onto first.
-    for (let oI = 1; oI < objs.length; oI++) {
-      let obj = objs[oI]
+  out = getprop(objs, 0, {})
 
-      if (isnode(obj)) {
+  // Merge remaining down onto first.
+  for (let oI = 1; oI < objs.length; oI++) {
+    let obj = objs[oI]
 
-        // Nodes win, also over nodes of a different kind.
-        if (!isnode(out) || (ismap(obj) && islist(out)) || (islist(obj) && ismap(out))) {
-          out = obj
-        }
-        else {
-          let cur = [out] // Node stack
-          let cI = 0
+    if (isnode(obj)) {
 
-          // Walk overriding node, creating paths in output as needed.
-          walk(obj, (key, val, parent, path) => {
-            if (null != key) {
-              cI = path.length - 1
-              if (undefined === cur[cI]) {
-                cur[cI] = getpath(path.slice(0, path.length - 1), out)
-              }
-
-              // Create node if needed.
-              if (!isnode(cur[cI])) {
-                cur[cI] = islist(parent) ? [] : {}
-              }
-
-              // Node child is just ahead of us on the stack.
-              if (isnode(val)) {
-                setprop(cur[cI], key, cur[cI + 1])
-                cur[cI + 1] = undefined
-              }
-
-              // Scalar child.
-              else {
-                setprop(cur[cI], key, val)
-              }
-            }
-
-            return val
-          })
-        }
-      }
-
-      // Nodes win.
-      else {
+      // Nodes win, also over nodes of a different kind.
+      if (!isnode(out) || (ismap(obj) && islist(out)) || (islist(obj) && ismap(out))) {
         out = obj
       }
+      else {
+        let cur = [out] // Node stack
+        let cI = 0
+
+        // Walk overriding node, creating paths in output as needed.
+        walk(obj, (key, val, parent, path) => {
+          if (null != key) {
+            cI = path.length - 1
+            if (undefined === cur[cI]) {
+              cur[cI] = getpath(path.slice(0, path.length - 1), out)
+            }
+
+            // Create node if needed.
+            if (!isnode(cur[cI])) {
+              cur[cI] = islist(parent) ? [] : {}
+            }
+
+            // Node child is just ahead of us on the stack.
+            if (isnode(val)) {
+              setprop(cur[cI], key, cur[cI + 1])
+              cur[cI + 1] = undefined
+            }
+
+            // Scalar child.
+            else {
+              setprop(cur[cI], key, val)
+            }
+          }
+
+          return val
+        })
+      }
+    }
+
+    // Nodes win.
+    else {
+      out = obj
     }
   }
 

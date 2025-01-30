@@ -12,8 +12,9 @@ function test_set(tests, apply) {
             (0, node_assert_1.deepEqual)(apply(entry.in), entry.out);
         }
         catch (err) {
-            if (null != entry.err) {
-                if (true === entry.err || (err.message.includes(entry.err))) {
+            const entry_err = entry.err;
+            if (null != entry_err) {
+                if (true === entry_err || (err.message.includes(entry_err))) {
                     break;
                 }
                 entry.thrown = err.message;
@@ -25,7 +26,12 @@ function test_set(tests, apply) {
         }
     }
 }
+function walkpath(_key, val, _parent, path) {
+    return 'string' === typeof val ? val + '~' + path.join('.') : val;
+}
 (0, node_test_1.describe)('struct', () => {
+    // minor tests
+    // ===========
     (0, node_test_1.test)('minor-exists', () => {
         (0, node_assert_1.equal)('function', typeof struct_1.clone);
         (0, node_assert_1.equal)('function', typeof struct_1.isnode);
@@ -60,6 +66,16 @@ function test_set(tests, apply) {
     (0, node_test_1.test)('minor-setprop', () => {
         test_set((0, struct_1.clone)(TESTSPEC.minor.setprop), (vin) => (0, struct_1.setprop)(vin.parent, vin.key, vin.val));
     });
+    // walk tests
+    // ==========
+    (0, node_test_1.test)('walk-exists', () => {
+        (0, node_assert_1.equal)('function', typeof struct_1.merge);
+    });
+    (0, node_test_1.test)('walk-basic', () => {
+        test_set((0, struct_1.clone)(TESTSPEC.walk.basic), (vin) => (0, struct_1.walk)(vin, walkpath));
+    });
+    // merge tests
+    // ===========
     (0, node_test_1.test)('merge-exists', () => {
         (0, node_assert_1.equal)('function', typeof struct_1.merge);
     });
@@ -72,12 +88,6 @@ function test_set(tests, apply) {
     });
     (0, node_test_1.test)('merge-array', () => {
         test_set((0, struct_1.clone)(TESTSPEC.merge.array), struct_1.merge);
-    });
-    (0, node_test_1.test)('walk-exists', () => {
-        (0, node_assert_1.equal)('function', typeof struct_1.merge);
-    });
-    (0, node_test_1.test)('walk-basic', () => {
-        test_set((0, struct_1.clone)(TESTSPEC.walk.basic), (vin) => (0, struct_1.walk)(vin, walkpath));
     });
     (0, node_test_1.test)('getpath-exists', () => {
         (0, node_assert_1.equal)('function', typeof struct_1.getpath);
@@ -161,7 +171,4 @@ function test_set(tests, apply) {
         });
     });
 });
-function walkpath(_key, val, _parent, path) {
-    return 'string' === typeof val ? val + '~' + path.join('.') : val;
-}
 //# sourceMappingURL=struct.test.js.map
