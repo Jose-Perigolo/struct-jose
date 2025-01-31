@@ -7,17 +7,20 @@ import { equal, deepEqual, fail } from 'node:assert'
 
 import {
   clone,
-  isnode,
-  ismap,
-  islist,
-  iskey,
-  items,
-  getprop,
-  setprop,
-
+  escre,
+  escurl,
   getpath,
+  getprop,
   inject,
+  isempty,
+  iskey,
+  islist,
+  ismap,
+  isnode,
+  items,
   merge,
+  setprop,
+  stringify,
   transform,
   walk,
 } from '../dist/struct'
@@ -60,13 +63,17 @@ describe('struct', () => {
 
   test('minor-exists', () => {
     equal('function', typeof clone)
-    equal('function', typeof isnode)
-    equal('function', typeof ismap)
-    equal('function', typeof islist)
-    equal('function', typeof iskey)
-    equal('function', typeof items)
+    equal('function', typeof escre)
+    equal('function', typeof escurl)
     equal('function', typeof getprop)
+    equal('function', typeof isempty)
+    equal('function', typeof iskey)
+    equal('function', typeof islist)
+    equal('function', typeof ismap)
+    equal('function', typeof isnode)
+    equal('function', typeof items)
     equal('function', typeof setprop)
+    equal('function', typeof stringify)
   })
 
   test('minor-clone', () => {
@@ -87,6 +94,23 @@ describe('struct', () => {
 
   test('minor-iskey', () => {
     test_set(clone(TESTSPEC.minor.iskey), iskey)
+  })
+
+  test('minor-isempty', () => {
+    test_set(clone(TESTSPEC.minor.isempty), isempty)
+  })
+
+  test('minor-escre', () => {
+    test_set(clone(TESTSPEC.minor.escre), escre)
+  })
+
+  test('minor-escurl', () => {
+    test_set(clone(TESTSPEC.minor.escurl), escurl)
+  })
+
+  test('minor-stringify', () => {
+    test_set(clone(TESTSPEC.minor.stringify), (vin: any) =>
+      null == vin.max ? stringify(vin.val) : stringify(vin.val, vin.max))
   })
 
   test('minor-items', () => {
@@ -137,6 +161,9 @@ describe('struct', () => {
   })
 
 
+  // getpath tests
+  // =============
+
   test('getpath-exists', () => {
     equal('function', typeof getpath)
   })
@@ -174,6 +201,8 @@ describe('struct', () => {
   })
 
 
+  // inject tests
+  // ============
 
   test('inject-exists', () => {
     equal('function', typeof inject)
@@ -193,6 +222,9 @@ describe('struct', () => {
     test_set(clone(TESTSPEC.inject.deep), (vin: any) => inject(vin.val, vin.store))
   })
 
+
+  // transform tests
+  // ===============
 
   test('transform-exists', () => {
     equal('function', typeof transform)

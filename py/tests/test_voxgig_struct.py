@@ -8,16 +8,20 @@ import unittest
 
 from voxgig_struct import (
     clone,
-    isnode,
-    ismap,
-    islist,
-    iskey,
-    items,
-    getprop,
-    setprop,
+    escre,
+    escurl,
     getpath,
+    getprop,
     inject,
+    isempty,
+    iskey,
+    islist,
+    ismap,
+    isnode,
+    items,
     merge,
+    setprop,
+    stringify,
     transform,
     walk,
 )
@@ -33,6 +37,7 @@ def walkpath(_key, val, _parent, path):
     if isinstance(val, str):
         return val + '~' + '.'.join(path)
     return val
+
 
 def test_set(testcase, tests, test_fn):
     """
@@ -55,6 +60,7 @@ def test_set(testcase, tests, test_fn):
             else:
                 raise
 
+            
 def fixnull(obj):
     if obj is None:
         return "__NULL__"
@@ -65,6 +71,17 @@ def fixnull(obj):
     else:
         return obj
 
+def unfixnull(obj):
+    if obj == "__NULL__":
+        return None
+    elif isinstance(obj, list):
+        return [unfixnull(item) for item in obj]
+    elif isinstance(obj, dict):
+        return {k: unfixnull(v) for k, v in obj.items()}
+    else:
+        return obj
+
+    
     
 class TestStruct(unittest.TestCase):
 
@@ -83,13 +100,17 @@ class TestStruct(unittest.TestCase):
             
     def test_minor_exists(self):
         self.assertTrue(callable(clone))
-        self.assertTrue(callable(isnode))
-        self.assertTrue(callable(ismap))
-        self.assertTrue(callable(islist))
-        self.assertTrue(callable(iskey))
-        self.assertTrue(callable(items))
+        self.assertTrue(callable(escre))
+        self.assertTrue(callable(escurl))
         self.assertTrue(callable(getprop))
+        self.assertTrue(callable(isempty))
+        self.assertTrue(callable(iskey))
+        self.assertTrue(callable(islist))
+        self.assertTrue(callable(ismap))
+        self.assertTrue(callable(isnode))
+        self.assertTrue(callable(items))
         self.assertTrue(callable(setprop))
+        self.assertTrue(callable(stringify))
 
     def test_minor_clone(self):
         # test_set(clone(TESTSPEC.minor.clone), clone)
@@ -133,7 +154,23 @@ class TestStruct(unittest.TestCase):
         testspec_data = clone(self.TESTSPEC['minor']['setprop'])
         test_set(self, testspec_data, apply_fn)
 
+    def test_minor_isempty(self):
+        testspec_data = unfixnull(clone(self.TESTSPEC['minor']['isempty']))
+        test_set(self, testspec_data, isempty)
 
+    def test_minor_escurl(self):
+        testspec_data = clone(self.TESTSPEC['minor']['escurl'])
+        test_set(self, testspec_data, escurl)
+
+    def test_minor_escre(self):
+        testspec_data = clone(self.TESTSPEC['minor']['escre'])
+        test_set(self, testspec_data, escre)
+
+    def test_minor_stringify(self):
+        testspec_data = clone(self.TESTSPEC['minor']['stringify'])
+        test_set(self, testspec_data, lambda vin: stringify(vin.get('val')) if None == vin.get('max') else stringify(vin['val'], vin['max']))
+
+        
     # walk tests
     # ==========
 

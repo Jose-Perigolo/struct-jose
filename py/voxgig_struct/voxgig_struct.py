@@ -21,6 +21,7 @@
 
 from typing import *
 from datetime import datetime
+import urllib.parse
 import json
 import re
 
@@ -102,10 +103,78 @@ def clone(val: Any):
     """
     Clone a JSON-like data structure using a deep copy (via JSON).
     """
-    import json
     if val is None:
         return None
     return json.loads(json.dumps(val))
+
+
+
+def isempty(val: Any):
+    """
+    Check for an "empty" value - undefined, false, 0, empty string, array, object.
+    """
+    if val is None:
+        return True
+    
+    if val == S['empty']:
+        return True
+    
+    if val is False:
+        return True
+    
+    if val == 0:
+        return True
+    
+    if islist(val) and len(val) == 0:
+        return True
+    
+    if ismap(val) and len(val) == 0:
+        return True
+    
+    return False    
+
+
+
+def stringify(val: Any, maxlen: int = None):
+    """
+    Safely stringify a value for printing (NOT JSON!).
+    """
+    json_str = S['empty']
+    
+    try:
+        json_str = json.dumps(val, separators=(',', ':'))
+    except Exception:
+        json_str = str(val)
+    
+    json_str = json_str.replace('"', '')
+    
+    if maxlen is not None:
+        json_max = json_str[:maxlen]
+        
+        if 3 < maxlen < len(json_str):
+            json_str = json_max[:maxlen - 3] + '...'
+    
+    return json_str
+
+
+def escurl(s: Any):
+    """
+    Escape URL.
+    """
+    if s is None:
+        s = S['empty']
+    return urllib.parse.quote(s, safe="")
+
+
+
+def escre(s: Any):
+    """
+    Escape regular expression.
+    """
+    if s is None:
+        s = ""
+    pattern = r'([.*+?^${}()|\[\]\\])'
+    return re.sub(pattern, r'\\\1', s)
 
 
 def getprop(val: Any, key: Any, alt: Any = None) -> Any:

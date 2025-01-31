@@ -34,13 +34,17 @@ function walkpath(_key, val, _parent, path) {
     // ===========
     (0, node_test_1.test)('minor-exists', () => {
         (0, node_assert_1.equal)('function', typeof struct_1.clone);
-        (0, node_assert_1.equal)('function', typeof struct_1.isnode);
-        (0, node_assert_1.equal)('function', typeof struct_1.ismap);
-        (0, node_assert_1.equal)('function', typeof struct_1.islist);
-        (0, node_assert_1.equal)('function', typeof struct_1.iskey);
-        (0, node_assert_1.equal)('function', typeof struct_1.items);
+        (0, node_assert_1.equal)('function', typeof struct_1.escre);
+        (0, node_assert_1.equal)('function', typeof struct_1.escurl);
         (0, node_assert_1.equal)('function', typeof struct_1.getprop);
+        (0, node_assert_1.equal)('function', typeof struct_1.isempty);
+        (0, node_assert_1.equal)('function', typeof struct_1.iskey);
+        (0, node_assert_1.equal)('function', typeof struct_1.islist);
+        (0, node_assert_1.equal)('function', typeof struct_1.ismap);
+        (0, node_assert_1.equal)('function', typeof struct_1.isnode);
+        (0, node_assert_1.equal)('function', typeof struct_1.items);
         (0, node_assert_1.equal)('function', typeof struct_1.setprop);
+        (0, node_assert_1.equal)('function', typeof struct_1.stringify);
     });
     (0, node_test_1.test)('minor-clone', () => {
         test_set((0, struct_1.clone)(TESTSPEC.minor.clone), struct_1.clone);
@@ -56,6 +60,18 @@ function walkpath(_key, val, _parent, path) {
     });
     (0, node_test_1.test)('minor-iskey', () => {
         test_set((0, struct_1.clone)(TESTSPEC.minor.iskey), struct_1.iskey);
+    });
+    (0, node_test_1.test)('minor-isempty', () => {
+        test_set((0, struct_1.clone)(TESTSPEC.minor.isempty), struct_1.isempty);
+    });
+    (0, node_test_1.test)('minor-escre', () => {
+        test_set((0, struct_1.clone)(TESTSPEC.minor.escre), struct_1.escre);
+    });
+    (0, node_test_1.test)('minor-escurl', () => {
+        test_set((0, struct_1.clone)(TESTSPEC.minor.escurl), struct_1.escurl);
+    });
+    (0, node_test_1.test)('minor-stringify', () => {
+        test_set((0, struct_1.clone)(TESTSPEC.minor.stringify), (vin) => null == vin.max ? (0, struct_1.stringify)(vin.val) : (0, struct_1.stringify)(vin.val, vin.max));
     });
     (0, node_test_1.test)('minor-items', () => {
         test_set((0, struct_1.clone)(TESTSPEC.minor.items), struct_1.items);
@@ -89,6 +105,8 @@ function walkpath(_key, val, _parent, path) {
     (0, node_test_1.test)('merge-array', () => {
         test_set((0, struct_1.clone)(TESTSPEC.merge.array), struct_1.merge);
     });
+    // getpath tests
+    // =============
     (0, node_test_1.test)('getpath-exists', () => {
         (0, node_assert_1.equal)('function', typeof struct_1.getpath);
     });
@@ -119,6 +137,8 @@ function walkpath(_key, val, _parent, path) {
         };
         test_set((0, struct_1.clone)(TESTSPEC.getpath.state), (vin) => (0, struct_1.getpath)(vin.path, vin.store, vin.current, state));
     });
+    // inject tests
+    // ============
     (0, node_test_1.test)('inject-exists', () => {
         (0, node_assert_1.equal)('function', typeof struct_1.inject);
     });
@@ -132,6 +152,8 @@ function walkpath(_key, val, _parent, path) {
     (0, node_test_1.test)('inject-deep', () => {
         test_set((0, struct_1.clone)(TESTSPEC.inject.deep), (vin) => (0, struct_1.inject)(vin.val, vin.store));
     });
+    // transform tests
+    // ===============
     (0, node_test_1.test)('transform-exists', () => {
         (0, node_assert_1.equal)('function', typeof struct_1.transform);
     });

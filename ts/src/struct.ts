@@ -126,6 +126,51 @@ function iskey(key: any) {
 }
 
 
+// Check for an "empty" value - undefined, false, 0, empty string, array, object.
+function isempty(val: any) {
+  return null == val || S.empty === val || false === val || 0 === val ||
+    (Array.isArray(val) && 0 === val.length) ||
+    ('object' === typeof val && 0 === Object.keys(val).length)
+}
+
+
+// Safely stringify a value for printing (NOT JSON!).
+function stringify(val: any, maxlen?: number) {
+  let json = S.empty
+
+  try {
+    json = JSON.stringify(val)
+  }
+  catch (err: any) {
+    json = S.empty + val
+  }
+
+  json = 'string' !== typeof json ? S.empty + json : json
+  json = json.replace(/"/g, '')
+
+  if (null != maxlen) {
+    let js = json.substring(0, maxlen)
+    json = maxlen < json.length ? (js.substring(0, maxlen - 3) + '...') : json
+  }
+
+  return json
+}
+
+
+// Escape regular expression.
+function escre(s: string) {
+  s = null == s ? S.empty : s
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+
+// Escape URL.
+function escurl(s: string) {
+  s = null == s ? S.empty : s
+  return encodeURIComponent(s)
+}
+
+
 // List the keys of a map or list as an array of tuples of the form [key, value].
 function items(val: any) {
   return ismap(val) ? Object.entries(val) :
@@ -842,16 +887,20 @@ function transform(
 
 export {
   clone,
-  isnode,
-  ismap,
-  islist,
-  iskey,
-  items,
-  getprop,
-  setprop,
+  escre,
+  escurl,
   getpath,
+  getprop,
   inject,
+  isempty,
+  iskey,
+  islist,
+  ismap,
+  isnode,
+  items,
   merge,
+  setprop,
+  stringify,
   transform,
   walk,
 }
