@@ -26,11 +26,30 @@ import {
 } from '../dist/struct'
 
 
-const TESTSPEC =
+
+type TestEntry = {
+  in?: any
+  out?: any
+  err?: any
+  thrown?: any
+}
+
+type TestSet = TestEntry[]
+
+type SubTest = TestEntry & {
+  set: TestSet
+}
+
+type TestGroup = Record<string, SubTest>
+
+type FullTest = Record<string, TestGroup>
+
+
+const TESTSPEC: FullTest =
   JSON.parse(readFileSync(join(__dirname, '..', '..', 'build/test/test.json'), 'utf8'))
 
 
-function test_set(tests: { set: any[] }, apply: Function) {
+function test_set(tests: SubTest, apply: Function) {
   for (let entry of tests.set) {
     try {
       deepEqual(apply(entry.in), entry.out)

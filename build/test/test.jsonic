@@ -1,6 +1,5 @@
 
 minor: @"minor.jsonic"
-
 getpath: @"getpath.jsonic"
 inject: @"inject.jsonic"
 merge: @"merge.jsonic"
