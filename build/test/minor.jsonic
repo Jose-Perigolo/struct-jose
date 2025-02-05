@@ -163,7 +163,6 @@ setprop: {
 
 isempty: {
   set: [
-    { in: null, out: true }
     { in: '', out: true }
     { in: false, out: true }
     { in: 0, out: true }
@@ -175,6 +174,8 @@ isempty: {
     { in: 1, out: false }
     { in: {x:2}, out: false }
     { in: [3], out: false }
+
+    { in: null, out: true }
   ]
 }
 

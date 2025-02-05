@@ -1217,10 +1217,6 @@
     "isempty": {
       "set": [
         {
-          "in": null,
-          "out": true
-        },
-        {
           "in": "",
           "out": true
         },
@@ -1263,6 +1259,10 @@
             3
           ],
           "out": false
+        },
+        {
+          "in": null,
+          "out": true
         }
       ]
     },

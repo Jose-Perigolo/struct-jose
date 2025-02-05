@@ -60,7 +60,8 @@ def test_set(testcase, tests, test_fn):
             else:
                 raise
 
-            
+# Since json.load uses None for null, assume
+# user will represent null in another way with a defined value.
 def fixnull(obj):
     if obj is None:
         return "__NULL__"

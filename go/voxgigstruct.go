@@ -7,8 +7,9 @@ import (
 	"sort"
 	"strings"
 	"time"
-	//	"fmt"
-	//	"reflect"
+	"fmt"
+	"reflect"
+	"strconv"
 )
 
 // ---------------------------------------------------------------------
@@ -228,13 +229,24 @@ func EscUrl(s string) string {
 // Items lists the key/value pairs (like Object.entries).
 
 func Items(val interface{}) [][2]interface{} {
+	// fmt.Println("Items", val)
+	
 	if IsMap(val) {
 		m := val.(map[string]interface{})
 		out := make([][2]interface{}, 0, len(m))
-		for k, v := range m {
-			out = append(out, [2]interface{}{k, v})
+
+		// Step 1: Extract and sort keys
+		keys := make([]string, 0, len(m))
+		for k := range m {
+			keys = append(keys, k)
 		}
-		return out
+		sort.Strings(keys) // Ensures deterministic order
+
+		// Step 2: Iterate over sorted keys
+		for _, k := range keys {
+			out = append(out, [2]interface{}{k, m[k]})
+		}
+		return out		
 	} else if IsList(val) {
 		arr := val.([]interface{})
 		out := make([][2]interface{}, 0, len(arr))
@@ -266,70 +278,58 @@ func Clone(val interface{}) interface{} {
 // GetProp: safely get val[key], or alt if missing.
 
 func GetProp(val interface{}, key interface{}, alt ...interface{}) interface{} {
+	var out interface{}
+
+	if len(alt) > 0 {
+		out = alt[0]
+	}
+
+
 	if val == nil || key == nil {
-		if len(alt) > 0 {
-			return alt[0]
-		}
-		return nil
+		return out
 	}
 
 	switch v := val.(type) {
 	case map[string]interface{}:
 		ks, ok := key.(string)
 		if !ok {
-			// might be an int that was intended as string
-			switch ki := key.(type) {
-			case int:
-				ks = string(rune(ki))
-			default:
-				if len(alt) > 0 {
-					return alt[0]
-				}
-				return nil
-			}
+			ks = fmt.Sprintf("%v", key)
 		}
+		
 		res, has := v[ks]
-		if !has {
-			if len(alt) > 0 {
-				return alt[0]
-			}
-			return nil
+		if has {
+			out = res
 		}
-		return res
 	case []interface{}:
-		// If key is int
 		ki, ok := key.(int)
 		if !ok {
 			// might be float64 from JSON
 			switch kf := key.(type) {
 			case float64:
 				ki = int(kf)
-			default:
-				if len(alt) > 0 {
-					return alt[0]
+
+			case string:
+				ki = -1
+				ski, err := strconv.Atoi(key.(string))
+				if nil == err {
+					ki = ski
 				}
-				return nil
 			}
 		}
-		if ki < 0 || ki >= len(v) {
-			if len(alt) > 0 {
-				return alt[0]
-			}
-			return nil
+		if 0 <= ki && ki < len(v) {
+			out = v[ki]
 		}
-		return v[ki]
-	default:
-		if len(alt) > 0 {
-			return alt[0]
-		}
-		return nil
 	}
+
+	return out
 }
 
 // ---------------------------------------------------------------------
 // SetProp: safely set val[key] = newval (or delete if newval==nil).
 
 func SetProp(parent interface{}, key interface{}, newval interface{}) interface{} {
+	// fmt.Println("SetProp", fdt(key))
+
 	if !IsKey(key) {
 		return parent
 	}
@@ -339,17 +339,20 @@ func SetProp(parent interface{}, key interface{}, newval interface{}) interface{
 
 		// Convert key to string
 		ks := ""
-		switch k := key.(type) {
-		case string:
-			ks = k
-		case int:
-			ks = string(rune(k))
-		case int64:
-			ks = string(rune(k))
-		default:
-			ks = ""
-		}
-
+		ks = fmt.Sprintf("%v", key)
+		
+		// switch k := key.(type) {
+		// case string:
+		// 	ks = k
+		// case int:
+		// 	ks = string(rune(k))
+		// case int64:
+		// 	ks = string(rune(k))
+		// default:
+		// 	ks = fmt.Sprintf("%v", k)
+		// }
+		// fmt.Println("KS", ks)
+		
 		if newval == nil {
 			delete(m, ks)
 		} else {
@@ -1257,4 +1260,39 @@ func Transform(
 
 	out := Inject(spec, store, modify, store, nil)
 	return out
+}
+
+
+
+
+// DEBUG
+
+func fdt(data interface{}) string {
+	return fdti(data, "")
+}
+
+func fdti(data interface{}, indent string) string {
+	result := ""
+
+	switch v := data.(type) {
+	case map[string]interface{}:
+		result += indent + "{\n"
+		for key, value := range v {
+			result += fmt.Sprintf("%s  \"%s\": %s", indent, key, fdti(value, indent+"  "))
+		}
+		result += indent + "}\n"
+
+	case []interface{}:
+		result += indent + "[\n"
+		for _, value := range v {
+			result += fmt.Sprintf("%s  - %s", indent, fdti(value, indent+"  "))
+		}
+		result += indent + "]\n"
+
+	default:
+		// Format value with its type
+		result += fmt.Sprintf("%v (%s)\n", v, reflect.TypeOf(v))
+	}
+
+	return result
 }

@@ -39,50 +39,127 @@ type FullTest map[string]TestGroup
 
 // JSONMap and its custom unmarshaller ensure that numeric values
 // get decoded as int when possible rather than float64.
-type JSONMap map[string]interface{}
+// type JSONMap map[string]interface{}
 
-func (m *JSONMap) UnmarshalJSON(data []byte) error {
-    var raw map[string]interface{}
-    if err := json.Unmarshal(data, &raw); err != nil {
-        return err
-    }
-    *m = convertNumbers(raw)
-    return nil
+// func (m *JSONMap) UnmarshalJSON(data []byte) error {
+//     var raw map[string]interface{}
+//     if err := json.Unmarshal(data, &raw); err != nil {
+//         return err
+//     }
+//     *m = fixJSON(raw)
+//     return nil
+// }
+
+// Since json.Unmarshal uses nil for null, assume
+// user will represent null in another way with a defined value.
+
+func fixJSON(data interface{}) interface{} {
+	if nil == data {
+		return "__NULL__"
+	}
+	
+	
+	v := reflect.ValueOf(data)
+
+	switch v.Kind() {
+
+	// Handle numbers: Convert float64 to int if it has no decimals
+	case reflect.Float64:
+		if v.Float() == float64(int(v.Float())) {
+			return int(v.Float()) // Convert float64 to int
+		}
+		return data
+
+	// Handle maps: Recursively apply fixJSON
+	case reflect.Map:
+		fixedMap := make(map[string]interface{})
+		for _, key := range v.MapKeys() {
+			strKey, ok := key.Interface().(string) // Ensure key is string
+			if ok {
+				fixedMap[strKey] = fixJSON(v.MapIndex(key).Interface())
+			}
+		}
+		return fixedMap
+
+	// Handle slices: Recursively apply fixJSON
+	case reflect.Slice:
+		length := v.Len()
+		fixedSlice := make([]interface{}, length)
+		for i := 0; i < length; i++ {
+			fixedSlice[i] = fixJSON(v.Index(i).Interface())
+		}
+		return fixedSlice
+
+	// Handle fixed-size arrays: Convert to slice and process recursively
+	case reflect.Array:
+		length := v.Len()
+		fixedSlice := make([]interface{}, length)
+		for i := 0; i < length; i++ {
+			fixedSlice[i] = fixJSON(v.Index(i).Interface())
+		}
+		return fixedSlice
+
+	// Default: Return as-is
+	default:
+		return data
+	}
 }
 
-func convertNumbers(data map[string]interface{}) map[string]interface{} {
-    for key, value := range data {
-        switch v := value.(type) {
-        case float64:
-            // If the float64 has no decimal part, store as int.
-            if v == float64(int(v)) {
-                data[key] = int(v)
-            }
-        case map[string]interface{}:
-            data[key] = convertNumbers(v)
-        case []interface{}:
-            for i, item := range v {
-                if num, ok := item.(float64); ok && num == float64(int(num)) {
-                    v[i] = int(num)
-                }
-            }
-        }
-    }
-    return data
+
+func fdt(data interface{}) string {
+	return fdti(data, "")
+}
+
+func fdti(data interface{}, indent string) string {
+	result := ""
+
+	switch v := data.(type) {
+	case map[string]interface{}:
+		result += indent + "{\n"
+		for key, value := range v {
+			result += fmt.Sprintf("%s  \"%s\": %s", indent, key, fdti(value, indent+"  "))
+		}
+		result += indent + "}\n"
+
+	case []interface{}:
+		result += indent + "[\n"
+		for _, value := range v {
+			result += fmt.Sprintf("%s  - %s", indent, fdti(value, indent+"  "))
+		}
+		result += indent + "]\n"
+
+	default:
+		// Format value with its type
+		result += fmt.Sprintf("%v (%s)\n", v, reflect.TypeOf(v))
+	}
+
+	return result
+}
+
+func toJSONString(data interface{}) string {
+	jsonBytes, err := json.Marshal(data)
+	if err != nil {
+		return "" // Return empty string if marshalling fails
+	}
+	return string(jsonBytes)
 }
 
 // RunTestSet executes a set of test entries by calling 'apply'
 // on each "in" value and comparing to "out".
 // If a mismatch occurs, the test fails.
-func RunTestSet(t *testing.T, tests SubTest, apply func(interface{}) interface{}) {
-    for _, entry := range tests.Set {
-        result := apply(entry.In)
+func runTestSet(t *testing.T, tests SubTest, apply func(interface{}) interface{}) {
+	for _, entry := range tests.Set {
+		input := fixJSON(entry.In)
+		output := fixJSON(entry.Out)
+		result := fixJSON(apply(input))
 
-        // If expected is 'out', check deep equality.
-        if !reflect.DeepEqual(result, entry.Out) {
-            t.Errorf("Expected: %v, Got: %v", entry.Out, result)
-        }
-    }
+		// fmt.Println("RUNTESTSET", "IN", fdt(input), "RES", fdt(result), "OUT", fdt(output))
+		
+		if !reflect.DeepEqual(result, output) {
+			t.Errorf("Expected: %s, \nGot: %s \nExpected JSON: %s \nGot JSON: %s",
+				fdt(output), fdt(result), toJSONString(output), toJSONString(result))
+		}
+	}
 }
 
 // LoadTestSpec reads and unmarshals the JSON file into FullTest.
@@ -109,6 +186,7 @@ func LoadTestSpec(filename string) (FullTest, error) {
     if err := json.Unmarshal(data, &testSpec); err != nil {
         return nil, err
     }
+
     return testSpec, nil
 }
 
@@ -162,7 +240,7 @@ func TestStruct(t *testing.T) {
     // minor-clone
     t.Run("minor-clone", func(t *testing.T) {
         subtest := testSpec["minor"]["clone"]
-        RunTestSet(t, subtest, func(v interface{}) interface{} {
+        runTestSet(t, subtest, func(v interface{}) interface{} {
             return voxgigstruct.Clone(v)
         })
     })
@@ -170,7 +248,7 @@ func TestStruct(t *testing.T) {
     // minor-isnode
     t.Run("minor-isnode", func(t *testing.T) {
         subtest := testSpec["minor"]["isnode"]
-        RunTestSet(t, subtest, func(v interface{}) interface{} {
+        runTestSet(t, subtest, func(v interface{}) interface{} {
             return voxgigstruct.IsNode(v)
         })
     })
@@ -178,7 +256,7 @@ func TestStruct(t *testing.T) {
     // minor-ismap
     t.Run("minor-ismap", func(t *testing.T) {
         subtest := testSpec["minor"]["ismap"]
-        RunTestSet(t, subtest, func(v interface{}) interface{} {
+        runTestSet(t, subtest, func(v interface{}) interface{} {
             return voxgigstruct.IsMap(v)
         })
     })
@@ -186,7 +264,7 @@ func TestStruct(t *testing.T) {
     // minor-islist
     t.Run("minor-islist", func(t *testing.T) {
         subtest := testSpec["minor"]["islist"]
-        RunTestSet(t, subtest, func(v interface{}) interface{} {
+        runTestSet(t, subtest, func(v interface{}) interface{} {
             return voxgigstruct.IsList(v)
         })
     })
@@ -194,7 +272,7 @@ func TestStruct(t *testing.T) {
     // minor-iskey
     t.Run("minor-iskey", func(t *testing.T) {
         subtest := testSpec["minor"]["iskey"]
-        RunTestSet(t, subtest, func(v interface{}) interface{} {
+        runTestSet(t, subtest, func(v interface{}) interface{} {
             return voxgigstruct.IsKey(v)
         })
     })
@@ -202,15 +280,18 @@ func TestStruct(t *testing.T) {
     // minor-isempty
     t.Run("minor-isempty", func(t *testing.T) {
         subtest := testSpec["minor"]["isempty"]
-        RunTestSet(t, subtest, func(v interface{}) interface{} {
-            return voxgigstruct.IsEmpty(v)
+        runTestSet(t, subtest, func(v interface{}) interface{} {
+		if "__NULL__" == v {
+			return voxgigstruct.IsEmpty(nil)
+		}
+		return voxgigstruct.IsEmpty(v)
         })
     })
 
     // minor-escre
     t.Run("minor-escre", func(t *testing.T) {
         subtest := testSpec["minor"]["escre"]
-        RunTestSet(t, subtest, func(in interface{}) interface{} {
+        runTestSet(t, subtest, func(in interface{}) interface{} {
             return voxgigstruct.EscRe(fmt.Sprint(in))
         })
     })
@@ -218,7 +299,7 @@ func TestStruct(t *testing.T) {
     // minor-escurl
     t.Run("minor-escurl", func(t *testing.T) {
         subtest := testSpec["minor"]["escurl"]
-        RunTestSet(t, subtest, func(in interface{}) interface{} {
+        runTestSet(t, subtest, func(in interface{}) interface{} {
 		return strings.ReplaceAll(voxgigstruct.EscUrl(fmt.Sprint(in)), "+", "%20")
         })
     })
@@ -226,7 +307,7 @@ func TestStruct(t *testing.T) {
     // minor-stringify
     // t.Run("minor-stringify", func(t *testing.T) {
     //     subtest := testSpec["minor"]["stringify"]
-    //     RunTestSet(t, subtest, func(v interface{}) interface{} {
+    //     runTestSet(t, subtest, func(v interface{}) interface{} {
     //         // The TS code used: null == vin.max ? stringify(vin.val) : stringify(vin.val, vin.max)
     //         // We'll do similarly in Go.
     //         m, ok := v.(map[string]interface{})
@@ -246,7 +327,7 @@ func TestStruct(t *testing.T) {
     // minor-items
     t.Run("minor-items", func(t *testing.T) {
         subtest := testSpec["minor"]["items"]
-        RunTestSet(t, subtest, func(v interface{}) interface{} {
+        runTestSet(t, subtest, func(v interface{}) interface{} {
             return voxgigstruct.Items(v)
         })
     })
@@ -254,7 +335,7 @@ func TestStruct(t *testing.T) {
     // minor-getprop
     t.Run("minor-getprop", func(t *testing.T) {
         subtest := testSpec["minor"]["getprop"]
-        RunTestSet(t, subtest, func(v interface{}) interface{} {
+        runTestSet(t, subtest, func(v interface{}) interface{} {
             // The TS code used: null == vin.alt ? getprop(vin.val, vin.key) : getprop(vin.val, vin.key, vin.alt)
             m, ok := v.(map[string]interface{})
             if !ok {
@@ -273,7 +354,7 @@ func TestStruct(t *testing.T) {
     // minor-setprop
     t.Run("minor-setprop", func(t *testing.T) {
         subtest := testSpec["minor"]["setprop"]
-        RunTestSet(t, subtest, func(v interface{}) interface{} {
+        runTestSet(t, subtest, func(v interface{}) interface{} {
             // The TS code used: setprop(vin.parent, vin.key, vin.val)
             // We'll do similarly.
             m, ok := v.(map[string]interface{})
@@ -303,7 +384,7 @@ func TestStruct(t *testing.T) {
     // walk-basic
     // t.Run("walk-basic", func(t *testing.T) {
     //     subtest := testSpec["walk"]["basic"]
-    //     RunTestSet(t, subtest, func(v interface{}) interface{} {
+    //     runTestSet(t, subtest, func(v interface{}) interface{} {
     //         return voxgigstruct.Walk(v, walkPath, nil, nil, nil)
     //     })
     // })
@@ -335,13 +416,13 @@ func TestStruct(t *testing.T) {
 
     // merge-cases, merge-array
     t.Run("merge-cases", func(t *testing.T) {
-        RunTestSet(t, testSpec["merge"]["cases"], func(in interface{}) interface{} {
+        runTestSet(t, testSpec["merge"]["cases"], func(in interface{}) interface{} {
             return voxgigstruct.Merge(in.([]interface{}))
         })
     })
 
     t.Run("merge-array", func(t *testing.T) {
-        RunTestSet(t, testSpec["merge"]["array"], func(in interface{}) interface{} {
+        runTestSet(t, testSpec["merge"]["array"], func(in interface{}) interface{} {
             return voxgigstruct.Merge(in.([]interface{}))
         })
     })
@@ -360,7 +441,7 @@ func TestStruct(t *testing.T) {
 
     // getpath-basic
     t.Run("getpath-basic", func(t *testing.T) {
-        RunTestSet(t, testSpec["getpath"]["basic"], func(v interface{}) interface{} {
+        runTestSet(t, testSpec["getpath"]["basic"], func(v interface{}) interface{} {
             m, ok := v.(map[string]interface{})
             if !ok {
                 return nil
@@ -373,7 +454,7 @@ func TestStruct(t *testing.T) {
 
     // getpath-current
     t.Run("getpath-current", func(t *testing.T) {
-        RunTestSet(t, testSpec["getpath"]["current"], func(v interface{}) interface{} {
+        runTestSet(t, testSpec["getpath"]["current"], func(v interface{}) interface{} {
             m, ok := v.(map[string]interface{})
             if !ok {
                 return nil
@@ -389,7 +470,7 @@ func TestStruct(t *testing.T) {
     // t.Run("getpath-state", func(t *testing.T) {
     //     // The TS code used a special state structure.
     //     // We'll replicate the logic in a simplified manner.
-    //     RunTestSet(t, testSpec["getpath"]["state"], func(v interface{}) interface{} {
+    //     runTestSet(t, testSpec["getpath"]["state"], func(v interface{}) interface{} {
     //         m, ok := v.(map[string]interface{})
     //         if !ok {
     //             return nil
@@ -449,7 +530,7 @@ func TestStruct(t *testing.T) {
 
     // inject-string
     t.Run("inject-string", func(t *testing.T) {
-        RunTestSet(t, testSpec["inject"]["string"], func(v interface{}) interface{} {
+        runTestSet(t, testSpec["inject"]["string"], func(v interface{}) interface{} {
             m, ok := v.(map[string]interface{})
             if !ok {
                 return nil
@@ -463,7 +544,7 @@ func TestStruct(t *testing.T) {
 
     // inject-deep
     t.Run("inject-deep", func(t *testing.T) {
-        RunTestSet(t, testSpec["inject"]["deep"], func(v interface{}) interface{} {
+        runTestSet(t, testSpec["inject"]["deep"], func(v interface{}) interface{} {
             m, ok := v.(map[string]interface{})
             if !ok {
                 return nil
@@ -502,7 +583,7 @@ func TestStruct(t *testing.T) {
 
     // transform-paths
     t.Run("transform-paths", func(t *testing.T) {
-        RunTestSet(t, testSpec["transform"]["paths"], func(v interface{}) interface{} {
+        runTestSet(t, testSpec["transform"]["paths"], func(v interface{}) interface{} {
             m, ok := v.(map[string]interface{})
             if !ok {
                 return nil
@@ -516,7 +597,7 @@ func TestStruct(t *testing.T) {
 
     // transform-cmds
     t.Run("transform-cmds", func(t *testing.T) {
-        RunTestSet(t, testSpec["transform"]["cmds"], func(v interface{}) interface{} {
+        runTestSet(t, testSpec["transform"]["cmds"], func(v interface{}) interface{} {
             m, ok := v.(map[string]interface{})
             if !ok {
                 return nil
@@ -530,7 +611,7 @@ func TestStruct(t *testing.T) {
 
     // transform-each
     t.Run("transform-each", func(t *testing.T) {
-        RunTestSet(t, testSpec["transform"]["each"], func(v interface{}) interface{} {
+        runTestSet(t, testSpec["transform"]["each"], func(v interface{}) interface{} {
             m, ok := v.(map[string]interface{})
             if !ok {
                 return nil
@@ -544,7 +625,7 @@ func TestStruct(t *testing.T) {
 
     // transform-pack
     t.Run("transform-pack", func(t *testing.T) {
-        RunTestSet(t, testSpec["transform"]["pack"], func(v interface{}) interface{} {
+        runTestSet(t, testSpec["transform"]["pack"], func(v interface{}) interface{} {
             m, ok := v.(map[string]interface{})
             if !ok {
                 return nil
@@ -558,7 +639,7 @@ func TestStruct(t *testing.T) {
 
     // transform-modify
     // t.Run("transform-modify", func(t *testing.T) {
-    //     RunTestSet(t, testSpec["transform"]["modify"], func(v interface{}) interface{} {
+    //     runTestSet(t, testSpec["transform"]["modify"], func(v interface{}) interface{} {
     //         m, ok := v.(map[string]interface{})
     //         if !ok {
     //             return nil
