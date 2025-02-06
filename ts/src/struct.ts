@@ -279,37 +279,46 @@ function merge(objs: any[]): any {
   let out: any = undefined
 
   if (!islist(objs)) {
-    return objs
+    out = objs
   }
   else if (0 === objs.length) {
-    return undefined
+    out = undefined
   }
   else if (1 === objs.length) {
-    return objs[0]
+    out = objs[0]
   }
+  else {
 
-  out = getprop(objs, 0, {})
+    out = getprop(objs, 0, {})
 
-  // Merge remaining down onto first.
-  for (let oI = 1; oI < objs.length; oI++) {
-    let obj = objs[oI]
+    // Merge remaining down onto first.
+    for (let oI = 1; oI < objs.length; oI++) {
+      let obj = objs[oI]
 
-    if (isnode(obj)) {
-
-      // Nodes win, also over nodes of a different kind.
-      if (!isnode(out) || (ismap(obj) && islist(out)) || (islist(obj) && ismap(out))) {
+      if (!isnode(obj)) {
+        // Nodes win.
         out = obj
       }
       else {
-        let cur = [out] // Node stack
-        let cI = 0
+        // Nodes win, also over nodes of a different kind.
+        if (!isnode(out) || (ismap(obj) && islist(out)) || (islist(obj) && ismap(out))) {
+          out = obj
+        }
+        else {
+          let cur = [out] // Node stack
+          let cI = 0
 
-        // Walk overriding node, creating paths in output as needed.
-        walk(obj, (key, val, parent, path) => {
-          if (null != key) {
-            cI = path.length - 1
+          // Walk overriding node, creating paths in output as needed.
+          walk(obj, (key, val, parent, path) => {
+            if (null == key) {
+              return val
+            }
+
+            let lenpath = path.length
+
+            cI = lenpath - 1
             if (undefined === cur[cI]) {
-              cur[cI] = getpath(path.slice(0, path.length - 1), out)
+              cur[cI] = getpath(path.slice(0, lenpath - 1), out)
             }
 
             // Create node if needed.
@@ -327,16 +336,11 @@ function merge(objs: any[]): any {
             else {
               setprop(cur[cI], key, val)
             }
-          }
 
-          return val
-        })
+            return val
+          })
+        }
       }
-    }
-
-    // Nodes win.
-    else {
-      out = obj
     }
   }
 
@@ -353,7 +357,11 @@ function merge(objs: any[]): any {
 // The state argument allows for custom handling when called from `inject` or `transform`.
 function getpath(path: string | string[], store: any, current?: any, state?: InjectState) {
 
-  const parts = islist(path) ? path : S.string === typeof path ? path.split(S.DT) : []
+  const parts = islist(path) ? path : S.string === typeof path ? path.split(S.DT) : undefined
+
+  if (undefined === parts) {
+    return undefined
+  }
 
   let root = store
   let val = store
@@ -368,9 +376,6 @@ function getpath(path: string | string[], store: any, current?: any, state?: Inj
 
     // Relative path uses `current` argument.
     if (S.empty === parts[0]) {
-      // if (1 === parts.length) {
-      //   return getprop(store, getprop(state, S.base), store)
-      // }
       pI = 1
       root = current
     }
@@ -385,8 +390,7 @@ function getpath(path: string | string[], store: any, current?: any, state?: Inj
 
     // Move along the path, trying to descend into the store.
     for (pI++; undefined !== val && pI < parts.length; pI++) {
-      part = parts[pI]
-      val = getprop(val, part)
+      val = getprop(val, parts[pI])
     }
   }
 

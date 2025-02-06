@@ -2,14 +2,14 @@ package voxgigstruct
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/url"
+	"reflect"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
-	"fmt"
-	"reflect"
-	"strconv"
 )
 
 // ---------------------------------------------------------------------
@@ -31,7 +31,7 @@ const (
 	STRING   = "string"
 	FUNCTION = "function"
 	EMPTY    = ""
-	BASE     = "base"
+	BASE     = "Base"
 
 	BT = "`"
 	DS = "$"
@@ -96,6 +96,62 @@ type WalkApply func(
 	parent interface{},
 	path []string,
 ) interface{}
+
+func strKey(key interface{}) string {
+	switch v := key.(type) {
+	case string:
+		return v
+	case int:
+		return strconv.Itoa(v)
+	case int64:
+		return strconv.FormatInt(v, 10)
+	case float64:
+		return strconv.FormatFloat(v, 'f', -1, 64)
+	case float32:
+		return strconv.FormatFloat(float64(v), 'f', -1, 32)
+	default:
+		return fmt.Sprintf("%v", v)
+	}
+}
+
+func resolveStrings(input []interface{}) []string {
+	var result []string
+
+	for _, v := range input {
+		if str, ok := v.(string); ok {
+			result = append(result, str)
+		} else {
+			result = append(result, strKey(v))
+		}
+	}
+
+	return result
+}
+
+
+func listify(src interface{}) []interface{} {
+	if list, ok := src.([]interface{}); ok {
+		return list
+	}
+
+	if src == nil {
+		return nil
+	}
+
+	val := reflect.ValueOf(src)
+	if val.Kind() == reflect.Slice {
+		length := val.Len()
+		result := make([]interface{}, length)
+
+		for i := 0; i < length; i++ {
+			result[i] = val.Index(i).Interface()
+		}
+		return result
+	}
+
+	return nil
+}
+
 
 // ---------------------------------------------------------------------
 // Utility checks
@@ -230,7 +286,7 @@ func EscUrl(s string) string {
 
 func Items(val interface{}) [][2]interface{} {
 	// fmt.Println("Items", val)
-	
+
 	if IsMap(val) {
 		m := val.(map[string]interface{})
 		out := make([][2]interface{}, 0, len(m))
@@ -246,7 +302,7 @@ func Items(val interface{}) [][2]interface{} {
 		for _, k := range keys {
 			out = append(out, [2]interface{}{k, m[k]})
 		}
-		return out		
+		return out
 	} else if IsList(val) {
 		arr := val.([]interface{})
 		out := make([][2]interface{}, 0, len(arr))
@@ -284,7 +340,6 @@ func GetProp(val interface{}, key interface{}, alt ...interface{}) interface{} {
 		out = alt[0]
 	}
 
-
 	if val == nil || key == nil {
 		return out
 	}
@@ -293,9 +348,10 @@ func GetProp(val interface{}, key interface{}, alt ...interface{}) interface{} {
 	case map[string]interface{}:
 		ks, ok := key.(string)
 		if !ok {
-			ks = fmt.Sprintf("%v", key)
+			// ks = fmt.Sprintf("%v", key)
+			ks = strKey(key)
 		}
-		
+
 		res, has := v[ks]
 		if has {
 			out = res
@@ -319,6 +375,24 @@ func GetProp(val interface{}, key interface{}, alt ...interface{}) interface{} {
 		if 0 <= ki && ki < len(v) {
 			out = v[ki]
 		}
+
+	default:
+		valRef := reflect.ValueOf(val)
+		if valRef.Kind() == reflect.Ptr {
+			valRef = valRef.Elem()
+		}
+
+		if valRef.Kind() == reflect.Struct {
+			ks, ok := key.(string)
+			if !ok {
+				ks = strKey(key)
+			}
+
+			field := valRef.FieldByName(ks)
+			if field.IsValid() {
+				out = field.Interface()
+			}
+		}
 	}
 
 	return out
@@ -339,20 +413,9 @@ func SetProp(parent interface{}, key interface{}, newval interface{}) interface{
 
 		// Convert key to string
 		ks := ""
-		ks = fmt.Sprintf("%v", key)
-		
-		// switch k := key.(type) {
-		// case string:
-		// 	ks = k
-		// case int:
-		// 	ks = string(rune(k))
-		// case int64:
-		// 	ks = string(rune(k))
-		// default:
-		// 	ks = fmt.Sprintf("%v", k)
-		// }
-		// fmt.Println("KS", ks)
-		
+		// ks = fmt.Sprintf("%v", key)
+		ks = strKey(key)
+
 		if newval == nil {
 			delete(m, ks)
 		} else {
@@ -453,95 +516,217 @@ func Walk(
 	parent interface{},
 	path []string,
 ) interface{} {
+	// fmt.Println("WALK", key, fdt(path))
+	//holder := false
+
+	// if(nil == parent) {
+	//   // holder = true
+	//   parent = make(map[string]interface{})
+	//   hkey := "KEY"
+	//   key = &hkey
+	//   SetProp(parent, *key, val)
+	//   fmt.Println("WALK-P", parent)
+	// }
+
 	if IsNode(val) {
 		for _, kv := range Items(val) {
 			ckey := kv[0]
 			child := kv[1]
 
-			// Convert ckey to a string if possible
-			ckeyStr := ""
-			switch c := ckey.(type) {
-			case string:
-				ckeyStr = c
-			case int:
-				ckeyStr = string(rune(c))
-			default:
-				continue
-			}
+			// // Convert ckey to a string if possible
+			// ckeyStr := ""
+			// switch c := ckey.(type) {
+			// case string:
+			//   ckeyStr = c
+			// case int:
+			//   fmt.Println("WI", ckey, c, rune(c), string(rune(c)))
+			//   ckeyStr = string(rune(c))
+			// default:
+			//   fmt.Println("WI", ckey, c, rune(c), string(rune(c)))
+			//   continue
+			// }
+
+			// ckeyStr := fmt.Sprintf("%v", ckey)
+			ckeyStr := strKey(ckey)
 
 			newChild := Walk(child, apply, &ckeyStr, val, append(path, ckeyStr))
-			_ = SetProp(val, ckey, newChild)
+			val = SetProp(val, ckey, newChild)
+
+		}
+
+		// fmt.Println("WALK-VAL-A", *key, val, parent)
+		// pout := SetProp(parent, *key, val)
+		// fmt.Println("WALK-VAL-B", parent, pout)
+
+		if nil != parent && nil != key {
+			_ = SetProp(parent, *key, val)
 		}
 	}
 
-	// Post-order application
-	return apply(key, val, parent, path)
+	val = apply(key, val, parent, path)
+
+	// fmt.Println("WALK-OUT-A", val, parent)
+
+	// if holder {
+	// val = GetProp(parent,*key)
+	// fmt.Println("WALK-OUT-B", val, parent)
+	//}
+
+	return val
 }
 
 // ---------------------------------------------------------------------
 // Merge: merges an array of nodes from left to right; later override earlier.
 
-func Merge(objs []interface{}) interface{} {
-	if !IsList(objs) {
-		return objs
-	}
+func Merge(src interface{}) interface{} {
+  // fmt.Println("MERGE", src)
+
+	if !IsList(src) {
+    return src
+  }
+  
+	var out interface{}
+
+  objs := listify(src)
+  
 	if len(objs) == 0 {
-		return nil
-	}
-	if len(objs) == 1 {
-		return objs[0]
-	}
+		out = nil
 
-	out := GetProp(objs, 0)
-	// Merge the rest onto the first
-	for i := 1; i < len(objs); i++ {
-		obj := objs[i]
-		if IsNode(obj) {
-			// If out is not a node, or incompatible kind, out = obj
-			if !IsNode(out) ||
-				(IsMap(obj) && IsList(out)) ||
-				(IsList(obj) && IsMap(out)) {
+	} else if len(objs) == 1 {
+		out = objs[0]
+
+	} else {
+		out = objs[0]
+
+		// Merge the rest onto the first
+		for i := 1; i < len(objs); i++ {
+      obj := objs[i]
+      
+			if !IsNode(obj) {
+
+				// Nodes win.
 				out = obj
+
 			} else {
-				// Walk overriding node, modifying out
-				_ = Walk(obj, func(k *string, v interface{}, p interface{}, path []string) interface{} {
-					if k != nil {
-						// get the current output node for path
-						// (we create missing nodes on-the-fly)
-						curOut := getNodeByPath(out, path[:len(path)-1])
-						if !IsNode(curOut) {
-							// replace with an empty node of same kind as parent
-							if IsList(p) {
-								curOut = []interface{}{}
+				// Nodes win, also over nodes of a different kind.
+				if !IsNode(out) ||
+					(IsMap(obj) && IsList(out)) ||
+					(IsList(obj) && IsMap(out)) {
+
+					out = obj
+
+				} else {
+
+					var cur []interface{} = make([]interface{}, 11)
+					cI := 0
+          cur[cI] = out
+          
+					Walk(obj, func(
+						key *string,
+						val interface{},
+						parent interface{},
+						path []string,
+					) interface{} {
+
+						if nil == key {
+							return val
+						}
+
+						lenpath := len(path)
+						cI = lenpath - 1
+
+						// fmt.Println("MW-A", path, cI, "KV", *key, val, "CUR", cur)
+
+						if nil == cur[cI] {
+							// curpath := path[:lenpath-1]
+							// fmt.Println("CURPATH", cI, curpath, out, "F=", GetPath(curpath, out))
+              // curval := GetPath(curpath, out)
+              // fmt.Println("CURPATH", curpath, curval, out)
+							cur[cI] = GetPath(path[:lenpath-1], out)
+						}
+
+						// fmt.Println("MW-B", path, cI, "KV", *key, val, "CUR", cur)
+
+						if nil == cur[cI] {
+							if IsList(parent) {
+								cur[cI] = make([]interface{}, 0)
 							} else {
-								curOut = map[string]interface{}{}
+								cur[cI] = make(map[string]interface{})
 							}
 						}
 
-						if IsNode(v) {
-							// ensure node is created
-							existing := GetProp(curOut, *k)
-							if !IsNode(existing) {
-								// pick a node type matching v
-								if IsList(v) {
-									existing = []interface{}{}
-								} else {
-									existing = map[string]interface{}{}
-								}
-								SetProp(curOut, *k, existing)
-							}
+						// fmt.Println("MW-C", path, cI, "KV", *key, val, "CUR", cur)
+
+						if IsNode(val) {
+						  cur[cI] = SetProp(cur[cI], *key, cur[cI+1])
+						  cur[cI+1] = nil
+
 						} else {
-							// scalar child
-							SetProp(curOut, *k, v)
+						  cur[cI] = SetProp(cur[cI], *key, val)
 						}
-					}
-					return v
-				}, nil, nil, nil)
+
+						// fmt.Println("MW-D", path, cI, "CUR", cur)
+
+						return val
+
+						/*
+
+							curOut := getNodeByPath(out, path[:len(path)-1])
+
+							if !IsNode(curOut) {
+								// replace with an empty node of same kind as parent
+								if IsList(p) {
+									curOut = []interface{}{}
+								} else {
+									curOut = map[string]interface{}{}
+								}
+							}
+
+							if IsNode(v) {
+								// ensure node is created
+								existing := GetProp(curOut, *k)
+								if !IsNode(existing) {
+									// pick a node type matching v
+									if IsList(v) {
+										existing = []interface{}{}
+									} else {
+										existing = map[string]interface{}{}
+									}
+									SetProp(curOut, *k, existing)
+								}
+							} else {
+								// scalar child
+								newCurOut := SetProp(curOut, *k, v)
+								fmt.Println("MERGE-WALK SPS", path, len(path), "KV", *k, v, curOut, newCurOut)
+								// newCurOut != curOut &&
+								if 1 < len(path) {
+									curOut = newCurOut
+
+									curParent := getNodeByPath(out, path[:len(path)-2])
+
+									fmt.Println("CP", path, len(path)-2, curParent)
+									if nil != curParent {
+										qp := SetProp(curParent, path[len(path)-2], newCurOut)
+										//   }
+
+										fmt.Println("QQQ", curParent, qp)
+
+										// } else {
+										//   out = newCurOut
+									}
+								}
+							}
+
+						*/
+
+					}, nil, nil, nil)
+
+          out = cur[0]
+        }
 			}
-		} else {
-			out = obj
 		}
 	}
+  
 	return out
 }
 
@@ -568,78 +753,77 @@ func getNodeByPath(root interface{}, path []string) interface{} {
 // ---------------------------------------------------------------------
 // GetPath: retrieve nested values by path. Path can be string with '.' or []string.
 
-func GetPath(path interface{}, store interface{}, current interface{}, state *InjectState) interface{} {
+func GetPath(path interface{}, store interface{}) interface{} {
+	return GetPathState(path, store, nil, nil)
+}
+
+func GetPathState(path interface{}, store interface{}, current interface{}, state *InjectState) interface{} {
+  // fmt.Println("GETPATH", path, store)
+  
 	var parts []string
+
+  val := store
+  root := store
 
 	switch pp := path.(type) {
 	case []string:
 		parts = pp
+
 	case string:
+		// fmt.Println("PP-B", pp)
 		if pp == "" {
-			parts = nil
+			parts = []string{EMPTY}
 		} else {
 			parts = strings.Split(pp, DT)
 		}
-	default:
-		parts = nil
+  default:
+    if IsList(path) {
+      parts = resolveStrings(pp.([]interface{}))
+    } else {
+      return nil
+    }    
 	}
 
-	// If path is empty or store is nil, just return the store or store[base].
-	if store == nil || len(parts) == 0 ||
-		(len(parts) == 1 && parts[0] == EMPTY) {
-		if state != nil {
-			baseVal := GetProp(state, BASE)
-			bases, ok := baseVal.(string)
-			if ok && bases != "" {
-				// store[bases] or else store
-				got := GetProp(store, bases)
-				if got != nil {
-					return got
-				}
-			}
-		}
-		return store
-	}
+	// fmt.Println("PARTS", parts)
 
-	p0 := parts[0]
-	curVal := store
+  
+	if nil == path || nil == store || (1 == len(parts) && EMPTY == parts[0]) {
+		val = GetProp(store, GetProp(state, BASE), store)
 
-	// If path starts with "", treat as local path => use `current`.
-	idx := 0
-	if p0 == EMPTY {
-		curVal = current
-		idx = 1
-	}
+	} else if 0 < len(parts) {
 
-	if idx < len(parts) {
-		p := parts[idx]
-		valFirst := GetProp(curVal, p)
+    
+		pI := 0
 
-		// At top level, also check store[base]
-		if idx == 0 && valFirst == nil && state != nil {
-			baseVal := GetProp(state, BASE)
-			bases, ok := baseVal.(string)
-			if ok && bases != "" {
-				// store[bases][p]
-				baseMap := GetProp(curVal, bases)
-				valFirst = GetProp(baseMap, p)
-			}
+		if parts[0] == EMPTY {
+      pI = 1
+			root = current
 		}
 
-		curVal = valFirst
-		idx++
-		for idx < len(parts) && curVal != nil {
-			curVal = GetProp(curVal, parts[idx])
-			idx++
+    var part *string
+		if pI < len(parts) {
+			part = &parts[pI]
+    }
+
+    first := GetProp(root, *part)
+
+    val = first
+    if pI == 0 && first == nil  {
+      val = GetProp(GetProp(root, (GetProp(state, BASE))), *part)
+    }
+      
+    pI++
+    for nil != val && pI < len(parts) {
+      val = GetProp(val, parts[pI])
+      pI++
 		}
 	}
 
-	// Possibly modify found value via a custom handler
-	if state != nil && state.Handler != nil && getType(state.Handler) == FUNCTION {
-		curVal = state.Handler(state, curVal, current, store)
+	if state != nil && state.Handler != nil {
+		val = state.Handler(state, val, current, store)
 	}
 
-	return curVal
+	return val
 }
 
 func getType(i interface{}) string {
@@ -675,7 +859,7 @@ func injectStr(val string, store interface{}, current interface{}, state *Inject
 			ref = strings.ReplaceAll(ref, "$BT", BT)
 			ref = strings.ReplaceAll(ref, "$DS", DS)
 		}
-		out := GetPath(ref, store, current, state)
+		out := GetPathState(ref, store, current, state)
 		return out
 	}
 
@@ -691,7 +875,7 @@ func injectStr(val string, store interface{}, current interface{}, state *Inject
 		if state != nil {
 			state.Full = false
 		}
-		found := GetPath(inner, store, current, state)
+		found := GetPathState(inner, store, current, state)
 		if found == nil {
 			return ""
 		}
@@ -1045,7 +1229,7 @@ var Transform_EACH InjectHandler = func(
 	child := Clone(arr[2])
 
 	// Source data
-	src := GetPath(srcpath, store, current, state)
+	src := GetPathState(srcpath, store, current, state)
 
 	// Build parallel data structures
 	var tval interface{}
@@ -1137,7 +1321,7 @@ var Transform_PACK InjectHandler = func(
 		target = state.Nodes[len(state.Nodes)-1]
 	}
 
-	src := GetPath(srcpath, store, current, state)
+	src := GetPathState(srcpath, store, current, state)
 	// Convert map to list if needed
 	var srclist []interface{}
 
@@ -1261,9 +1445,6 @@ func Transform(
 	out := Inject(spec, store, modify, store, nil)
 	return out
 }
-
-
-
 
 // DEBUG
 

@@ -4,6 +4,7 @@
 basic: {
   set: [
     { in: { a: 'A' }, out: { a: 'A~a' } }
+
     { in: { a: 'A', b: 'B' }, out: { a: 'A~a', b: 'B~b' } }
 
     { in: { a: { b: 'B' } }, out: { a: { b: 'B~a.b' } } }

@@ -192,9 +192,9 @@ func LoadTestSpec(filename string) (FullTest, error) {
 
 // walkPath mimics the TS function walkpath,
 // appending path info to any string values.
-func walkPath(k string, val interface{}, parent interface{}, path []string) interface{} {
+func walkPath(k *string, val interface{}, parent interface{}, path []string) interface{} {
     if str, ok := val.(string); ok {
-        return str + "~" + fmt.Sprint(path)
+	    return str + "~" + strings.Join(path, ".") // fmt.Sprint(path)
     }
     return val
 }
@@ -381,13 +381,16 @@ func TestStruct(t *testing.T) {
         }
     })
 
-    // walk-basic
-    // t.Run("walk-basic", func(t *testing.T) {
-    //     subtest := testSpec["walk"]["basic"]
-    //     runTestSet(t, subtest, func(v interface{}) interface{} {
-    //         return voxgigstruct.Walk(v, walkPath, nil, nil, nil)
-    //     })
-    // })
+	// walk-basic
+    t.Run("walk-basic", func(t *testing.T) {
+        subtest := testSpec["walk"]["basic"]
+        runTestSet(t, subtest, func(v interface{}) interface{} {
+		if "__NULL__" == v {
+			v = nil
+		}
+		return voxgigstruct.Walk(v, walkPath, nil, nil, nil)
+        })
+    })
 
     // =========================
     // merge tests
@@ -406,7 +409,7 @@ func TestStruct(t *testing.T) {
         test := testSpec["merge"]["basic"]
         // The TS code calls merge(test.in) -> deepEqual(...) with test.out.
         // We can do a single check because it's not a set, it's one.
-        inVal := test.In.([]interface{})
+        inVal := test.In
         outVal := test.Out
         result := voxgigstruct.Merge(inVal)
         if !reflect.DeepEqual(result, outVal) {
@@ -417,13 +420,13 @@ func TestStruct(t *testing.T) {
     // merge-cases, merge-array
     t.Run("merge-cases", func(t *testing.T) {
         runTestSet(t, testSpec["merge"]["cases"], func(in interface{}) interface{} {
-            return voxgigstruct.Merge(in.([]interface{}))
+            return voxgigstruct.Merge(in)
         })
     })
 
     t.Run("merge-array", func(t *testing.T) {
         runTestSet(t, testSpec["merge"]["array"], func(in interface{}) interface{} {
-            return voxgigstruct.Merge(in.([]interface{}))
+            return voxgigstruct.Merge(in)
         })
     })
 
@@ -448,7 +451,7 @@ func TestStruct(t *testing.T) {
             }
             path := m["path"]
             store := m["store"]
-            return voxgigstruct.GetPath(path, store, nil, nil)
+            return voxgigstruct.GetPath(path, store)
         })
     })
 
@@ -462,46 +465,48 @@ func TestStruct(t *testing.T) {
             path := m["path"]
             store := m["store"]
             current := m["current"]
-            return voxgigstruct.GetPath(path, store, current, nil)
+            return voxgigstruct.GetPathState(path, store, current, nil)
         })
     })
 
     // getpath-state
-    // t.Run("getpath-state", func(t *testing.T) {
-    //     // The TS code used a special state structure.
-    //     // We'll replicate the logic in a simplified manner.
-    //     runTestSet(t, testSpec["getpath"]["state"], func(v interface{}) interface{} {
-    //         m, ok := v.(map[string]interface{})
-    //         if !ok {
-    //             return nil
-    //         }
-    //         path := m["path"]
-    //         store := m["store"]
-    //         current := m["current"]
+    t.Run("getpath-state", func(t *testing.T) {
+	    step := 0
 
-    //         // We'll define a custom state in Go.
-    //         state := &voxgigstruct.InjectState{
-    //             Handler: func(s *voxgigstruct.InjectState, val interface{}, cur interface{}, st interface{}) interface{} {
-    //                 out := fmt.Sprintf("%d:%v", s.Step, val)
-    //                 s.Step++
-    //                 return out
-    //             },
-    //             Step:   0,
-    //             Mode:   "val",
-    //             Full:   false,
-    //             KeyI:   0,
-    //             Keys:   []string{"$TOP"},
-    //             Key:    "$TOP",
-    //             Val:    "",
-    //             Parent: nil,
-    //             Path:   []string{"$TOP"},
-    //             Nodes:  make([]interface{}, 1),
-    //             Base:   "$TOP",
-    //         }
+        runTestSet(t, testSpec["getpath"]["state"], func(v interface{}) interface{} {
+            m, ok := v.(map[string]interface{})
+            if !ok {
+                return nil
+            }
+            path := m["path"]
+            store := m["store"]
+            current := m["current"]
 
-    //         return voxgigstruct.GetPath(path, store, current, state)
-    //     })
-    // })
+            // We'll define a custom state in Go.
+            state := &voxgigstruct.InjectState{
+                Handler: func(s *voxgigstruct.InjectState, val interface{}, cur interface{}, st interface{}) interface{} {
+			// out := fmt.Sprintf("%d:%v", s.Step, val)
+			// s.Step++
+			out := fmt.Sprintf("%d:%v", step, val)
+			step++
+                    return out
+                },
+		    // Step:   0,
+                Mode:   "val",
+                Full:   false,
+                KeyI:   0,
+                Keys:   []string{"$TOP"},
+                Key:    "$TOP",
+                Val:    "",
+                Parent: nil,
+                Path:   []string{"$TOP"},
+                Nodes:  make([]interface{}, 1),
+                Base:   "$TOP",
+            }
+
+            return voxgigstruct.GetPathState(path, store, current, state)
+        })
+    })
 
     // =========================
     // inject tests
