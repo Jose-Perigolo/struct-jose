@@ -262,7 +262,6 @@ class TestStruct(unittest.TestCase):
 
     def test_inject_basic(self):
         test_data = clone(self.TESTSPEC['inject']['basic'])
-        # deepEqual(inject(test.in.val, test.in.store), test.out)
         result = inject(test_data['in']['val'], test_data['in'].get('store'))
         self.assertEqual(result, test_data['out'])
 

@@ -37,24 +37,18 @@ type TestGroup map[string]SubTest
 
 type FullTest map[string]TestGroup
 
-// JSONMap and its custom unmarshaller ensure that numeric values
-// get decoded as int when possible rather than float64.
-// type JSONMap map[string]interface{}
-
-// func (m *JSONMap) UnmarshalJSON(data []byte) error {
-//     var raw map[string]interface{}
-//     if err := json.Unmarshal(data, &raw); err != nil {
-//         return err
-//     }
-//     *m = fixJSON(raw)
-//     return nil
-// }
 
 // Since json.Unmarshal uses nil for null, assume
 // user will represent null in another way with a defined value.
-
 func fixJSON(data interface{}) interface{} {
-	if nil == data {
+	return fixJSONFlags(data, map[string]bool{
+		"null":   true,
+	})
+}
+
+
+func fixJSONFlags(data interface{}, flags map[string]bool) interface{} {
+	if nil == data && flags["null"] {
 		return "__NULL__"
 	}
 	
@@ -63,45 +57,59 @@ func fixJSON(data interface{}) interface{} {
 
 	switch v.Kind() {
 
-	// Handle numbers: Convert float64 to int if it has no decimals
 	case reflect.Float64:
 		if v.Float() == float64(int(v.Float())) {
-			return int(v.Float()) // Convert float64 to int
+			return int(v.Float())
 		}
 		return data
 
-	// Handle maps: Recursively apply fixJSON
 	case reflect.Map:
 		fixedMap := make(map[string]interface{})
 		for _, key := range v.MapKeys() {
-			strKey, ok := key.Interface().(string) // Ensure key is string
+			strKey, ok := key.Interface().(string)
 			if ok {
-				fixedMap[strKey] = fixJSON(v.MapIndex(key).Interface())
+				fixedMap[strKey] = fixJSONFlags(v.MapIndex(key).Interface(), flags)
 			}
 		}
 		return fixedMap
 
-	// Handle slices: Recursively apply fixJSON
 	case reflect.Slice:
 		length := v.Len()
 		fixedSlice := make([]interface{}, length)
 		for i := 0; i < length; i++ {
-			fixedSlice[i] = fixJSON(v.Index(i).Interface())
+			fixedSlice[i] = fixJSONFlags(v.Index(i).Interface(), flags)
 		}
 		return fixedSlice
 
-	// Handle fixed-size arrays: Convert to slice and process recursively
 	case reflect.Array:
 		length := v.Len()
 		fixedSlice := make([]interface{}, length)
 		for i := 0; i < length; i++ {
-			fixedSlice[i] = fixJSON(v.Index(i).Interface())
+			fixedSlice[i] = fixJSONFlags(v.Index(i).Interface(), flags)
 		}
 		return fixedSlice
 
-	// Default: Return as-is
 	default:
 		return data
+	}
+}
+
+func nullModifier(
+	key interface{},
+	val interface{},
+	parent interface{},
+	state *voxgigstruct.Injection,
+	current interface{},
+	store interface{},
+) {
+	switch v := val.(type) {
+	case string:
+		if "__NULL__" == v {
+			_ = voxgigstruct.SetProp(parent, key, nil)
+		} else {
+			_ = voxgigstruct.SetProp(parent, key,
+				strings.ReplaceAll(v, "__NULL__", "null"))
+		}
 	}
 }
 
@@ -147,11 +155,18 @@ func toJSONString(data interface{}) string {
 // RunTestSet executes a set of test entries by calling 'apply'
 // on each "in" value and comparing to "out".
 // If a mismatch occurs, the test fails.
+
 func runTestSet(t *testing.T, tests SubTest, apply func(interface{}) interface{}) {
+	runTestSetFlags(t, tests, apply, map[string]bool{
+		"null": true,
+	})
+}
+
+func runTestSetFlags(t *testing.T, tests SubTest, apply func(interface{}) interface{}, flags map[string]bool) {
 	for _, entry := range tests.Set {
-		input := fixJSON(entry.In)
-		output := fixJSON(entry.Out)
-		result := fixJSON(apply(input))
+		input := fixJSONFlags(entry.In, flags)
+		output := fixJSONFlags(entry.Out, flags)
+		result := fixJSONFlags(apply(input), flags)
 
 		// fmt.Println("RUNTESTSET", "IN", fdt(input), "RES", fdt(result), "OUT", fdt(output))
 		
@@ -305,24 +320,24 @@ func TestStruct(t *testing.T) {
     })
 
     // minor-stringify
-    // t.Run("minor-stringify", func(t *testing.T) {
-    //     subtest := testSpec["minor"]["stringify"]
-    //     runTestSet(t, subtest, func(v interface{}) interface{} {
-    //         // The TS code used: null == vin.max ? stringify(vin.val) : stringify(vin.val, vin.max)
-    //         // We'll do similarly in Go.
-    //         m, ok := v.(map[string]interface{})
-    //         if !ok {
-    //             return nil
-    //         }
-    //         val := m["val"]
-    //         max, hasMax := m["max"]
-    //         if !hasMax || max == nil {
-    //             return voxgigstruct.Stringify(val)
-    //         } else {
-    // 		    return voxgigstruct.Stringify(val, int(max.(int)))
-    //         }
-    //     })
-    // })
+    t.Run("minor-stringify", func(t *testing.T) {
+        subtest := testSpec["minor"]["stringify"]
+        runTestSet(t, subtest, func(v interface{}) interface{} {
+            // The TS code used: null == vin.max ? stringify(vin.val) : stringify(vin.val, vin.max)
+            // We'll do similarly in Go.
+            m, ok := v.(map[string]interface{})
+            if !ok {
+                return nil
+            }
+            val := m["val"]
+            max, hasMax := m["max"]
+            if !hasMax || max == nil {
+                return voxgigstruct.Stringify(val)
+            } else {
+		    return voxgigstruct.Stringify(val, int(max.(int)))
+            }
+        })
+    })
 
     // minor-items
     t.Run("minor-items", func(t *testing.T) {
@@ -483,8 +498,8 @@ func TestStruct(t *testing.T) {
             current := m["current"]
 
             // We'll define a custom state in Go.
-            state := &voxgigstruct.InjectState{
-                Handler: func(s *voxgigstruct.InjectState, val interface{}, cur interface{}, st interface{}) interface{} {
+            state := &voxgigstruct.Injection{
+                Handler: func(s *voxgigstruct.Injection, val interface{}, cur interface{}, st interface{}) interface{} {
 			// out := fmt.Sprintf("%d:%v", s.Step, val)
 			// s.Step++
 			out := fmt.Sprintf("%d:%v", step, val)
@@ -527,7 +542,7 @@ func TestStruct(t *testing.T) {
         inVal := subtest.In.(map[string]interface{})
         val, store := inVal["val"], inVal["store"]
         outVal := subtest.Out
-        result := voxgigstruct.Inject(val, store, nil, nil, nil)
+        result := voxgigstruct.Inject(val, store)
         if !reflect.DeepEqual(result, outVal) {
             t.Errorf("Expected: %v, Got: %v", outVal, result)
         }
@@ -541,9 +556,10 @@ func TestStruct(t *testing.T) {
                 return nil
             }
             val := m["val"]
-            store := m["store"]
-            current := m["current"]
-            return voxgigstruct.Inject(val, store, nil, current, nil)
+		store := m["store"]
+		current := m["current"]
+
+		return voxgigstruct.InjectState(val, store, nullModifier, current, nil)
         })
     })
 
@@ -556,7 +572,7 @@ func TestStruct(t *testing.T) {
             }
             val := m["val"]
             store := m["store"]
-            return voxgigstruct.Inject(val, store, nil, nil, nil)
+            return voxgigstruct.Inject(val, store)
         })
     })
 
@@ -643,40 +659,40 @@ func TestStruct(t *testing.T) {
     })
 
     // transform-modify
-    // t.Run("transform-modify", func(t *testing.T) {
-    //     runTestSet(t, testSpec["transform"]["modify"], func(v interface{}) interface{} {
-    //         m, ok := v.(map[string]interface{})
-    //         if !ok {
-    //             return nil
-    //         }
-    //         data := m["data"]
-    //         spec := m["spec"]
-    //         store := m["store"]
-    //         return voxgigstruct.Transform(data, spec, store, func(key interface{}, val interface{}, parent interface{}) {
-    //             if key != nil && parent != nil {
-    //                 if strval, ok := val.(string); ok {
-    //                     // mimic the TS logic: val = parent[key] = '@' + val
-    //                     newVal := "@" + strval
-    //                     // In Go, we need reflection or map/array checks to assign.
-    //                     // We'll assume the parent is a map, keyed by 'key'.
-    //                     if pm, isMap := parent.(map[string]interface{}); isMap {
-    //                         pm[fmt.Sprint(key)] = newVal
-    //                     }
-    //                 }
-    //             }
-    //         })
-    //     })
-    // })
+    t.Run("transform-modify", func(t *testing.T) {
+        runTestSet(t, testSpec["transform"]["modify"], func(v interface{}) interface{} {
+            m, ok := v.(map[string]interface{})
+            if !ok {
+                return nil
+            }
+            data := m["data"]
+            spec := m["spec"]
+            store := m["store"]
+		return voxgigstruct.Transform(data, spec, store, func(
+			key interface{},
+			val interface{},
+			parent interface{},
+			state *voxgigstruct.Injection,
+			current interface{},
+			store interface{},
+		) {
+                if key != nil && parent != nil {
+                    if strval, ok := val.(string); ok {
+                        // mimic the TS logic: val = parent[key] = '@' + val
+                        newVal := "@" + strval
+                        // In Go, we need reflection or map/array checks to assign.
+                        // We'll assume the parent is a map, keyed by 'key'.
+                        if pm, isMap := parent.(map[string]interface{}); isMap {
+                            pm[fmt.Sprint(key)] = newVal
+                        }
+                    }
+                }
+            })
+        })
+    })
 
     // transform-extra
     t.Run("transform-extra", func(t *testing.T) {
-        // The TS code used:
-        // deepEqual(transform(
-        //   { a: 1 },
-        //   { x: '`a`', b: '`$COPY`', c: '`$UPPER`' },
-        //   { b: 2, $UPPER: (state) => { ... } }
-        // ), { x: 1, b: 2, c: 'C' })
-        // We'll replicate that.
         data := map[string]interface{}{"a": 1}
         spec := map[string]interface{}{
             "x": "`a`",
@@ -685,33 +701,20 @@ func TestStruct(t *testing.T) {
         }
         store := map[string]interface{}{
             "b": 2,
-            "$UPPER": func(s *voxgigstruct.InjectState) interface{} {
-                // The TS code used path.
-                // We'll do something similar.
-                p := s.Path
-                // uppercase last path element
-                if len(p) > 0 {
-                    return (p[len(p)-1]) + "" // but uppercase?
-                }
-                return nil
-            },
-        }
-        // We'll skip an actual uppercase logic for the final char.
-        // This test just ensures it returns 'C'.
-        // We'll forcibly replicate the logic.
+            "$UPPER": func(s *voxgigstruct.Injection) interface{} {
+		    p := s.Path
+		    if len(p) == 0 {
+			    return ""
+		    }
+		    last := p[len(p)-1]
+		    // uppercase the last letter
+		    if len(last) > 0 {
+			    return string(last[0]-32) + last[1:]
+		    }
 
-        // But let's do it properly:
-        store["$UPPER"] = func(s *voxgigstruct.InjectState) interface{} {
-            p := s.Path
-            if len(p) == 0 {
-                return ""
-            }
-            last := p[len(p)-1]
-            // uppercase the last letter
-            if len(last) > 0 {
-                return string(last[0]-32) + last[1:]
-            }
-            return last
+		    fmt.Println("LAST", last)
+		    return last
+            },
         }
 
         outExpected := map[string]interface{}{

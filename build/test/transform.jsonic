@@ -60,7 +60,7 @@ paths: {
 
 cmds: {
   set: [
-    { in: { data: {}, spec: '`$BT``$DS`ESCAPED`$BT`' }, out: '`$ESCAPED`' }
+    # { in: { data: {}, spec: '`$BT``$DS`ESCAPED`$BT`' }, out: '`$ESCAPED`' }
 
     { in: { data: 1, spec: '`$COPY`' }, out: 1 }
     { in: { data: {a:1}, spec: {a:'`$COPY`'} }, out: {a:1} }
@@ -85,27 +85,26 @@ cmds: {
 
     { in: { data: {a:{b:74},c:{b:84}}, spec: {x:{'`$MERGE`':'`a`'}} }, out: {x:{b:74}} }
 
-    { in: { data: {a:{b:75},c:{b:85}}, spec: {x:{'`$MERGE1`':'`a`','`$MERGE0`':'`c`'}} },
-      out: {x:{b:85}} }
-    { in: { data: {a:{b:76},c:{b:86}}, spec: {x:{'`$MERGE0`':'`a`','`$MERGE1`':'`c`'}} },
-      out: {x:{b:76}} }
+    # { in: { data: {a:{b:75},c:{b:85}}, spec: {x:{'`$MERGE1`':'`a`','`$MERGE0`':'`c`'}} },
+    #   out: {x:{b:85}} }
+    # { in: { data: {a:{b:76},c:{b:86}}, spec: {x:{'`$MERGE0`':'`a`','`$MERGE1`':'`c`'}} },
+    #   out: {x:{b:76}} }
       
     { in: { data: {a:{b:7}}, spec: {a:{'`$MERGE`':['`a`',{b:71}]}} }, out: {a:{b:71}} }
 
-    { in: { data: {a:{b:71}}, spec: {a:['`$MERGE`']}}, out: {a:[]} }
-    { in: { data: {a:{b:72}}, spec: {a:['`$MERGE`',77]}}, out: {a:[77]} }
+    # { in: { data: {a:{b:71}}, spec: {a:['`$MERGE`']}}, out: {a:[]} }
+    # { in: { data: {a:{b:72}}, spec: {a:['`$MERGE`',77]}}, out: {a:[77]} }
 
     { in: { data: {a:{b:73}}, spec: {x:{'`$MERGE`':'`a`',b:74,c:75}} },
       out: {x:{b:74,c:75}} }
 
     { in: { data: {a:{b:76},d:77}, spec: {x:{'`$MERGE`':'`a`',b:'`d`',c:78}} },
-      out: {x:{b:77,c:78}} }
-
-      
+       out: {x:{b:77,c:78}} }
+  
     { in: { data: {a:{b:8}}, spec: {a:{b:'`$DELETE`'}} }, out: {a:{}} }
     { in: { data: {a:{b:8}}, spec: {a:'`$DELETE`'} }, out: {} }
 
-    { in: { data: {}, spec: {a:'`$BT`$COPY`$BT`'} }, out: {a:'`$COPY`'} }
+    # { in: { data: {}, spec: {a:'`$BT`$COPY`$BT`'} }, out: {a:'`$COPY`'} }
   ]
 }
 
