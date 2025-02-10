@@ -191,8 +191,6 @@ func IsList(val interface{}) bool {
 
 // IsKey checks if key is a non-empty string or an integer.
 func IsKey(key interface{}) bool {
-	// fmt.Println("IsKey", key, reflect.TypeOf(key))
-
 	switch k := key.(type) {
 	case string:
 		return k != EMPTY
@@ -353,8 +351,6 @@ func SortedKeys(val interface{}, ckey string) []string {
 
 
 func Items(val interface{}) [][2]interface{} {
-	// fmt.Println("Items", val)
-
 	if IsMap(val) {
 		m := val.(map[string]interface{})
 		out := make([][2]interface{}, 0, len(m))
@@ -386,16 +382,36 @@ func Items(val interface{}) [][2]interface{} {
 // Clone a JSON-like data structure using JSON round-trips.
 
 func Clone(val interface{}) interface{} {
-	if val == nil {
-		return nil
+	switch v := val.(type) {
+	case map[string]interface{}:
+		// Clone a map
+		newMap := make(map[string]interface{}, len(v))
+		for key, value := range v {
+			newMap[key] = Clone(value)
+		}
+		return newMap
+	case []interface{}:
+		// Clone a list
+		newSlice := make([]interface{}, len(v))
+		for i, value := range v {
+			newSlice[i] = Clone(value)
+		}
+		return newSlice
+	default:
+		// Primitive types (string, number, bool, nil) are immutable, so return as-is
+		return v
 	}
-	b, err := json.Marshal(val)
-	if err != nil {
-		return nil
-	}
-	var out interface{}
-	_ = json.Unmarshal(b, &out)
-	return out
+
+  // if val == nil {
+	// 	return nil
+	// }
+	// b, err := json.Marshal(val)
+	// if err != nil {
+	// 	return nil
+	// }
+	// var out interface{}
+	// _ = json.Unmarshal(b, &out)
+	// return out
 }
 
 // ---------------------------------------------------------------------
@@ -470,8 +486,6 @@ func GetProp(val interface{}, key interface{}, alt ...interface{}) interface{} {
 // SetProp: safely set val[key] = newval (or delete if newval==nil).
 
 func SetProp(parent interface{}, key interface{}, newval interface{}) interface{} {
-	// fmt.Println("SetProp", fdt(key))
-
 	if !IsKey(key) {
 		return parent
 	}
@@ -584,47 +598,16 @@ func Walk(
 	parent interface{},
 	path []string,
 ) interface{} {
-	// fmt.Println("WALK", key, fdt(path))
-	//holder := false
-
-	// if(nil == parent) {
-	//   // holder = true
-	//   parent = make(map[string]interface{})
-	//   hkey := "KEY"
-	//   key = &hkey
-	//   SetProp(parent, *key, val)
-	//   fmt.Println("WALK-P", parent)
-	// }
 
 	if IsNode(val) {
 		for _, kv := range Items(val) {
 			ckey := kv[0]
 			child := kv[1]
-
-			// // Convert ckey to a string if possible
-			// ckeyStr := ""
-			// switch c := ckey.(type) {
-			// case string:
-			//   ckeyStr = c
-			// case int:
-			//   fmt.Println("WI", ckey, c, rune(c), string(rune(c)))
-			//   ckeyStr = string(rune(c))
-			// default:
-			//   fmt.Println("WI", ckey, c, rune(c), string(rune(c)))
-			//   continue
-			// }
-
-			// ckeyStr := fmt.Sprintf("%v", ckey)
 			ckeyStr := strKey(ckey)
-
 			newChild := Walk(child, apply, &ckeyStr, val, append(path, ckeyStr))
 			val = SetProp(val, ckey, newChild)
-
 		}
 
-		// fmt.Println("WALK-VAL-A", *key, val, parent)
-		// pout := SetProp(parent, *key, val)
-		// fmt.Println("WALK-VAL-B", parent, pout)
 
 		if nil != parent && nil != key {
 			_ = SetProp(parent, *key, val)
@@ -633,13 +616,6 @@ func Walk(
 
 	val = apply(key, val, parent, path)
 
-	// fmt.Println("WALK-OUT-A", val, parent)
-
-	// if holder {
-	// val = GetProp(parent,*key)
-	// fmt.Println("WALK-OUT-B", val, parent)
-	//}
-
 	return val
 }
 
@@ -647,8 +623,6 @@ func Walk(
 // Merge: merges an array of nodes from left to right; later override earlier.
 
 func Merge(src interface{}) interface{} {
-  // fmt.Println("MERGE", src)
-
 	if !IsList(src) {
     return src
   }
@@ -703,17 +677,9 @@ func Merge(src interface{}) interface{} {
 						lenpath := len(path)
 						cI = lenpath - 1
 
-						// fmt.Println("MW-A", path, cI, "KV", *key, val, "CUR", cur)
-
 						if nil == cur[cI] {
-							// curpath := path[:lenpath-1]
-							// fmt.Println("CURPATH", cI, curpath, out, "F=", GetPath(curpath, out))
-              // curval := GetPath(curpath, out)
-              // fmt.Println("CURPATH", curpath, curval, out)
 							cur[cI] = GetPath(path[:lenpath-1], out)
 						}
-
-						// fmt.Println("MW-B", path, cI, "KV", *key, val, "CUR", cur)
 
 						if nil == cur[cI] {
 							if IsList(parent) {
@@ -723,8 +689,6 @@ func Merge(src interface{}) interface{} {
 							}
 						}
 
-						// fmt.Println("MW-C", path, cI, "KV", *key, val, "CUR", cur)
-
 						if IsNode(val) {
 						  cur[cI] = SetProp(cur[cI], *key, cur[cI+1])
 						  cur[cI+1] = nil
@@ -733,59 +697,7 @@ func Merge(src interface{}) interface{} {
 						  cur[cI] = SetProp(cur[cI], *key, val)
 						}
 
-						// fmt.Println("MW-D", path, cI, "CUR", cur)
-
 						return val
-
-						/*
-
-							curOut := getNodeByPath(out, path[:len(path)-1])
-
-							if !IsNode(curOut) {
-								// replace with an empty node of same kind as parent
-								if IsList(p) {
-									curOut = []interface{}{}
-								} else {
-									curOut = map[string]interface{}{}
-								}
-							}
-
-							if IsNode(v) {
-								// ensure node is created
-								existing := GetProp(curOut, *k)
-								if !IsNode(existing) {
-									// pick a node type matching v
-									if IsList(v) {
-										existing = []interface{}{}
-									} else {
-										existing = map[string]interface{}{}
-									}
-									SetProp(curOut, *k, existing)
-								}
-							} else {
-								// scalar child
-								newCurOut := SetProp(curOut, *k, v)
-								fmt.Println("MERGE-WALK SPS", path, len(path), "KV", *k, v, curOut, newCurOut)
-								// newCurOut != curOut &&
-								if 1 < len(path) {
-									curOut = newCurOut
-
-									curParent := getNodeByPath(out, path[:len(path)-2])
-
-									fmt.Println("CP", path, len(path)-2, curParent)
-									if nil != curParent {
-										qp := SetProp(curParent, path[len(path)-2], newCurOut)
-										//   }
-
-										fmt.Println("QQQ", curParent, qp)
-
-										// } else {
-										//   out = newCurOut
-									}
-								}
-							}
-
-						*/
 
 					}, nil, nil, nil)
 
@@ -826,8 +738,6 @@ func GetPath(path interface{}, store interface{}) interface{} {
 }
 
 func GetPathState(path interface{}, store interface{}, current interface{}, state *Injection) interface{} {
-  // fmt.Println("GETPATH", path, store)
-  
 	var parts []string
 
   val := store
@@ -838,7 +748,6 @@ func GetPathState(path interface{}, store interface{}, current interface{}, stat
 		parts = pp
 
 	case string:
-		// fmt.Println("PP-B", pp)
 		if pp == "" {
 			parts = []string{EMPTY}
 		} else {
@@ -852,9 +761,6 @@ func GetPathState(path interface{}, store interface{}, current interface{}, stat
     }    
 	}
 
-	// fmt.Println("PARTS", parts)
-
-  
 	if nil == path || nil == store || (1 == len(parts) && EMPTY == parts[0]) {
 		val = GetProp(store, GetProp(state, BASE), store)
 
@@ -888,8 +794,6 @@ func GetPathState(path interface{}, store interface{}, current interface{}, stat
 	}
 
 	if state != nil && state.Handler != nil {
-    fmt.Println("GETPATH HANDLER", path, val, state.Handler)
-
     val = state.Handler(state, val, current, store)
 	}
 
@@ -929,9 +833,8 @@ func injectStr(val string, store interface{}, current interface{}, state *Inject
 			ref = strings.ReplaceAll(ref, "$DS", DS)
 		}
 		out := GetPathState(ref, store, current, state)
-
-    fmt.Println("FOUND-A", ref, out)
-
+    // fmt.Println("INJECTSTR", val, out)
+    
     return out
 	}
 
@@ -948,7 +851,6 @@ func injectStr(val string, store interface{}, current interface{}, state *Inject
 			state.Full = false
 		}
 		found := GetPathState(inner, store, current, state)
-    // fmt.Println("FOUND-B", inner, found)
 
     if found == nil {
 			return ""
@@ -1002,8 +904,6 @@ func InjectState(
 ) interface{} {
 	valType := getType(val)
 
-  // fmt.Println("INJECT START", valType, val)
-  
 	// Create state if at the root
 	if state == nil {
 		parent := map[string]interface{}{
@@ -1036,8 +936,6 @@ func InjectState(
 		}
 	}
 
-  // fmt.Println("INJECT-STATE", state.Key, state.Keys, state.KeyI)
-  
 	// Descend into node
 	if IsNode(val) {
 
@@ -1057,8 +955,6 @@ func InjectState(
     // Sort transform keys so they run in alphanumeric order
     sort.Strings(transformKeys)
     origKeys := append(normalKeys, transformKeys...)
-
-    // fmt.Println("ORIGKEYS", fdt(origKeys))
 
     for okI, origKey := range origKeys {
       childPath := append(state.Path, origKey)
@@ -1098,7 +994,6 @@ func InjectState(
 		if ok {
 			newVal := injectStr(strVal, store, current, state)
 			SetProp(state.Parent, state.Key, newVal)
-      // fmt.Println("INJECT-STR", state.Parent, state.Key, state.Keys, newVal)
 			val = newVal
 		}
 	}
@@ -1127,17 +1022,16 @@ var injectHandler InjectHandler = func(
     isfunc = reflect.TypeOf(val).Kind() == reflect.Func
   }
 
-  fmt.Println("IH", isfunc, getType(val))
-
-  
 	if isfunc {
 		// If val is a "function" transform, call it.
 		// In Go, we store them as a special variable or a typed value.
 		// For simplicity, we’ll do a type assertion check:
-		if fn, ok := val.(InjectHandler); ok {
+
+    fn, ok := val.(InjectHandler)
+
+    if ok {
 			out := fn(state, val, current, store)
-      fmt.Println("CALL", out, ok, fn)
-      return out
+      val = out
 		}
 	}
 
@@ -1175,8 +1069,6 @@ var Transform_COPY InjectHandler = func(
 		return state.Key
 	} else {
 		out := GetProp(current, state.Key)
-
-    // fmt.Println("COPY", state.Key, val, out)
 
 		SetProp(state.Parent, state.Key, out)
 		return out
@@ -1346,9 +1238,6 @@ var Transform_EACH InjectHandler = func(
 		DTOP: tcur,
 	}
 
-  // fmt.Println("EACH TCUR", tcur)
-  // fmt.Println("EACH TVAL", tval)
-  
 	// Perform sub-injection
 	tval = InjectState(tval, store, state.Modify, tcur, nil)
 
@@ -1456,9 +1345,6 @@ var Transform_PACK InjectHandler = func(
 		DTOP: tcurrent,
 	}
 
-  // fmt.Println("PACK TVAL", tval)
-  // fmt.Println("PACK TCUR", tcur)
-  
 	tvalout := InjectState(tval, store, state.Modify, tcur, nil)
 
 	SetProp(target, tkey, tvalout)
@@ -1470,6 +1356,14 @@ var Transform_PACK InjectHandler = func(
 // Transform function: top-level
 
 func Transform(
+	data interface{}, // source data
+	spec interface{}, // transform specification
+) interface{} {
+  return TransformModify(data, spec, nil, nil)
+}
+
+
+func TransformModify(
 	data interface{}, // source data
 	spec interface{}, // transform specification
 	extra interface{}, // extra store
@@ -1527,8 +1421,6 @@ func Transform(
 		store[k] = v
 	}
 
-  // fmt.Println("TRANSFORM", fdt(store))
-  
 	out := InjectState(spec, store, modify, store, nil)
 	return out
 }

@@ -29,6 +29,15 @@ function test_set(tests, apply) {
 function walkpath(_key, val, _parent, path) {
     return 'string' === typeof val ? val + '~' + path.join('.') : val;
 }
+function nullModifier(key, val, parent) {
+    console.log('NM', val);
+    if ("__NULL__" === val) {
+        (0, struct_1.setprop)(parent, key, null);
+    }
+    else if ('string' === typeof val) {
+        (0, struct_1.setprop)(parent, key, val.replaceAll('__NULL__', 'null'));
+    }
+}
 (0, node_test_1.describe)('struct', () => {
     // minor tests
     // ===========
@@ -147,7 +156,7 @@ function walkpath(_key, val, _parent, path) {
         (0, node_assert_1.deepEqual)((0, struct_1.inject)(test.in.val, test.in.store), test.out);
     });
     (0, node_test_1.test)('inject-string', () => {
-        test_set((0, struct_1.clone)(TESTSPEC.inject.string), (vin) => (0, struct_1.inject)(vin.val, vin.store, vin.current));
+        test_set((0, struct_1.clone)(TESTSPEC.inject.string), (vin) => (0, struct_1.inject)(vin.val, vin.store, nullModifier, vin.current));
     });
     (0, node_test_1.test)('inject-deep', () => {
         test_set((0, struct_1.clone)(TESTSPEC.inject.deep), (vin) => (0, struct_1.inject)(vin.val, vin.store));

@@ -189,7 +189,8 @@ function clone(val: any) {
 // If the key is not found, return the alternative value.
 function getprop(val: any, key: any, alt?: any) {
   let out = undefined === val ? alt : undefined === key ? alt : val[key]
-  return undefined == out ? alt : out
+  out = undefined === out ? alt : out
+  return out
 }
 
 
@@ -392,6 +393,7 @@ function getpath(path: string | string[], store: any, current?: any, state?: Inj
     for (pI++; undefined !== val && pI < parts.length; pI++) {
       val = getprop(val, parts[pI])
     }
+
   }
 
   // State may provide a custom handler to modify found value.
@@ -441,7 +443,8 @@ function injectstr(val: string, store: any, current?: any, state?: any): any {
           state.full = false
         }
         const found = getpath(ref, store, current, state)
-        return undefined == found ? S.empty :
+
+        return undefined === found ? S.empty :
           S.object === typeof found ? JSON.stringify(found) :
             found
       })

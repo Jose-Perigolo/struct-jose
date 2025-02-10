@@ -44,7 +44,7 @@ basic: {
 
     { in: { path: 'b', store: {a:1} } }
     { in: { path: '', store: {a:1} }, out: {a:1} }
-    { in: { store: {a:1} } }
+    { in: { store: {a:111} } }
     { in: { path: 'a' } }
     { in: { } }
 

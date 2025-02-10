@@ -39,18 +39,23 @@ def walkpath(_key, val, _parent, path):
     return val
 
 
-def test_set(testcase, tests, test_fn):
+def test_set(testcase, tests, apply):
     """
     Runs each input through test_fn
     and checks for expected outputs or expected errors.
     """
     for entry in tests.get('set', []):
         try:
-            input_data = entry.get('in')
-            result = test_fn(input_data)
-            testcase.assertEqual(result, entry.get('out'))
+            input = fixJSON(entry.get('in'))
+            output = fixJSON(entry.get('out'))
+            result = fixJSON(apply(input))
+
+            testcase.assertEqual(result, output)
 
         except Exception as err:
+            # print('INPUT', input)
+            # print('RESULT', result)
+            # print('OUTPUT', output)
             entry_err = entry.get('err')
             if entry_err is not None:
                 if entry_err == True or (entry.get('err') in str(err)):
@@ -60,6 +65,18 @@ def test_set(testcase, tests, test_fn):
             else:
                 raise
 
+
+def fixJSON(obj):
+    if obj is None:
+        return "__NULL__"
+    elif isinstance(obj, list):
+        return [fixJSON(item) for item in obj]
+    elif isinstance(obj, dict):
+        return {k: fixJSON(v) for k, v in obj.items()}
+    else:
+        return obj
+
+            
 # Since json.load uses None for null, assume
 # user will represent null in another way with a defined value.
 def fixnull(obj):
@@ -82,6 +99,18 @@ def unfixnull(obj):
     else:
         return obj
 
+def nullModifier(
+  key,
+  val,
+  parent,
+  state,
+  current,
+  store,
+):
+    if "__NULL__" == val:
+            setprop(parent, key, None)
+    elif isinstance(val, str):
+            setprop(parent, key, val.replace("__NULL__", "null"))
     
     
 class TestStruct(unittest.TestCase):
@@ -93,7 +122,8 @@ class TestStruct(unittest.TestCase):
             '..', '..', 'build', 'test', 'test.json'
         )
         with open(test_json_path, 'r', encoding='utf-8') as f:
-            cls.TESTSPEC = fixnull(json.load(f))
+            # cls.TESTSPEC = fixnull(json.load(f))
+            cls.TESTSPEC = json.load(f)
 
 
     # minor tests
@@ -156,8 +186,9 @@ class TestStruct(unittest.TestCase):
         test_set(self, testspec_data, apply_fn)
 
     def test_minor_isempty(self):
-        testspec_data = unfixnull(clone(self.TESTSPEC['minor']['isempty']))
-        test_set(self, testspec_data, isempty)
+        # testspec_data = unfixnull(clone(self.TESTSPEC['minor']['isempty']))
+        testspec_data = clone(self.TESTSPEC['minor']['isempty'])
+        test_set(self, testspec_data, lambda vin: isempty(None) if "__NULL__" == vin else isempty(vin))
 
     def test_minor_escurl(self):
         testspec_data = clone(self.TESTSPEC['minor']['escurl'])
@@ -180,7 +211,7 @@ class TestStruct(unittest.TestCase):
 
     def test_walk_basic(self):
         testspec_data = clone(self.TESTSPEC['walk']['basic'])
-        test_set(self, testspec_data, lambda vin: walk(vin, walkpath))
+        test_set(self, testspec_data, lambda vin: walk(None if "__NULL__" == vin else vin, walkpath))
 
 
     # merge tests
@@ -215,6 +246,7 @@ class TestStruct(unittest.TestCase):
             return getpath(vin.get('path'), vin.get('store'))
 
         testspec_data = clone(self.TESTSPEC['getpath']['basic'])
+
         test_set(self, testspec_data, apply_fn)
 
     def test_getpath_current(self):
@@ -267,10 +299,13 @@ class TestStruct(unittest.TestCase):
 
     def test_inject_string(self):
         def apply_fn(vin):
-            return inject(vin.get('val'), vin.get('store'), None, vin.get('current'))
+            return inject(vin.get('val'), vin.get('store'), nullModifier, vin.get('current'))
 
         testspec_data = clone(self.TESTSPEC['inject']['string'])
-        test_set(self, testspec_data, apply_fn)
+
+        # print('TS', unfixnull(testspec_data))
+        
+        test_set(self, unfixnull(testspec_data), apply_fn)
 
     def test_inject_deep(self):
         testspec_data = clone(self.TESTSPEC['inject']['deep'])

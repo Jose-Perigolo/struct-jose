@@ -75,6 +75,22 @@ function walkpath(_key: string | undefined, val: any, _parent: any, path: string
 }
 
 
+function nullModifier(
+  key: any,
+  val: any,
+  parent: any
+) {
+  console.log('NM', val)
+
+  if ("__NULL__" === val) {
+    setprop(parent, key, null)
+  }
+  else if ('string' === typeof val) {
+    setprop(parent, key, val.replaceAll('__NULL__', 'null'))
+  }
+}
+
+
 describe('struct', () => {
 
   // minor tests
@@ -234,7 +250,7 @@ describe('struct', () => {
 
   test('inject-string', () => {
     test_set(clone(TESTSPEC.inject.string), (vin: any) =>
-      inject(vin.val, vin.store, vin.current))
+      inject(vin.val, vin.store, nullModifier, vin.current))
   })
 
   test('inject-deep', () => {

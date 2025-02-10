@@ -350,7 +350,8 @@ def getpath(path, store, current=None, state=None):
     elif islist(path):
         parts = path[:]
     else:
-        parts = []
+        # parts = []
+        return None
         
     root = store
     val = store
@@ -400,13 +401,15 @@ def _injectstr(val, store, current=None, state=None):
     if not isinstance(val, str):
         return S['empty']
 
-    import re
-
+    if val == "":
+        return ""
+    
     pattern_full = re.compile(r'^`(\$[A-Z]+|[^`]+)[0-9]*`$')
     pattern_part = re.compile(r'`([^`]+)`')
 
     m = pattern_full.match(val)
-
+    # print("INJECTSTR-M", val, m)
+    
     if m:
         # Full string is an injection
         if state is not None:
@@ -418,6 +421,7 @@ def _injectstr(val, store, current=None, state=None):
             ref = ref.replace(r'$BT', S['BT']).replace(r'$DS', S['DS'])
 
         out = getpath(ref, store, current, state)
+        # print('INJECTSTR-P', val, out)
         
     else:
         # Check partial injections

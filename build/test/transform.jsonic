@@ -1,7 +1,7 @@
 
 
 basic: {
-  in: { data: {a:1}, spec: {a:'`a`',b:2}, store: {} }
+  in: { data: {a:1}, spec: {a:'`a`',b:2} }
   out: {a:1,b:2}
 }
 
