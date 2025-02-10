@@ -1,11 +1,11 @@
 
-import { readFileSync } from 'node:fs'
-import { join } from 'node:path'
-import { test, describe } from 'node:test'
-import { equal, deepEqual, fail } from 'node:assert'
+const { readFileSync } = require('node:fs')
+const { join } = require('node:path')
+const { test, describe } = require('node:test')
+const { equal, deepEqual, fail } = require('node:assert')
 
 
-import {
+const {
   clone,
   escre,
   escurl,
@@ -23,38 +23,19 @@ import {
   stringify,
   transform,
   walk,
-} from '../dist/struct'
+} = require('../src/struct')
 
 
-
-type TestEntry = {
-  in?: any
-  out?: any
-  err?: any
-  thrown?: any
-}
-
-type TestSet = TestEntry[]
-
-type SubTest = TestEntry & {
-  set: TestSet
-}
-
-type TestGroup = Record<string, SubTest>
-
-type FullTest = Record<string, TestGroup>
-
-
-const TESTSPEC: FullTest =
+const TESTSPEC =
   JSON.parse(readFileSync(join(__dirname, '..', '..', 'build/test/test.json'), 'utf8'))
 
 
-function test_set(tests: SubTest, apply: Function) {
+function test_set(tests, apply) {
   for (let entry of tests.set) {
     try {
       deepEqual(apply(entry.in), entry.out)
     }
-    catch (err: any) {
+    catch (err) {
       const entry_err = entry.err
       if (null != entry_err) {
         if (true === entry_err || (err.message.includes(entry_err))) {
@@ -70,15 +51,15 @@ function test_set(tests: SubTest, apply: Function) {
   }
 }
 
-function walkpath(_key: string | undefined, val: any, _parent: any, path: string[]) {
+function walkpath(_key, val, _parent, path) {
   return 'string' === typeof val ? val + '~' + path.join('.') : val
 }
 
 
 function nullModifier(
-  key: any,
-  val: any,
-  parent: any
+  key,
+  val,
+  parent
 ) {
   if ("__NULL__" === val) {
     setprop(parent, key, null)
@@ -142,7 +123,7 @@ describe('struct', () => {
   })
 
   test('minor-stringify', () => {
-    test_set(clone(TESTSPEC.minor.stringify), (vin: any) =>
+    test_set(clone(TESTSPEC.minor.stringify), (vin) =>
       null == vin.max ? stringify(vin.val) : stringify(vin.val, vin.max))
   })
 
@@ -151,12 +132,12 @@ describe('struct', () => {
   })
 
   test('minor-getprop', () => {
-    test_set(clone(TESTSPEC.minor.getprop), (vin: any) =>
+    test_set(clone(TESTSPEC.minor.getprop), (vin) =>
       null == vin.alt ? getprop(vin.val, vin.key) : getprop(vin.val, vin.key, vin.alt))
   })
 
   test('minor-setprop', () => {
-    test_set(clone(TESTSPEC.minor.setprop), (vin: any) =>
+    test_set(clone(TESTSPEC.minor.setprop), (vin) =>
       setprop(vin.parent, vin.key, vin.val))
   })
 
@@ -169,7 +150,7 @@ describe('struct', () => {
   })
 
   test('walk-basic', () => {
-    test_set(clone(TESTSPEC.walk.basic), (vin: any) => walk(vin, walkpath))
+    test_set(clone(TESTSPEC.walk.basic), (vin) => walk(vin, walkpath))
   })
 
 
@@ -202,23 +183,23 @@ describe('struct', () => {
   })
 
   test('getpath-basic', () => {
-    test_set(clone(TESTSPEC.getpath.basic), (vin: any) => getpath(vin.path, vin.store))
+    test_set(clone(TESTSPEC.getpath.basic), (vin) => getpath(vin.path, vin.store))
   })
 
   test('getpath-current', () => {
-    test_set(clone(TESTSPEC.getpath.current), (vin: any) =>
+    test_set(clone(TESTSPEC.getpath.current), (vin) =>
       getpath(vin.path, vin.store, vin.current))
   })
 
   test('getpath-state', () => {
     const state = {
-      handler: (state: any, val: any, _current: any, _store: any) => {
+      handler: (state, val, _current, _store) => {
         let out = state.step + ':' + val
         state.step++
         return out
       },
       step: 0,
-      mode: ('val' as any),
+      mode: 'val',
       full: false,
       keyI: 0,
       keys: ['$TOP'],
@@ -229,7 +210,7 @@ describe('struct', () => {
       nodes: [{}],
       base: '$TOP'
     }
-    test_set(clone(TESTSPEC.getpath.state), (vin: any) =>
+    test_set(clone(TESTSPEC.getpath.state), (vin) =>
       getpath(vin.path, vin.store, vin.current, state))
   })
 
@@ -247,12 +228,12 @@ describe('struct', () => {
   })
 
   test('inject-string', () => {
-    test_set(clone(TESTSPEC.inject.string), (vin: any) =>
+    test_set(clone(TESTSPEC.inject.string), (vin) =>
       inject(vin.val, vin.store, nullModifier, vin.current))
   })
 
   test('inject-deep', () => {
-    test_set(clone(TESTSPEC.inject.deep), (vin: any) => inject(vin.val, vin.store))
+    test_set(clone(TESTSPEC.inject.deep), (vin) => inject(vin.val, vin.store))
   })
 
 
@@ -269,30 +250,30 @@ describe('struct', () => {
   })
 
   test('transform-paths', () => {
-    test_set(clone(TESTSPEC.transform.paths), (vin: any) =>
+    test_set(clone(TESTSPEC.transform.paths), (vin) =>
       transform(vin.data, vin.spec, vin.store))
   })
 
   test('transform-cmds', () => {
-    test_set(clone(TESTSPEC.transform.cmds), (vin: any) =>
+    test_set(clone(TESTSPEC.transform.cmds), (vin) =>
       transform(vin.data, vin.spec, vin.store))
   })
 
   test('transform-each', () => {
-    test_set(clone(TESTSPEC.transform.each), (vin: any) =>
+    test_set(clone(TESTSPEC.transform.each), (vin) =>
       transform(vin.data, vin.spec, vin.store))
   })
 
   test('transform-pack', () => {
-    test_set(clone(TESTSPEC.transform.pack), (vin: any) =>
+    test_set(clone(TESTSPEC.transform.pack), (vin) =>
       transform(vin.data, vin.spec, vin.store))
   })
 
 
   test('transform-modify', () => {
-    test_set(clone(TESTSPEC.transform.modify), (vin: any) =>
+    test_set(clone(TESTSPEC.transform.modify), (vin) =>
       transform(vin.data, vin.spec, vin.store,
-        (key: any, val: any, parent: any) => {
+        (key, val, parent) => {
           if (null != key && null != parent && 'string' === typeof val) {
             val = parent[key] = '@' + val
           }
@@ -305,7 +286,7 @@ describe('struct', () => {
       { a: 1 },
       { x: '`a`', b: '`$COPY`', c: '`$UPPER`' },
       {
-        b: 2, $UPPER: (state: any) => {
+        b: 2, $UPPER: (state) => {
           const { path } = state
           return ('' + getprop(path, path.length - 1)).toUpperCase()
         }

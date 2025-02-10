@@ -1,10 +1,9 @@
 {
-  "name": "@voxgig/struct",
+  "name": "@voxgig/structjs",
   "version": "0.0.1",
   "description": "Data structure manipulations",
-  "main": "dist/struct.js",
+  "main": "src/struct.js",
   "type": "commonjs",
-  "types": "dist/struct.d.ts",
   "homepage": "https://github.com/voxgig/struct",
   "keywords": [
     "voxgig",
@@ -19,8 +18,8 @@
     "url": "git://github.com/voxgig/struct.git"
   },
   "scripts": {
-    "test": "node --enable-source-maps --test dist-test",
-    "test22": "node --enable-source-maps --test \"dist-test/*.test.js\"",
+    "test": "node --enable-source-maps --test test",
+    "test22": "node --enable-source-maps --test \"test/*.test.js\"",
     "test-cov": "rm -rf ./coverage && mkdir -p ./coverage && node --experimental-test-coverage --test-reporter=spec --test-reporter-destination=stdout --test-reporter=lcov --test-reporter-destination=coverage/lcov.info --enable-source-maps --test \"dist-test/*.test.js\"",
     "test-some": "node --enable-source-maps --test-name-pattern=\"$npm_config_pattern\" --test dist-test",
     "watch": "tsc --build src test -w",
@@ -35,11 +34,6 @@
   "license": "MIT",
   "files": [
     "LICENSE",
-    "src",
-    "dist"
-  ],
-  "devDependencies": {
-    "@types/node": "^22.9.3",
-    "typescript": "^5.7.2"
-  }
+    "src"
+  ]
 }

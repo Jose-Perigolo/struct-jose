@@ -30,7 +30,6 @@ function walkpath(_key, val, _parent, path) {
     return 'string' === typeof val ? val + '~' + path.join('.') : val;
 }
 function nullModifier(key, val, parent) {
-    console.log('NM', val);
     if ("__NULL__" === val) {
         (0, struct_1.setprop)(parent, key, null);
     }
