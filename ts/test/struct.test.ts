@@ -1,9 +1,6 @@
 
-import { readFileSync } from 'node:fs'
-import { join } from 'node:path'
 import { test, describe } from 'node:test'
-import { equal, deepEqual, fail } from 'node:assert'
-
+import { equal, deepEqual } from 'node:assert'
 
 import {
   clone,
@@ -18,59 +15,22 @@ import {
   ismap,
   isnode,
   items,
+  haskey,
+  keysof,
   merge,
   setprop,
   stringify,
   transform,
   walk,
+  validate,
+  joinurl,
 } from '../dist/struct'
 
 
-
-type TestEntry = {
-  in?: any
-  out?: any
-  err?: any
-  thrown?: any
-}
-
-type TestSet = TestEntry[]
-
-type SubTest = TestEntry & {
-  set: TestSet
-}
-
-type TestGroup = Record<string, SubTest>
-
-type FullTest = Record<string, TestGroup>
+import { runner } from './runner'
 
 
-const TESTSPEC: FullTest =
-  JSON.parse(readFileSync(join(__dirname, '..', '..', 'build/test/test.json'), 'utf8'))
-
-
-function test_set(tests: SubTest, apply: Function) {
-  for (let entry of tests.set) {
-    try {
-      deepEqual(apply(entry.in), entry.out)
-    }
-    catch (err: any) {
-      const entry_err = entry.err
-      if (null != entry_err) {
-        if (true === entry_err || (err.message.includes(entry_err))) {
-          break
-        }
-        entry.thrown = err.message
-        fail(JSON.stringify(entry))
-      }
-      else {
-        throw err
-      }
-    }
-  }
-}
-
-function walkpath(_key: string | undefined, val: any, _parent: any, path: string[]) {
+function walkpath(_key: any, val: any, _parent: any, path: any) {
   return 'string' === typeof val ? val + '~' + path.join('.') : val
 }
 
@@ -89,7 +49,39 @@ function nullModifier(
 }
 
 
-describe('struct', () => {
+describe('struct', async () => {
+
+  const { spec, runset, subject } =
+    await runner('struct', {}, '../../build/test/test.json', {
+      test: () => ({
+        utility: () => ({
+          struct: {
+            clone,
+            escre,
+            escurl,
+            getpath,
+            getprop,
+            inject,
+            isempty,
+            iskey,
+            islist,
+            ismap,
+            isnode,
+            items,
+            haskey,
+            keysof,
+            merge,
+            setprop,
+            stringify,
+            transform,
+            walk,
+            validate,
+            joinurl,
+          }
+        })
+      })
+    })
+
 
   // minor tests
   // ===========
@@ -107,112 +99,138 @@ describe('struct', () => {
     equal('function', typeof items)
     equal('function', typeof setprop)
     equal('function', typeof stringify)
+    equal('function', typeof haskey)
+    equal('function', typeof keysof)
+    equal('function', typeof joinurl)
   })
 
-  test('minor-clone', () => {
-    test_set(clone(TESTSPEC.minor.clone), clone)
+  test('minor-clone', async () => {
+    await runset(spec.minor.clone, clone)
   })
 
-  test('minor-isnode', () => {
-    test_set(clone(TESTSPEC.minor.isnode), isnode)
+  test('minor-isnode', async () => {
+    await runset(spec.minor.isnode, isnode)
   })
 
-  test('minor-ismap', () => {
-    test_set(clone(TESTSPEC.minor.ismap), ismap)
+  test('minor-ismap', async () => {
+    await runset(spec.minor.ismap, ismap)
   })
 
-  test('minor-islist', () => {
-    test_set(clone(TESTSPEC.minor.islist), islist)
+  test('minor-islist', async () => {
+    await runset(spec.minor.islist, islist)
   })
 
-  test('minor-iskey', () => {
-    test_set(clone(TESTSPEC.minor.iskey), iskey)
+  test('minor-iskey', async () => {
+    await runset(spec.minor.iskey, iskey)
   })
 
-  test('minor-isempty', () => {
-    test_set(clone(TESTSPEC.minor.isempty), isempty)
+  test('minor-isempty', async () => {
+    await runset(spec.minor.isempty, isempty)
   })
 
-  test('minor-escre', () => {
-    test_set(clone(TESTSPEC.minor.escre), escre)
+  test('minor-escre', async () => {
+    await runset(spec.minor.escre, escre)
   })
 
-  test('minor-escurl', () => {
-    test_set(clone(TESTSPEC.minor.escurl), escurl)
+  test('minor-escurl', async () => {
+    await runset(spec.minor.escurl, escurl)
   })
 
-  test('minor-stringify', () => {
-    test_set(clone(TESTSPEC.minor.stringify), (vin: any) =>
+  test('minor-stringify', async () => {
+    await runset(spec.minor.stringify, (vin: any) =>
       null == vin.max ? stringify(vin.val) : stringify(vin.val, vin.max))
   })
 
-  test('minor-items', () => {
-    test_set(clone(TESTSPEC.minor.items), items)
+  test('minor-items', async () => {
+    await runset(spec.minor.items, items)
   })
 
-  test('minor-getprop', () => {
-    test_set(clone(TESTSPEC.minor.getprop), (vin: any) =>
+  test('minor-getprop', async () => {
+    await runset(spec.minor.getprop, (vin: any) =>
       null == vin.alt ? getprop(vin.val, vin.key) : getprop(vin.val, vin.key, vin.alt))
   })
 
-  test('minor-setprop', () => {
-    test_set(clone(TESTSPEC.minor.setprop), (vin: any) =>
+  test('minor-setprop', async () => {
+    await runset(spec.minor.setprop, (vin: any) =>
       setprop(vin.parent, vin.key, vin.val))
+  })
+
+  test('minor-haskey', async () => {
+    await runset(spec.minor.haskey, haskey)
+  })
+
+  test('minor-keysof', async () => {
+    await runset(spec.minor.keysof, keysof)
+  })
+
+  test('minor-joinurl', async () => {
+    await runset(spec.minor.joinurl, joinurl)
   })
 
 
   // walk tests
   // ==========
 
-  test('walk-exists', () => {
+  test('walk-exists', async () => {
     equal('function', typeof merge)
   })
 
-  test('walk-basic', () => {
-    test_set(clone(TESTSPEC.walk.basic), (vin: any) => walk(vin, walkpath))
+  test('walk-basic', async () => {
+    await runset(spec.walk.basic, (vin: any) => walk(vin, walkpath))
   })
 
 
   // merge tests
   // ===========
 
-  test('merge-exists', () => {
+  test('merge-exists', async () => {
     equal('function', typeof merge)
   })
 
-  test('merge-basic', () => {
-    const test = clone(TESTSPEC.merge.basic)
+  test('merge-basic', async () => {
+    const test = clone(spec.merge.basic)
     deepEqual(merge(test.in), test.out)
   })
 
-  test('merge-cases', () => {
-    test_set(clone(TESTSPEC.merge.cases), merge)
+  test('merge-cases', async () => {
+    await runset(spec.merge.cases, merge)
   })
 
-  test('merge-array', () => {
-    test_set(clone(TESTSPEC.merge.array), merge)
+  test('merge-array', async () => {
+    await runset(spec.merge.array, merge)
+  })
+
+  test('merge-special', async () => {
+    const f0 = () => null
+    deepEqual(merge([f0]), f0)
+    deepEqual(merge([null, f0]), f0)
+    deepEqual(merge([{ a: f0 }]), { a: f0 })
+    deepEqual(merge([{ a: { b: f0 } }]), { a: { b: f0 } })
+
+    deepEqual(merge([{ a: global.fetch }]), { a: global.fetch })
+    deepEqual(merge([{ a: { b: global.fetch } }]), { a: { b: global.fetch } })
   })
 
 
   // getpath tests
   // =============
 
-  test('getpath-exists', () => {
+  test('getpath-exists', async () => {
     equal('function', typeof getpath)
   })
 
-  test('getpath-basic', () => {
-    test_set(clone(TESTSPEC.getpath.basic), (vin: any) => getpath(vin.path, vin.store))
+  test('getpath-basic', async () => {
+    await runset(spec.getpath.basic, (vin: any) => getpath(vin.path, vin.store))
   })
 
-  test('getpath-current', () => {
-    test_set(clone(TESTSPEC.getpath.current), (vin: any) =>
+  test('getpath-current', async () => {
+    await runset(spec.getpath.current, (vin: any) =>
       getpath(vin.path, vin.store, vin.current))
   })
 
-  test('getpath-state', () => {
+  test('getpath-state', async () => {
     const state = {
-      handler: (state: any, val: any, _current: any, _store: any) => {
+      handler: (state: any, val: any, _current: any, _ref: any, _store: any) => {
         let out = state.step + ':' + val
         state.step++
         return out
@@ -227,9 +245,10 @@ describe('struct', () => {
       parent: {},
       path: ['$TOP'],
       nodes: [{}],
-      base: '$TOP'
+      base: '$TOP',
+      errs: [],
     }
-    test_set(clone(TESTSPEC.getpath.state), (vin: any) =>
+    await runset(spec.getpath.state, (vin: any) =>
       getpath(vin.path, vin.store, vin.current, state))
   })
 
@@ -237,62 +256,62 @@ describe('struct', () => {
   // inject tests
   // ============
 
-  test('inject-exists', () => {
+  test('inject-exists', async () => {
     equal('function', typeof inject)
   })
 
-  test('inject-basic', () => {
-    const test = clone(TESTSPEC.inject.basic)
+  test('inject-basic', async () => {
+    const test = clone(spec.inject.basic)
     deepEqual(inject(test.in.val, test.in.store), test.out)
   })
 
-  test('inject-string', () => {
-    test_set(clone(TESTSPEC.inject.string), (vin: any) =>
+  test('inject-string', async () => {
+    await runset(spec.inject.string, (vin: any) =>
       inject(vin.val, vin.store, nullModifier, vin.current))
   })
 
-  test('inject-deep', () => {
-    test_set(clone(TESTSPEC.inject.deep), (vin: any) => inject(vin.val, vin.store))
+  test('inject-deep', async () => {
+    await runset(spec.inject.deep, (vin: any) => inject(vin.val, vin.store))
   })
 
 
   // transform tests
   // ===============
 
-  test('transform-exists', () => {
+  test('transform-exists', async () => {
     equal('function', typeof transform)
   })
 
-  test('transform-basic', () => {
-    const test = clone(TESTSPEC.transform.basic)
+  test('transform-basic', async () => {
+    const test = clone(spec.transform.basic)
     deepEqual(transform(test.in.data, test.in.spec, test.in.store), test.out)
   })
 
-  test('transform-paths', () => {
-    test_set(clone(TESTSPEC.transform.paths), (vin: any) =>
+  test('transform-paths', async () => {
+    await runset(spec.transform.paths, (vin: any) =>
       transform(vin.data, vin.spec, vin.store))
   })
 
-  test('transform-cmds', () => {
-    test_set(clone(TESTSPEC.transform.cmds), (vin: any) =>
+  test('transform-cmds', async () => {
+    await runset(spec.transform.cmds, (vin: any) =>
       transform(vin.data, vin.spec, vin.store))
   })
 
-  test('transform-each', () => {
-    test_set(clone(TESTSPEC.transform.each), (vin: any) =>
+  test('transform-each', async () => {
+    await runset(spec.transform.each, (vin: any) =>
       transform(vin.data, vin.spec, vin.store))
   })
 
-  test('transform-pack', () => {
-    test_set(clone(TESTSPEC.transform.pack), (vin: any) =>
+  test('transform-pack', async () => {
+    await runset(spec.transform.pack, (vin: any) =>
       transform(vin.data, vin.spec, vin.store))
   })
 
 
-  test('transform-modify', () => {
-    test_set(clone(TESTSPEC.transform.modify), (vin: any) =>
+  test('transform-modify', async () => {
+    await runset(spec.transform.modify, (vin: any) =>
       transform(vin.data, vin.spec, vin.store,
-        (key: any, val: any, parent: any) => {
+        (key, val, parent) => {
           if (null != key && null != parent && 'string' === typeof val) {
             val = parent[key] = '@' + val
           }
@@ -300,7 +319,7 @@ describe('struct', () => {
       ))
   })
 
-  test('transform-extra', () => {
+  test('transform-extra', async () => {
     deepEqual(transform(
       { a: 1 },
       { x: '`a`', b: '`$COPY`', c: '`$UPPER`' },
@@ -317,6 +336,57 @@ describe('struct', () => {
     })
   })
 
-})
 
+  test('transform-funcval', async () => {
+    const f0 = () => 99
+    deepEqual(transform({}, { x: 1 }), { x: 1 })
+    deepEqual(transform({}, { x: f0 }), { x: f0 })
+    deepEqual(transform({ a: 1 }, { x: '`a`' }), { x: 1 })
+    deepEqual(transform({ f0 }, { x: '`f0`' }), { x: f0 })
+  })
+
+
+  // validate tests
+  // ===============
+
+  test('validate-exists', async () => {
+    equal('function', typeof validate)
+  })
+
+
+  test('validate-basic', async () => {
+    await runset(spec.validate.basic, (vin: any) => validate(vin.data, vin.spec))
+  })
+
+
+  test('validate-node', async () => {
+    await runset(spec.validate.node, (vin: any) => validate(vin.data, vin.spec))
+  })
+
+
+  test('validate-custom', async () => {
+    const errs: any[] = []
+    const extra = {
+      $INTEGER: (state: any, _val: any, current: any) => {
+        const { key } = state
+        let out = getprop(current, key)
+
+        let t = typeof out
+        if ('number' !== t && !Number.isInteger(out)) {
+          state.errs.push('Not an integer at ' + state.path.slice(1).join('.') + ': ' + out)
+          return
+        }
+
+        return out
+      },
+    }
+
+    validate({ a: 1 }, { a: '`$INTEGER`' }, extra, errs)
+    equal(errs.length, 0)
+
+    validate({ a: 'A' }, { a: '`$INTEGER`' }, extra, errs)
+    deepEqual(errs, ['Not an integer at a: A'])
+  })
+
+})
 

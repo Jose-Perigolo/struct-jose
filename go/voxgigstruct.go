@@ -1,3 +1,5 @@
+/* Copyright (c) 2025 Voxgig Ltd. MIT LICENSE. */
+
 package voxgigstruct
 
 import (
@@ -401,17 +403,6 @@ func Clone(val interface{}) interface{} {
 		// Primitive types (string, number, bool, nil) are immutable, so return as-is
 		return v
 	}
-
-  // if val == nil {
-	// 	return nil
-	// }
-	// b, err := json.Marshal(val)
-	// if err != nil {
-	// 	return nil
-	// }
-	// var out interface{}
-	// _ = json.Unmarshal(b, &out)
-	// return out
 }
 
 // ---------------------------------------------------------------------
