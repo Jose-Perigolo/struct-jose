@@ -188,7 +188,6 @@ function haskey(val: any, key: any) {
 }
 
 
-
 // Safely stringify a value for printing (NOT JSON!).
 function stringify(val: any, maxlen?: number) {
   let json = S.empty
@@ -213,7 +212,7 @@ function stringify(val: any, maxlen?: number) {
 
 
 // Clone a JSON-like data structure.
-// NOTE: function values are *not* cloned.
+// NOTE: function value references are copied, *not* cloned.
 function clone(val: any) {
   const refs: any[] = []
   const replacer: any = (_k: any, v: any) => S.function === typeof v ?
@@ -231,13 +230,14 @@ function escre(s: string) {
 }
 
 
-// Escape URL.
+// Escape URLs.
 function escurl(s: string) {
   s = null == s ? S.empty : s
   return encodeURIComponent(s)
 }
 
 
+// Concatenate url part strings, merging forward slashes as needed.
 function joinurl(sarr: any[]) {
   return sarr
     .filter(s => null != s && '' !== s)
@@ -261,7 +261,7 @@ function getprop(val: any, key: any, alt?: any) {
 // Returns the (possible modified) parent.
 // If the value is undefined it the key will be deleted from the parent.
 // If the parent is a list, and the key is negative, prepend the value.
-// If the key is above the list size, append the value.
+// NOTE: If the key is above the list size, append the value; below, prepend.
 // If the value is undefined, remove the list element at index key, and shift the
 // remaining elements down.  These rules avoids "holes" in the list.
 function setprop<PARENT>(parent: PARENT, key: any, val: any): PARENT {
@@ -313,7 +313,7 @@ function setprop<PARENT>(parent: PARENT, key: any, val: any): PARENT {
 }
 
 
-// Walk a data structure depth first.
+// Walk a data structure depth first, applying a function to each value.
 function walk(
   // These arguments are the public interface.
   val: any,
@@ -336,12 +336,14 @@ function walk(
 }
 
 
-// Merge a list of values into each other. Later values have precedence.
-// Nodes override scalars. Node kinds (list or map) override each other.
-// The first element is modified.
+// Merge a list of values into each other. Later values have
+// precedence.  Nodes override scalars. Node kinds (list or map)
+// override each other, and do *not* merge.  The first element is
+// modified.
 function merge(objs: any[]): any {
   let out: any = UNDEF
 
+  // Handle edge cases.
   if (!islist(objs)) {
     out = objs
   }
@@ -351,6 +353,8 @@ function merge(objs: any[]): any {
   else if (1 === objs.length) {
     out = objs[0]
   }
+
+  // An actual list of values to merge.
   else {
 
     out = getprop(objs, 0, {})
@@ -369,7 +373,8 @@ function merge(objs: any[]): any {
           out = obj
         }
         else {
-          let cur = [out] // Node stack
+          // Node stack. walking down the current obj.
+          let cur = [out]
           let cI = 0
 
           // Walk overriding node, creating paths in output as needed.
@@ -380,6 +385,8 @@ function merge(objs: any[]): any {
 
             let lenpath = path.length
 
+            // Get the curent value at the current path in obj.
+            // NOTE: this is not exactly efficient, and should be optimised.
             cI = lenpath - 1
             if (UNDEF === cur[cI]) {
               cur[cI] = getpath(path.slice(0, lenpath - 1), out)
@@ -390,7 +397,8 @@ function merge(objs: any[]): any {
               cur[cI] = islist(parent) ? [] : {}
             }
 
-            // Node child is just ahead of us on the stack.
+            // Node child is just ahead of us on the stack, since
+            // `walk` traverses leaves before nodes.
             if (isnode(val) && !isempty(val)) {
               setprop(cur[cI], key, cur[cI + 1])
               cur[cI + 1] = UNDEF
@@ -421,6 +429,7 @@ function merge(objs: any[]): any {
 // The state argument allows for custom handling when called from `inject` or `transform`.
 function getpath(path: string | string[], store: any, current?: any, state?: InjectState) {
 
+  // Operate on a string array.
   const parts = islist(path) ? path : S.string === typeof path ? path.split(S.DT) : UNDEF
 
   if (UNDEF === parts) {
@@ -477,42 +486,52 @@ function getpath(path: string | string[], store: any, current?: any, state?: Inj
 // and 999 is any digits, which are discarded. This syntax specifies the name of a transform,
 // and optionally allows transforms to be ordered by alphanumeric sorting.
 function injectstr(val: string, store: any, current?: any, state?: any): any {
+
+  // Can't inject into non-strings
   if (S.string !== typeof val) {
     return S.empty
   }
 
   let out: any = val
+
+  // Pattern examples: "`a.b.c`", "`$NAME`", "`$NAME1`"
   const m = val.match(/^`(\$[A-Z]+|[^`]+)[0-9]*`$/)
 
-  // Full string is an injection.
+  // Full string of the val is an injection.
   if (m) {
     if (state) {
       state.full = true
     }
-    let ref = m[1]
+    let pathref = m[1]
 
     // Special escapes inside injection.
-    ref = 3 < ref.length ? ref.replace(/\$BT/g, S.BT).replace(/\$DS/g, S.DS) : ref
+    pathref =
+      3 < pathref.length ? pathref.replace(/\$BT/g, S.BT).replace(/\$DS/g, S.DS) : pathref
 
-    out = getpath(ref, store, current, state)
+    // Get the extracted path reference.
+    out = getpath(pathref, store, current, state)
   }
 
   // Check for injections within the string.
   else {
     out = val.replace(/`([^`]+)`/g,
       (_m: string, ref: string) => {
+
+        // Special escapes inside injection.
         ref = 3 < ref.length ? ref.replace(/\$BT/g, S.BT).replace(/\$DS/g, S.DS) : ref
         if (state) {
           state.full = false
         }
         const found = getpath(ref, store, current, state)
 
+        // Ensure inject value is a string.
         return UNDEF === found ? S.empty :
           S.object === typeof found ? JSON.stringify(found) :
             found
       })
 
-    // Also call the handler on the entire string.
+    // Also call the state handler on the entire string, providing the
+    // option for custom injection.
     if (state.handler) {
       state.full = true
       out = state.handler(state, out, current, val, store)
@@ -540,6 +559,8 @@ function inject(
   // to simplify edge cases.
   if (UNDEF === state) {
     const parent = { [S.DTOP]: val }
+
+    // Set up state assuming we are starting in the virtual parent.
     state = {
       mode: S.MVAL as InjectMode,
       full: false,
@@ -566,7 +587,7 @@ function inject(
     current = null == parentkey ? current : getprop(current, parentkey)
   }
 
-  // Desend into node.
+  // Descend into node.
   if (isnode(val)) {
 
     // Keys are sorted alphanumerically to ensure determinism.
@@ -601,17 +622,22 @@ function inject(
         nodes: childnodes,
         handler: injecthandler,
         base: state.base,
-        errs: getprop(store, S.DERRS, []),
+        errs: state.errs
       }
 
+      // Peform the key:pre mode injection on the child key.
       const prekey = injectstr(origkey, store, current, childstate)
+
+      // The injection may modify child processing.
       okI = childstate.keyI
 
       // Prevent further processing by returning an undefined prekey
-      if (null != prekey) {
-        let child = val[prekey]
+      if (UNDEF !== prekey) {
+        let child = getprop(val, prekey)
         childstate.mode = S.MVAL as InjectMode
 
+        // Perform the val mode injection on the child value.
+        // NOTE: return value is not used.
         inject(
           child,
           store,
@@ -619,10 +645,15 @@ function inject(
           current,
           childstate,
         )
+
+        // The injection may modify child processing.
         okI = childstate.keyI
 
+        // Peform the key:post mode injection on the child key.
         childstate.mode = S.MKEYPOST as InjectMode
         injectstr(origkey, store, current, childstate)
+
+        // The injection may modify child processing.
         okI = childstate.keyI
       }
     }
@@ -650,6 +681,7 @@ function inject(
   }
 
   // Original val reference may no longer be correct.
+  // This return value is only used as the top level result.
   return getprop(state.parent, S.DTOP)
 }
 
@@ -665,10 +697,13 @@ const injecthandler: InjectHandler = (
 ): any => {
   let out = val
 
+  // Only call val function if it is a special command ($NAME format).
   if (S.function === typeof val &&
     (null == ref || (S.string === typeof ref && ref.startsWith(S.DS)))) {
     out = val(state, val, current, store)
   }
+
+  // Update parent with value. Ensures references remain in node tree.
   else if (S.MVAL === state.mode && state.full) {
     setprop(state.parent, state.key, val)
   }
@@ -677,7 +712,7 @@ const injecthandler: InjectHandler = (
 }
 
 
-// The transform_* functions are define inject handlers (see InjectHandler).
+// The transform_* functions are special command inject handlers (see InjectHandler).
 
 
 // Delete a key from a map or list.
@@ -710,16 +745,19 @@ const transform_COPY: InjectHandler = (state: InjectState, _val: any, current: a
 const transform_KEY: InjectHandler = (state: InjectState, _val: any, current: any) => {
   const { mode, path, parent } = state
 
+  // Do nothing in val mode.
   if (S.MVAL !== mode) {
     return UNDEF
   }
 
+  // Key is defined by $KEY meta property.
   const keyspec = getprop(parent, S.DKEY)
   if (UNDEF !== keyspec) {
     setprop(parent, S.DKEY, UNDEF)
     return getprop(current, keyspec)
   }
 
+  // Key is defined within general purpose $META object.
   return getprop(getprop(parent, S.DMETA), S.KEY, getprop(path, path.length - 2))
 }
 
@@ -750,9 +788,11 @@ const transform_MERGE: InjectHandler = (
     let args = getprop(parent, key)
     args = S.empty === args ? [store.$TOP] : Array.isArray(args) ? args : [args]
 
+    // Remove the $MERGE command.
     setprop(parent, key, UNDEF)
 
-    // Literals in the parent have precedence.
+    // Literals in the parent have precedence, but we still merg onto
+    // the parent object, so that node tree references are not changed.
     const mergelist = [parent, ...args, clone(parent)]
 
     merge(mergelist)
@@ -799,6 +839,7 @@ const transform_EACH: InjectHandler = (
   const tkey = path[path.length - 2]
   const target = nodes[path.length - 2] || nodes[path.length - 1]
 
+  // Create clones of the child template for each value of the current soruce.
   if (isnode(src)) {
     if (islist(src)) {
       tval = src.map(() => clone(child))
@@ -807,7 +848,7 @@ const transform_EACH: InjectHandler = (
       tval = Object.entries(src).map(n => ({
         ...clone(child),
 
-        // Make a note of the key for $KEY transforms
+        // Make a note of the key for $KEY transforms.
         [S.DMETA]: { KEY: n[0] }
       }))
     }
@@ -970,6 +1011,16 @@ function transform(
 }
 
 
+// Validate a data structure against a shape specification.  The shape
+// specification follows the "by example" principle.  Plain data in
+// teh shape is treated as default values that also specify the
+// required type.  Thus shape {a:1} validates {a:2}, since the types
+// (number) match, but not {a:'A'}.  Shape {a;1} against data {}
+// returns {a:1} as a=1 is the default value of the a key.  Special
+// validation commands (in the same syntax as transform ) are also
+// provided to specify required values.  Thus shape {a:'`$STRING`'}
+// validates {a:'A'} but not {a:1}. Empty map or list means the node
+// is open, and if missing an empty default is inserted.
 function validate(
   data: any, // Source data to transform into new data (original not mutated)
   spec: any, // Transform specification; output follows this shape
@@ -984,8 +1035,10 @@ function validate(
     data,
     spec,
     {
+      // A special top level value to collect errors.
       $ERRS: errs,
 
+      // Remove the transform commands.
       $DELETE: null,
       $COPY: null,
       $KEY: null,
@@ -994,6 +1047,7 @@ function validate(
       $EACH: null,
       $PACK: null,
 
+      // A required string value. NOTE: Rejects empty strings.
       $STRING: (state: InjectState, _val: any, current: any) => {
         let out = getprop(current, state.key)
 
@@ -1013,6 +1067,7 @@ function validate(
         }
       },
 
+      // A required number value (int or float).
       $NUMBER: (state: InjectState, _val: any, current: any) => {
         let out = getprop(current, state.key)
 
@@ -1025,6 +1080,7 @@ function validate(
         return out
       },
 
+      // A required boolean value.
       $BOOLEAN: (state: InjectState, _val: any, current: any) => {
         let out = getprop(current, state.key)
 
@@ -1037,6 +1093,7 @@ function validate(
         return out
       },
 
+      // A required object (map) value (contents not validated).
       $OBJECT: (state: InjectState, _val: any, current: any) => {
         let out = getprop(current, state.key)
 
@@ -1050,6 +1107,7 @@ function validate(
         return out
       },
 
+      // A required array (list) value (contents not validated).
       $ARRAY: (state: InjectState, _val: any, current: any) => {
         let out = getprop(current, state.key)
 
@@ -1062,6 +1120,7 @@ function validate(
         return out
       },
 
+      // A required function value.
       $FUNCTION: (state: InjectState, _val: any, current: any) => {
         let out = getprop(current, state.key)
 
@@ -1074,30 +1133,55 @@ function validate(
         return out
       },
 
+      // Allow any value.
       $ANY: (state: InjectState, _val: any, current: any) => {
         let out = getprop(current, state.key)
         return out
       },
 
+      // Specify child values for map or list.
+      // Map syntax: {'`$CHILD`': child-template }
+      // List syntax: ['`$CHILD`', child-template ]
       $CHILD: (state: InjectState, _val: any, current: any) => {
         const { mode, key, parent, keys, path } = state
 
+        // Setup data structures for validation by cloning child template.
+
+        // Map syntax.
         if (S.MKEYPRE === mode) {
           const child = getprop(parent, key)
+
+          // Get corresponding current object.
           const pkey = path[path.length - 2]
-          const tval = getprop(current, pkey)
+          let tval = getprop(current, pkey)
+
+          if (UNDEF == tval) {
+            // Create an empty object as default.
+            tval = {}
+          }
+          else if (!ismap(tval)) {
+            state.errs.push(invalidTypeMsg(
+              state.path.slice(0, state.path.length - 1), S.object, typeof tval, tval))
+            return UNDEF
+          }
 
           const ckeys = keysof(tval)
           for (let ckey of ckeys) {
             setprop(parent, ckey, clone(child))
+
+            // NOTE: modifying state! This extends the child value loop in inject.
             keys.push(ckey)
           }
 
+          // Remove $CHILD to cleanup ouput.
           setprop(parent, key, UNDEF)
           return UNDEF
         }
+
+        // List syntax.
         else if (S.MVAL === mode) {
           if (!islist(parent)) {
+            // $CHILD was not inside a list.
             state.errs.push('Invalid $CHILD as value')
             return UNDEF
           }
@@ -1105,6 +1189,7 @@ function validate(
           const child = parent[1]
 
           if (UNDEF === current) {
+            // Empty list as default.
             parent.length = 0
             return UNDEF
           }
@@ -1114,6 +1199,10 @@ function validate(
             state.keyI = parent.length
             return current
           }
+
+          // Clone children abd reset state key index.
+          // The inject child loop will now iterate over the cloned children,
+          // validating them againt the current list values.
           else {
             current.map((_n, i) => parent[i] = clone(child))
             parent.length = current.length
@@ -1125,31 +1214,48 @@ function validate(
         return UNDEF
       },
 
+      // Match at least one of the specified shapes.
+      // Syntax: ['`$ONE`', alt0, alt1, ...]
       $ONE: (state: InjectState, _val: any, current: any) => {
         const { mode, parent, path, nodes } = state
 
+        // Only operate in val mode, since parent is a list.
         if (S.MVAL === mode) {
           state.keyI = state.keys.length
 
+          // Shape alts.
           let tvals = parent.slice(1)
 
+          // See if we can find a match.
           for (let tval of tvals) {
+
+            // If match, then errs.length = 0
             let terrs: any[] = []
             validate(current, tval, UNDEF, terrs)
 
+            // The parent is the list we are inside. Go up one level
+            // to set the actual value.
             const grandparent = nodes[nodes.length - 2]
             const grandkey = path[path.length - 2]
 
             if (isnode(grandparent)) {
+
+              // Accept current value if there was a match
               if (0 === terrs.length) {
+
+                // Ensure generic type validation (in validate "modify") passes.
                 setprop(grandparent, grandkey, current)
                 return
               }
+
+              // Ensure generic validation does not generate a spurious error.
               else {
                 setprop(grandparent, grandkey, UNDEF)
               }
             }
           }
+
+          // There was no match.
 
           const valdesc = tvals
             .map((v: any) => stringify(v))
@@ -1166,12 +1272,16 @@ function validate(
       ...(extra || {})
     },
 
+    // This is the "modify" argument to inject. Use this to perform
+    // generic validation. Runs *after* any special commands.
     (val,
       key,
       parent,
       state,
       current,
       _store) => {
+
+      // Current val to verify.
       const cval = getprop(current, key)
 
       if (UNDEF === cval || UNDEF === state) {
@@ -1181,17 +1291,24 @@ function validate(
       const pval = getprop(parent, key)
       const t = typeof pval
 
+      // Delete any special commands remaining.
       if (S.string === t && pval.includes(S.DS)) {
         return UNDEF
       }
 
       const ct = typeof cval
 
+      // Type mismatch.
       if (t !== ct && UNDEF !== pval) {
         state.errs.push(invalidTypeMsg(state.path, t, ct, cval))
         return UNDEF
       }
       else if (ismap(cval)) {
+        if (!ismap(val)) {
+          state.errs.push(invalidTypeMsg(state.path, islist(val) ? S.array : t, ct, cval))
+          return UNDEF
+        }
+
         const ckeys = keysof(cval)
         const pkeys = keysof(pval)
 
@@ -1203,12 +1320,15 @@ function validate(
               badkeys.push(ckey)
             }
           }
+
+          // Closed object, so reject extra keys not in shape.
           if (0 < badkeys.length) {
             state.errs.push('Unexpected keys at ' + pathify(state.path) +
               ': ' + badkeys.join(', '))
           }
         }
         else {
+          // Object is open, so merge in extra keys.
           merge([pval, cval])
           if (isnode(pval)) {
             delete pval['`$OPEN`']
@@ -1238,6 +1358,9 @@ function validate(
 
 
 function invalidTypeMsg(path: any, type: string, vt: string, v: any) {
+  // Deal with js array type returns 'object' 
+  vt = Array.isArray(v) && S.object === vt ? S.array : vt
+  v = stringify(v)
   return 'Expected ' + type + ' at ' + pathify(path) +
     ', found ' + (null != v ? vt + ': ' : '') + v
 }

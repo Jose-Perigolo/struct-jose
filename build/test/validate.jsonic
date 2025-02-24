@@ -53,6 +53,8 @@ node: {
     { in: { data: {}, spec: {x:{y:11}} }, out: {x:{y:11}} }
     
     { in: { data: {a:{x:12,y:22}}, spec: {a:{x:0,'`$OPEN`':true}} }, out: {a:{x:12,y:22}} }
+    { in: { data: {a1:{}}, spec: {a1:[]} }, err:'Expected array at a1, found object: {}' }
+    { in: { data: {a2:[]}, spec: {a2:{}} }, err:'Expected object at a2, found array: []' }
     
     { in: { data: {q:{a:{x:1},b:{x:2}}}, spec: {q:{'`$CHILD`':{x:'`$NUMBER`'}}} },
       out: {q:{a:{x:1},b:{x:2}}} }
@@ -94,10 +96,17 @@ node: {
     { in: { data: true, spec: ['`$ONE`','`$STRING`','`$NUMBER`']},
       err: 'Expected one of string, number at <root>, found boolean: true' }
 
+      # Child template is a default value defining type
     { in: { data:{a40:{x0:2}}, spec: {a40:{'`$CHILD`':1}}}, out:{a40:{x0:2}} }
     { in: { data:{a41:{x0:3,x1:4}}, spec: {a41:{'`$CHILD`':1}}}, out:{a41:{x0:3,x1:4}} }
+    { in: { data:{a411:{x2:'X'}}, spec: {a411:{'`$CHILD`':1}}}
+      err: 'Expected number at a411.x2, found string: X'}
+    
     { in: { data:{a42:{}}, spec: {a42:{'`$CHILD`':1}}}, out:{a42:{}} }
     { in: { data:{}, spec: {a43:{'`$CHILD`':1}}}, out:{a43:{}} }
+
+    { in: { data:{a44:1}, spec: {a44:{'`$CHILD`':{y:1}}}}
+      err: 'Expected object at a44, found number: 1' }
 
     { in: { data:{a50:[2]}, spec: {a50:['`$CHILD`',1]}}, out:{a50:[2]} }
     { in: { data:{a51:[3,4]}, spec: {a51:['`$CHILD`',1]}}, out:{a51:[3,4]} }
