@@ -1628,6 +1628,37 @@
           ]
         }
       ]
+    },
+    "isfunc": {
+      "set": [
+        {
+          "out": false
+        },
+        {
+          "in": null,
+          "out": false
+        },
+        {
+          "in": true,
+          "out": false
+        },
+        {
+          "in": 1,
+          "out": false
+        },
+        {
+          "in": "a",
+          "out": false
+        },
+        {
+          "in": {},
+          "out": false
+        },
+        {
+          "in": [],
+          "out": false
+        }
+      ]
     }
   },
   "getpath": {

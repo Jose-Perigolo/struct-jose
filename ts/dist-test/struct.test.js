@@ -54,6 +54,7 @@ function nullModifier(key, val, parent) {
         (0, node_assert_1.equal)('function', typeof struct_1.getprop);
         (0, node_assert_1.equal)('function', typeof struct_1.haskey);
         (0, node_assert_1.equal)('function', typeof struct_1.isempty);
+        (0, node_assert_1.equal)('function', typeof struct_1.isfunc);
         (0, node_assert_1.equal)('function', typeof struct_1.iskey);
         (0, node_assert_1.equal)('function', typeof struct_1.islist);
         (0, node_assert_1.equal)('function', typeof struct_1.ismap);
@@ -108,6 +109,12 @@ function nullModifier(key, val, parent) {
     });
     (0, node_test_1.test)('minor-joinurl', async () => {
         await runset(spec.minor.joinurl, struct_1.joinurl);
+    });
+    (0, node_test_1.test)('minor-isfunc', async () => {
+        await runset(spec.minor.isfunc, struct_1.isfunc);
+        function f0() { return null; }
+        (0, node_assert_1.equal)((0, struct_1.isfunc)(f0), true);
+        (0, node_assert_1.equal)((0, struct_1.isfunc)(() => null), true);
     });
     // walk tests
     // ==========
@@ -212,7 +219,7 @@ function nullModifier(key, val, parent) {
         await runset(spec.transform.pack, (vin) => (0, struct_1.transform)(vin.data, vin.spec, vin.store));
     });
     (0, node_test_1.test)('transform-modify', async () => {
-        await runset(spec.transform.modify, (vin) => (0, struct_1.transform)(vin.data, vin.spec, vin.store, (key, val, parent) => {
+        await runset(spec.transform.modify, (vin) => (0, struct_1.transform)(vin.data, vin.spec, vin.store, (val, key, parent) => {
             if (null != key && null != parent && 'string' === typeof val) {
                 val = parent[key] = '@' + val;
             }

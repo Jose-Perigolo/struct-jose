@@ -4,38 +4,54 @@
  * =============
  *
  * Utility functions to manipulate in-memory JSON-like data
- * structures.  The general design principle is
- * "by-example". Transform specifications mirror the desired output.
- * This implementation is desgined for porting to multiple language.
+ * structures. These structures assumed to be composed of nested
+ * "nodes", where a node is a list or map, and has named or indexed
+ * fields.  The general design principle is "by-example". Transform
+ * specifications mirror the desired output.  This implementation is
+ * designed for porting to multiple language, and to be tolerant of
+ * undefined values.
  *
- * - isnode, islist, islist, iskey: identify value kinds
- * - clone: create a copy of a JSON-like data structure
- * - items: list entries of a map or list as [key, value] pairs
- * - getprop: safely get a property value by key
- * - setprop: safely set a property value by key
- * - getpath: get the value at a key path deep inside an object
+ * Main utilities
+ * - getpath: get the value at a key path deep inside an object.
  * - merge: merge multiple nodes, overriding values in earlier nodes.
  * - walk: walk a node tree, applying a function at each node and leaf.
  * - inject: inject values from a data store into a new data structure.
  * - transform: transform a data structure to an example structure.
+ * - validate: valiate a data structure against a shape specification.
+ *
+ * Minor utilities
+ * - isnode, islist, ismap, iskey, isfunc: identify value kinds.
+ * - isempty: undefined values, or empty nodes.
+ * - keysof: sorted list of node keys (ascending).
+ * - haskey: true if key value is defined.
+ * - clone: create a copy of a JSON-like data structure.
+ * - items: list entries of a map or list as [key, value] pairs.
+ * - getprop: safely get a property value by key.
+ * - setprop: safely set a property value by key.
+ * - stringify: human-friendly string version of a value.
+ * - escre: escape a regular expresion string.
+ * - escurl: escape a url.
+ * - joinurl: join parts of a url, merging forward slashes.
+ * 
  */
 
 
-// String constants.
+// String constants are explicitly defined.
 const S = {
+
+  // Mode value for inject step.
   MKEYPRE: 'key:pre',
   MKEYPOST: 'key:post',
   MVAL: 'val',
   MKEY: 'key',
 
-  TKEY: '`$KEY`',
-  TMETA: '`$META`',
-
-  KEY: 'KEY',
-
+  // Special keys.
+  DKEY: '`$KEY`',
   DTOP: '$TOP',
   DERRS: '$ERRS',
+  DMETA: '`$META`',
 
+  // General strings.
   array: 'array',
   base: 'base',
   boolean: 'boolean',
@@ -44,13 +60,16 @@ const S = {
   number: 'number',
   object: 'object',
   string: 'string',
-
+  key: 'key',
+  parent: 'parent',
   BT: '`',
   DS: '$',
   DT: '.',
+  KEY: 'KEY',
 }
 
 
+// The standard undefined value for this language.
 const UNDEF = undefined
 
 
@@ -96,12 +115,12 @@ type InjectState = {
 
 // Apply a custom modification to injections.
 type Modify = (
-  key: string | number,
-  val: any,
-  parent: any,
-  state: InjectState,
-  current: any,
-  store: any,
+  val: any,            // Value.
+  key?: PropKey,       // Value key, if any,
+  parent?: any,        // Parent node, if any.
+  state?: InjectState, // Injection state, if any.
+  current?: any,       // Current value in store (matches path)
+  store?: any,         // Store, if any
 ) => void
 
 
@@ -142,7 +161,7 @@ function isempty(val: any) {
 }
 
 
-// TOOD: TEST
+// Value is a function.
 function isfunc(val: any) {
   return S.function === typeof val
 }
@@ -156,7 +175,6 @@ function items(val: any) {
 }
 
 
-
 // Sorted keys of a map, or indexes of an array.
 function keysof(val: any) {
   return !isnode(val) ? [] :
@@ -164,6 +182,7 @@ function keysof(val: any) {
 }
 
 
+// Value of property with name key in node val is defined.
 function haskey(val: any, key: any) {
   return UNDEF !== getprop(val, key)
 }
@@ -621,9 +640,9 @@ function inject(
   // Custom modification.
   if (modify) {
     modify(
-      state.key,
       val,
-      state.parent,
+      getprop(state, S.key),
+      getprop(state, S.parent),
       state,
       current,
       store
@@ -695,20 +714,20 @@ const transform_KEY: InjectHandler = (state: InjectState, _val: any, current: an
     return UNDEF
   }
 
-  const keyspec = getprop(parent, S.TKEY)
+  const keyspec = getprop(parent, S.DKEY)
   if (UNDEF !== keyspec) {
-    setprop(parent, S.TKEY, UNDEF)
+    setprop(parent, S.DKEY, UNDEF)
     return getprop(current, keyspec)
   }
 
-  return getprop(getprop(parent, S.TMETA), S.KEY, getprop(path, path.length - 2))
+  return getprop(getprop(parent, S.DMETA), S.KEY, getprop(path, path.length - 2))
 }
 
 
 // Store meta data about a node.
 const transform_META: InjectHandler = (state: InjectState) => {
   const { parent } = state
-  setprop(parent, S.TMETA, UNDEF)
+  setprop(parent, S.DMETA, UNDEF)
   return UNDEF
 }
 
@@ -789,7 +808,7 @@ const transform_EACH: InjectHandler = (
         ...clone(child),
 
         // Make a note of the key for $KEY transforms
-        [S.TMETA]: { KEY: n[0] }
+        [S.DMETA]: { KEY: n[0] }
       }))
     }
 
@@ -836,7 +855,7 @@ const transform_PACK: InjectHandler = (
   const child = clone(args[1]) // Child template.
 
   // Find key and target node.
-  const keyprop = child[S.TKEY]
+  const keyprop = child[S.DKEY]
   const tkey = path[path.length - 2]
   const target = nodes[path.length - 2] || nodes[path.length - 1]
 
@@ -847,7 +866,7 @@ const transform_PACK: InjectHandler = (
   src = islist(src) ? src :
     ismap(src) ? Object.entries(src)
       .reduce((a: any[], n: any) =>
-        (n[1][S.TMETA] = { KEY: n[0] }, a.push(n[1]), a), []) :
+        (n[1][S.DMETA] = { KEY: n[0] }, a.push(n[1]), a), []) :
       UNDEF
 
   if (null == src) {
@@ -855,9 +874,9 @@ const transform_PACK: InjectHandler = (
   }
 
   // Get key if specified.
-  let childkey: PropKey | undefined = getprop(child, S.TKEY)
+  let childkey: PropKey | undefined = getprop(child, S.DKEY)
   let keyname = UNDEF === childkey ? keyprop : childkey
-  setprop(child, S.TKEY, UNDEF)
+  setprop(child, S.DKEY, UNDEF)
 
   // Build parallel target object.
   let tval: any = {}
@@ -865,7 +884,7 @@ const transform_PACK: InjectHandler = (
     let kn = getprop(n, keyname)
     setprop(a, kn, clone(child))
     const nchild = getprop(a, kn)
-    setprop(nchild, S.TMETA, getprop(n, S.TMETA))
+    setprop(nchild, S.DMETA, getprop(n, S.DMETA))
     return a
   }, tval)
 
@@ -1147,15 +1166,15 @@ function validate(
       ...(extra || {})
     },
 
-    (key,
-      val,
+    (val,
+      key,
       parent,
       state,
       current,
       _store) => {
       const cval = getprop(current, key)
 
-      if (UNDEF === cval) {
+      if (UNDEF === cval || UNDEF === state) {
         return UNDEF
       }
 
@@ -1203,7 +1222,7 @@ function validate(
       }
       else {
         // Spec value was a default, copy over data
-        parent[key] = cval
+        setprop(parent, key, cval)
       }
 
       return UNDEF

@@ -11,6 +11,7 @@ import {
   haskey,
   inject,
   isempty,
+  isfunc,
   iskey,
   islist,
   ismap,
@@ -93,6 +94,7 @@ describe('struct', async () => {
     equal('function', typeof getprop)
     equal('function', typeof haskey)
     equal('function', typeof isempty)
+    equal('function', typeof isfunc)
     equal('function', typeof iskey)
     equal('function', typeof islist)
     equal('function', typeof ismap)
@@ -165,6 +167,13 @@ describe('struct', async () => {
 
   test('minor-joinurl', async () => {
     await runset(spec.minor.joinurl, joinurl)
+  })
+
+  test('minor-isfunc', async () => {
+    await runset(spec.minor.isfunc, isfunc)
+    function f0() { return null }
+    equal(isfunc(f0), true)
+    equal(isfunc(() => null), true)
   })
 
 
@@ -311,7 +320,7 @@ describe('struct', async () => {
   test('transform-modify', async () => {
     await runset(spec.transform.modify, (vin: any) =>
       transform(vin.data, vin.spec, vin.store,
-        (key, val, parent) => {
+        (val, key, parent) => {
           if (null != key && null != parent && 'string' === typeof val) {
             val = parent[key] = '@' + val
           }
