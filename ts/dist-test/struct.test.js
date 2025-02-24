@@ -16,7 +16,7 @@ function nullModifier(key, val, parent) {
     }
 }
 (0, node_test_1.describe)('struct', async () => {
-    const { spec, runset, subject } = await (0, runner_1.runner)('struct', {}, '../../build/test/test.json', {
+    const { spec, runset } = await (0, runner_1.runner)('struct', {}, '../../build/test/test.json', {
         test: () => ({
             utility: () => ({
                 struct: {
@@ -52,17 +52,17 @@ function nullModifier(key, val, parent) {
         (0, node_assert_1.equal)('function', typeof struct_1.escre);
         (0, node_assert_1.equal)('function', typeof struct_1.escurl);
         (0, node_assert_1.equal)('function', typeof struct_1.getprop);
+        (0, node_assert_1.equal)('function', typeof struct_1.haskey);
         (0, node_assert_1.equal)('function', typeof struct_1.isempty);
         (0, node_assert_1.equal)('function', typeof struct_1.iskey);
         (0, node_assert_1.equal)('function', typeof struct_1.islist);
         (0, node_assert_1.equal)('function', typeof struct_1.ismap);
         (0, node_assert_1.equal)('function', typeof struct_1.isnode);
         (0, node_assert_1.equal)('function', typeof struct_1.items);
+        (0, node_assert_1.equal)('function', typeof struct_1.joinurl);
+        (0, node_assert_1.equal)('function', typeof struct_1.keysof);
         (0, node_assert_1.equal)('function', typeof struct_1.setprop);
         (0, node_assert_1.equal)('function', typeof struct_1.stringify);
-        (0, node_assert_1.equal)('function', typeof struct_1.haskey);
-        (0, node_assert_1.equal)('function', typeof struct_1.keysof);
-        (0, node_assert_1.equal)('function', typeof struct_1.joinurl);
     });
     (0, node_test_1.test)('minor-clone', async () => {
         await runset(spec.minor.clone, struct_1.clone);
@@ -138,6 +138,7 @@ function nullModifier(key, val, parent) {
         (0, node_assert_1.deepEqual)((0, struct_1.merge)([null, f0]), f0);
         (0, node_assert_1.deepEqual)((0, struct_1.merge)([{ a: f0 }]), { a: f0 });
         (0, node_assert_1.deepEqual)((0, struct_1.merge)([{ a: { b: f0 } }]), { a: { b: f0 } });
+        // JavaScript only
         (0, node_assert_1.deepEqual)((0, struct_1.merge)([{ a: global.fetch }]), { a: global.fetch });
         (0, node_assert_1.deepEqual)((0, struct_1.merge)([{ a: { b: global.fetch } }]), { a: { b: global.fetch } });
     });

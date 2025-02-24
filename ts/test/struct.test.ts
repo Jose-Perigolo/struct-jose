@@ -8,6 +8,7 @@ import {
   escurl,
   getpath,
   getprop,
+  haskey,
   inject,
   isempty,
   iskey,
@@ -15,15 +16,14 @@ import {
   ismap,
   isnode,
   items,
-  haskey,
+  joinurl,
   keysof,
   merge,
   setprop,
   stringify,
   transform,
-  walk,
   validate,
-  joinurl,
+  walk,
 } from '../dist/struct'
 
 
@@ -51,7 +51,7 @@ function nullModifier(
 
 describe('struct', async () => {
 
-  const { spec, runset, subject } =
+  const { spec, runset } =
     await runner('struct', {}, '../../build/test/test.json', {
       test: () => ({
         utility: () => ({
@@ -91,17 +91,17 @@ describe('struct', async () => {
     equal('function', typeof escre)
     equal('function', typeof escurl)
     equal('function', typeof getprop)
+    equal('function', typeof haskey)
     equal('function', typeof isempty)
     equal('function', typeof iskey)
     equal('function', typeof islist)
     equal('function', typeof ismap)
     equal('function', typeof isnode)
     equal('function', typeof items)
+    equal('function', typeof joinurl)
+    equal('function', typeof keysof)
     equal('function', typeof setprop)
     equal('function', typeof stringify)
-    equal('function', typeof haskey)
-    equal('function', typeof keysof)
-    equal('function', typeof joinurl)
   })
 
   test('minor-clone', async () => {
@@ -207,6 +207,7 @@ describe('struct', async () => {
     deepEqual(merge([{ a: f0 }]), { a: f0 })
     deepEqual(merge([{ a: { b: f0 } }]), { a: { b: f0 } })
 
+    // JavaScript only
     deepEqual(merge([{ a: global.fetch }]), { a: global.fetch })
     deepEqual(merge([{ a: { b: global.fetch } }]), { a: { b: global.fetch } })
   })
@@ -307,7 +308,6 @@ describe('struct', async () => {
       transform(vin.data, vin.spec, vin.store))
   })
 
-
   test('transform-modify', async () => {
     await runset(spec.transform.modify, (vin: any) =>
       transform(vin.data, vin.spec, vin.store,
@@ -335,7 +335,6 @@ describe('struct', async () => {
       c: 'C'
     })
   })
-
 
   test('transform-funcval', async () => {
     const f0 = () => 99

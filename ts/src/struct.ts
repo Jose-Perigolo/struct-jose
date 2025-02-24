@@ -1,4 +1,4 @@
-/* Copyright(c) 2025 Voxgig Ltd. MIT LICENSE. */
+/* Copyright (c) 2025 Voxgig Ltd. MIT LICENSE. */
 
 /* Voxgig Struct
  * =============
@@ -36,14 +36,14 @@ const S = {
   DTOP: '$TOP',
   DERRS: '$ERRS',
 
-  object: 'object',
   array: 'array',
-  number: 'number',
-  boolean: 'boolean',
-  string: 'string',
-  function: 'function',
-  empty: '',
   base: 'base',
+  boolean: 'boolean',
+  empty: '',
+  function: 'function',
+  number: 'number',
+  object: 'object',
+  string: 'string',
 
   BT: '`',
   DS: '$',
@@ -402,7 +402,7 @@ function merge(objs: any[]): any {
 // The state argument allows for custom handling when called from `inject` or `transform`.
 function getpath(path: string | string[], store: any, current?: any, state?: InjectState) {
 
-  const parts = islist(path) ? path : S.string === typeof path ? path.split(S.DT) : undefined
+  const parts = islist(path) ? path : S.string === typeof path ? path.split(S.DT) : UNDEF
 
   if (UNDEF === parts) {
     return UNDEF
@@ -434,7 +434,7 @@ function getpath(path: string | string[], store: any, current?: any, state?: Inj
       first
 
     // Move along the path, trying to descend into the store.
-    for (pI++; undefined !== val && pI < parts.length; pI++) {
+    for (pI++; UNDEF !== val && pI < parts.length; pI++) {
       val = getprop(val, parts[pI])
     }
 
@@ -646,7 +646,8 @@ const injecthandler: InjectHandler = (
 ): any => {
   let out = val
 
-  if (S.function === typeof val && ref.startsWith(S.DS)) {
+  if (S.function === typeof val &&
+    (null == ref || (S.string === typeof ref && ref.startsWith(S.DS)))) {
     out = val(state, val, current, store)
   }
   else if (S.MVAL === state.mode && state.full) {
@@ -695,7 +696,7 @@ const transform_KEY: InjectHandler = (state: InjectState, _val: any, current: an
   }
 
   const keyspec = getprop(parent, S.TKEY)
-  if (undefined !== keyspec) {
+  if (UNDEF !== keyspec) {
     setprop(parent, S.TKEY, UNDEF)
     return getprop(current, keyspec)
   }
@@ -1236,28 +1237,27 @@ function pathify(val: any, from?: number) {
 }
 
 
-
 export {
   clone,
   escre,
   escurl,
   getpath,
   getprop,
+  haskey,
   inject,
   isempty,
+  isfunc,
   iskey,
   islist,
   ismap,
   isnode,
-  isfunc,
-  haskey,
-  keysof,
   items,
+  joinurl,
+  keysof,
   merge,
   setprop,
   stringify,
   transform,
-  walk,
-  joinurl,
   validate,
+  walk,
 }
