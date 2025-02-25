@@ -1114,27 +1114,37 @@ function validate(
       parent,
       state,
       current,
-      _store) => {
+     _store) =>
+    {
+
+      // Current val to verify.
       const cval = getprop(current, key)
 
-      if (UNDEF === cval) {
+      if (UNDEF === cval || UNDEF === state) {
         return UNDEF
       }
 
       const pval = getprop(parent, key)
       const t = typeof pval
 
+      // Delete any special commands remaining.
       if (S.string === t && pval.includes(S.DS)) {
         return UNDEF
       }
 
       const ct = typeof cval
 
+      // Type mismatch.
       if (t !== ct && UNDEF !== pval) {
         state.errs.push(invalidTypeMsg(state.path, t, ct, cval))
         return UNDEF
       }
       else if (ismap(cval)) {
+        if (!ismap(val)) {
+          state.errs.push(invalidTypeMsg(state.path, islist(val) ? S.array : t, ct, cval))
+          return UNDEF
+        }
+
         const ckeys = keysof(cval)
         const pkeys = keysof(pval)
 
@@ -1152,6 +1162,7 @@ function validate(
           }
         }
         else {
+          // Object is open, so merge in extra keys.
           merge([pval, cval])
           if (isnode(pval)) {
             delete pval['`$OPEN`']
@@ -1181,6 +1192,9 @@ function validate(
 
 
 function invalidTypeMsg(path, type, vt, v) {
+  // Deal with js array type returns 'object' 
+  vt = Array.isArray(v) && S.object === vt ? S.array : vt
+  v = stringify(v)
   return 'Expected ' + type + ' at ' + pathify(path) +
     ', found ' + (null != v ? vt + ': ' : '') + v
 }
