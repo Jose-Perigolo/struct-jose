@@ -1,4 +1,4 @@
-# Copyright (c) 2025 Voxgig Ltd.
+# Copyright (c) 2025 Voxgig Ltd. MIT LICENSE.
 #
 # Voxgig Struct
 # =============
@@ -87,28 +87,6 @@ def iskey(key: Any):
     return False
 
 
-def items(val: Any):
-    """
-    List the keys of a map or list as an array of [key, value] tuples.
-    """
-    if ismap(val):
-        return list(val.items())
-    elif islist(val):
-        return list(enumerate(val))
-    else:
-        return []
-
-
-def clone(val: Any):
-    """
-    Clone a JSON-like data structure using a deep copy (via JSON).
-    """
-    if val is None:
-        return None
-    return json.loads(json.dumps(val))
-
-
-
 def isempty(val: Any):
     """
     Check for an "empty" value - undefined, false, 0, empty string, array, object.
@@ -132,6 +110,30 @@ def isempty(val: Any):
         return True
     
     return False    
+
+
+def items(val: Any):
+    """
+    List the keys of a map or list as an array of [key, value] tuples.
+    """
+    if ismap(val):
+        return list(val.items())
+    elif islist(val):
+        return list(enumerate(val))
+    else:
+        return []
+
+
+def clone(val: Any):
+    """
+    Clone a JSON-like data structure using a deep copy (via JSON).
+    """
+    if val is None:
+        return None
+    return json.loads(json.dumps(val))
+
+
+
 
 
 

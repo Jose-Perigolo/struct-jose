@@ -164,11 +164,13 @@ setprop: {
 isempty: {
   set: [
     { in: '', out: true }
-    { in: false, out: true }
-    { in: 0, out: true }
     { in: [], out: true }
     { in: {}, out: true }
 
+    { in: false, out: false }
+    { in: true, out: false }
+    { in: 0, out: false }
+    { in: 1, out: false }
     { in: 'a', out: false }
     { in: true, out: false }
     { in: 1, out: false }
@@ -210,3 +212,61 @@ escurl: {
 }
 
 
+haskey: {
+  set: [
+    { args: [{a:1},a], out: true }
+    { args: [{a:2},b], out: false }
+    { args: [{a:11,c:12},a], out: true }
+    { args: [{a:12,c:13},b], out: false }
+    { args: [{a:13,c:14},c], out: true }
+    { args: [{a:21,b:22},a], out: true }
+    { args: [{a:22,b:23},b], out: true }
+    { args: [{a:24,b:25},c], out: false }
+    { args: [[3],0], out: true }
+    { args: [[3],1], out: false }
+    { args: [[3],'0'], out: true }
+    { args: [[3],'1'], out: false }
+  ]
+}
+
+
+keysof: {
+  set: [
+    { out: [] }
+    { in: {}, out: [] }
+    { in: [], out: [] }
+    { in: {a:1}, out: [a] }
+    { in: {a:2,b:3}, out: [a,b] }
+    { in: {b:4,a:5}, out: [a,b] }
+    { in: [a], out: [0] }
+    { in: [a,b], out: [0,1] }
+  ]
+}
+
+
+joinurl: {
+  set: [
+    { out: 'a' in: ['a'] }
+    { out: 'a/b' in: ['a','b'] }
+    { out: 'a/b' in: ['a',null,'b'] }
+    { out: 'a/b' in: ['a/','b'] }
+    { out: 'a/b' in: ['a','/b'] }
+    { out: 'a/b' in: ['a/','/b'] }
+    { out: 'a/b' in: ['a/','//b'] }
+    { out: 'a/b/c/d' in: ['a','b','c//d'] }
+    { out: '//a/b' in: ['//a','/b'] }
+  ]
+}
+
+
+isfunc: {
+  set: [
+    { out: false }
+    { in: null, out: false }
+    { in: true, out: false }
+    { in: 1, out: false }
+    { in: 'a', out: false }
+    { in: {}, out: false }
+    { in: [], out: false }
+  ]
+}
