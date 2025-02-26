@@ -65,9 +65,6 @@ function nullModifier(key, val, parent) {
         (0, node_assert_1.equal)('function', typeof struct_1.setprop);
         (0, node_assert_1.equal)('function', typeof struct_1.stringify);
     });
-    (0, node_test_1.test)('minor-clone', async () => {
-        await runset(spec.minor.clone, struct_1.clone);
-    });
     (0, node_test_1.test)('minor-isnode', async () => {
         await runset(spec.minor.isnode, struct_1.isnode);
     });
@@ -82,6 +79,17 @@ function nullModifier(key, val, parent) {
     });
     (0, node_test_1.test)('minor-isempty', async () => {
         await runset(spec.minor.isempty, struct_1.isempty);
+    });
+    (0, node_test_1.test)('minor-isfunc', async () => {
+        await runset(spec.minor.isfunc, struct_1.isfunc);
+        function f0() { return null; }
+        (0, node_assert_1.equal)((0, struct_1.isfunc)(f0), true);
+        (0, node_assert_1.equal)((0, struct_1.isfunc)(() => null), true);
+    });
+    (0, node_test_1.test)('minor-clone', async () => {
+        await runset(spec.minor.clone, struct_1.clone);
+        const f0 = () => null;
+        (0, node_assert_1.deepEqual)({ a: f0 }, (0, struct_1.clone)({ a: f0 }));
     });
     (0, node_test_1.test)('minor-escre', async () => {
         await runset(spec.minor.escre, struct_1.escre);
@@ -110,16 +118,10 @@ function nullModifier(key, val, parent) {
     (0, node_test_1.test)('minor-joinurl', async () => {
         await runset(spec.minor.joinurl, struct_1.joinurl);
     });
-    (0, node_test_1.test)('minor-isfunc', async () => {
-        await runset(spec.minor.isfunc, struct_1.isfunc);
-        function f0() { return null; }
-        (0, node_assert_1.equal)((0, struct_1.isfunc)(f0), true);
-        (0, node_assert_1.equal)((0, struct_1.isfunc)(() => null), true);
-    });
     // walk tests
     // ==========
     (0, node_test_1.test)('walk-exists', async () => {
-        (0, node_assert_1.equal)('function', typeof struct_1.merge);
+        (0, node_assert_1.equal)('function', typeof struct_1.walk);
     });
     (0, node_test_1.test)('walk-basic', async () => {
         await runset(spec.walk.basic, (vin) => (0, struct_1.walk)(vin, walkpath));

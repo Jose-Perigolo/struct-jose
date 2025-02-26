@@ -1,11 +1,4 @@
 
-clone: {
-  set: [
-    { in: {a:1}, out: {a:1} }
-    { in: [11], out: [11] }
-  ]
-}
-
 isnode: {
   set: [
     { in: {a:1}, out: true }
@@ -13,6 +6,8 @@ isnode: {
     { in: 1, out: false }
     { in: 'a', out: false }
     { in: true, out: false }
+    { in: null, out: false }
+    { out: false }
   ]
 }
 
@@ -23,6 +18,8 @@ ismap: {
     { in: 1, out: false }
     { in: 'a', out: false }
     { in: true, out: false }
+    { in: null, out: false }
+    { out: false }
   ]
 }
 
@@ -33,6 +30,8 @@ islist: {
     { in: 1, out: false }
     { in: 'a', out: false }
     { in: true, out: false }
+    { in: null, out: false }
+    { out: false }
   ]
 }
 
@@ -48,6 +47,59 @@ iskey: {
     { in: [], out: false }
     { in: [1], out: false }
     { in: ['a'], out: false }
+    { in: null, out: false }
+    { out: false }
+  ]
+}
+
+
+isempty: {
+  set: [
+    { in: '', out: true }
+    { in: [], out: true }
+    { in: {}, out: true }
+
+    { in: false, out: false }
+    { in: true, out: false }
+    { in: 0, out: false }
+    { in: 1, out: false }
+    { in: 'a', out: false }
+    { in: true, out: false }
+    { in: 1, out: false }
+    { in: {x:2}, out: false }
+    { in: [3], out: false }
+
+    { in: null, out: true }
+    { out: true }
+  ]
+}
+
+
+isfunc: {
+  set: [
+    { out: false }
+    { in: null, out: false }
+    { in: true, out: false }
+    { in: 1, out: false }
+    { in: 'a', out: false }
+    { in: {}, out: false }
+    { in: [], out: false }
+    { in: null, out: false }
+    { out: false }
+  ]
+}
+
+
+clone: {
+  set: [
+    { in: {a:1}, out: {a:1} }
+    { in: [11], out: [11] }
+    { in: 2, out: 2 }
+    { in: 'b', out: 'b' }
+    { in: true, out: true }
+    { in: null, out: null }
+    { in: {a:{b:{x:1},c:[2]}}, out: {a:{b:{x:1},c:[2]}} }
+    {}
   ]
 }
 
@@ -70,6 +122,8 @@ items: {
     { in: 1, out: [] }
     { in: 'a', out: [] }
     { in: true, out: [] }
+    { in: null, out: [] }
+    { out: [] }
   ]
 }
 
@@ -161,27 +215,6 @@ setprop: {
 }
 
 
-isempty: {
-  set: [
-    { in: '', out: true }
-    { in: [], out: true }
-    { in: {}, out: true }
-
-    { in: false, out: false }
-    { in: true, out: false }
-    { in: 0, out: false }
-    { in: 1, out: false }
-    { in: 'a', out: false }
-    { in: true, out: false }
-    { in: 1, out: false }
-    { in: {x:2}, out: false }
-    { in: [3], out: false }
-
-    { in: null, out: true }
-  ]
-}
-
-
 stringify: {
   set: [
     { in: { val: 1 }, out: '1' }
@@ -259,14 +292,3 @@ joinurl: {
 }
 
 
-isfunc: {
-  set: [
-    { out: false }
-    { in: null, out: false }
-    { in: true, out: false }
-    { in: 1, out: false }
-    { in: 'a', out: false }
-    { in: {}, out: false }
-    { in: [], out: false }
-  ]
-}

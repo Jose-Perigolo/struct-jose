@@ -32,7 +32,11 @@
  * - escre: escape a regular expresion string.
  * - escurl: escape a url.
  * - joinurl: join parts of a url, merging forward slashes.
- * 
+ *
+ * This set of functions and supporting utilities is designed to work
+ * uniformly across many languages, meaning that some code that may be
+ * functionally redundant in specific languages is still retained to
+ * keep the code human comparable.
  */
 
 
@@ -60,6 +64,7 @@ const S = {
   number: 'number',
   object: 'object',
   string: 'string',
+  null: 'null',
   key: 'key',
   parent: 'parent',
   BT: '`',
@@ -153,7 +158,7 @@ function iskey(key: any) {
 }
 
 
-// Check for an "empty" value - undefined, false, 0, empty string, array, object.
+// Check for an "empty" value - undefined, empty string, array, object.
 function isempty(val: any) {
   return null == val || S.empty === val ||
     (Array.isArray(val) && 0 === val.length) ||
@@ -470,7 +475,7 @@ function getpath(path: string | string[], store: any, current?: any, state?: Inj
 
   // State may provide a custom handler to modify found value.
   if (null != state && S.function === typeof state.handler) {
-    val = state.handler(state, val, current, pathify(path), store)
+    val = state.handler(state, val, current, _pathify(path), store)
   }
 
   return val
@@ -1011,6 +1016,320 @@ function transform(
 }
 
 
+
+// A required string value. NOTE: Rejects empty strings.
+const validate_STRING: InjectHandler = (state: InjectState, _val: any, current: any) => {
+  let out = getprop(current, state.key)
+
+  let t = typeof out
+  if (S.string === t) {
+    if (S.empty === out) {
+      state.errs.push('Empty string at ' + _pathify(state.path))
+      return UNDEF
+    }
+    else {
+      return out
+    }
+  }
+  else {
+    state.errs.push(_invalidTypeMsg(state.path, S.string, t, out))
+    return UNDEF
+  }
+}
+
+
+// A required number value (int or float).
+const validate_NUMBER: InjectHandler = (state: InjectState, _val: any, current: any) => {
+  let out = getprop(current, state.key)
+
+  let t = typeof out
+  if (S.number !== t) {
+    state.errs.push(_invalidTypeMsg(state.path, S.number, t, out))
+    return UNDEF
+  }
+
+  return out
+}
+
+
+// A required boolean value.
+const validate_BOOLEAN: InjectHandler = (state: InjectState, _val: any, current: any) => {
+  let out = getprop(current, state.key)
+
+  let t = typeof out
+  if (S.boolean !== t) {
+    state.errs.push(_invalidTypeMsg(state.path, S.boolean, t, out))
+    return UNDEF
+  }
+
+  return out
+}
+
+
+// A required object (map) value (contents not validated).
+const validate_OBJECT: InjectHandler = (state: InjectState, _val: any, current: any) => {
+  let out = getprop(current, state.key)
+
+  let t = typeof out
+
+  if (null == out || S.object !== t) {
+    state.errs.push(_invalidTypeMsg(state.path, S.object, t, out))
+    return UNDEF
+  }
+
+  return out
+}
+
+
+// A required array (list) value (contents not validated).
+const validate_ARRAY: InjectHandler = (state: InjectState, _val: any, current: any) => {
+  let out = getprop(current, state.key)
+
+  let t = typeof out
+  if (!Array.isArray(out)) {
+    state.errs.push(_invalidTypeMsg(state.path, S.array, t, out))
+    return UNDEF
+  }
+
+  return out
+}
+
+
+// A required function value.
+const validate_FUNCTION: InjectHandler = (state: InjectState, _val: any, current: any) => {
+  let out = getprop(current, state.key)
+
+  let t = typeof out
+  if (S.function !== t) {
+    state.errs.push(_invalidTypeMsg(state.path, S.function, t, out))
+    return UNDEF
+  }
+
+  return out
+}
+
+
+// Allow any value.
+const validate_ANY: InjectHandler = (state: InjectState, _val: any, current: any) => {
+  let out = getprop(current, state.key)
+  return out
+}
+
+
+
+// Specify child values for map or list.
+// Map syntax: {'`$CHILD`': child-template }
+// List syntax: ['`$CHILD`', child-template ]
+const validate_CHILD: InjectHandler = (state: InjectState, _val: any, current: any) => {
+  const { mode, key, parent, keys, path } = state
+
+  // Setup data structures for validation by cloning child template.
+
+  // Map syntax.
+  if (S.MKEYPRE === mode) {
+    const child = getprop(parent, key)
+
+    // Get corresponding current object.
+    const pkey = path[path.length - 2]
+    let tval = getprop(current, pkey)
+
+    if (UNDEF == tval) {
+      // Create an empty object as default.
+      tval = {}
+    }
+    else if (!ismap(tval)) {
+      state.errs.push(_invalidTypeMsg(
+        state.path.slice(0, state.path.length - 1), S.object, typeof tval, tval))
+      return UNDEF
+    }
+
+    const ckeys = keysof(tval)
+    for (let ckey of ckeys) {
+      setprop(parent, ckey, clone(child))
+
+      // NOTE: modifying state! This extends the child value loop in inject.
+      keys.push(ckey)
+    }
+
+    // Remove $CHILD to cleanup ouput.
+    setprop(parent, key, UNDEF)
+    return UNDEF
+  }
+
+  // List syntax.
+  else if (S.MVAL === mode) {
+    if (!islist(parent)) {
+      // $CHILD was not inside a list.
+      state.errs.push('Invalid $CHILD as value')
+      return UNDEF
+    }
+
+    const child = parent[1]
+
+    if (UNDEF === current) {
+      // Empty list as default.
+      parent.length = 0
+      return UNDEF
+    }
+    else if (!islist(current)) {
+      state.errs.push(_invalidTypeMsg(
+        state.path.slice(0, state.path.length - 1), S.array, typeof current, current))
+      state.keyI = parent.length
+      return current
+    }
+
+    // Clone children abd reset state key index.
+    // The inject child loop will now iterate over the cloned children,
+    // validating them againt the current list values.
+    else {
+      current.map((_n, i) => parent[i] = clone(child))
+      parent.length = current.length
+      state.keyI = 0
+      return current[0]
+    }
+  }
+
+  return UNDEF
+}
+
+
+
+// Match at least one of the specified shapes.
+// Syntax: ['`$ONE`', alt0, alt1, ...]
+const validate_ONE: InjectHandler = (state: InjectState, _val: any, current: any) => {
+  const { mode, parent, path, nodes } = state
+
+  // Only operate in val mode, since parent is a list.
+  if (S.MVAL === mode) {
+    state.keyI = state.keys.length
+
+    // Shape alts.
+    let tvals = parent.slice(1)
+
+    // See if we can find a match.
+    for (let tval of tvals) {
+
+      // If match, then errs.length = 0
+      let terrs: any[] = []
+      validate(current, tval, UNDEF, terrs)
+
+      // The parent is the list we are inside. Go up one level
+      // to set the actual value.
+      const grandparent = nodes[nodes.length - 2]
+      const grandkey = path[path.length - 2]
+
+      if (isnode(grandparent)) {
+
+        // Accept current value if there was a match
+        if (0 === terrs.length) {
+
+          // Ensure generic type validation (in validate "modify") passes.
+          setprop(grandparent, grandkey, current)
+          return
+        }
+
+        // Ensure generic validation does not generate a spurious error.
+        else {
+          setprop(grandparent, grandkey, UNDEF)
+        }
+      }
+    }
+
+    // There was no match.
+
+    const valdesc = tvals
+      .map((v: any) => stringify(v))
+      .join(', ')
+      .replace(/`\$([A-Z]+)`/g, (_m: any, p1: string) => p1.toLowerCase())
+
+    state.errs.push(_invalidTypeMsg(
+      state.path.slice(0, state.path.length - 1),
+      'one of ' + valdesc,
+      typeof current, current))
+  }
+}
+
+
+// This is the "modify" argument to inject. Use this to perform
+// generic validation. Runs *after* any special commands.
+const validation: Modify = (
+  val: any,
+  key?: any,
+  parent?: any,
+  state?: InjectState,
+  current?: any,
+  _store?: any
+) => {
+
+  // Current val to verify.
+  const cval = getprop(current, key)
+
+  if (UNDEF === cval || UNDEF === state) {
+    return UNDEF
+  }
+
+  const pval = getprop(parent, key)
+  const t = typeof pval
+
+  // Delete any special commands remaining.
+  if (S.string === t && pval.includes(S.DS)) {
+    return UNDEF
+  }
+
+  const ct = typeof cval
+
+  // Type mismatch.
+  if (t !== ct && UNDEF !== pval) {
+    state.errs.push(_invalidTypeMsg(state.path, t, ct, cval))
+    return UNDEF
+  }
+  else if (ismap(cval)) {
+    if (!ismap(val)) {
+      state.errs.push(_invalidTypeMsg(state.path, islist(val) ? S.array : t, ct, cval))
+      return UNDEF
+    }
+
+    const ckeys = keysof(cval)
+    const pkeys = keysof(pval)
+
+    // Empty spec object {} means object can be open (any keys).
+    if (0 < pkeys.length && true !== getprop(pval, '`$OPEN`')) {
+      const badkeys = []
+      for (let ckey of ckeys) {
+        if (!haskey(val, ckey)) {
+          badkeys.push(ckey)
+        }
+      }
+
+      // Closed object, so reject extra keys not in shape.
+      if (0 < badkeys.length) {
+        state.errs.push('Unexpected keys at ' + _pathify(state.path) +
+          ': ' + badkeys.join(', '))
+      }
+    }
+    else {
+      // Object is open, so merge in extra keys.
+      merge([pval, cval])
+      if (isnode(pval)) {
+        delete pval['`$OPEN`']
+      }
+    }
+  }
+  else if (islist(cval)) {
+    if (!islist(val)) {
+      state.errs.push(_invalidTypeMsg(state.path, t, ct, cval))
+    }
+  }
+  else {
+    // Spec value was a default, copy over data
+    setprop(parent, key, cval)
+  }
+
+  return UNDEF
+}
+
+
+
 // Validate a data structure against a shape specification.  The shape
 // specification follows the "by example" principle.  Plain data in
 // teh shape is treated as default values that also specify the
@@ -1047,306 +1366,20 @@ function validate(
       $EACH: null,
       $PACK: null,
 
-      // A required string value. NOTE: Rejects empty strings.
-      $STRING: (state: InjectState, _val: any, current: any) => {
-        let out = getprop(current, state.key)
-
-        let t = typeof out
-        if (S.string === t) {
-          if (S.empty === out) {
-            state.errs.push('Empty string at ' + pathify(state.path))
-            return UNDEF
-          }
-          else {
-            return out
-          }
-        }
-        else {
-          state.errs.push(invalidTypeMsg(state.path, S.string, t, out))
-          return UNDEF
-        }
-      },
-
-      // A required number value (int or float).
-      $NUMBER: (state: InjectState, _val: any, current: any) => {
-        let out = getprop(current, state.key)
-
-        let t = typeof out
-        if (S.number !== t) {
-          state.errs.push(invalidTypeMsg(state.path, S.number, t, out))
-          return UNDEF
-        }
-
-        return out
-      },
-
-      // A required boolean value.
-      $BOOLEAN: (state: InjectState, _val: any, current: any) => {
-        let out = getprop(current, state.key)
-
-        let t = typeof out
-        if (S.boolean !== t) {
-          state.errs.push(invalidTypeMsg(state.path, S.boolean, t, out))
-          return UNDEF
-        }
-
-        return out
-      },
-
-      // A required object (map) value (contents not validated).
-      $OBJECT: (state: InjectState, _val: any, current: any) => {
-        let out = getprop(current, state.key)
-
-        let t = typeof out
-
-        if (null == out || S.object !== t) {
-          state.errs.push(invalidTypeMsg(state.path, S.object, t, out))
-          return UNDEF
-        }
-
-        return out
-      },
-
-      // A required array (list) value (contents not validated).
-      $ARRAY: (state: InjectState, _val: any, current: any) => {
-        let out = getprop(current, state.key)
-
-        let t = typeof out
-        if (!Array.isArray(out)) {
-          state.errs.push(invalidTypeMsg(state.path, S.array, t, out))
-          return UNDEF
-        }
-
-        return out
-      },
-
-      // A required function value.
-      $FUNCTION: (state: InjectState, _val: any, current: any) => {
-        let out = getprop(current, state.key)
-
-        let t = typeof out
-        if (S.function !== t) {
-          state.errs.push(invalidTypeMsg(state.path, S.function, t, out))
-          return UNDEF
-        }
-
-        return out
-      },
-
-      // Allow any value.
-      $ANY: (state: InjectState, _val: any, current: any) => {
-        let out = getprop(current, state.key)
-        return out
-      },
-
-      // Specify child values for map or list.
-      // Map syntax: {'`$CHILD`': child-template }
-      // List syntax: ['`$CHILD`', child-template ]
-      $CHILD: (state: InjectState, _val: any, current: any) => {
-        const { mode, key, parent, keys, path } = state
-
-        // Setup data structures for validation by cloning child template.
-
-        // Map syntax.
-        if (S.MKEYPRE === mode) {
-          const child = getprop(parent, key)
-
-          // Get corresponding current object.
-          const pkey = path[path.length - 2]
-          let tval = getprop(current, pkey)
-
-          if (UNDEF == tval) {
-            // Create an empty object as default.
-            tval = {}
-          }
-          else if (!ismap(tval)) {
-            state.errs.push(invalidTypeMsg(
-              state.path.slice(0, state.path.length - 1), S.object, typeof tval, tval))
-            return UNDEF
-          }
-
-          const ckeys = keysof(tval)
-          for (let ckey of ckeys) {
-            setprop(parent, ckey, clone(child))
-
-            // NOTE: modifying state! This extends the child value loop in inject.
-            keys.push(ckey)
-          }
-
-          // Remove $CHILD to cleanup ouput.
-          setprop(parent, key, UNDEF)
-          return UNDEF
-        }
-
-        // List syntax.
-        else if (S.MVAL === mode) {
-          if (!islist(parent)) {
-            // $CHILD was not inside a list.
-            state.errs.push('Invalid $CHILD as value')
-            return UNDEF
-          }
-
-          const child = parent[1]
-
-          if (UNDEF === current) {
-            // Empty list as default.
-            parent.length = 0
-            return UNDEF
-          }
-          else if (!islist(current)) {
-            state.errs.push(invalidTypeMsg(
-              state.path.slice(0, state.path.length - 1), S.array, typeof current, current))
-            state.keyI = parent.length
-            return current
-          }
-
-          // Clone children abd reset state key index.
-          // The inject child loop will now iterate over the cloned children,
-          // validating them againt the current list values.
-          else {
-            current.map((_n, i) => parent[i] = clone(child))
-            parent.length = current.length
-            state.keyI = 0
-            return current[0]
-          }
-        }
-
-        return UNDEF
-      },
-
-      // Match at least one of the specified shapes.
-      // Syntax: ['`$ONE`', alt0, alt1, ...]
-      $ONE: (state: InjectState, _val: any, current: any) => {
-        const { mode, parent, path, nodes } = state
-
-        // Only operate in val mode, since parent is a list.
-        if (S.MVAL === mode) {
-          state.keyI = state.keys.length
-
-          // Shape alts.
-          let tvals = parent.slice(1)
-
-          // See if we can find a match.
-          for (let tval of tvals) {
-
-            // If match, then errs.length = 0
-            let terrs: any[] = []
-            validate(current, tval, UNDEF, terrs)
-
-            // The parent is the list we are inside. Go up one level
-            // to set the actual value.
-            const grandparent = nodes[nodes.length - 2]
-            const grandkey = path[path.length - 2]
-
-            if (isnode(grandparent)) {
-
-              // Accept current value if there was a match
-              if (0 === terrs.length) {
-
-                // Ensure generic type validation (in validate "modify") passes.
-                setprop(grandparent, grandkey, current)
-                return
-              }
-
-              // Ensure generic validation does not generate a spurious error.
-              else {
-                setprop(grandparent, grandkey, UNDEF)
-              }
-            }
-          }
-
-          // There was no match.
-
-          const valdesc = tvals
-            .map((v: any) => stringify(v))
-            .join(', ')
-            .replace(/`\$([A-Z]+)`/g, (_m: any, p1: string) => p1.toLowerCase())
-
-          state.errs.push(invalidTypeMsg(
-            state.path.slice(0, state.path.length - 1),
-            'one of ' + valdesc,
-            typeof current, current))
-        }
-      },
+      $STRING: validate_STRING,
+      $NUMBER: validate_NUMBER,
+      $BOOLEAN: validate_BOOLEAN,
+      $OBJECT: validate_OBJECT,
+      $ARRAY: validate_ARRAY,
+      $FUNCTION: validate_FUNCTION,
+      $ANY: validate_ANY,
+      $CHILD: validate_CHILD,
+      $ONE: validate_ONE,
 
       ...(extra || {})
     },
 
-    // This is the "modify" argument to inject. Use this to perform
-    // generic validation. Runs *after* any special commands.
-    (val,
-      key,
-      parent,
-      state,
-      current,
-      _store) => {
-
-      // Current val to verify.
-      const cval = getprop(current, key)
-
-      if (UNDEF === cval || UNDEF === state) {
-        return UNDEF
-      }
-
-      const pval = getprop(parent, key)
-      const t = typeof pval
-
-      // Delete any special commands remaining.
-      if (S.string === t && pval.includes(S.DS)) {
-        return UNDEF
-      }
-
-      const ct = typeof cval
-
-      // Type mismatch.
-      if (t !== ct && UNDEF !== pval) {
-        state.errs.push(invalidTypeMsg(state.path, t, ct, cval))
-        return UNDEF
-      }
-      else if (ismap(cval)) {
-        if (!ismap(val)) {
-          state.errs.push(invalidTypeMsg(state.path, islist(val) ? S.array : t, ct, cval))
-          return UNDEF
-        }
-
-        const ckeys = keysof(cval)
-        const pkeys = keysof(pval)
-
-        // Empty spec object {} means object can be open (any keys).
-        if (0 < pkeys.length && true !== getprop(pval, '`$OPEN`')) {
-          const badkeys = []
-          for (let ckey of ckeys) {
-            if (!haskey(val, ckey)) {
-              badkeys.push(ckey)
-            }
-          }
-
-          // Closed object, so reject extra keys not in shape.
-          if (0 < badkeys.length) {
-            state.errs.push('Unexpected keys at ' + pathify(state.path) +
-              ': ' + badkeys.join(', '))
-          }
-        }
-        else {
-          // Object is open, so merge in extra keys.
-          merge([pval, cval])
-          if (isnode(pval)) {
-            delete pval['`$OPEN`']
-          }
-        }
-      }
-      else if (islist(cval)) {
-        if (!islist(val)) {
-          state.errs.push(invalidTypeMsg(state.path, t, ct, cval))
-        }
-      }
-      else {
-        // Spec value was a default, copy over data
-        setprop(parent, key, cval)
-      }
-
-      return UNDEF
-    }
+    validation
   )
 
   if (0 < errs.length && null == collecterrs) {
@@ -1357,16 +1390,31 @@ function validate(
 }
 
 
-function invalidTypeMsg(path: any, type: string, vt: string, v: any) {
+// Internal utilities
+// ==================
+
+
+function _typify(val: any) {
+  let t: string = typeof val
+  t = null == val ? S.null :
+    Array.isArray(val) ? S.array :
+      t
+  return t
+}
+
+
+// Build a type validation error message.
+function _invalidTypeMsg(path: any, type: string, vt: string, v: any) {
   // Deal with js array type returns 'object' 
   vt = Array.isArray(v) && S.object === vt ? S.array : vt
   v = stringify(v)
-  return 'Expected ' + type + ' at ' + pathify(path) +
+  return 'Expected ' + type + ' at ' + _pathify(path) +
     ', found ' + (null != v ? vt + ': ' : '') + v
 }
 
 
-function pathify(val: any, from?: number) {
+// Build a human friendly path string.
+function _pathify(val: any, from?: number) {
   from = null == from ? 1 : -1 < from ? from : 1
   if (Array.isArray(val)) {
     let path = val.slice(from)
@@ -1377,6 +1425,7 @@ function pathify(val: any, from?: number) {
   }
   return null == val ? '<unknown-path>' : stringify(val)
 }
+
 
 
 export {
