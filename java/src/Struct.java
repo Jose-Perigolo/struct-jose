@@ -3,6 +3,40 @@ import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 import java.io.*;
+import java.util.function.*;
+
+enum InjectMode {
+    KEY_PRE("key:pre"),
+    KEY_POST("key:post"),
+    VAL("val");
+    
+    private final String value;
+    
+    InjectMode(String value) {
+        this.value = value;
+    }
+    
+    public String getValue() {
+        return value;
+    }
+}
+
+// Injection state class
+class InjectState {
+    InjectMode mode;
+    boolean full;
+    int keyI;
+    List<String> keys;
+    String key;
+    Object val;
+    Object parent;
+    List<String> path;
+    List<Object> nodes;
+    Function<InjectState, Object> handler;
+    List<Object> errs;
+    String base;
+    BiFunction<Object, InjectState, Void> modify;
+}
 
 public class Struct {
     
@@ -121,6 +155,111 @@ public class Struct {
         }
         return json;
     }
+    
+    public static String stringify(Object val) {
+        String json;
+        try {
+            json = Objects.toString(val, "");
+        } catch (Exception e) {
+            json = "";
+        }
+        json = json.replaceAll("\"", "");
+        return json;
+    }
+ 
+ /*   
+    public static Object clone(Object val) {
+        if (val == null) return null;
+
+        List<Object> refs = new ArrayList<>();
+        Pattern functionPattern = Pattern.compile("^`\\$FUNCTION:([0-9]+)`$");
+
+        String jsonString = serialize(val, refs);
+        return deserialize(jsonString, refs, functionPattern);
+    }
+
+    private static String serialize(Object val, List<Object> refs) {
+        if (val == null) return "null";
+        if (val instanceof Number || val instanceof Boolean) return val.toString();
+        if (val instanceof String) return "\"" + val + "\"";
+
+        if (val instanceof Function<?, ?>) {
+            refs.add(val);
+            return "\"`$FUNCTION:" + (refs.size() - 1) + "`\"";
+        }
+
+        if (val instanceof Map<?, ?>) {
+            StringBuilder json = new StringBuilder("{");
+            for (Map.Entry<?, ?> entry : ((Map<?, ?>) val).entrySet()) {
+                json.append("\"").append(entry.getKey()).append("\":")
+                    .append(serialize(entry.getValue(), refs)).append(",");
+            }
+            if (json.length() > 1) json.setLength(json.length() - 1);
+            return json.append("}").toString();
+        }
+
+        if (val instanceof List<?>) {
+            StringBuilder json = new StringBuilder("[");
+            for (Object item : (List<?>) val) {
+                json.append(serialize(item, refs)).append(",");
+            }
+            if (json.length() > 1) json.setLength(json.length() - 1);
+            return json.append("]").toString();
+        }
+
+        return "\"Unsupported Type\"";
+    }
+
+    private static Object deserialize(String jsonString, List<Object> refs, Pattern functionPattern) {
+        
+        // System.out.println(jsonString);
+        
+        // System.out.println(jsonString.matches(functionPattern.toString()));
+        
+        // if(jsonString.matches(functionPattern.toString())) return "F";
+        if (jsonString.equals("null")) return null;
+        if (jsonString.matches("^\".*\"$")) return jsonString.substring(1, jsonString.length() - 1);
+        if (jsonString.matches("^-?\\d+(\\.\\d+)?$")) return jsonString.contains(".") ? Double.parseDouble(jsonString) : Integer.parseInt(jsonString);
+        if (jsonString.equals("true") || jsonString.equals("false")) return Boolean.parseBoolean(jsonString);
+        
+
+        
+        
+        if(jsonString.matches(functionPattern.toString())) return "F";
+
+        if (jsonString.startsWith("[") && jsonString.endsWith("]")) {
+            List<Object> list = new ArrayList<>();
+            String content = jsonString.substring(1, jsonString.length() - 1);
+            String[] elements = content.split(",");
+            for (String element : elements) {
+                list.add(deserialize(element.trim(), refs, functionPattern));
+            }
+            return list;
+        }
+
+        if (jsonString.startsWith("{") && jsonString.endsWith("}")) {
+            Map<String, Object> map = new HashMap<>();
+            String content = jsonString.substring(1, jsonString.length() - 1);
+            String[] pairs = content.split(",");
+            for (String pair : pairs) {
+                String[] kv = pair.split(":", 2);
+                if (kv.length == 2) {
+                    String key = kv[0].trim().replaceAll("^\"|\"$", "");
+                    Object value = deserialize(kv[1].trim(), refs, functionPattern);
+                    map.put(key, value);
+                }
+            }
+            return map;
+        }
+
+        Matcher matcher = functionPattern.matcher(jsonString);
+        if (matcher.matches()) {
+            return refs.get(Integer.parseInt(matcher.group(1)));
+        }
+
+        return jsonString;
+    }
+    */
 
     public static Object clone(Object val) {
         if (val == null) return null;
@@ -224,6 +363,60 @@ public class Struct {
         // Apply the function to the current node, after processing its children
         return apply.apply(key, val);
     }
+    
+  /*
+      public static Object getPath(Object path, Map<String, Object> store, Object current, InjectState state) {
+        // Operate on a string array
+        String[] parts = null;
+
+        if (isList(path)) {
+            parts = (String[]) path;
+        } else if (path instanceof String) {
+            parts = splitPath((String) path);
+        }
+
+        if (parts == null) {
+            return UNDEF;
+        }
+
+        Object root = store;
+        Object val = store;
+
+        // An empty path (including empty string) just finds the store.
+        if (path == null || store == null || (parts.length == 1 && EMPTY.equals(parts[0]))) {
+            // The actual store data may be in a store sub-property, defined by state.base.
+            val = getProp(store, getProp(state, "base").toString());
+        } else if (parts.length > 0) {
+            int pI = 0;
+
+            // Relative path uses `current` argument.
+            if (EMPTY.equals(parts[0])) {
+                pI = 1;
+                root = current;
+            }
+
+            String part = (pI < parts.length) ? parts[pI] : null;
+            Object first = getProp(root, part);
+
+            // At top level, check state.base if provided
+            val = (first == UNDEF && pI == 0) ? getProp(getProp(root, getProp(state, "base").toString()), part) : first;
+
+            // Move along the path, trying to descend into the store.
+            for (pI++; val != UNDEF && pI < parts.length; pI++) {
+                val = getProp(val, parts[pI]);
+            }
+        }
+
+        // State may provide a custom handler to modify the found value.
+        if (state != null && state.getHandler() != null) {
+            val = state.getHandler().apply(state, val, current, pathify(path), store);
+        }
+
+        return val;
+    }
+    
+    
+    
   public static Object merge(List<Object> objs) {
         Object out = null; // Equivalent to UNDEF in JS
 
@@ -288,8 +481,35 @@ public class Struct {
 
         return out;
     }
-
+    */
     
+    public static String pathify(Object val, Integer from) {
+        if (from == null) {
+            from = 1;  // Default value for from
+        } else if (from < 1) {
+            from = 1;  // Ensure from is at least 1
+        }
+
+        // If the value is a List (equivalent to Array.isArray in JS)
+        if (val instanceof List) {
+            List<?> listVal = (List<?>) val;
+            // Slice the list starting from 'from' index
+            List<?> path = listVal.subList(from, listVal.size());
+
+            // If the path is empty, return <root>
+            if (path.isEmpty()) {
+                return "<root>";
+            }
+            // Join the list elements with '.' separator
+            return String.join(".", (CharSequence[]) path.toArray(new String[0]));
+        }
+
+        // If val is not a list, just return its stringified value
+        return stringify(val);
+    }
+    
+
+   @SuppressWarnings("unchecked")
    public static void main(String[] args) {
         // Example usage with a sample Map
         Map<String, Object> sampleMap = new HashMap<>();
@@ -307,6 +527,22 @@ public class Struct {
             return val;
         }, null, null, new ArrayList<>());
         */
+        
+        
+        {
+		Map<String, Object> original = new HashMap<>();
+		Function<Integer, Integer> sampleFunction = (x) -> x * 2;
+		original.put("name", "test");
+		original.put("fn", sampleFunction);
+		original.put("nested", Map.of("key", "value"));
+
+		Object cloned = clone(original);
+		
+		// ((Map<String, Object>)cloned).put("name", "test1");
+		
+		System.out.println(original);
+		System.out.println(cloned);
+        }
         
     }
 }
