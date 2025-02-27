@@ -27,6 +27,9 @@ import {
   walk,
 } from '../dist/struct'
 
+import type {
+  InjectState
+} from '../dist/struct'
 
 import { runner } from './runner'
 
@@ -106,10 +109,6 @@ describe('struct', async () => {
     equal('function', typeof stringify)
   })
 
-  test('minor-clone', async () => {
-    await runset(spec.minor.clone, clone)
-  })
-
   test('minor-isnode', async () => {
     await runset(spec.minor.isnode, isnode)
   })
@@ -128,6 +127,19 @@ describe('struct', async () => {
 
   test('minor-isempty', async () => {
     await runset(spec.minor.isempty, isempty)
+  })
+
+  test('minor-isfunc', async () => {
+    await runset(spec.minor.isfunc, isfunc)
+    function f0() { return null }
+    equal(isfunc(f0), true)
+    equal(isfunc(() => null), true)
+  })
+
+  test('minor-clone', async () => {
+    await runset(spec.minor.clone, clone)
+    const f0 = () => null
+    deepEqual({ a: f0 }, clone({ a: f0 }))
   })
 
   test('minor-escre', async () => {
@@ -169,19 +181,13 @@ describe('struct', async () => {
     await runset(spec.minor.joinurl, joinurl)
   })
 
-  test('minor-isfunc', async () => {
-    await runset(spec.minor.isfunc, isfunc)
-    function f0() { return null }
-    equal(isfunc(f0), true)
-    equal(isfunc(() => null), true)
-  })
 
 
   // walk tests
   // ==========
 
   test('walk-exists', async () => {
-    equal('function', typeof merge)
+    equal('function', typeof walk)
   })
 
   test('walk-basic', async () => {
@@ -239,13 +245,13 @@ describe('struct', async () => {
   })
 
   test('getpath-state', async () => {
-    const state = {
+    const state: InjectState = {
       handler: (state: any, val: any, _current: any, _ref: any, _store: any) => {
-        let out = state.step + ':' + val
-        state.step++
+        let out = state.meta.step + ':' + val
+        state.meta.step++
         return out
       },
-      step: 0,
+      meta: { step: 0 },
       mode: ('val' as any),
       full: false,
       keyI: 0,
