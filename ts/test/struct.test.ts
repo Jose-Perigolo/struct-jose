@@ -27,6 +27,9 @@ import {
   walk,
 } from '../dist/struct'
 
+import type {
+  InjectState
+} from '../dist/struct'
 
 import { runner } from './runner'
 
@@ -242,13 +245,13 @@ describe('struct', async () => {
   })
 
   test('getpath-state', async () => {
-    const state = {
+    const state: InjectState = {
       handler: (state: any, val: any, _current: any, _ref: any, _store: any) => {
-        let out = state.step + ':' + val
-        state.step++
+        let out = state.meta.step + ':' + val
+        state.meta.step++
         return out
       },
-      step: 0,
+      meta: { step: 0 },
       mode: ('val' as any),
       full: false,
       keyI: 0,

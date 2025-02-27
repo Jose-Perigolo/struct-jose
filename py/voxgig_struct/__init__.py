@@ -22,7 +22,8 @@ from .voxgig_struct import (
     stringify,
     transform,
     validate,
-    walk
+    walk,
+    InjectState
 )
 
 
@@ -49,5 +50,6 @@ __all__ = [
     'transform',
     'validate',
     'walk',
+    'InjectState'
 ]
 

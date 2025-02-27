@@ -102,19 +102,20 @@ type InjectHandler = (
 
 // Injection state used for recursive injection into JSON-like data structures.
 type InjectState = {
-  mode: InjectMode
-  full: boolean           // Transform escape was full key name.
-  keyI: number            // Index of parent key in list of parent keys.
-  keys: string[]          // List of parent keys.
-  key: string             // Current parent key.
-  val: any                // Current child value.
-  parent: any             // Current parent (in transform specification).
-  path: string[]          // Path to current node.
-  nodes: any[]            // Stack of ancestor nodes.
-  handler: InjectHandler  // Custom handler for injections.
-  errs: any[]
-  base?: string           // Base key for data in store, if any. 
-  modify?: Modify         // Modify injection output.
+  mode: InjectMode          // Injection mode: key:pre, val, key:post.
+  full: boolean             // Transform escape was full key name.
+  keyI: number              // Index of parent key in list of parent keys.
+  keys: string[]            // List of parent keys.
+  key: string               // Current parent key.
+  val: any                  // Current child value.
+  parent: any               // Current parent (in transform specification).
+  path: string[]            // Path to current node.
+  nodes: any[]              // Stack of ancestor nodes.
+  handler: InjectHandler    // Custom handler for injections.
+  errs: any[]               // Error collector.  
+  meta: Record<string, any> // Custom meta data.
+  base?: string             // Base key for data in store, if any. 
+  modify?: Modify           // Modify injection output.
 }
 
 
@@ -172,15 +173,32 @@ function isfunc(val: any) {
 }
 
 
-// List the keys of a map or list as an array of tuples of the form [key, value].
-function items(val: any) {
-  return ismap(val) ? Object.entries(val) :
-    islist(val) ? val.map((n: any, i: number) => [i, n]) :
-      []
+// Safely get a property of a node. Undefined arguments return undefined.
+// If the key is not found, return the alternative value.
+function getprop(val: any, key: any, alt?: any) {
+  if (UNDEF === val) {
+    return alt
+  }
+
+  if (UNDEF === key) {
+    return alt
+  }
+
+  let out = alt
+
+  if (isnode(val)) {
+    out = val[key]
+  }
+
+  if (UNDEF === out) {
+    out = alt
+  }
+
+  return out
 }
 
 
-// Sorted keys of a map, or indexes of an array.
+// Sorted keys of a map, or indexes of a list.
 function keysof(val: any) {
   return !isnode(val) ? [] :
     ismap(val) ? Object.keys(val).sort() : val.map((_n: any, i: number) => i)
@@ -190,6 +208,39 @@ function keysof(val: any) {
 // Value of property with name key in node val is defined.
 function haskey(val: any, key: any) {
   return UNDEF !== getprop(val, key)
+}
+
+
+// List the keys of a map or list as an array of tuples of the form [key, value].
+function items(val: any) {
+  return ismap(val) ? Object.entries(val) :
+    islist(val) ? val.map((n: any, i: number) => [i, n]) :
+      []
+}
+
+
+// Escape regular expression.
+function escre(s: string) {
+  s = null == s ? S.empty : s
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+
+// Escape URLs.
+function escurl(s: string) {
+  s = null == s ? S.empty : s
+  return encodeURIComponent(s)
+}
+
+
+// Concatenate url part strings, merging forward slashes as needed.
+function joinurl(sarr: any[]) {
+  return sarr
+    .filter(s => null != s && '' !== s)
+    .map((s, i) => 0 === i ? s.replace(/([^\/])\/+/, '$1/').replace(/\/+$/, '') :
+      s.replace(/([^\/])\/+/, '$1/').replace(/^\/+/, '').replace(/\/+$/, ''))
+    .filter(s => '' !== s)
+    .join('/')
 }
 
 
@@ -225,40 +276,6 @@ function clone(val: any) {
   const reviver: any = (_k: any, v: any, m: any) => S.string === typeof v ?
     (m = v.match(/^`\$FUNCTION:([0-9]+)`$/), m ? refs[m[1]] : v) : v
   return UNDEF === val ? UNDEF : JSON.parse(JSON.stringify(val, replacer), reviver)
-}
-
-
-// Escape regular expression.
-function escre(s: string) {
-  s = null == s ? S.empty : s
-  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-}
-
-
-// Escape URLs.
-function escurl(s: string) {
-  s = null == s ? S.empty : s
-  return encodeURIComponent(s)
-}
-
-
-// Concatenate url part strings, merging forward slashes as needed.
-function joinurl(sarr: any[]) {
-  return sarr
-    .filter(s => null != s && '' !== s)
-    .map((s, i) => 0 === i ? s.replace(/([^\/])\/+/, '$1/').replace(/\/+$/, '') :
-      s.replace(/([^\/])\/+/, '$1/').replace(/^\/+/, '').replace(/\/+$/, ''))
-    .filter(s => '' !== s)
-    .join('/')
-}
-
-
-// Safely get a property of a node. Undefined arguments return undefined.
-// If the key is not found, return the alternative value.
-function getprop(val: any, key: any, alt?: any) {
-  let out = UNDEF === val ? alt : UNDEF === key ? alt : val[key]
-  out = UNDEF === out ? alt : out
-  return out
 }
 
 
@@ -350,73 +367,70 @@ function merge(objs: any[]): any {
 
   // Handle edge cases.
   if (!islist(objs)) {
-    out = objs
+    return objs
   }
   else if (0 === objs.length) {
-    out = UNDEF
+    return UNDEF
   }
   else if (1 === objs.length) {
-    out = objs[0]
+    return objs[0]
   }
 
-  // An actual list of values to merge.
-  else {
+  // Merge a list of values.
+  out = getprop(objs, 0, {})
 
-    out = getprop(objs, 0, {})
+  for (let oI = 1; oI < objs.length; oI++) {
+    let obj = objs[oI]
 
-    // Merge remaining down onto first.
-    for (let oI = 1; oI < objs.length; oI++) {
-      let obj = objs[oI]
-
-      if (!isnode(obj)) {
-        // Nodes win.
+    if (!isnode(obj)) {
+      // Nodes win.
+      out = obj
+    }
+    else {
+      // Nodes win, also over nodes of a different kind.
+      if (!isnode(out) || (ismap(obj) && islist(out)) || (islist(obj) && ismap(out))) {
         out = obj
       }
       else {
-        // Nodes win, also over nodes of a different kind.
-        if (!isnode(out) || (ismap(obj) && islist(out)) || (islist(obj) && ismap(out))) {
-          out = obj
-        }
-        else {
-          // Node stack. walking down the current obj.
-          let cur = [out]
-          let cI = 0
+        // Node stack. walking down the current obj.
+        let cur = [out]
+        let cI = 0
 
-          // Walk overriding node, creating paths in output as needed.
-          walk(obj, (key, val, parent, path) => {
-            if (null == key) {
-              return val
-            }
-
-            let lenpath = path.length
-
-            // Get the curent value at the current path in obj.
-            // NOTE: this is not exactly efficient, and should be optimised.
-            cI = lenpath - 1
-            if (UNDEF === cur[cI]) {
-              cur[cI] = getpath(path.slice(0, lenpath - 1), out)
-            }
-
-            // Create node if needed.
-            if (!isnode(cur[cI])) {
-              cur[cI] = islist(parent) ? [] : {}
-            }
-
-            // Node child is just ahead of us on the stack, since
-            // `walk` traverses leaves before nodes.
-            if (isnode(val) && !isempty(val)) {
-              setprop(cur[cI], key, cur[cI + 1])
-              cur[cI + 1] = UNDEF
-            }
-
-            // Scalar child.
-            else {
-              setprop(cur[cI], key, val)
-            }
-
+        function merger(key: string | undefined, val: any, parent: any, path: string[]) {
+          if (null == key) {
             return val
-          })
+          }
+
+          // Get the curent value at the current path in obj.
+          // NOTE: this is not exactly efficient, and should be optimised.
+          let lenpath = path.length
+          cI = lenpath - 1
+          if (UNDEF === cur[cI]) {
+            cur[cI] = getpath(path.slice(0, lenpath - 1), out)
+          }
+
+          // Create node if needed.
+          if (!isnode(cur[cI])) {
+            cur[cI] = islist(parent) ? [] : {}
+          }
+
+          // Node child is just ahead of us on the stack, since
+          // `walk` traverses leaves before nodes.
+          if (isnode(val) && !isempty(val)) {
+            setprop(cur[cI], key, cur[cI + 1])
+            cur[cI + 1] = UNDEF
+          }
+
+          // Scalar child.
+          else {
+            setprop(cur[cI], key, val)
+          }
+
+          return val
         }
+
+        // Walk overriding node, creating paths in output as needed.
+        walk(obj, merger)
       }
     }
   }
@@ -474,7 +488,7 @@ function getpath(path: string | string[], store: any, current?: any, state?: Inj
   }
 
   // State may provide a custom handler to modify found value.
-  if (null != state && S.function === typeof state.handler) {
+  if (null != state && isfunc(state.handler)) {
     val = state.handler(state, val, current, _pathify(path), store)
   }
 
@@ -490,7 +504,7 @@ function getpath(path: string | string[], store: any, current?: any, state?: Inj
 // The path can also have the special syntax $NAME999 where NAME is upper case letters only,
 // and 999 is any digits, which are discarded. This syntax specifies the name of a transform,
 // and optionally allows transforms to be ordered by alphanumeric sorting.
-function injectstr(val: string, store: any, current?: any, state?: any): any {
+function _injectstr(val: string, store: any, current?: any, state?: any): any {
 
   // Can't inject into non-strings
   if (S.string !== typeof val) {
@@ -580,6 +594,7 @@ function inject(
       base: S.DTOP,
       modify,
       errs: getprop(store, S.DERRS, []),
+      meta: {},
     }
   }
 
@@ -627,11 +642,12 @@ function inject(
         nodes: childnodes,
         handler: injecthandler,
         base: state.base,
-        errs: state.errs
+        errs: state.errs,
+        meta: state.meta,
       }
 
       // Peform the key:pre mode injection on the child key.
-      const prekey = injectstr(origkey, store, current, childstate)
+      const prekey = _injectstr(origkey, store, current, childstate)
 
       // The injection may modify child processing.
       okI = childstate.keyI
@@ -643,20 +659,14 @@ function inject(
 
         // Perform the val mode injection on the child value.
         // NOTE: return value is not used.
-        inject(
-          child,
-          store,
-          modify,
-          current,
-          childstate,
-        )
+        inject(child, store, modify, current, childstate)
 
         // The injection may modify child processing.
         okI = childstate.keyI
 
         // Peform the key:post mode injection on the child key.
         childstate.mode = S.MKEYPOST as InjectMode
-        injectstr(origkey, store, current, childstate)
+        _injectstr(origkey, store, current, childstate)
 
         // The injection may modify child processing.
         okI = childstate.keyI
@@ -667,7 +677,7 @@ function inject(
   // Inject paths into string scalars.
   else if (S.string === valtype) {
     state.mode = S.MVAL as InjectMode
-    const newval = injectstr(val, store, current, state)
+    const newval = _injectstr(val, store, current, state)
     val = newval
 
     setprop(state.parent, state.key, newval)
@@ -703,7 +713,7 @@ const injecthandler: InjectHandler = (
   let out = val
 
   // Only call val function if it is a special command ($NAME format).
-  if (S.function === typeof val &&
+  if (isfunc(val) &&
     (null == ref || (S.string === typeof ref && ref.startsWith(S.DS)))) {
     out = val(state, val, current, store)
   }
@@ -1195,7 +1205,7 @@ const validate_CHILD: InjectHandler = (state: InjectState, _val: any, current: a
 
 
 // Match at least one of the specified shapes.
-// Syntax: ['`$ONE`', alt0, alt1, ...]
+// Syntax: ['`$ONE`', alt0, alt1, ...]okI
 const validate_ONE: InjectHandler = (state: InjectState, _val: any, current: any) => {
   const { mode, parent, path, nodes } = state
 
@@ -1451,4 +1461,10 @@ export {
   transform,
   validate,
   walk,
+}
+
+export type {
+  InjectState,
+  InjectHandler,
+  WalkApply
 }

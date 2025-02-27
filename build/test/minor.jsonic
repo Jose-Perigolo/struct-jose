@@ -90,44 +90,6 @@ isfunc: {
 }
 
 
-clone: {
-  set: [
-    { in: {a:1}, out: {a:1} }
-    { in: [11], out: [11] }
-    { in: 2, out: 2 }
-    { in: 'b', out: 'b' }
-    { in: true, out: true }
-    { in: null, out: null }
-    { in: {a:{b:{x:1},c:[2]}}, out: {a:{b:{x:1},c:[2]}} }
-    {}
-  ]
-}
-
-
-items: {
-  set: [
-    { in: {a:11}, out: [['a',11]] }
-    { in: {a:1,b:2}, out: [['a',1],['b',2]] }
-    { in: {a:{x:1},b:{x:2},c:{x:3}}, out: [['a',{x:1}],['b',{x:2}],['c',{x:3}]] }
-    { in: {a:[111],b:[222],c:[333],d:[444]},
-      out: [['a',[111]],['b',[222]],['c',[333]],['d',[444]]] }
-    { in: {a:{x:{y:1}},b:{x:{y:2}},c:{x:{y:3}},d:{x:{y:4}},e:{x:{y:5}}},
-      out: [['a',{x:{y:1}}],['b',{x:{y:2}}],['c',{x:{y:3}}],['d',{x:{y:4}}],['e',{x:{y:5}}]] }
-
-    { in: [11], out: [[0,11]] }
-    { in: [11,22], out: [[0,11],[1,22]] }
-    { in: [{z:1},{z:2},{z:3}], out: [[0,{z:1}],[1,{z:2}],[2,{z:3}]] }
-    { in: [[111],[222],[333],[444]], out: [[0,[111]],[1,[222]],[2,[333]],[3,[444]]] }
-    
-    { in: 1, out: [] }
-    { in: 'a', out: [] }
-    { in: true, out: [] }
-    { in: null, out: [] }
-    { out: [] }
-  ]
-}
-
-
 getprop: {
   set: [
     { in: { val: {x:1}, key: x }, out: 1 }
@@ -166,6 +128,99 @@ getprop: {
     { in: { val: ['a'], key: 'x', alt:[{G:551},{G:552}] }, out:[{G:551},{G:552}] }
     { in: { val: [{x:11},{x:22}], key: 1, alt:{H:[441,442,443]} }, out: {x:22} }
     { in: { val: [[111],[222]], key: 1, alt:[[]] }, out: [222] }
+    { in: { val: 11, key: 12, alt: 13 }, out: 13 }
+    { in: { val: 1, key: 2 } }
+    { in: { val: 'a', key: 3 } }
+    { in: { val: true, key: 4 } }
+    { in: { val: null, key: 5 } }
+    { in: { val: {} } }
+    { in: { val: [] } }
+    { in: { val: 1 } }
+    { in: { val: 'a' } }
+    { in: { val: true } }
+    { in: { val: null } }
+    { in: { val: {}, key: null } }
+    { in: { val: {}, key: null, alt: null }, out: null }
+    { in: {} }
+  ]
+}
+
+
+clone: {
+  set: [
+    { in: {a:1}, out: {a:1} }
+    { in: [11], out: [11] }
+    { in: 2, out: 2 }
+    { in: 'b', out: 'b' }
+    { in: true, out: true }
+    { in: null, out: null }
+    { in: {a:{b:{x:1},c:[2]}}, out: {a:{b:{x:1},c:[2]}} }
+    {}
+  ]
+}
+
+
+items: {
+  set: [
+    { in: {a:11}, out: [['a',11]] }
+    { in: {a:1,b:2}, out: [['a',1],['b',2]] }
+    { in: {a:{x:1},b:{x:2},c:{x:3}}, out: [['a',{x:1}],['b',{x:2}],['c',{x:3}]] }
+    { in: {a:[111],b:[222],c:[333],d:[444]},
+      out: [['a',[111]],['b',[222]],['c',[333]],['d',[444]]] }
+    { in: {a:{x:{y:1}},b:{x:{y:2}},c:{x:{y:3}},d:{x:{y:4}},e:{x:{y:5}}},
+      out: [['a',{x:{y:1}}],['b',{x:{y:2}}],['c',{x:{y:3}}],['d',{x:{y:4}}],['e',{x:{y:5}}]] }
+
+    { in: [11], out: [[0,11]] }
+    { in: [11,22], out: [[0,11],[1,22]] }
+    { in: [{z:1},{z:2},{z:3}], out: [[0,{z:1}],[1,{z:2}],[2,{z:3}]] }
+    { in: [[111],[222],[333],[444]], out: [[0,[111]],[1,[222]],[2,[333]],[3,[444]]] }
+    
+    { in: 1, out: [] }
+    { in: 'a', out: [] }
+    { in: true, out: [] }
+    { in: null, out: [] }
+    { out: [] }
+  ]
+}
+
+
+keysof: {
+  set: [
+    { out: [] }
+    { in: null, out: [] }
+    { in: {}, out: [] }
+    { in: [], out: [] }
+    { in: {a:1}, out: [a] }
+    { in: {a:2,b:3}, out: [a,b] }
+    { in: {b:4,a:5}, out: [a,b] }
+    { in: [a], out: [0] }
+    { in: [a,b], out: [0,1] }
+  ]
+}
+
+
+haskey: {
+  set: [
+    { args: [{a:1},a], out: true }
+    { args: [{a:2},b], out: false }
+    { args: [{a:11,c:12},a], out: true }
+    { args: [{a:12,c:13},b], out: false }
+    { args: [{a:13,c:14},c], out: true }
+    { args: [{a:21,b:22},a], out: true }
+    { args: [{a:22,b:23},b], out: true }
+    { args: [{a:24,b:25},c], out: false }
+    { args: [[3],0], out: true }
+    { args: [[3],1], out: false }
+    { args: [[3],'0'], out: true }
+    { args: [[3],'1'], out: false }
+    { args: [null,'a'], out: false }
+    { args: [null,1], out: false }
+    { args: [null,null], out: false }
+    { args: [{},null], out: false }
+    { args: [[],null], out: false }
+    { args: [[]], out: false }
+    { args: [{}], out: false }
+    { args: [], out: false }
   ]
 }
 
@@ -241,38 +296,6 @@ escurl: {
   set: [
     { in: 'a-B_0.', out: 'a-B_0.' }
     { in: ' ?:', out: '%20%3F%3A' }
-  ]
-}
-
-
-haskey: {
-  set: [
-    { args: [{a:1},a], out: true }
-    { args: [{a:2},b], out: false }
-    { args: [{a:11,c:12},a], out: true }
-    { args: [{a:12,c:13},b], out: false }
-    { args: [{a:13,c:14},c], out: true }
-    { args: [{a:21,b:22},a], out: true }
-    { args: [{a:22,b:23},b], out: true }
-    { args: [{a:24,b:25},c], out: false }
-    { args: [[3],0], out: true }
-    { args: [[3],1], out: false }
-    { args: [[3],'0'], out: true }
-    { args: [[3],'1'], out: false }
-  ]
-}
-
-
-keysof: {
-  set: [
-    { out: [] }
-    { in: {}, out: [] }
-    { in: [], out: [] }
-    { in: {a:1}, out: [a] }
-    { in: {a:2,b:3}, out: [a,b] }
-    { in: {b:4,a:5}, out: [a,b] }
-    { in: [a], out: [0] }
-    { in: [a,b], out: [0,1] }
   ]
 }
 

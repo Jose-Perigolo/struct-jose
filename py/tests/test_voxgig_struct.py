@@ -29,7 +29,8 @@ from voxgig_struct import (
     stringify,
     transform,
     validate,
-    walk
+    walk,
+    InjectState
 )
 
 
@@ -41,7 +42,7 @@ def walkpath(_key, val, _parent, path):
     return val
 
 
-def nullModifier(key, val, parent):
+def nullModifier(val, key, parent, _state=None, _current=None, _store=None):
     if "__NULL__" == val:
         parent[key] = None
     elif isinstance(val, str):
@@ -211,7 +212,7 @@ class TestStruct(unittest.TestCase):
         self.assertTrue(callable(merge))
 
     def test_merge_basic(self):
-        test_data = self.clone(spec["merge"]["basic"])
+        test_data = clone(spec["merge"]["basic"])
         self.assertEqual(merge(test_data["in"]), test_data["out"])
 
     def test_merge_cases(self):
@@ -237,7 +238,7 @@ class TestStruct(unittest.TestCase):
 
     def test_getpath_basic(self):
         def getpath_wrapper(vin):
-            return getpath(vin["path"], vin.get("store"))
+            return getpath(vin.get("path"), vin.get("store"))
         runset(spec["getpath"]["basic"], getpath_wrapper)
 
     def test_getpath_current(self):
@@ -246,30 +247,29 @@ class TestStruct(unittest.TestCase):
         runset(spec["getpath"]["current"], getpath_wrapper)
 
     def test_getpath_state(self):
-        def handler_fn(state, val, _current, _ref, _store):
-            out = f"{state['step']}:{val}"
-            state["step"] += 1
+        def handler_fn(state, val, _current=None, _ref=None, _store=None):
+            out = f"{state.meta["step"]}:{val}"
+            state.meta["step"] = state.meta["step"]+1 
             return out
 
-        def getpath_wrapper(vin):
-            state = {
-                "handler": handler_fn,
-                "step": 0,
-                "mode": "val",
-                "full": False,
-                "keyI": 0,
-                "keys": ["$TOP"],
-                "key": "$TOP",
-                "val": "",
-                "parent": {},
-                "path": ["$TOP"],
-                "nodes": [{}],
-                "base": "$TOP",
-                "errs": [],
-            }
-            return getpath(vin["path"], vin.get("store"), vin.get("current"), state)
+        state = InjectState(
+                meta = {"step":0},
+                handler = handler_fn,
+                mode = "val",
+                full = False,
+                keyI = 0,
+                keys = ["$TOP"],
+                key = "$TOP",
+                val = "",
+                parent = {},
+                path = ["$TOP"],
+                nodes = [{}],
+                base = "$TOP",
+                errs = [],
+            )
 
-        runset(spec["getpath"]["state"], getpath_wrapper)
+        runset(spec["getpath"]["state"],
+               lambda vin: getpath(vin.get("path"), vin.get("store"), vin.get("current"), state))
 
     # -------------------------------------------------
     # inject tests
@@ -279,7 +279,7 @@ class TestStruct(unittest.TestCase):
         self.assertTrue(callable(inject))
 
     def test_inject_basic(self):
-        test_data = self.clone(spec["inject"]["basic"])
+        test_data = clone(spec["inject"]["basic"])
         self.assertEqual(
             inject(test_data["in"]["val"], test_data["in"]["store"]),
             test_data["out"]
@@ -301,12 +301,13 @@ class TestStruct(unittest.TestCase):
         self.assertTrue(callable(transform))
 
     def test_transform_basic(self):
-        test_data = self.clone(spec["transform"]["basic"])
+        test_data = clone(spec["transform"]["basic"])
+        test_data_in = test_data.get("in")
         self.assertEqual(
             transform(
-                test_data["in"]["data"],
-                test_data["in"]["spec"],
-                test_data["in"]["store"]
+                test_data_in.get("data"),
+                test_data_in.get("spec"),
+                test_data_in.get("store")
             ),
             test_data["out"]
         )
@@ -332,23 +333,20 @@ class TestStruct(unittest.TestCase):
         runset(spec["transform"]["pack"], transform_wrapper)
 
     def test_transform_modify(self):
-        def modifier(val, key, parent):
-            if key is not None and parent is not None and isinstance(val, str):
-                parent[key] = '@' + val
+        def modifier(val, key, parent, _state, _current, _store):
+            if isinstance(val, str):
+                setprop(parent, key, '@' + val)
 
-        def transform_wrapper(vin):
-            return transform(vin.get("data"), vin.get("spec"), vin.get("store"), modifier)
-        runset(spec["transform"]["modify"], transform_wrapper)
+        runset(spec["transform"]["modify"],
+               lambda vin: transform(vin.get("data"), vin.get("spec"), vin.get("store"), modifier))
 
     def test_transform_extra(self):
         """
         Equivalent to JS:
             transform({ a: 1 }, { x: '`a`', b: '`$COPY`', c: '`$UPPER`' }, { b: 2, $UPPER: (...) => {...} })
         """
-        from my_struct_lib import getprop  # or getprop
-
-        def upper_func(state):
-            path = state["path"]
+        def upper_func(state, val, current, store):
+            path = state.path
             this_key = path[-1] if path else None
             return str(this_key).upper()
 
@@ -391,21 +389,14 @@ class TestStruct(unittest.TestCase):
         runset(spec["validate"]["node"], validate_wrapper)
 
     def test_validate_custom(self):
-        """
-        In JS:
-          const extra = { $INTEGER: (state, _val, current) => { ... } };
-          validate({ a: 1 }, { a: '`$INTEGER`' }, extra, errs)
-        """
-        from my_struct_lib import getprop  # or getprop
-
         errs = []
 
-        def integer_check(state, _val, current):
-            key = state["key"]
+        def integer_check(state, _val, current, store):
+            key = state.key
             out = current.get(key)
             if not isinstance(out, int):
-                state["errs"].append(
-                    f"Not an integer at {'.'.join(state['path'][1:])}: {out}"
+                state.errs.append(
+                    f"Not an integer at {'.'.join(state.path[1:])}: {out}"
                 )
             return out
 

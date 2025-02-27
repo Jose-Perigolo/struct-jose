@@ -165,11 +165,11 @@ function nullModifier(key, val, parent) {
     (0, node_test_1.test)('getpath-state', async () => {
         const state = {
             handler: (state, val, _current, _ref, _store) => {
-                let out = state.step + ':' + val;
-                state.step++;
+                let out = state.meta.step + ':' + val;
+                state.meta.step++;
                 return out;
             },
-            step: 0,
+            meta: { step: 0 },
             mode: 'val',
             full: false,
             keyI: 0,

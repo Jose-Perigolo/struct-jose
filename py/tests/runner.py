@@ -14,13 +14,11 @@ def runner(name: str, store: Any, testfile: str, provider: Any):
     struct = utility["struct"] 
     
     clone = struct["clone"]       
-    getpath = struct["getpath"]       
+    getpath = struct["getpath"]
     inject = struct["inject"]       
-    ismap = struct["ismap"]       
     items = struct["items"]       
     stringify = struct["stringify"]       
     walk = struct["walk"]       
-    isnode = struct["isnode"]
 
     # Read and parse the test JSON file
     with open(os.path.join(os.path.dirname(__file__), testfile), 'r', encoding='utf-8') as f:
@@ -39,7 +37,7 @@ def runner(name: str, store: Any, testfile: str, provider: Any):
     if 'DEF' in spec and 'client' in spec['DEF']:
         for c_name, c_val in items(spec['DEF']['client']):
             copts = c_val.get('test', {}).get('options', {})
-            if ismap(store):
+            if isinstance(store, dict):
                 inject(copts, store)
             clients[c_name] = provider.test(copts)
 
@@ -87,15 +85,16 @@ def runner(name: str, store: Any, testfile: str, provider: Any):
 
                 # If we have a context or arguments, we might need to patch them:
                 if 'ctx' in entry or 'args' in entry:
-                    first_arg = args[0]
-                    if ismap(first_arg):
+                    first_arg = None if args is None or 0 == len(args) else args[0]
+                    if isinstance(first_arg, dict):
                         # Deep clone first_arg
                         first_arg = clone(first_arg)
                         args[0] = first_arg
                         entry['ctx'] = first_arg
-                        # Insert .client and .utility references
-                        first_arg.client = testclient
-                        first_arg.utility = testclient.utility()
+
+                        if isinstance(first_arg, dict):
+                            first_arg["client"] = testclient
+                            first_arg["utility"] = testclient.utility()
 
                 # print("ARGS", args)
                         
@@ -159,11 +158,11 @@ def runner(name: str, store: Any, testfile: str, provider: Any):
         def walker(obj, path=None):
             if path is None:
                 path = []
-            if ismap(obj):
+            if isinstance(obj, dict):
                 # It's a dict
                 for k, v in obj.items():
                     new_path = path + [k]
-                    if not isnode(v):
+                    if not isinstance(v, (dict,list)):
                         baseval = getpath(new_path, base)
                         if not matchval(v, baseval):
                             raise AssertionError_(
@@ -174,7 +173,7 @@ def runner(name: str, store: Any, testfile: str, provider: Any):
             elif isinstance(obj, list):
                 for i, v in enumerate(obj):
                     new_path = path + [i]
-                    if not isnode(v):
+                    if not isinstance(v, (dict,list)):
                         baseval = getpath(new_path, base)
                         if not matchval(v, baseval):
                             raise AssertionError_(
