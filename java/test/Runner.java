@@ -25,6 +25,16 @@ public class Main {
         public String subjectname;
     }
 
+    public static class RunSetArguments{
+        public Map<String, Object> testspec;
+        public String testsubjectname;
+
+        public RunSetArguments(Map<String, Object> testspec, String testsubject) {
+            this.testspec = testspec;
+            this.testsubjectname = testsubject;
+        }
+    }
+
     public static class TestSubject {
         public static Object invoke(String name, List<Object> args) {
             if(name == "isNode") {
@@ -38,16 +48,6 @@ public class Main {
 
     }
 
-
-    public static class RunSetArguments{
-        public Map<String, Object> testspec;
-        public String testsubjectname;
-
-        public RunSetArguments(Map<String, Object> testspec, String testsubject) {
-            this.testspec = testspec;
-            this.testsubjectname = testsubject;
-        }
-    }
 
     public static RunnerResult runner(String name, Map<String, Object> store, String testfile, Provider provider) throws IOException {
         Client client = provider.test();
@@ -116,7 +116,7 @@ public class Main {
                 List<Object> args = Arrays.asList(entry_in);
 
                 System.out.println("isNode: " + TestSubject.invoke(testsubjectname, args));
-                
+
                 // System.out.println(entry_out);
 
 
