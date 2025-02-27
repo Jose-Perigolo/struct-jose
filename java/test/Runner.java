@@ -4,13 +4,9 @@ import java.lang.reflect.Array;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.io.IOException;
-import java.util.Iterator;
-import java.util.List;
-import java.util.Map;
-import java.util.HashMap;
+import java.util.*;
 import java.util.function.Function;
 
-import org.json.*;
 
 import com.google.gson.Gson;
 import com.google.gson.Gson.*;
@@ -24,18 +20,32 @@ import org.example.Struct;
 public class Main {
 
     public static class RunnerResult {
-        public JSONObject spec;
+        public Map<String, Object> spec;
         public Function<RunSetArguments, Void> runset;
-        public Object subject;
+        public String subjectname;
     }
 
-    public static class RunSetArguments{
-        public JSONObject testspec;
-        public Object testsubject;
+    public static class TestSubject {
+        public static Object invoke(String name, List<Object> args) {
+            if(name == "isNode") {
+                if(args.size() == 1) {
+                    return Struct.isNode(args.get(0));
+                }
+            }
+            return null;
 
-        public RunSetArguments(JSONObject testspec, Object testsubject) {
+        }
+
+    }
+
+
+    public static class RunSetArguments{
+        public Map<String, Object> testspec;
+        public String testsubjectname;
+
+        public RunSetArguments(Map<String, Object> testspec, String testsubject) {
             this.testspec = testspec;
-            this.testsubject = testsubject;
+            this.testsubjectname = testsubject;
         }
     }
 
@@ -43,16 +53,21 @@ public class Main {
         Client client = provider.test();
         Utility utility = client.utility();
 
+
         String fileContent = new String(Files.readAllBytes(Paths.get(testfile)));
 
+        JsonElement jsonElement = JsonParser.parseString(fileContent);
 
-        JSONObject alltests = new JSONObject(fileContent);
+        Gson gson = new Gson();
 
-        System.out.println(alltests);
+        // Object _alltests = gson.fromJson(jsonElement, Object.class);
+        Map<String, Object> alltests = gson.fromJson(jsonElement, Map.class);
 
-        JSONObject spec = alltests.has("primary") && ((JSONObject)alltests.get("primary")).has(name)
-                ? (JSONObject) ((JSONObject)alltests.get("primary")).get(name)
-                : alltests.has(name) ? (JSONObject) alltests.get(name) : alltests;
+        // System.out.println(alltests);
+
+        Map<String, Object> spec = (Map<String, Object>) (alltests.containsKey("primary") && ((Map<String, Object>)alltests.get("primary")).containsKey(name)
+                        ? (Map<String, Object>) ((Map<String, Object>)alltests.get("primary")).get(name)
+                        : alltests.containsKey(name) ? (Map<String, Object>) alltests.get(name) : alltests);
 
         Map<String, Client> clients = new HashMap<>();
 
@@ -77,33 +92,47 @@ public class Main {
         }
         */
 
-        Object subject = utility.get(name);
+        // Object subject = utility.get(name);
 
         Function<RunSetArguments, Void> runset = (func_args) -> {
             // System.out.println(func_args.testspec.getJSONArray("set"));
 
-            JSONArray testspec_set = func_args.testspec.getJSONArray("set");
-            Object testsubject = func_args.testsubject;
+            List<Object> testspec_set = (List<Object>) func_args.testspec.get("set");
+
+            String testsubjectname;
+
+            if(func_args.testsubjectname == null || func_args.testsubjectname.isEmpty()) {
+                testsubjectname = name;
+
+            } else {
+                testsubjectname = func_args.testsubjectname;
+            }
 
             // Iterator<String> keys = testspec_set.keys();
-            for(int i = 0; i < testspec_set.length(); i++) {
-                JSONObject entry = (JSONObject) testspec_set.get(i);
+            for(int i = 0; i < testspec_set.size(); i++) {
+                Map<String, Object> entry = (Map<String, Object>) testspec_set.get(i);
 
-                Object entry_in = entry.get("in");
+                Object entry_in = entry.get("in"), entry_out = entry.get("out");
+                List<Object> args = Arrays.asList(entry_in);
 
-                // System.out.println(Struct.isNode(entry_in));
+                System.out.println("isNode: " + TestSubject.invoke(testsubjectname, args));
+                
+                // System.out.println(entry_out);
+
+
+                /*
                 switch(entry_in) {
                     case String s -> {
                         System.out.println(Struct.isNode(s));
                     }
-                    case JSONArray arr -> {
-                        System.out.println(Struct.isNode(arr.toList()));
+                    case List arr -> {
+                        System.out.println(Struct.isNode(arr));
                     }
-                    case JSONObject obj -> {
-                        System.out.println(Struct.isNode(obj.toMap()));
+                    case Map obj -> {
+                        System.out.println(Struct.isNode(obj));
                     }
-                    case Integer integer -> {
-                        System.out.println(Struct.isNode(integer));
+                    case Double number -> {
+                        System.out.println(Struct.isNode(number));
                     }
                     case Boolean bool -> {
                         System.out.println(Struct.isNode(bool));
@@ -112,6 +141,8 @@ public class Main {
                         throw new AssertionError("Unknown entry in " + entry_in.getClass());
                     }
                 }
+
+                 */
 
 
 
@@ -176,17 +207,17 @@ public class Main {
         RunnerResult result = new RunnerResult();
         result.spec = spec;
         result.runset = runset;
-        result.subject = subject;
+        result.subjectname = name;
 
         return result;
     }
 
-    private static Object invokeTestSubject(Object testsubject, JSONObject args) {
+    private static Object invokeTestSubject(Object testsubject, Object args) {
         // Implement function invocation logic
         return null;
     }
 
-    private static void inject(JSONObject target, Map<String, Object> store) {
+    private static void inject(Object target, Map<String, Object> store) {
         // Implement injection logic
     }
 
@@ -195,7 +226,7 @@ public class Main {
 
             return new Client();
         }
-        public Client test(JSONObject options) {
+        public Client test(Object options) {
             return null;
         }
     }
@@ -216,24 +247,24 @@ public class Main {
     public static void main(String[] args) throws IOException {
 
         {
-
-            System.out.println("Running test");
-        }
-
-        {
             Map<String, Object> store = new HashMap<>();
 
             try {
                 RunnerResult runner_result = runner("struct", store, "/home/alex/Project/struct/build/test/test.json", new Provider());
 
-                JSONObject spec = runner_result.spec;
-                JSONObject minor = (JSONObject) spec.get("minor");
-                JSONObject isnode = (JSONObject) minor.get("isnode");
+                {
+                    // runset
+                    System.out.println("Running set");
 
-                Object testsubject = null;
+                    Map<String, Object> spec = runner_result.spec;
+                    Map<String, Object> minor = (Map<String, Object>) spec.get("minor");
+                    Map<String, Object> isnode = (Map<String, Object>) minor.get("isnode");
 
-                runner_result.runset.apply(new RunSetArguments(isnode, testsubject));
+                    runner_result.runset.apply(new RunSetArguments(isnode, "isNode"));
+                }
 
+
+                /*
                 {
                     String jsonString = "{ \"name\": \"Alice\", \"age\": 25 }";
 
@@ -272,18 +303,10 @@ public class Main {
                         }
                     }
 
-                    /*
-                    switch(jsonElement) {
-                        case JsonObject obj-> {
-                            System.out.println(obj.toString());
-                            break;
-                        }
-                        default -> {
-                            break;
-                        }
-                    }
-                     */
+
                 }
+
+                 */
 
             } catch (IOException e) {
                 throw new RuntimeException(e);
