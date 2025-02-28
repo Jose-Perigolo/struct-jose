@@ -1,718 +1,549 @@
-local struct = {}
-local json = require("dkjson")
+-- JSON-like Utilities Module
+local M = {}
 
-local S = {
-  MKEYPRE      = "key:pre",
-  MKEYPOST     = "key:post",
-  MVAL         = "val",
-  MKEY         = "key",
-  DKEY         = "`$KEY`",
-  DTOP         = "$TOP",
-  DERRS        = "$ERRS",
-  DMETA        = "`$META`",
-  array        = "array",
-  base         = "base",
-  boolean      = "boolean",
-  empty        = "",
-  ["function"] = "function",
-  number       = "number",
-  object       = "object",
-  string       = "string",
-  key          = "key",
-  parent       = "parent",
-  BT           = "`",
-  DS           = "$",
-  DT           = ".",
-  KEY          = "KEY",
-}
-struct.S = S
-
-local UNDEF = nil
-
-local function isnode(val)
-  return val ~= nil and type(val) == "table"
+--[[
+  Checks if a value is a JSON-like node (table that is a list or map).
+  @param value any  The value to check.
+  @return boolean  True if the value is a table (list or map), false otherwise.
+]]
+function M.isnode(value)
+  return type(value) == "table"
 end
 
-
-local function islist(val)
-  if type(val) ~= "table" then return false end
-  local n = #val
+--[[
+  Checks if a value is a JSON-like list (array).
+  A list is defined as a table with consecutive integer keys starting at 1.
+  @param value any  The value to check.
+  @return boolean  True if the value is a list (array), false otherwise.
+]]
+function M.islist(value)
+  if type(value) ~= "table" then return false end
   local count = 0
-  for k, _ in pairs(val) do
-    if type(k) == "number" and k >= 1 and math.floor(k) == k then
-      count = count + 1
+  for k, _ in pairs(value) do
+    if type(k) ~= "number" then
+      return false -- found a non-numeric key, so not a list
+    end
+    count = count + 1
+  end
+  -- ensure keys 1..count exist with no gaps
+  for i = 1, count do
+    if value[i] == nil then return false end
+  end
+  return true
+end
+
+--[[
+  Checks if a value is a JSON-like map (object with string keys).
+  A map is a table that is not identified as a list.
+  @param value any  The value to check.
+  @return boolean  True if the value is a map (object), false otherwise.
+]]
+function M.ismap(value)
+  if type(value) ~= "table" then return false end
+  return not M.islist(value)
+end
+
+--[[
+  Checks if a given key is a valid JSON-like key.
+  In JSON, keys are typically strings (or can be numeric indices for arrays).
+  @param key any  The key to check.
+  @return boolean  True if the key is a string (non-empty) or number, false otherwise.
+]]
+function M.iskey(key)
+  if type(key) == "string" then
+    return key ~= ""
+  elseif type(key) == "number" then
+    return true
+  end
+  return false
+end
+
+--[[
+  Checks if a value is a function.
+  @param value any  The value to check.
+  @return boolean  True if the value is of type 'function', false otherwise.
+]]
+function M.isfunc(value)
+  return type(value) == "function"
+end
+
+--[[
+  Checks if a given value (node or primitive) is "empty".
+  - For lists: returns true if the list has length 0.
+  - For maps: returns true if the map has no keys.
+  - For other types (including nil): returns true if the value is nil or an empty string.
+  @param value any  The value to check.
+  @return boolean  True if the value is empty as per above rules.
+]]
+function M.isempty(value)
+  if type(value) == "table" then
+    if M.islist(value) then
+      return #value == 0
     else
-      return false
+      return next(value) == nil -- no key-value pairs
     end
+  elseif value == nil or value == "" then
+    return true
   end
-  return count == n
+  return false
 end
 
-local function ismap(val)
-  return val ~= nil and type(val) == "table" and (not islist(val))
-end
-
-
-local function iskey(key)
-  return (type(key) == "string" and key ~= "") or (type(key) == "number")
-end
-
-local function isempty(val)
-  return val == nil or val == "" or
-      (type(val) == "table" and next(val) == nil)
-end
-
-local function isfunc(val)
-  return type(val) == "function"
-end
-
-local function items(val)
-  local result = {}
-  if ismap(val) then
-    for k, v in pairs(val) do
-      table.insert(result, { k, v })
-    end
-  elseif islist(val) then
-    for i, v in ipairs(val) do
-      table.insert(result, { i, v })
-    end
-  end
-  return result
-end
-
-local function keysof(val)
-  if not isnode(val) then return {} end
+--[[
+  Returns an array of keys for a given JSON-like node.
+  @param node table  The map or list to extract keys from.
+  @return table  Array of keys (numeric indices for lists, string keys for maps). Returns empty table for non-table inputs.
+]]
+function M.keysof(node)
   local keys = {}
-  if ismap(val) then
-    for k, _ in pairs(val) do
-      table.insert(keys, k)
-    end
-    table.sort(keys, function(a, b) return tostring(a) < tostring(b) end)
-  elseif islist(val) then
-    for i = 1, #val do
-      table.insert(keys, i)
+  if type(node) == "table" then
+    for k, _ in pairs(node) do
+      keys[#keys + 1] = k
     end
   end
   return keys
 end
 
-local function haskey(val, key)
-  return getprop(val, key) ~= UNDEF
+--[[
+  Checks if a given table (map or list) contains a specific key.
+  @param node table  The table to check.
+  @param key any  The key to look for.
+  @return boolean  True if the key exists in the table (and maps to a non-nil value), false otherwise.
+]]
+function M.haskey(node, key)
+  if type(node) ~= "table" then return false end
+  return node[key] ~= nil
 end
 
-local function stringify(val, maxlen)
-  local jsonStr = ""
-  local ok, encoded = pcall(function()
-    return json.encode(val)
-  end)
-  if ok then
-    jsonStr = encoded
+--[[
+  Deep-clones a JSON-like structure.
+  Primitives (number, string, boolean, nil, function) are returned as-is (functions are not copied).
+  Tables (lists or maps) are cloned recursively.
+  @param value any  The value to clone.
+  @return any  A new cloned value structurally identical to the input.
+]]
+function M.clone(value)
+  if type(value) ~= "table" then
+    -- primitive types and functions are returned directly
+    return value
+  end
+  if M.islist(value) then
+    local new_list = {}
+    for i, v in ipairs(value) do
+      new_list[i] = M.clone(v)
+    end
+    return new_list
   else
-    jsonStr = tostring(val)
-  end
-  jsonStr = tostring(jsonStr):gsub('"', '')
-  if maxlen then
-    local js = string.sub(jsonStr, 1, maxlen)
-    if #jsonStr > maxlen then
-      jsonStr = string.sub(js, 1, maxlen - 3) .. "..."
+    local new_map = {}
+    for k, v in pairs(value) do
+      new_map[k] = M.clone(v)
     end
+    return new_map
   end
-  return jsonStr
 end
 
-local function clone(val)
-  if val == nil then return nil end
-  local t = type(val)
-  if t ~= "table" then
-    return val
-  end
-  local copy = {}
-  for k, v in pairs(val) do
-    copy[clone(k)] = clone(v)
-  end
-  return copy
-end
-
-local function escre(s)
-  if s == nil then s = "" end
-  return s:gsub("[%(%)%.%%%+%-%*%?%[%]%^%$]", "%%%1")
-end
-
-local function escurl(s)
-  s = s or S.empty
-  return (s:gsub("([^%w%-%.%_%~])", function(c)
-    return string.format("%%%02X", string.byte(c))
-  end))
-end
-
-local function joinurl(sarr)
-  local parts = {}
-  for i, s in ipairs(sarr) do
-    if s ~= nil and s ~= "" then
-      local part = s
-      if i == 1 then
-        part = part:gsub("([^/])/+", "%1/"):gsub("/+$", "")
-      else
-        part = part:gsub("([^/])/+", "%1/"):gsub("^/+", ""):gsub("/+$", "")
+--[[
+  Returns a list of key-value pair entries for a given node.
+  For lists, numeric indices (1-based) act as keys; for maps, string keys are used.
+  @param node table  The JSON-like table to get items from.
+  @return table  An array of two-element tables {key, value} for each entry in the node.
+]]
+function M.items(node)
+  local entries = {}
+  if type(node) == "table" then
+    if M.islist(node) then
+      for i, v in ipairs(node) do
+        entries[#entries + 1] = { i, v }
       end
-      if part ~= "" then
-        table.insert(parts, part)
-      end
-    end
-  end
-  return table.concat(parts, "/")
-end
-
-local function getprop(val, key, alt)
-  if val == nil or key == nil then return alt end
-  local out = val[key]
-  return (out == nil) and alt or out
-end
-
-local function setprop(parent, key, val)
-  if not iskey(key) then return parent end
-  if ismap(parent) then
-    key = tostring(key)
-    if val == nil then
-      parent[key] = nil
     else
-      parent[key] = val
-    end
-  elseif islist(parent) then
-    local keyI = tonumber(key)
-    if not keyI then return parent end
-    keyI = math.floor(keyI)
-    if val == nil then
-      if keyI >= 1 and keyI <= #parent then
-        table.remove(parent, keyI)
-      end
-    elseif keyI < 1 then
-      table.insert(parent, 1, val)
-    else
-      if keyI > #parent then
-        table.insert(parent, val)
-      else
-        parent[keyI] = val
+      for k, v in pairs(node) do
+        entries[#entries + 1] = { k, v }
       end
     end
   end
-  return parent
+  return entries
 end
 
-local function walk(val, apply, key, parent, path)
-  path = path or {}
-  if isnode(val) then
-    for _, pair in ipairs(items(val)) do
-      local ckey = pair[1]
-      local child = pair[2]
-      local newPath = {}
-      for i, v in ipairs(path) do table.insert(newPath, v) end
-      table.insert(newPath, tostring(ckey))
-      val[ckey] = walk(child, apply, ckey, val, newPath)
-    end
+--[[
+  Safely gets a property from a map or list, with an optional default.
+  @param node table  The table (map or list) to query.
+  @param key any  The key or index to retrieve.
+  @param default any  (Optional) Default value to return if the key is not present.
+  @return any  The value at the given key, or the default value (or nil if not provided and key missing).
+]]
+function M.getprop(node, key, default)
+  if type(node) ~= "table" then
+    return default
   end
-  return apply(key, val, parent, path or {})
-end
-
-local function merge(objs)
-  if not islist(objs) then
-    return objs
-  elseif #objs == 0 then
-    return nil
-  elseif #objs == 1 then
-    return objs[1]
-  else
-    local function deepmerge(a, b)
-      if type(a) ~= "table" or type(b) ~= "table" then
-        return b
-      end
-      for k, v in pairs(b) do
-        if type(v) == "table" and type(a[k]) == "table" then
-          a[k] = deepmerge(a[k], v)
-        else
-          a[k] = v
-        end
-      end
-      return a
-    end
-    local out = clone(objs[1])
-    for i = 2, #objs do
-      out = deepmerge(out, objs[i])
-    end
-    return out
-  end
-end
-
-local function pathifyInput(path)
-  if type(path) == "table" then
-    return path
-  elseif type(path) == "string" then
-    local parts = {}
-    for part in string.gmatch(path, "([^" .. S.DT .. "]+)") do
-      table.insert(parts, part)
-    end
-    return parts
-  else
-    return nil
-  end
-end
-
-local function getpath(path, store, current, state)
-  local parts = pathifyInput(path)
-  if parts == nil then return nil end
-  local root = store
-  local val = store
-  if path == nil or store == nil or (#parts == 1 and parts[1] == S.empty) then
-    val = getprop(store, getprop(state, S.base), store)
-  elseif #parts > 0 then
-    local pI = 1
-    if parts[1] == S.empty then
-      pI = 2
-      root = current
-    end
-    local part = parts[pI] or nil
-    local first = getprop(root, part)
-    if first == nil and pI == 1 then
-      val = getprop(getprop(root, getprop(state, S.base)), part)
-    else
-      val = first
-    end
-    for i = pI + 1, #parts do
-      if val == nil then break end
-      val = getprop(val, parts[i])
-    end
-  end
-  if state and type(state.handler) == "function" then
-    val = state.handler(state, val, current, parts, store)
+  local val = node[key]
+  if val == nil then
+    return default
   end
   return val
 end
 
-local function injectstr(val, store, current, state)
-  if type(val) ~= "string" then return S.empty end
-  local out = val
-  local m = { string.match(val, "^`([^`]+)`$") }
-  if #m > 0 then
-    if state then state.full = true end
-    local pathref = m[1]
-    if #pathref > 3 then
-      pathref = pathref:gsub("%$BT", S.BT):gsub("%$DS", S.DS)
-    end
-    out = getpath(pathref, store, current, state)
-  else
-    out = val:gsub("`([^`]+)`", function(ref)
-      if #ref > 3 then
-        ref = ref:gsub("%$BT", S.BT):gsub("%$DS", S.DS)
-      end
-      if state then state.full = false end
-      local found = getpath(ref, store, current, state)
-      if found == nil then
-        return S.empty
-      elseif type(found) == "table" then
-        local ok, encoded = pcall(function() return json.encode(found) end)
-        return ok and encoded or tostring(found)
-      else
-        return tostring(found)
-      end
+--[[
+  Sets a property on a map or list.
+  @param node table  The table (map or list) to modify.
+  @param key any  The key or index to set.
+  @param value any  The value to set at the given key.
+  @return table  The modified table (same as the input node).
+]]
+function M.setprop(node, key, value)
+  if type(node) ~= "table" then
+    return node -- not a table, nothing to set
+  end
+  node[key] = value
+  return node
+end
+
+--[[
+  Converts a JSON-like structure to a JSON string.
+  Booleans, numbers, and strings are converted to their JSON representations.
+  Lists and maps are converted recursively to JSON array and object syntax.
+  The `nil` value is converted to JSON "null". Functions and unsupported types are omitted or represented as null.
+  @param value any  The JSON-like value to stringify.
+  @return string  A JSON-formatted string representing the input value.
+]]
+function M.stringify(value)
+  -- Helper to escape special characters in JSON strings (quotes, backslashes, control chars)
+  local function escape_str(str)
+    -- Replace special characters with escape sequences
+    str = str:gsub("\\", "\\\\")
+        :gsub("\"", "\\\"")
+        :gsub("\b", "\\b")
+        :gsub("\f", "\\f")
+        :gsub("\n", "\\n")
+        :gsub("\r", "\\r")
+        :gsub("\t", "\\t")
+    -- Replace other control characters (0x00-0x1F) with \u00XX sequences
+    str = str:gsub("([^%w%p%s])", function(ch)
+      return string.format("\\u%04X", string.byte(ch))
     end)
-    if state and state.handler then
-      state.full = true
-      out = state.handler(state, out, current, val, store)
-    end
+    return str
   end
-  return out
-end
 
-local function inject(val, store, modify, current, state)
-  local valtype = type(val)
-  if state == nil then
-    local parent = { [S.DTOP] = val }
-    state = {
-      mode = S.MVAL,
-      full = false,
-      keyI = 0,
-      keys = { S.DTOP },
-      key = S.DTOP,
-      val = val,
-      parent = parent,
-      path = { S.DTOP },
-      nodes = { parent },
-      handler = injecthandler,
-      base = S.DTOP,
-      modify = modify,
-      errs = getprop(store, S.DERRS, {})
-    }
-  end
-  if current == nil then
-    current = { ["$TOP"] = store }
+  local t = type(value)
+  if value == nil then
+    return "null"
+  elseif t == "boolean" or t == "number" then
+    -- JSON booleans and numbers are same text representation as Lua
+    if t == "number" then
+      -- JSON does not allow NaN/Inf, represent them as null
+      if value ~= value or value == math.huge or value == -math.huge then
+        return "null"
+      end
+    end
+    return tostring(value)
+  elseif t == "string" then
+    return "\"" .. escape_str(value) .. "\""
+  elseif t == "function" or t == "userdata" or t == "thread" then
+    -- Unsupported types in JSON; represent as null
+    return "null"
+  elseif M.islist(value) then
+    local parts = {}
+    for i, v in ipairs(value) do
+      parts[#parts + 1] = M.stringify(v)
+    end
+    return "[" .. table.concat(parts, ",") .. "]"
+  elseif M.ismap(value) then
+    local parts = {}
+    for k, v in pairs(value) do
+      if type(k) == "string" then
+        local keyStr = escape_str(k)
+        parts[#parts + 1] = "\"" .. keyStr .. "\":" .. M.stringify(v)
+      end
+      -- Note: if key is not a string, it will be ignored (JSON object keys must be strings)
+    end
+    return "{" .. table.concat(parts, ",") .. "}"
   else
-    local parentkey = state.path[#state.path - 1]
-    current = (parentkey == nil) and current or getprop(current, parentkey)
+    -- Fallback for any other type (should not happen in JSON-like data)
+    return "null"
   end
-  if isnode(val) then
-    local origkeys = {}
-    if ismap(val) then
-      for k, _ in pairs(val) do
-        if not string.find(k, S.DS) then
-          table.insert(origkeys, k)
-        end
-      end
-      for k, _ in pairs(val) do
-        if string.find(k, S.DS) then
-          table.insert(origkeys, k)
-        end
-      end
-      table.sort(origkeys, function(a, b) return tostring(a) < tostring(b) end)
-    elseif islist(val) then
-      for i = 1, #val do
-        table.insert(origkeys, i)
-      end
+end
+
+--[[
+  Escapes a string for safe use in a Lua pattern or regular expression.
+  It prepends '%' to all magic characters.
+  @param s string|nil  The input string to escape (nil is treated as empty string).
+  @return string  The escaped string, safe for use in pattern matching.
+]]
+function M.escre(s)
+  if s == nil then return "" end
+  -- Pattern of characters to escape: ^$()%.[]*+-?{}|
+  return (tostring(s):gsub("([%^%$%(%)%[%]%.%*%+%-%?%{%}%|])", "%%%1"))
+end
+
+--[[
+  Escapes a string for safe use in a URL (percent-encoding).
+  Encodes all characters except alphanumeric and the characters - _ . ~
+  @param s string|number  The input value to encode (will be converted to string).
+  @return string  The URL-encoded string.
+]]
+function M.escurl(s)
+  if s == nil then return "" end
+  s = tostring(s)
+  return (s:gsub("([^%w%._~%-])", function(c)
+    return string.format("%%%02X", string.byte(c))
+  end))
+end
+
+--[[
+  Joins multiple URL path segments into one, ensuring proper slashes.
+  It trims any leading/trailing slashes from each segment and then joins them with a single '/'.
+  (Note: It does not handle URL query '?' or fragment '#' specially; those should be passed as part of a segment if needed.)
+  @param ... string  Multiple string arguments representing parts of a URL path.
+  @return string  The joined URL path.
+]]
+function M.joinurl(...)
+  local parts = {}
+  for _, segment in ipairs { ... } do
+    local seg = tostring(segment or "")
+    -- Remove leading and trailing slashes
+    seg = seg:gsub("^/*", ""):gsub("/*$", "")
+    if seg ~= "" then
+      parts[#parts + 1] = seg
     end
-    for okI = 1, #origkeys do
-      local origkey = S.empty .. origkeys[okI]
-      local childpath = {}
-      for i, v in ipairs(state.path or {}) do table.insert(childpath, v) end
-      table.insert(childpath, origkey)
-      local childnodes = {}
-      for i, v in ipairs(state.nodes or {}) do table.insert(childnodes, v) end
-      table.insert(childnodes, val)
-      local childstate = {
-        mode = S.MKEYPRE,
-        full = false,
-        keyI = okI - 1,
-        keys = origkeys,
-        key = origkey,
-        val = val,
-        parent = val,
-        path = childpath,
-        nodes = childnodes,
-        handler = injecthandler,
-        base = state.base,
-        errs = state.errs
-      }
-      local prekey = injectstr(origkey, store, current, childstate)
-      okI = childstate.keyI + 1
-      if prekey ~= nil then
-        local child = getprop(val, prekey)
-        childstate.mode = S.MVAL
-        inject(child, store, modify, current, childstate)
-        childstate.mode = S.MKEYPOST
-        injectstr(origkey, store, current, childstate)
-        okI = childstate.keyI + 1
-      end
+  end
+  -- Special case: if first part was just "/" (root), retain it
+  if select(1, ...) == "/" then
+    return "/" .. table.concat(parts, "/")
+  end
+  return table.concat(parts, "/")
+end
+
+--[[
+  Retrieves a nested value from a JSON-like structure using a path.
+  The path can be provided as a string (dot-separated keys) or as an array of keys.
+  @param node table        The root JSON-like structure (list or map) to traverse.
+  @param path string|table The path to navigate, e.g. "user.address.city" or {"user","address","city"}.
+  @param default any       (Optional) Default value to return if the path is not found.
+  @return any  The value at the given path, or the default (or nil) if not found.
+]]
+function M.getpath(node, path, default)
+  if node == nil then return default end
+  -- If path is a string, split it on dots to get components
+  local keys = {}
+  if type(path) == "string" then
+    if path == "" then
+      return node -- empty path returns the node itself
     end
-  elseif S.string == valtype then
-    state.mode = S.MVAL
-    local newval = injectstr(val, store, current, state)
-    val = newval
-    setprop(state.parent, state.key, newval)
-  end
-  if modify then
-    modify(
-      val,
-      getprop(state, "key"),
-      getprop(state, "parent"),
-      state,
-      current,
-      store
-    )
-  end
-  return getprop(state.parent, S.DTOP)
-end
-
-local function injecthandler(state, val, current, ref, store)
-  local out = val
-  if type(val) == "function" and (ref == nil or (type(ref) == "string" and string.sub(ref, 1, 1) == S.DS)) then
-    out = val(state, val, current, store)
-  elseif state.mode == S.MVAL and state.full then
-    setprop(state.parent, state.key, val)
-  end
-  return out
-end
-
-local function transform_DELETE(state)
-  local key = state.key
-  local parent = state.parent
-  setprop(parent, key, UNDEF)
-  return UNDEF
-end
-
-local function transform_COPY(state, _val, current)
-  local mode = state.mode
-  local key = state.key
-  local parent = state.parent
-  local out
-  if string.sub(mode, 1, #S.MKEY) == S.MKEY then
-    out = key
+    for key in string.gmatch(path, "[^%.]+") do
+      keys[#keys + 1] = key
+    end
+  elseif type(path) == "table" then
+    for _, key in ipairs(path) do
+      keys[#keys + 1] = key
+    end
   else
-    out = getprop(current, key)
-    setprop(parent, key, out)
+    -- unsupported path type
+    return default
   end
-  return out
-end
 
-local function transform_KEY(state, _val, current)
-  local mode = state.mode
-  local parent = state.parent
-  local path = state.path
-  if state.mode ~= S.MVAL then
-    return UNDEF
-  end
-  local keyspec = getprop(parent, S.DKEY)
-  if keyspec ~= UNDEF then
-    setprop(parent, S.DKEY, UNDEF)
-    return getprop(current, keyspec)
-  end
-  return getprop(getprop(parent, S.DMETA), S.KEY, path[#path - 1])
-end
-
-local function transform_META(state)
-  local parent = state.parent
-  setprop(parent, S.DMETA, UNDEF)
-  return UNDEF
-end
-
-local function transform_MERGE(state, _val, store)
-  local mode = state.mode
-  local key = state.key
-  local parent = state.parent
-  if mode == S.MKEYPRE then return key end
-  if mode == S.MKEYPOST then
-    local args = getprop(parent, key)
-    if args == S.empty then
-      args = { store["$TOP"] }
-    elseif type(args) ~= "table" then
-      args = { args }
+  local current = node
+  for _, key in ipairs(keys) do
+    if type(current) ~= "table" then
+      return default
     end
-    setprop(parent, key, UNDEF)
-    local mergelist = { parent }
-    for i = 1, #args do
-      table.insert(mergelist, args[i])
+    current = current[key]
+    if current == nil then
+      return default
     end
-    table.insert(mergelist, clone(parent))
-    local merged = merge(mergelist)
-    setprop(parent, key, merged)
-    return key
   end
-  return UNDEF
+  return current
 end
 
-local function transform_EACH(state, _val, current, store)
-  local mode = state.mode
-  local keys = state.keys
-  if keys then
-    while #keys > 1 do table.remove(keys) end
-  end
-  local srcpath = getprop(state.parent, 2)
-  local child = clone(getprop(state.parent, 3))
-  local src = getpath(srcpath, store, current, state)
-  local tcurrent = {}
-  local tval = {}
-  local tkey = state.path[#state.path - 1]
-  local target = state.nodes[#state.nodes - 1] or state.nodes[#state.nodes]
-  if isnode(src) then
-    if islist(src) then
-      for i = 1, #src do
-        table.insert(tval, clone(child))
-      end
-    else
-      for k, _ in pairs(src) do
-        local entry = clone(child)
-        entry[S.DMETA] = { KEY = k }
-        tval[k] = entry
+-- Internal helper for merging two nodes (used by M.merge)
+local function _merge_two(a, b)
+  if M.islist(a) and M.islist(b) then
+    -- Merge lists by concatenation (append elements of b into a)
+    for _, v in ipairs(b) do
+      a[#a + 1] = M.clone(v)
+    end
+    return a
+  elseif M.ismap(a) and M.ismap(b) then
+    -- Merge maps by key, deep merging any common sub-nodes
+    for k, v in pairs(b) do
+      if M.isnode(a[k]) and M.isnode(v) then
+        -- Both are tables (nodes): merge recursively
+        a[k] = _merge_two(a[k], M.clone(v))
+      else
+        -- Otherwise, overwrite or add new key (clone to avoid reference sharing)
+        a[k] = M.clone(v)
       end
     end
-    tcurrent = islist(src) and src or {}
-    if not islist(src) then
-      for k, v in pairs(src) do
-        tcurrent[k] = v
+    return a
+  else
+    -- If types differ or either is not a node, the second value overrides the first
+    return M.clone(b)
+  end
+end
+
+--[[
+  Deep merges two or more JSON-like structures into a new one.
+  - For maps: keys from later structures override or are combined with earlier ones. Nested tables are merged recursively.
+  - For lists: elements from later lists are appended to the earlier list.
+  - If a value in later structures is not a table (node), it overrides the previous value entirely.
+  @param base any    The first structure to merge (will not be mutated).
+  @param ...  any    Additional structures to merge into the base.
+  @return any  A new merged JSON-like structure.
+]]
+function M.merge(base, ...)
+  local result = M.clone(base)
+  for _, nextStruct in ipairs({ ... }) do
+    result = _merge_two(result, nextStruct)
+  end
+  return result
+end
+
+--[[
+  Recursively walks a JSON-like structure, invoking a callback for each value.
+  The callback is called for every value (including nested ones) with parameters (value, key, parent, path).
+  - value: the current value at the node.
+  - key: the key or index of this value in its parent (nil for the root).
+  - parent: the parent table containing this value (nil for the root).
+  - path: an array representing the path (keys) to this value from the root.
+  @param node any                              The root of the JSON-like structure to walk.
+  @param callback function(value, key, parent, path)  Function to call on each value.
+]]
+function M.walk(node, callback)
+  local function _walk(value, key, parent, path)
+    callback(value, key, parent, path)
+    if type(value) ~= "table" then
+      return
+    end
+    if M.islist(value) then
+      for i, v in ipairs(value) do
+        path[#path + 1] = i      -- push current key
+        _walk(v, i, value, path) -- recurse into list element
+        path[#path] = nil        -- pop current key
+      end
+    else                         -- map
+      for k, v in pairs(value) do
+        path[#path + 1] = k
+        _walk(v, k, value, path)
+        path[#path] = nil
       end
     end
   end
-  tcurrent = { ["$TOP"] = tcurrent }
-  tval = inject(tval, store, state.modify, tcurrent)
-  setprop(target, tkey, tval)
-  return tval[1]
+  _walk(node, nil, nil, {})
 end
 
-local function pathify(val, from)
-  from = (from == nil or from < 0) and 1 or from
-  if type(val) == "table" then
-    local path = {}
-    for i = from, #val do
-      table.insert(path, tostring(val[i]))
+--[[
+  Reduces a JSON-like structure to a single value by iterating over all values.
+  The reducer function is called for each value in the structure (deeply nested included).
+  @param node any             The root of the structure to reduce.
+  @param initial any          The initial accumulator value.
+  @param reducer function(acc, value, key, parent, path)  The reducing function.
+  @return any  The final accumulated result after processing all values.
+]]
+function M.inject(node, initial, reducer)
+  local acc = initial
+  M.walk(node, function(val, key, parent, path)
+    acc = reducer(acc, val, key, parent, path)
+  end)
+  return acc
+end
+
+--[[
+  Transforms a JSON-like structure by applying a function to each value, returning a new structure.
+  The transform function is applied to each non-table value and the result is placed into a new structure of the same shape.
+  @param node any                           The root of the structure to transform.
+  @param fn function(value, key, parent, path)  Function to transform each non-table value.
+  @return any  A new JSON-like structure where every non-table value has been transformed by `fn`.
+]]
+function M.transform(node, fn)
+  local function _transform(value, key, parent, path)
+    if type(value) ~= "table" then
+      -- Primitive or function value: apply transform function
+      return fn(value, key, parent, path)
     end
-    if #path == 0 then
-      return '<root>'
-    end
-    return table.concat(path, '.')
-  end
-  return (val == nil) and '<unknown-path>' or stringify(val)
-end
-
-local function transform_PACK(state, _val, current, store)
-  if state.mode ~= S.MKEYPRE or type(state.key) ~= "string" then return UNDEF end
-  local parent = state.parent
-  local args = getprop(parent, state.key)
-  local srcpath = args[1]
-  local child = clone(args[2])
-  local keyprop = child[S.DKEY]
-  local tkey = state.path[#state.path - 1]
-  local target = state.nodes[#state.nodes - 1] or state.nodes[#state.nodes]
-  local childkey = getprop(child, S.DKEY)
-  local keyname = (childkey == UNDEF) and keyprop or childkey
-  setprop(child, S.DKEY, UNDEF)
-  local tval = {}
-  local src = getpath(srcpath, store, current, state)
-  if src == nil then return UNDEF end
-  if not islist(src) then
-    local temp = {}
-    for k, v in pairs(src) do
-      table.insert(temp, { k, v })
-    end
-    src = temp
-  end
-  for _, n in ipairs(src) do
-    local kn = getprop(n, keyname)
-    setprop(tval, kn, clone(child))
-    local nchild = getprop(tval, kn)
-    setprop(nchild, S.DMETA, getprop(n, S.DMETA))
-  end
-  local tcurrent = {}
-  for _, n in ipairs(src) do
-    local kn = getprop(n, keyname)
-    tcurrent[kn] = n
-  end
-  tcurrent = { ["$TOP"] = tcurrent }
-  tval = inject(tval, store, state.modify, tcurrent)
-  setprop(target, tkey, tval)
-  return UNDEF
-end
-
-local function transform(data, spec, extra, modify)
-  spec = clone(spec)
-  local extraTransforms = {}
-  local extraData = extra or {}
-  for k, v in pairs(extraData) do
-    if string.sub(k, 1, 1) == S.DS then
-      extraTransforms[k] = v
-    else
-      extraData[k] = v
-    end
-  end
-  local dataClone = merge({
-    clone(extraData or {}),
-    clone(data or {})
-  })
-  local store = {}
-  for k, v in pairs(extraTransforms) do
-    store[k] = v
-  end
-  store[S.DTOP]    = dataClone
-  store["$BT"]     = function() return S.BT end
-  store["$DS"]     = function() return S.DS end
-  store["$WHEN"]   = function() return os.date("!%Y-%m-%dT%TZ") end
-  store["$DELETE"] = transform_DELETE
-  store["$COPY"]   = transform_COPY
-  store["$KEY"]    = transform_KEY
-  store["$META"]   = transform_META
-  store["$MERGE"]  = transform_MERGE
-  store["$EACH"]   = transform_EACH
-  store["$PACK"]   = transform_PACK
-  for k, v in pairs(extraTransforms) do
-    store[k] = v
-  end
-  local out = inject(spec, store, modify, store)
-  return out
-end
-
-
-local function invalidTypeMsg(path, expected, vt, v)
-  vt = (type(v) == "table" and ismap(v)) and S.array or type(v)
-  v = stringify(v)
-  return 'Expected ' .. expected .. ' at ' .. pathify(path) ..
-      ', found ' .. ((v ~= nil) and (vt .. ': ' .. v) or '')
-end
-
-
-local function validate(data, spec, extra, collecterrs)
-  local errs = collecterrs or {}
-  local out = transform(data, spec, extra,
-    function(val, _key, parent, state, current, _store)
-      local cval = getprop(current, state.key)
-      if cval == UNDEF or state == UNDEF then
-        return UNDEF
+    if M.islist(value) then
+      local new_list = {}
+      for i, v in ipairs(value) do
+        path[#path + 1] = i
+        new_list[i] = _transform(v, i, value, path)
+        path[#path] = nil
       end
-      local pval = getprop(parent, state.key)
-      local t = type(pval)
-      if t == "string" and string.find(pval, S.DS) then
-        return UNDEF
+      return new_list
+    else -- map
+      local new_map = {}
+      for k, v in pairs(value) do
+        path[#path + 1] = k
+        new_map[k] = _transform(v, k, value, path)
+        path[#path] = nil
       end
-      local ct = type(cval)
-      if t ~= ct and pval ~= UNDEF then
-        table.insert(state.errs, invalidTypeMsg(state.path, t, ct, cval))
-        return UNDEF
-      elseif ismap(cval) then
-        if not ismap(val) then
-          table.insert(state.errs, invalidTypeMsg(state.path, islist(val) and S.array or t, ct, cval))
-          return UNDEF
-        end
-        local ckeys = keysof(cval)
-        local pkeys = keysof(pval)
-        if #pkeys > 0 and getprop(pval, '`$OPEN`') ~= true then
-          local badkeys = {}
-          for _, ckey in ipairs(ckeys) do
-            if not haskey(val, ckey) then
-              table.insert(badkeys, ckey)
-            end
-          end
-          if #badkeys > 0 then
-            table.insert(state.errs, 'Unexpected keys at ' .. pathify(state.path) .. ': ' .. table.concat(badkeys, ', '))
-          end
-        else
-          merge({ pval, cval })
-          if isnode(pval) then
-            pval['`$OPEN`'] = nil
+      return new_map
+    end
+  end
+  return _transform(node, nil, nil, {})
+end
+
+--[[
+  Validates that a value is a proper JSON-like structure.
+  Rules checked:
+    - Primitives allowed: string, number (finite), boolean, nil (treated as null).
+    - Tables must be either lists or maps as defined by islist/ismap.
+    - Map keys must be strings (non-empty).
+    - No functions, userdata, or thread values are allowed.
+    - No circular references (cycles) in the structure.
+  @param value any  The value to validate.
+  @return boolean  True if the value is a valid JSON-like structure, false otherwise.
+]]
+function M.validate(value)
+  local seen = {} -- for cycle detection
+  local function _validate(x)
+    local t = type(x)
+    if x == nil or t == "boolean" or t == "string" then
+      return true
+    elseif t == "number" then
+      -- number must be finite and not NaN
+      if x ~= x or x == math.huge or x == -math.huge then
+        return false
+      end
+      return true
+    elseif t == "function" or t == "userdata" or t == "thread" then
+      return false -- invalid type for JSON
+    elseif t == "table" then
+      if seen[x] then
+        return false -- cycle detected
+      end
+      seen[x] = true
+      local valid
+      if M.islist(x) then
+        -- validate each element in the list
+        valid = true
+        for _, v in ipairs(x) do
+          if not _validate(v) then
+            valid = false
+            break
           end
         end
-      elseif islist(cval) then
-        if not islist(val) then
-          table.insert(state.errs, invalidTypeMsg(state.path, t, ct, cval))
+      elseif M.ismap(x) then
+        -- all keys must be strings, and values valid
+        valid = true
+        for k, v in pairs(x) do
+          if type(k) ~= "string" or k == "" then
+            valid = false
+            break
+          end
+          if not _validate(v) then
+            valid = false
+            break
+          end
         end
       else
-        setprop(parent, state.key, cval)
+        -- Table is neither a proper list nor map (mixed or sparse array)
+        valid = false
       end
-      return UNDEF
+      seen[x] = nil
+      return valid
+    else
+      -- any other type (should not happen)
+      return false
     end
-  )
-  if #errs > 0 and collecterrs == nil then
-    error('Invalid data: ' .. table.concat(errs, "\n"))
   end
-  return out
+  return _validate(value)
 end
 
-
-struct.clone     = clone
-struct.escre     = escre
-struct.escurl    = escurl
-struct.getpath   = getpath
-struct.getprop   = getprop
-struct.haskey    = haskey
-struct.inject    = inject
-struct.isempty   = isempty
-struct.isfunc    = isfunc
-struct.iskey     = iskey
-struct.islist    = islist
-struct.ismap     = ismap
-struct.isnode    = isnode
-struct.items     = items
-struct.joinurl   = joinurl
-struct.keysof    = keysof
-struct.merge     = merge
-struct.setprop   = setprop
-struct.stringify = stringify
-struct.transform = transform
-struct.validate  = validate
-struct.walk      = walk
-
-return { struct = struct }
+-- Return the module table
+return M
