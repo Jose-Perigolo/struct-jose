@@ -57,7 +57,7 @@ describe('struct', async () => {
 
   const { spec, runset } =
     await runner('struct', {}, '../../build/test/test.json', {
-      test: () => ({
+      test: async () => ({
         utility: () => ({
           struct: {
             clone,

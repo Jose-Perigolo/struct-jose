@@ -17,7 +17,7 @@ function nullModifier(key, val, parent) {
 }
 (0, node_test_1.describe)('struct', async () => {
     const { spec, runset } = await (0, runner_1.runner)('struct', {}, '../../build/test/test.json', {
-        test: () => ({
+        test: async () => ({
             utility: () => ({
                 struct: {
                     clone: struct_1.clone,

@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/voxgig/struct"
+  "github.com/voxgig/struct/testutil"
 )
 
 // TestEntry represents a single test case
@@ -195,9 +196,45 @@ func walkPath(k *string, val interface{}, parent interface{}, path []string) int
 	return val
 }
 
+
+
+type TestProvider struct{}
+
+func (p *TestProvider) Test(opts map[string]interface{}) (runner.Client, error) {
+	return &testClient{}, nil
+}
+
+type testClient struct{}
+
+func (c *testClient) Utility() (runner.Utility) {
+  return &testUtility{}
+}
+
+type testUtility struct{}
+
+func (c *testUtility) Struct() *runner.StructUtility {
+  return &runner.StructUtility{
+    Clone: voxgigstruct.Clone,
+    GetPath: voxgigstruct.GetPath,
+    Inject: voxgigstruct.Inject,
+    Items: voxgigstruct.Items,
+    Stringify: voxgigstruct.Stringify,
+    Walk: voxgigstruct.Walk,
+  }
+}
+
+
+
+
 // TestStructFunctions runs the entire suite of tests
 // replicating the original TS test logic.
 func TestStruct(t *testing.T) {
+
+  store := make(map[string]interface{})
+  provider := &TestProvider{}
+  runner := runner.Runner("struct", store, "../build/test/test.json", provider)
+
+  
 	// Adjust path to your JSON test file.
 	testSpec, err := LoadTestSpec("../build/test/test.json")
 	if err != nil {

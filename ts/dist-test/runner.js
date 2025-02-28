@@ -5,7 +5,7 @@ const node_fs_1 = require("node:fs");
 const node_path_1 = require("node:path");
 const node_assert_1 = require("node:assert");
 async function runner(name, store, testfile, provider) {
-    const client = provider.test();
+    const client = await provider.test();
     const utility = client.utility();
     const { clone, getpath, inject, items, stringify, walk, } = utility.struct;
     const alltests = JSON.parse((0, node_fs_1.readFileSync)((0, node_path_1.join)(__dirname, testfile), 'utf8'));
@@ -29,7 +29,8 @@ async function runner(name, store, testfile, provider) {
                 let testclient = client;
                 if (entry.client) {
                     testclient = clients[entry.client];
-                    testsubject = client.utility()[name];
+                    let utility = client.utility();
+                    testsubject = utility[name];
                 }
                 if (makesubject) {
                     testsubject = makesubject(testsubject);

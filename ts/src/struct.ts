@@ -131,7 +131,7 @@ type Modify = (
 
 
 // Function applied to each node and leaf when walking a node structure depth first.
-type WalkApply = (key: string | undefined, val: any, parent: any, path: string[]) => any
+type WalkApply = (key: string | number | undefined, val: any, parent: any, path: string[]) => any
 
 
 // Value is a node - defined, and a map (hash) or list (array).
@@ -212,7 +212,7 @@ function haskey(val: any, key: any) {
 
 
 // List the keys of a map or list as an array of tuples of the form [key, value].
-function items(val: any) {
+function items(val: any): [number | string, any][] {
   return ismap(val) ? Object.entries(val) :
     islist(val) ? val.map((n: any, i: number) => [i, n]) :
       []
@@ -245,7 +245,7 @@ function joinurl(sarr: any[]) {
 
 
 // Safely stringify a value for printing (NOT JSON!).
-function stringify(val: any, maxlen?: number) {
+function stringify(val: any, maxlen?: number): string {
   let json = S.empty
 
   try {
@@ -269,7 +269,7 @@ function stringify(val: any, maxlen?: number) {
 
 // Clone a JSON-like data structure.
 // NOTE: function value references are copied, *not* cloned.
-function clone(val: any) {
+function clone(val: any): any {
   const refs: any[] = []
   const replacer: any = (_k: any, v: any) => S.function === typeof v ?
     (refs.push(v), '`$FUNCTION:' + (refs.length - 1) + '`') : v
@@ -342,7 +342,7 @@ function walk(
   apply: WalkApply,
 
   // These areguments are used for recursive state.
-  key?: string,
+  key?: string | number,
   parent?: any,
   path?: string[]
 ): any {
@@ -396,7 +396,12 @@ function merge(objs: any[]): any {
         let cur = [out]
         let cI = 0
 
-        function merger(key: string | undefined, val: any, parent: any, path: string[]) {
+        function merger(
+          key: string | number | undefined,
+          val: any,
+          parent: any,
+          path: string[]
+        ) {
           if (null == key) {
             return val
           }

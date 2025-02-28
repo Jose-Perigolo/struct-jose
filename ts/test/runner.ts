@@ -5,9 +5,39 @@ import { join } from 'node:path'
 import { deepEqual, fail, AssertionError } from 'node:assert'
 
 
-async function runner(name: string, store: any, testfile: string, provider: any) {
+type Provider = {
+  test: (opts?: Record<string, any>) => Promise<Client>
+}
 
-  const client = provider.test()
+type Client = {
+  utility: () => Utility
+}
+
+type Utility = {
+  struct: StructUtility
+}
+
+type StructUtility = {
+  clone: (val: any) => any,
+  getpath: (path: string | string[], store: any) => any,
+  inject: (val: any, store: any) => any,
+  items: (val: any) => [number | string, any][],
+  stringify: (val: any, maxlen?: number) => string
+  walk: (
+    val: any,
+    apply: (
+      key: string | number | undefined,
+      val: any,
+      parent: any,
+      path: string[]
+    ) => any
+  ) => any
+}
+
+
+async function runner(name: string, store: any, testfile: string, provider: Provider) {
+
+  const client = await provider.test()
   const utility = client.utility()
   const {
     clone,
@@ -37,7 +67,7 @@ async function runner(name: string, store: any, testfile: string, provider: any)
     }
   }
 
-  let subject = utility[name]
+  let subject = (utility as any)[name]
 
   let runset = async (testspec: any, testsubject: Function, makesubject?: Function) => {
     testsubject = testsubject || subject
@@ -49,7 +79,8 @@ async function runner(name: string, store: any, testfile: string, provider: any)
 
         if (entry.client) {
           testclient = clients[entry.client]
-          testsubject = client.utility()[name]
+          let utility = client.utility()
+          testsubject = (utility as any)[name]
         }
 
         if (makesubject) {
