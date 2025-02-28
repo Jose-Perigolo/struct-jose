@@ -33,9 +33,6 @@ local function isnode(val)
   return val ~= nil and type(val) == "table"
 end
 
-local function ismap(val)
-  return val ~= nil and type(val) == "table" and (not islist(val))
-end
 
 local function islist(val)
   if type(val) ~= "table" then return false end
@@ -51,22 +48,18 @@ local function islist(val)
   return count == n
 end
 
+local function ismap(val)
+  return val ~= nil and type(val) == "table" and (not islist(val))
+end
+
+
 local function iskey(key)
   return (type(key) == "string" and key ~= "") or (type(key) == "number")
 end
 
 local function isempty(val)
-  if val == nil then return true end
-  local t = type(val)
-  if t == "string" then return val == "" end
-  if t == "boolean" then return val == false end
-  if t == "number" then return val == 0 end
-  if t == "table" then
-    local count = 0
-    for _ in pairs(val) do count = count + 1 end
-    return count == 0
-  end
-  return false
+  return val == nil or val == "" or
+      (type(val) == "table" and next(val) == nil)
 end
 
 local function isfunc(val)
@@ -141,8 +134,8 @@ local function clone(val)
 end
 
 local function escre(s)
-  s = s or S.empty
-  return s:gsub("([%.%*%+%-%?%^%$%(%)%[%]%%])", "%%%1")
+  if s == nil then s = "" end
+  return s:gsub("[%(%)%.%%%+%-%*%?%[%]%^%$]", "%%%1")
 end
 
 local function escurl(s)

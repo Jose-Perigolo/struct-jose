@@ -28,23 +28,6 @@ local function matchval(check, base)
   return pass
 end
 
--- local function fail(message)
---   error(message, 2)
--- end
-
-local function match(check, base, struct)
-  walk(check, function(_key, val, _parent, path)
-    if not isnode(val) then
-      local baseval = getpath(path, base)
-
-      if not matchval(val, baseval) then
-        lu.fail("MATCH: " .. table.concat(path, ".") ..
-          ": [" .. stringify(val) .. "] <=> [" .. stringify(baseval) .. "]")
-      end
-    end
-  end)
-end
-
 local function runner(name, store, testfile, provider)
   local client     = provider.test()
   local utility    = client.utility()
@@ -93,6 +76,18 @@ local function runner(name, store, testfile, provider)
 
   local subject = utility[name]
 
+  local function match(check, base, struct)
+    walk(check, function(_key, val, _parent, path)
+      if not isnode(val) then
+        local baseval = getpath(path, base)
+
+        if not matchval(val, baseval) then
+          lu.fail("MATCH: " .. table.concat(path, ".") ..
+            ": [" .. stringify(val) .. "] <=> [" .. stringify(baseval) .. "]")
+        end
+      end
+    end)
+  end
 
 
   local function runset(testspec, testsubject, makesubject)
@@ -160,10 +155,6 @@ local function runner(name, store, testfile, provider)
       end
     end
   end
-
-  -- local function deepEqual(a, b)
-  --   assert(a == b, "Deep equality failed: " .. tostring(a) .. " ~= " .. tostring(b))
-  -- end
 
   return {
     spec = spec,

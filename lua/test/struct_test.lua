@@ -191,34 +191,34 @@ function TestStruct:test_minor_exists()
   lu.assertEquals(type(stringify), "function")
 end
 
--- function TestStruct:test_minor_clone()
---   runset(spec.minor.clone, struct.clone)
--- end
---
--- function TestStruct:test_minor_isnode()
---   runset(spec.minor.isnode, struct.isnode)
--- end
---
--- function TestStruct:test_minor_ismap()
---   runset(spec.minor.ismap, struct.ismap)
--- end
---
--- function TestStruct:test_minor_islist()
---   runset(spec.minor.islist, struct.islist)
--- end
---
--- function TestStruct:test_minor_iskey()
---   runset(spec.minor.iskey, struct.iskey)
--- end
---
--- function TestStruct:test_minor_isempty()
---   runset(spec.minor.isempty, struct.isempty)
--- end
---
--- function TestStruct:test_minor_escre()
---   runset(spec.minor.escre, struct.escre)
--- end
---
+function TestStruct:test_minor_clone()
+  runset(spec.minor.clone, clone)
+end
+
+function TestStruct:test_minor_isnode()
+  runset(spec.minor.isnode, isnode)
+end
+
+function TestStruct:test_minor_ismap()
+  runset(spec.minor.ismap, ismap)
+end
+
+function TestStruct:test_minor_islist()
+  runset(spec.minor.islist, islist)
+end
+
+function TestStruct:test_minor_iskey()
+  runset(spec.minor.iskey, iskey)
+end
+
+function TestStruct:test_minor_isempty()
+  runset(spec.minor.isempty, isempty)
+end
+
+function TestStruct:test_minor_escre()
+  runset(spec.minor.escre, escre)
+end
+
 -- function TestStruct:test_minor_escurl()
 --   runset(spec.minor.escurl, struct.escurl)
 -- end
