@@ -52,7 +52,7 @@ function nullModifier(
 
 describe('struct', async () => {
 
-  const { spec, runset, subject } =
+  const { spec, runset } =
     await runner('struct', {}, '../../build/test/test.json', {
       test: () => ({
         utility: () => ({
@@ -106,10 +106,6 @@ describe('struct', async () => {
     equal('function', typeof stringify)
   })
 
-  test('minor-clone', async () => {
-    await runset(spec.minor.clone, clone)
-  })
-
   test('minor-isnode', async () => {
     await runset(spec.minor.isnode, isnode)
   })
@@ -128,6 +124,19 @@ describe('struct', async () => {
 
   test('minor-isempty', async () => {
     await runset(spec.minor.isempty, isempty)
+  })
+
+  test('minor-isfunc', async () => {
+    await runset(spec.minor.isfunc, isfunc)
+    function f0() { return null }
+    equal(isfunc(f0), true)
+    equal(isfunc(() => null), true)
+  })
+
+  test('minor-clone', async () => {
+    await runset(spec.minor.clone, clone)
+    const f0 = () => null
+    deepEqual({ a: f0 }, clone({ a: f0 }))
   })
 
   test('minor-escre', async () => {
@@ -169,19 +178,13 @@ describe('struct', async () => {
     await runset(spec.minor.joinurl, joinurl)
   })
 
-  test('minor-isfunc', async () => {
-    await runset(spec.minor.isfunc, isfunc)
-    function f0() { return null }
-    equal(isfunc(f0), true)
-    equal(isfunc(() => null), true)
-  })
 
   
   // walk tests
   // ==========
 
   test('walk-exists', async () => {
-    equal('function', typeof merge)
+    equal('function', typeof walk)
   })
 
   test('walk-basic', async () => {
@@ -240,12 +243,12 @@ describe('struct', async () => {
 
   test('getpath-state', async () => {
     const state = {
-      handler: (state, val, _current, _store) => {
-        let out = state.step + ':' + val
-        state.step++
+      handler: (state, val, _current, _ref, _store) => {
+        let out = state.meta.step + ':' + val
+        state.meta.step++
         return out
       },
-      step: 0,
+      meta: { step: 0 },
       mode: 'val',
       full: false,
       keyI: 0,
@@ -255,7 +258,8 @@ describe('struct', async () => {
       parent: {},
       path: ['$TOP'],
       nodes: [{}],
-      base: '$TOP'
+      base: '$TOP',
+      errs: [],
     }
     await runset(spec.getpath.state, (vin) =>
       getpath(vin.path, vin.store, vin.current, state))
@@ -344,7 +348,7 @@ describe('struct', async () => {
     })
   })
 
-       test('transform-funcval', async () => {
+  test('transform-funcval', async () => {
     const f0 = () => 99
     deepEqual(transform({}, { x: 1 }), { x: 1 })
     deepEqual(transform({}, { x: f0 }), { x: f0 })

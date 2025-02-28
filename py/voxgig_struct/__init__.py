@@ -6,18 +6,24 @@ from .voxgig_struct import (
     escurl,
     getpath,
     getprop,
+    haskey,
     inject,
     isempty,
+    isfunc,
     iskey,
     islist,
     ismap,
     isnode,
     items,
+    joinurl,
+    keysof,
     merge,
     setprop,
     stringify,
     transform,
+    validate,
     walk,
+    InjectState
 )
 
 
@@ -27,17 +33,23 @@ __all__ = [
     'escurl',
     'getpath',
     'getprop',
+    'haskey',
     'inject',
     'isempty',
+    'isfunc',
     'iskey',
     'islist',
     'ismap',
     'isnode',
     'items',
+    'joinurl',
+    'keysof',
     'merge',
     'setprop',
     'stringify',
     'transform',
+    'validate',
     'walk',
+    'InjectState'
 ]
 

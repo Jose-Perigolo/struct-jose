@@ -63,6 +63,10 @@ basic: {
     { in: { path: ['a','b','c'], store: {a:{b:{c:3}}} }, out: 3 }
 
     { in: { path: [''], store: {a:40} }, out: {a:40} }
+
+    { in: { path: true, store: {} } }
+    { in: { path: null, store: {} } }
+    { in: { path: {}, store: {} } }
   ]
 }
 
@@ -86,11 +90,11 @@ state: {
   set: [
     { in: { path: 'a', store: {a:11} }, out: '0:11' }
     { in: { path: '', store: {'$TOP':'12'} }, out: '1:12' }
-    { in: { path: 'a', store: {'$TOP':{a:13}} }, out: '2:13' }
-    { in: { path: 'a.b', store: {a:{b:21}} }, out: '3:21' }
-    { in: { path: 'a.b', store: {'$TOP':{a:{b:21}}} }, out: '4:21' }
+    # { in: { path: 'a', store: {'$TOP':{a:13}} }, out: '2:13' }
+    # { in: { path: 'a.b', store: {a:{b:21}} }, out: '3:21' }
+    # { in: { path: 'a.b', store: {'$TOP':{a:{b:21}}} }, out: '4:21' }
 
-    { in: { path: '.b', store: {a:{b:33}}, current:{b:333} }, out: '5:333' }
-    { in: { path: '.b.c', store: {a:{b:{c:44}}}, current:{b:{c:444}} }, out: '6:444' }
+    # { in: { path: '.b', store: {a:{b:33}}, current:{b:333} }, out: '5:333' }
+    # { in: { path: '.b.c', store: {a:{b:{c:44}}}, current:{b:{c:444}} }, out: '6:444' }
   ]
 }

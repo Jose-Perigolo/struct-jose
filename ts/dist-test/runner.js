@@ -7,7 +7,7 @@ const node_assert_1 = require("node:assert");
 async function runner(name, store, testfile, provider) {
     const client = provider.test();
     const utility = client.utility();
-    const { clone, getpath, inject, ismap, items, stringify, walk, isnode, } = utility.struct;
+    const { clone, getpath, inject, items, stringify, walk, } = utility.struct;
     const alltests = JSON.parse((0, node_fs_1.readFileSync)((0, node_path_1.join)(__dirname, testfile), 'utf8'));
     // TODO: a more coherent namespace perhaps?
     let spec = alltests.primary?.[name] || alltests[name] || alltests;
@@ -15,7 +15,7 @@ async function runner(name, store, testfile, provider) {
     if (spec.DEF) {
         for (let cdef of items(spec.DEF.client)) {
             const copts = cdef[1].test.options || {};
-            if (ismap(store)) {
+            if ('object' === typeof store) {
                 inject(copts, store);
             }
             clients[cdef[0]] = await provider.test(copts);
@@ -43,7 +43,7 @@ async function runner(name, store, testfile, provider) {
                 }
                 if (entry.ctx || entry.args) {
                     let first = args[0];
-                    if (ismap(first)) {
+                    if ('object' === typeof first && null != first) {
                         entry.ctx = first = args[0] = clone(args[0]);
                         first.client = testclient;
                         first.utility = testclient.utility();
@@ -83,7 +83,7 @@ async function runner(name, store, testfile, provider) {
     };
     function match(check, base) {
         walk(check, (_key, val, _parent, path) => {
-            if (!isnode(val)) {
+            if ('object' != typeof val) {
                 let baseval = getpath(path, base);
                 if (!matchval(val, baseval)) {
                     (0, node_assert_1.fail)('MATCH: ' + path.join('.') +
