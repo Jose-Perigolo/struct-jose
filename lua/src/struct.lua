@@ -1,6 +1,10 @@
 -- JSON-like Utilities Module
 local M = {}
 
+
+-- The standard undefined value for this language.
+local UNDEF = nil
+
 --[[
   Checks if a value is a JSON-like node (table that is a list or map).
   @param value any  The value to check.
@@ -27,7 +31,7 @@ function M.islist(value)
   end
   -- ensure keys 1..count exist with no gaps
   for i = 1, count do
-    if value[i] == nil then return false end
+    if value[i] == UNDEF then return false end
   end
   return true
 end
@@ -80,9 +84,9 @@ function M.isempty(value)
     if M.islist(value) then
       return #value == 0
     else
-      return next(value) == nil -- no key-value pairs
+      return next(value) == UNDEF -- no key-value pairs
     end
-  elseif value == nil or value == "" then
+  elseif value == UNDEF or value == "" then
     return true
   end
   return false
@@ -111,7 +115,7 @@ end
 ]]
 function M.haskey(node, key)
   if type(node) ~= "table" then return false end
-  return node[key] ~= nil
+  return node[key] ~= UNDEF
 end
 
 --[[
@@ -175,7 +179,7 @@ function M.getprop(node, key, default)
     return default
   end
   local val = node[key]
-  if val == nil then
+  if val == UNDEF then
     return default
   end
   return val
@@ -223,7 +227,7 @@ function M.stringify(value)
   end
 
   local t = type(value)
-  if value == nil then
+  if value == UNDEF then
     return "null"
   elseif t == "boolean" or t == "number" then
     -- JSON booleans and numbers are same text representation as Lua
@@ -268,7 +272,7 @@ end
   @return string  The escaped string, safe for use in pattern matching.
 ]]
 function M.escre(s)
-  if s == nil then return "" end
+  if s == UNDEF then return "" end
   -- Pattern of characters to escape: ^$()%.[]*+-?{}|
   return (tostring(s):gsub("([%^%$%(%)%[%]%.%*%+%-%?%{%}%|])", "%%%1"))
 end
@@ -280,7 +284,7 @@ end
   @return string  The URL-encoded string.
 ]]
 function M.escurl(s)
-  if s == nil then return "" end
+  if s == UNDEF then return "" end
   s = tostring(s)
   return (s:gsub("([^%w%._~%-])", function(c)
     return string.format("%%%02X", string.byte(c))
@@ -320,7 +324,7 @@ end
   @return any  The value at the given path, or the default (or nil) if not found.
 ]]
 function M.getpath(node, path, default)
-  if node == nil then return default end
+  if node == UNDEF then return default end
   -- If path is a string, split it on dots to get components
   local keys = {}
   if type(path) == "string" then
@@ -345,7 +349,7 @@ function M.getpath(node, path, default)
       return default
     end
     current = current[key]
-    if current == nil then
+    if current == UNDEF then
       return default
     end
   end
@@ -415,17 +419,17 @@ function M.walk(node, callback)
       for i, v in ipairs(value) do
         path[#path + 1] = i      -- push current key
         _walk(v, i, value, path) -- recurse into list element
-        path[#path] = nil        -- pop current key
+        path[#path] = UNDEF      -- pop current key
       end
     else                         -- map
       for k, v in pairs(value) do
         path[#path + 1] = k
         _walk(v, k, value, path)
-        path[#path] = nil
+        path[#path] = UNDEF
       end
     end
   end
-  _walk(node, nil, nil, {})
+  _walk(node, UNDEF, UNDEF, {})
 end
 
 --[[
@@ -462,7 +466,7 @@ function M.transform(node, fn)
       for i, v in ipairs(value) do
         path[#path + 1] = i
         new_list[i] = _transform(v, i, value, path)
-        path[#path] = nil
+        path[#path] = UNDEF
       end
       return new_list
     else -- map
@@ -470,12 +474,12 @@ function M.transform(node, fn)
       for k, v in pairs(value) do
         path[#path + 1] = k
         new_map[k] = _transform(v, k, value, path)
-        path[#path] = nil
+        path[#path] = UNDEF
       end
       return new_map
     end
   end
-  return _transform(node, nil, nil, {})
+  return _transform(node, UNDEF, UNDEF, {})
 end
 
 --[[
@@ -493,7 +497,7 @@ function M.validate(value)
   local seen = {} -- for cycle detection
   local function _validate(x)
     local t = type(x)
-    if x == nil or t == "boolean" or t == "string" then
+    if x == UNDEF or t == "boolean" or t == "string" then
       return true
     elseif t == "number" then
       -- number must be finite and not NaN
@@ -535,7 +539,7 @@ function M.validate(value)
         -- Table is neither a proper list nor map (mixed or sparse array)
         valid = false
       end
-      seen[x] = nil
+      seen[x] = UNDEF
       return valid
     else
       -- any other type (should not happen)
