@@ -215,10 +215,9 @@ describe("struct", function()
     end)
   end)
 
-  --Fix
-  -- test("minor-items", function()
-  --   runset(spec.minor.items, items)
-  -- end)
+  test("minor-items", function()
+    runset(spec.minor.items, items)
+  end)
 
   -- Fix
   -- test("minor-getprop", function()

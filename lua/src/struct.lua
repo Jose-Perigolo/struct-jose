@@ -212,14 +212,27 @@ end
 local function items(val)
   if ismap(val) then
     local result = {}
-    for k, v in pairs(val) do
-      table.insert(result, { k, v })
+    local keys = {}
+
+    -- Collect all keys
+    for k, _ in pairs(val) do
+      table.insert(keys, k)
     end
+
+    -- Sort keys (for consistent ordering)
+    table.sort(keys)
+
+    -- Create sorted key-value pairs
+    for _, k in ipairs(keys) do
+      table.insert(result, { k, val[k] })
+    end
+
     return result
   elseif islist(val) then
     local result = {}
     for i, v in ipairs(val) do
-      table.insert(result, { i, v })
+      -- Subtract 1 from index to match JavaScript's 0-based indexing
+      table.insert(result, { i - 1, v })
     end
     return result
   else
