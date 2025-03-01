@@ -219,16 +219,15 @@ describe("struct", function()
     runset(spec.minor.items, items)
   end)
 
-  -- Fix
-  -- test("minor-getprop", function()
-  --   runset(spec.minor.getprop, function(vin)
-  --     if vin.alt == nil then
-  --       return getprop(vin.val, vin.key)
-  --     else
-  --       return getprop(vin.val, vin.key, vin.alt)
-  --     end
-  --   end)
-  -- end)
+  test("minor-getprop", function()
+    runset(spec.minor.getprop, function(vin)
+      if vin.alt == nil then
+        return getprop(vin.val, vin.key)
+      else
+        return getprop(vin.val, vin.key, vin.alt)
+      end
+    end)
+  end)
 
   -- Fix
   -- test("minor-setprop", function()

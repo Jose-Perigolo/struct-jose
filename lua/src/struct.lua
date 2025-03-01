@@ -160,21 +160,44 @@ end
 -- Safely get a property of a node. Undefined arguments return undefined.
 -- If the key is not found, return the alternative value.
 local function getprop(val, key, alt)
-  if val == UNDEF then
+  if val == nil then
     return alt
   end
 
-  if key == UNDEF then
+  if key == nil then
     return alt
   end
 
   local out = alt
 
   if isnode(val) then
-    out = val[key]
+    -- Check if we're dealing with an array-like table and a numeric index
+    local isArray = #val > 0
+    local isNumericKey = type(key) == "number" or (type(key) == "string" and tonumber(key) ~= nil)
+
+    if isArray and isNumericKey then
+      -- Convert to 0-based indexing to 1-based for arrays
+      local numKey = type(key) == "number" and key or tonumber(key)
+      if numKey >= 0 then     -- Only adjust non-negative indices
+        out = val[numKey + 1] -- +1 for Lua's 1-based arrays
+      end
+    else
+      -- Try the key as is
+      out = val[key]
+
+      -- If not found and key is a number, try as string
+      if out == nil and type(key) == "number" then
+        out = val[tostring(key)]
+      end
+
+      -- If not found and key is a string that looks like a number, try as number
+      if out == nil and type(key) == "string" and tonumber(key) ~= nil then
+        out = val[tonumber(key)]
+      end
+    end
   end
 
-  if out == UNDEF then
+  if out == nil then
     out = alt
   end
 
