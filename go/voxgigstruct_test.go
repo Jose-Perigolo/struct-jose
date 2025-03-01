@@ -232,8 +232,12 @@ func TestStruct(t *testing.T) {
 
   store := make(map[string]interface{})
   provider := &TestProvider{}
-  runner := runner.Runner("struct", store, "../build/test/test.json", provider)
+  runner, err := runner.Runner("struct", store, "../build/test/test.json", provider)
+	if err != nil {
+		t.Fatalf("Failed to create runner: %v", err)
+	}
 
+  fmt.Printf("RUNNER: %+v\n", runner)
   
 	// Adjust path to your JSON test file.
 	testSpec, err := LoadTestSpec("../build/test/test.json")
