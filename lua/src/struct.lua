@@ -152,9 +152,8 @@ end
   @param key any  The key to look for.
   @return boolean  True if the key exists in the table (and maps to a non-nil value), false otherwise.
 ]]
-function M.haskey(node, key)
-  if type(node) ~= "table" then return false end
-  return node[key] ~= UNDEF
+function M.haskey(val, key)
+  return M.getprop(val, key) ~= UNDEF
 end
 
 --[[
@@ -164,24 +163,40 @@ end
   @param value any  The value to clone.
   @return any  A new cloned value structurally identical to the input.
 ]]
-function M.clone(value)
-  if type(value) ~= "table" then
-    -- primitive types and functions are returned directly
-    return value
-  end
-  if M.islist(value) then
-    local new_list = {}
-    for i, v in ipairs(value) do
-      new_list[i] = M.clone(v)
+function M.clone(val)
+  local refs = {}
+
+  local function cloneTable(t)
+    if type(t) ~= "table" then
+      return t
     end
-    return new_list
-  else
-    local new_map = {}
-    for k, v in pairs(value) do
-      new_map[k] = M.clone(v)
+
+    if type(t) == S["function"] then
+      table.insert(refs, t)
+      return "__FUNCTION:" .. (#refs - 1)
     end
-    return new_map
+
+    for i, v in ipairs(refs) do
+      if t == v then
+        return "__FUNCTION:" .. (i - 1)
+      end
+    end
+
+    table.insert(refs, t)
+
+    local result = {}
+    for k, v in pairs(t) do
+      result[cloneTable(k)] = cloneTable(v)
+    end
+
+    return result
   end
+
+  if val == UNDEF then
+    return UNDEF
+  end
+
+  return cloneTable(val)
 end
 
 --[[
