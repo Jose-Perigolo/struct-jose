@@ -205,16 +205,15 @@ describe("struct", function()
     runset(spec.minor.escurl, escurl)
   end)
 
-  -- Fix
-  -- test("minor-stringify", function()
-  --   runset(spec.minor.stringify, function(vin)
-  --     if vin.max == nil then
-  --       return stringify(vin.val)
-  --     else
-  --       return stringify(vin.val, vin.max)
-  --     end
-  --   end)
-  -- end)
+  test("minor-stringify", function()
+    runset(spec.minor.stringify, function(vin)
+      if vin.max == nil then
+        return stringify(vin.val)
+      else
+        return stringify(vin.val, vin.max)
+      end
+    end)
+  end)
 
   --Fix
   -- test("minor-items", function()

@@ -265,26 +265,75 @@ end
 
 -- Safely stringify a value for printing (NOT JSON!).
 local function stringify(val, maxlen)
-  local json = S.empty
+  local function stringifyTable(t, visited)
+    visited = visited or {}
 
-  local success, result = pcall(function()
-    if type(val) == 'table' then
+    -- Check for recursive references
+    if visited[t] then
+      return "<<recursive>>"
+    end
+
+    visited[t] = true
+
+    -- Check if table is array-like
+    local isArray = true
+    local maxIndex = 0
+
+    for k, _ in pairs(t) do
+      if type(k) ~= 'number' or k <= 0 or k ~= math.floor(k) then
+        isArray = false
+        break
+      end
+      maxIndex = math.max(maxIndex, k)
+    end
+
+    -- Count actual elements
+    local count = 0
+    for _ in pairs(t) do count = count + 1 end
+
+    -- If array-like (sequential keys from 1 to n)
+    if isArray and count == maxIndex then
       local items = {}
-      for k, v in pairs(val) do
-        if type(v) == 'string' then
-          table.insert(items, k .. ':' .. v)
+      for i = 1, count do
+        local v = t[i]
+        if type(v) == 'table' then
+          table.insert(items, stringifyTable(v, visited))
+        elseif type(v) == 'string' then
+          table.insert(items, v)
         else
-          table.insert(items, k .. ':' .. tostring(v))
+          table.insert(items, tostring(v))
         end
       end
-      return '{' .. table.concat(items, ',') .. '}'
+      return '[' .. table.concat(items, ',') .. ']'
     else
-      return tostring(val)
-    end
-  end)
+      -- Format as object
+      local items = {}
+      local sortedKeys = {}
+      for k, _ in pairs(t) do
+        table.insert(sortedKeys, k)
+      end
+      table.sort(sortedKeys)
 
-  if success then
-    json = result
+      for _, k in ipairs(sortedKeys) do
+        local v = t[k]
+        local valStr
+        if type(v) == 'table' then
+          valStr = stringifyTable(v, visited)
+        elseif type(v) == 'string' then
+          valStr = v
+        else
+          valStr = tostring(v)
+        end
+        table.insert(items, tostring(k) .. ':' .. valStr)
+      end
+      return '{' .. table.concat(items, ',') .. '}'
+    end
+  end
+
+  local json = S.empty
+
+  if type(val) == 'table' then
+    json = stringifyTable(val)
   else
     json = tostring(val)
   end
@@ -292,7 +341,7 @@ local function stringify(val, maxlen)
   json = type(json) ~= 'string' and tostring(json) or json
   json = json:gsub('"', '')
 
-  if maxlen ~= UNDEF then
+  if maxlen ~= nil then
     if #json > maxlen then
       json = json:sub(1, maxlen - 3) .. '...'
     end
