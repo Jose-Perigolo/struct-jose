@@ -1,6 +1,36 @@
 -- JSON-like Utilities Module
 local M = {}
 
+local S = {
+  -- Mode value for inject step.
+  ["MKEYPRE"]  = "key:pre",
+  ["MKEYPOST"] = "key:post",
+  ["MVAL"]     = "val",
+  ["MKEY"]     = "key",
+
+  -- Special keys.
+  ["DKEY"]     = "`$KEY`",
+  ["DTOP"]     = "$TOP",
+  ["DERRS"]    = "$ERRS",
+  ["DMETA"]    = "`$META`",
+
+  -- General strings.
+  ["array"]    = "table",
+  ["base"]     = "base",
+  ["boolean"]  = "boolean",
+  ["empty"]    = "",
+  ["function"] = "function",
+  ["number"]   = "number",
+  ["object"]   = "table",
+  ["string"]   = "string",
+  ["null"]     = "none",
+  ["key"]      = "key",
+  ["parent"]   = "parent",
+  ["BT"]       = "`",
+  ["DS"]       = "$",
+  ["DT"]       = ".",
+  ["KEY"]      = "KEY",
+}
 
 -- The standard undefined value for this language.
 local UNDEF = nil
@@ -10,8 +40,8 @@ local UNDEF = nil
   @param value any  The value to check.
   @return boolean  True if the value is a table (list or map), false otherwise.
 ]]
-function M.isnode(value)
-  return type(value) == "table"
+function M.isnode(val)
+  return S["object"] == type(val)
 end
 
 --[[
@@ -20,18 +50,18 @@ end
   @param value any  The value to check.
   @return boolean  True if the value is a list (array), false otherwise.
 ]]
-function M.islist(value)
-  if type(value) ~= "table" then return false end
+function M.islist(val)
+  if type(val) ~= S["array"] then return false end
   local count = 0
-  for k, _ in pairs(value) do
-    if type(k) ~= "number" then
+  for k, _ in pairs(val) do
+    if type(k) ~= S["number"] then
       return false -- found a non-numeric key, so not a list
     end
     count = count + 1
   end
   -- ensure keys 1..count exist with no gaps
   for i = 1, count do
-    if value[i] == UNDEF then return false end
+    if val[i] == UNDEF then return false end
   end
   return true
 end
@@ -42,9 +72,9 @@ end
   @param value any  The value to check.
   @return boolean  True if the value is a map (object), false otherwise.
 ]]
-function M.ismap(value)
-  if type(value) ~= "table" then return false end
-  return not M.islist(value)
+function M.ismap(val)
+  if type(val) ~= S["object"] then return false end
+  return not M.islist(val)
 end
 
 --[[
@@ -54,12 +84,9 @@ end
   @return boolean  True if the key is a string (non-empty) or number, false otherwise.
 ]]
 function M.iskey(key)
-  if type(key) == "string" then
-    return key ~= ""
-  elseif type(key) == "number" then
-    return true
-  end
-  return false
+  local keytype = type(key)
+
+  return (S["string"] == keytype and S["empty"] ~= key) or S["number"] == keytype
 end
 
 --[[
@@ -67,8 +94,8 @@ end
   @param value any  The value to check.
   @return boolean  True if the value is of type 'function', false otherwise.
 ]]
-function M.isfunc(value)
-  return type(value) == "function"
+function M.isfunc(val)
+  return S["function"] == type(val)
 end
 
 --[[
@@ -79,14 +106,10 @@ end
   @param value any  The value to check.
   @return boolean  True if the value is empty as per above rules.
 ]]
-function M.isempty(value)
-  if type(value) == "table" then
-    if M.islist(value) then
-      return #value == 0
-    else
-      return next(value) == UNDEF -- no key-value pairs
-    end
-  elseif value == UNDEF or value == "" then
+function M.isempty(val)
+  if type(val) == S["object"] or type(val) == S["array"] then
+    return next(val) == UNDEF
+  elseif val == UNDEF or val == S["empty"] then
     return true
   end
   return false
@@ -97,14 +120,30 @@ end
   @param node table  The map or list to extract keys from.
   @return table  Array of keys (numeric indices for lists, string keys for maps). Returns empty table for non-table inputs.
 ]]
-function M.keysof(node)
-  local keys = {}
-  if type(node) == "table" then
-    for k, _ in pairs(node) do
-      keys[#keys + 1] = k
+function M.keysof(val)
+  if not M.isnode(val) then
+    return {}
+  elseif M.ismap(val) then
+    local pairs = {}
+    for k, v in pairs(val) do
+      table.insert(pairs, { key = k, value = v })
     end
+
+    table.sort(pairs, function(a, b) return a.key < b.key end)
+
+    local sorted = {}
+    for _, pair in ipairs(pairs) do
+      sorted[pair.key] = pair.value
+    end
+
+    return sorted
+  else
+    local indices = {}
+    for i = 1, #val do
+      table.insert(indices, i)
+    end
+    return indices
   end
-  return keys
 end
 
 --[[

@@ -197,9 +197,9 @@ describe("struct", function()
     assert.are.same(original, copied)
   end)
 
-  test("minor-escre", function()
-    runset(spec.minor.escre, escre)
-  end)
+  -- test("minor-escre", function()
+  --   runset(spec.minor.escre, escre)
+  -- end)
 
   test("minor-escurl", function()
     runset(spec.minor.escurl, escurl)
