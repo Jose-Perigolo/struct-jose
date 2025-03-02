@@ -249,10 +249,10 @@ describe("struct", function()
 
   -- -- merge tests
   -- -- ===========
-  -- it("merge-exists", function()
-  --   assert.equal("function", type(merge))
-  -- end)
-  --
+  test("merge-exists", function()
+    assert.equal("function", type(merge))
+  end)
+
   -- it("merge-basic", function()
   --   local test = clone(TESTSPEC.merge.basic)
   --   assert.same(test.out, merge(test['in']))
