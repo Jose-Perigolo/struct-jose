@@ -229,12 +229,11 @@ describe("struct", function()
     end)
   end)
 
-  -- Fix
-  -- test("minor-setprop", function()
-  --   runset(spec.minor.setprop, function(vin)
-  --     return setprop(vin.parent, vin.key, vin.val)
-  --   end)
-  -- end)
+  test("minor-setprop", function()
+    runset(spec.minor.setprop, function(vin)
+      return setprop(vin.parent, vin.key, vin.val)
+    end)
+  end)
 
   -- -- walk tests
   -- -- ==========

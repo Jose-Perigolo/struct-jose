@@ -441,7 +441,7 @@ local function setprop(parent, key, val)
   if ismap(parent) then
     key = tostring(key)
     if val == UNDEF then
-      parent[key] = UNDEF
+      parent[key] = nil -- Use nil to properly remove the key
     else
       parent[key] = val
     end
@@ -449,7 +449,7 @@ local function setprop(parent, key, val)
     -- Ensure key is an integer
     local keyI = tonumber(key)
 
-    if keyI == UNDEF then
+    if keyI == nil then
       return parent
     end
 
@@ -457,20 +457,35 @@ local function setprop(parent, key, val)
 
     -- Delete list element at position keyI, shifting later elements down
     if val == UNDEF then
-      if keyI >= 1 and keyI <= #parent then
-        for pI = keyI, #parent - 1 do
-          parent[pI] = parent[pI + 1]
+      -- TypeScript is 0-indexed, Lua is 1-indexed
+      -- TypeScript: if (0 <= keyI && keyI < parent.length)
+      -- For Lua: We need to handle keyI as a 0-based index coming from JS
+
+      -- Convert from JavaScript 0-based indexing to Lua 1-based indexing
+      local luaIndex = keyI + 1
+
+      if luaIndex >= 1 and luaIndex <= #parent then
+        -- Shift elements down
+        for i = luaIndex, #parent - 1 do
+          parent[i] = parent[i + 1]
         end
-        parent[#parent] = UNDEF
+        -- Remove the last element
+        parent[#parent] = nil
       end
-      -- Set or append value at position keyI, or append if keyI out of bounds
-    elseif keyI >= 1 then
-      if #parent < keyI then
+      -- Set or append value at position keyI
+    elseif keyI >= 0 then -- TypeScript checks (0 <= keyI)
+      -- Convert from JavaScript 0-based indexing to Lua 1-based indexing
+      local luaIndex = keyI + 1
+
+      -- TypeScript: parent[parent.length < keyI ? parent.length : keyI] = val
+      if #parent < luaIndex then
+        -- If index is beyond current length, append to end
         parent[#parent + 1] = val
       else
-        parent[keyI] = val
+        -- Otherwise set at the specific index
+        parent[luaIndex] = val
       end
-      -- Prepend value if keyI is negative or zero
+      -- Prepend value if keyI is negative
     else
       table.insert(parent, 1, val)
     end
