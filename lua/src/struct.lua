@@ -81,6 +81,12 @@ local _pathify
 local getpath
 local walk
 
+local function print_table(t)
+  for k, v in pairs(t) do
+    print(k, v)
+  end
+end
+
 -- Value is a node - defined, and a map (hash) or list (array).
 local function isnode(val)
   return val ~= UNDEF and type(val) == 'table'
@@ -558,7 +564,7 @@ local function merge(objs)
   end
 
   -- Merge a list of values
-  out = getprop(objs, 1, {})
+  out = getprop(objs, 0, {})
 
   for oI = 2, #objs do
     local obj = objs[oI]
@@ -573,7 +579,7 @@ local function merge(objs)
       else
         -- Node stack, walking down the current obj
         local cur = { out }
-        local cI = 0
+        local cI = 1
 
         local function merger(key, val, parent, path)
           if key == UNDEF then

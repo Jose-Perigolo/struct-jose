@@ -253,11 +253,11 @@ describe("struct", function()
     assert.equal("function", type(merge))
   end)
 
-  -- it("merge-basic", function()
-  --   local test = clone(TESTSPEC.merge.basic)
-  --   assert.same(test.out, merge(test['in']))
-  -- end)
-  --
+  test("merge-basic", function()
+    local test = clone(spec.merge.basic)
+    assert.same(test.out, merge(test['in']))
+  end)
+
   -- it("merge-cases", function()
   --   test_set(clone(TESTSPEC.merge.cases), merge)
   -- end)
