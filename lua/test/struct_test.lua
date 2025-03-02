@@ -69,13 +69,13 @@ local joinurl   = struct.joinurl
 -- end
 
 -- Modifier function for walk (appends path to string values)
--- local function walkpath(key, val, parent, path)
---   if type(val) == "string" then
---     return val .. "~" .. table.concat(path, ".")
---   else
---     return val
---   end
--- end
+local function walkpath(_key, val, _parent, path)
+  if type(val) == "string" then
+    return val .. "~" .. table.concat(path, ".")
+  else
+    return val
+  end
+end
 --
 -- Modifier function to replace "__NULL__" markers with nil (Lua's null equivalent)
 -- local function nullModifier(key, val, parent)
@@ -241,12 +241,12 @@ describe("struct", function()
     assert.equal("function", type(walk))
   end)
 
-  -- it("walk-basic", function()
-  --   test_set(clone(TESTSPEC.walk.basic), function(vin)
-  --     return walk(vin, walkpath)
-  --   end)
-  -- end)
-  --
+  test("walk-basic", function()
+    runset(spec.walk.basic, function(vin)
+      return walk(vin, walkpath)
+    end)
+  end)
+
   -- -- merge tests
   -- -- ===========
   -- it("merge-exists", function()
