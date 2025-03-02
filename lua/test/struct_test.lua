@@ -237,10 +237,10 @@ describe("struct", function()
 
   -- -- walk tests
   -- -- ==========
-  -- it("walk-exists", function()
-  --   assert.equal("function", type(merge))
-  -- end)
-  --
+  test("walk-exists", function()
+    assert.equal("function", type(walk))
+  end)
+
   -- it("walk-basic", function()
   --   test_set(clone(TESTSPEC.walk.basic), function(vin)
   --     return walk(vin, walkpath)
