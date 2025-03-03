@@ -13,11 +13,9 @@ async function runner(name: string, store: any, testfile: string, provider: any)
     clone,
     getpath,
     inject,
-    ismap,
     items,
     stringify,
     walk,
-    isnode,
   } = utility.struct
 
   const alltests =
@@ -31,7 +29,7 @@ async function runner(name: string, store: any, testfile: string, provider: any)
   if (spec.DEF) {
     for (let cdef of items(spec.DEF.client)) {
       const copts = cdef[1].test.options || {}
-      if (ismap(store)) {
+      if ('object' === typeof store) {
         inject(copts, store)
       }
 
@@ -69,7 +67,7 @@ async function runner(name: string, store: any, testfile: string, provider: any)
 
         if (entry.ctx || entry.args) {
           let first = args[0]
-          if (ismap(first)) {
+          if ('object' === typeof first && null != first) {
             entry.ctx = first = args[0] = clone(args[0])
             first.client = testclient
             first.utility = testclient.utility()
@@ -119,7 +117,7 @@ async function runner(name: string, store: any, testfile: string, provider: any)
 
   function match(check: any, base: any) {
     walk(check, (_key: any, val: any, _parent: any, path: any) => {
-      if (!isnode(val)) {
+      if ('object' != typeof val) {
         let baseval = getpath(path, base)
 
         if (!matchval(val, baseval)) {
