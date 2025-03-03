@@ -258,10 +258,10 @@ describe("struct", function()
     assert.same(test.out, merge(test['in']))
   end)
 
-  -- it("merge-cases", function()
-  --   test_set(clone(TESTSPEC.merge.cases), merge)
-  -- end)
-  --
+  test("merge-cases", function()
+    runset(spec.merge.cases, merge)
+  end)
+
   -- it("merge-array", function()
   --   test_set(clone(TESTSPEC.merge.array), merge)
   -- end)
