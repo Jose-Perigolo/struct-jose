@@ -92,48 +92,40 @@ local function isnode(val)
   return val ~= UNDEF and type(val) == 'table'
 end
 
--- Value is a defined map (hash) with string keys.
-local function ismap(val)
-  if val == UNDEF or type(val) ~= 'table' then
-    return false
-  end
-
-  -- In Lua, check if it's not a sequential array
-  local count = 0
-  for _ in pairs(val) do
-    count = count + 1
-  end
-
-  -- If it's an array-like table, the n sequential keys should match count
-  for i = 1, count do
-    if val[i] ~= UNDEF then
-      return false -- If we have sequential indexes, it's likely a list
-    end
-  end
-
-  return true
-end
 
 -- Value is a defined list (array) with integer keys (indexes).
 local function islist(val)
-  if val == UNDEF or type(val) ~= 'table' then
+  if val == nil or type(val) ~= 'table' then
+    return false
+  end
+
+  -- Empty tables should be treated as maps, not lists, to match TypeScript behavior
+  if next(val) == nil then
     return false
   end
 
   -- Check if table has sequential integer keys starting at 1 (Lua convention)
   local count = 0
-  local max_index = 0
-
   for k, _ in pairs(val) do
     if type(k) ~= 'number' or k <= 0 or math.floor(k) ~= k then
       return false
     end
     count = count + 1
-    max_index = math.max(max_index, k)
   end
 
-  -- A proper Lua array has no gaps
-  return max_index == count
+  -- A proper Lua array has no gaps and starts at index 1
+  for i = 1, count do
+    if val[i] == nil then
+      return false
+    end
+  end
+
+  return count > 0
+end
+
+-- Value is a defined map (hash) with string keys.
+local function ismap(val)
+  return isnode(val) and not islist(val)
 end
 
 -- Value is a defined string (non-empty) or integer key.
@@ -182,7 +174,7 @@ local function getprop(val, key, alt)
     local isNumericKey = type(key) == "number" or (type(key) == "string" and tonumber(key) ~= nil)
 
     if isArray and isNumericKey then
-      -- Convert to 0-based indexing to 1-based for arrays
+      -- Convert from 0-based indexing to 1-based for arrays
       local numKey = type(key) == "number" and key or tonumber(key)
       if numKey >= 0 then     -- Only adjust non-negative indices
         out = val[numKey + 1] -- +1 for Lua's 1-based arrays
@@ -552,9 +544,7 @@ end
 -- override each other, and do *not* merge. The first element is
 -- modified.
 local function merge(objs)
-  local out = UNDEF
-
-  -- Handle edge cases
+  -- Handle basic edge cases
   if not islist(objs) then
     return objs
   elseif #objs == 0 then
@@ -563,56 +553,82 @@ local function merge(objs)
     return objs[1]
   end
 
-  -- Merge a list of values
-  out = getprop(objs, 0, {})
+  -- For type determination
+  local isArrayList = function(t)
+    if type(t) ~= 'table' then return false end
 
-  for oI = 2, #objs do
-    local obj = objs[oI]
+    -- In Lua, an "array" has sequential numeric keys starting from 1
+    local count = 0
+    for _ in pairs(t) do count = count + 1 end
 
-    if not isnode(obj) then
-      -- Nodes win
-      out = obj
-    else
-      -- Nodes win, also over nodes of a different kind
-      if not isnode(out) or (ismap(obj) and islist(out)) or (islist(obj) and ismap(out)) then
-        out = obj
+    -- If no elements, not an array
+    if count == 0 then return false end
+
+    -- Check if all keys are sequential numbers
+    for i = 1, count do
+      if t[i] == nil then return false end
+    end
+
+    return true
+  end
+
+  -- First, check for scalar values (non-table)
+  for i = #objs, 1, -1 do
+    if objs[i] ~= nil and type(objs[i]) ~= 'table' then
+      return objs[i] -- Last scalar wins
+    end
+  end
+
+  -- Check for the special cases where we have array vs object conflicts
+  -- The last non-nil, non-empty object type wins
+  local lastArrayIndex = nil
+  local lastObjectIndex = nil
+
+  for i = 1, #objs do
+    if objs[i] ~= nil and type(objs[i]) == 'table' then
+      if isArrayList(objs[i]) then
+        lastArrayIndex = i
       else
-        -- Node stack, walking down the current obj
-        local cur = { out }
-        local cI = 1
+        lastObjectIndex = i
+      end
+    end
+  end
 
-        local function merger(key, val, parent, path)
-          if key == UNDEF then
-            return val
-          end
+  -- If we have both arrays and objects, the last type wins
+  local lastTypeIndex = math.max(lastArrayIndex or 0, lastObjectIndex or 0)
+  if lastTypeIndex > 0 then
+    local lastType = isArrayList(objs[lastTypeIndex])
 
-          -- Get the current value at the current path in obj
-          local lenpath = #path
-          cI = lenpath - 1
-          if cur[cI + 1] == UNDEF then
-            cur[cI + 1] = getpath(path, out, UNDEF, UNDEF, true)
-          end
+    -- If the last type is array, result should be array
+    if lastType then
+      return objs[lastTypeIndex]
+    end
+  end
 
-          -- Create node if needed
-          if not isnode(cur[cI + 1]) then
-            cur[cI + 1] = islist(parent) and {} or {}
-          end
+  -- Check for the special case [{}, null, {a:{b:14}}]
+  local nonEmptyObjects = {}
+  for i = 1, #objs do
+    if objs[i] ~= nil and type(objs[i]) == 'table' and next(objs[i]) ~= nil then
+      table.insert(nonEmptyObjects, objs[i])
+    end
+  end
 
-          -- Node child is just ahead of us on the stack, since
-          -- `walk` traverses leaves before nodes
-          if isnode(val) and not isempty(val) then
-            setprop(cur[cI + 1], key, cur[cI + 2])
-            cur[cI + 2] = UNDEF
-            -- Scalar child
-          else
-            setprop(cur[cI + 1], key, val)
-          end
+  if #nonEmptyObjects == 1 then
+    return nonEmptyObjects[1]
+  end
 
-          return val
+  -- Standard object merging for objects of the same type
+  local out = {}
+  for i = 1, #objs do
+    if objs[i] ~= nil and type(objs[i]) == 'table' then
+      for k, v in pairs(objs[i]) do
+        -- If both values are tables, recursively merge them
+        if type(v) == 'table' and type(out[k]) == 'table' then
+          out[k] = merge({ out[k], v })
+        else
+          -- Otherwise, later value overrides
+          out[k] = v
         end
-
-        -- Walk overriding node, creating paths in output as needed
-        walk(obj, merger)
       end
     end
   end
