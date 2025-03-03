@@ -1,0 +1,99 @@
+#include <iostream>
+#include <fstream>
+
+#include <nlohmann/json.hpp>
+
+#include "utility_decls.hpp"
+#include "runner.hpp"
+
+
+#define TEST_CASE(TEST_NAME) std::cout << "Running: " << TEST_NAME << " at " << __LINE__ << std::endl;
+
+
+// Struct Utility Functions
+
+json isList(arg_container&& args) {
+  json obj = args.size() == 0 ? nullptr : std::move(args[0]);
+
+  return static_cast<bool>(obj.is_array());
+}
+
+json isNode(arg_container&& args) {
+  json obj = args.size() == 0 ? nullptr : std::move(args[0]);
+
+  return static_cast<bool>(obj.is_array() || obj.is_object());
+}
+
+
+
+inline void Utility::set_key(const std::string& key, function_pointer p) {
+  table[key] = p;
+}
+
+inline function_pointer& Utility::get_key(const std::string& key) {
+  return table[key];
+}
+
+inline function_pointer& Utility::operator[](const std::string& key) {
+  return get_key(key);
+}
+
+struct Struct : public Utility {
+
+  Struct() {
+    set_key("islist", isList);
+    set_key("isnode", isNode);
+  }
+
+  function_pointer& operator[](const std::string& key) {
+    return get_key(key);
+  }
+
+  ~Struct() = default;
+
+};
+
+
+// NOTE: More dynamic approach compared to function overloading
+Provider::Provider(const json& opts = nullptr) {
+  // Do opts
+}
+
+Provider Provider::test(const json& opts) {
+  return Provider(opts);
+}
+
+Provider Provider::test(void) {
+  return Provider(nullptr);
+}
+
+
+hash_table<std::string, Utility> Provider::utility() {
+  return { 
+    {
+      "struct", Struct()
+    }
+  };
+
+}
+
+int main() {
+
+  Provider provider = Provider::test();
+
+  RunnerResult runparts = runner("struct", {}, "../build/test/test.json", provider);
+
+  json spec = std::move(runparts.spec);
+  auto runset = runparts.runset;
+
+
+  TEST_CASE("test_minor_isnode") {
+    runset(spec["minor"]["isnode"], isNode, { { "fixjson", false } });
+  }
+
+  TEST_CASE("test_minor_islist") {
+    runset(spec["minor"]["islist"], isList, { { "fixjson", false } });
+  }
+
+  return 0;
+}
