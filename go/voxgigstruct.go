@@ -130,7 +130,6 @@ func resolveStrings(input []interface{}) []string {
 	return result
 }
 
-
 func listify(src interface{}) []interface{} {
 	if list, ok := src.([]interface{}); ok {
 		return list
@@ -153,7 +152,6 @@ func listify(src interface{}) []interface{} {
 
 	return nil
 }
-
 
 // ---------------------------------------------------------------------
 // Utility checks
@@ -240,11 +238,11 @@ func IsEmpty(val interface{}) bool {
 // Stringify attempts to JSON-stringify `val`, then remove quotes, for debug printing.
 // If maxlen is provided, the string is truncated.
 func Stringify(val interface{}, maxlen ...int) string {
-  // if nil == val {
-  //   return "null"
-  // }
+	// if nil == val {
+	//   return "null"
+	// }
 
-  b, err := json.Marshal(val)
+	b, err := json.Marshal(val)
 	if err != nil {
 		// fallback
 		return ""
@@ -288,7 +286,6 @@ func EscUrl(s string) string {
 // ---------------------------------------------------------------------
 // Items lists the key/value pairs (like Object.entries).
 
-
 func Keys(val interface{}) []string {
 	if IsMap(val) {
 		m := val.(map[string]interface{})
@@ -300,57 +297,56 @@ func Keys(val interface{}) []string {
 
 		sort.Strings(keys)
 
-    return keys
-    
+		return keys
+
 	} else if IsList(val) {
-    arr := val.([]interface{})
-    keys := make([]string, len(arr))
-    for i := range arr {
-      keys[i] = strKey(i)
-    }
-    return keys
+		arr := val.([]interface{})
+		keys := make([]string, len(arr))
+		for i := range arr {
+			keys[i] = strKey(i)
+		}
+		return keys
 	}
 
 	return make([]string, 0)
 }
 
 func SortedKeys(val interface{}, ckey string) []string {
-  type pair struct {
-    k string
-    c string
-  }
+	type pair struct {
+		k string
+		c string
+	}
 
-  if IsMap(val) {
+	if IsMap(val) {
 		m := val.(map[string]interface{})
 
 		pairs := make([]pair, 0, len(m))
 		for k, v := range m {
-			pairs = append(pairs, pair{k:k,c:strKey(GetProp(v,ckey))})
+			pairs = append(pairs, pair{k: k, c: strKey(GetProp(v, ckey))})
 		}
 
-    sort.Slice(pairs, func(i, j int) bool {
-      return pairs[i].c < pairs[j].c
-    })
+		sort.Slice(pairs, func(i, j int) bool {
+			return pairs[i].c < pairs[j].c
+		})
 
-    keys := make([]string, len(pairs))
-    for i, pair := range pairs {
-      keys[i] = pair.k
-    }
+		keys := make([]string, len(pairs))
+		for i, pair := range pairs {
+			keys[i] = pair.k
+		}
 
-    return keys
-    
+		return keys
+
 	} else if IsList(val) {
-    arr := val.([]interface{})
-    keys := make([]string, len(arr))
-    for i := range arr {
-      keys[i] = strKey(i)
-    }
-    return keys
+		arr := val.([]interface{})
+		keys := make([]string, len(arr))
+		for i := range arr {
+			keys[i] = strKey(i)
+		}
+		return keys
 	}
 
 	return make([]string, 0)
 }
-
 
 func Items(val interface{}) [][2]interface{} {
 	if IsMap(val) {
@@ -383,24 +379,76 @@ func Items(val interface{}) [][2]interface{} {
 // ---------------------------------------------------------------------
 // Clone a JSON-like data structure using JSON round-trips.
 
+// func Clone(val interface{}) interface{} {
+// 	switch v := val.(type) {
+// 	case map[string]interface{}:
+// 		// Clone a map
+// 		newMap := make(map[string]interface{}, len(v))
+// 		for key, value := range v {
+// 			newMap[key] = Clone(value)
+// 		}
+// 		return newMap
+// 	case []interface{}:
+// 		// Clone a list
+// 		newSlice := make([]interface{}, len(v))
+// 		for i, value := range v {
+// 			newSlice[i] = Clone(value)
+// 		}
+// 		return newSlice
+// 	default:
+// 		// Primitive types (string, number, bool, nil) are immutable, so return as-is
+// 		return v
+// 	}
+// }
+
 func Clone(val interface{}) interface{} {
+  fmt.Println("VVV", val)
+	return CloneFlags(val, nil)
+}
+
+func CloneFlags(val interface{}, flags map[string]bool) interface{} {
+  fmt.Println("CF", val, flags)
+  
+	if val == nil {
+		return nil
+	}
+
+	if nil == flags {
+		flags = map[string]bool{}
+
+		if _, ok := flags["func"]; !ok {
+			flags["func"] = true
+		}
+	}
+
+  fmt.Println("FFF", val, flags)
+  
+	typ := reflect.TypeOf(val)
+	if typ.Kind() == reflect.Func {
+		if flags["func"] {
+			return val
+		}
+		return nil
+	}
+
+  fmt.Println("GGG", typ, val, flags)
+  
 	switch v := val.(type) {
 	case map[string]interface{}:
-		// Clone a map
+		// Clone each entry in the map recursively.
 		newMap := make(map[string]interface{}, len(v))
 		for key, value := range v {
-			newMap[key] = Clone(value)
+			newMap[key] = CloneFlags(value, flags)
 		}
 		return newMap
 	case []interface{}:
-		// Clone a list
+		// Clone each element in the slice recursively.
 		newSlice := make([]interface{}, len(v))
 		for i, value := range v {
-			newSlice[i] = Clone(value)
+			newSlice[i] = CloneFlags(value, flags)
 		}
 		return newSlice
 	default:
-		// Primitive types (string, number, bool, nil) are immutable, so return as-is
 		return v
 	}
 }
@@ -599,7 +647,6 @@ func Walk(
 			val = SetProp(val, ckey, newChild)
 		}
 
-
 		if nil != parent && nil != key {
 			_ = SetProp(parent, *key, val)
 		}
@@ -615,13 +662,13 @@ func Walk(
 
 func Merge(src interface{}) interface{} {
 	if !IsList(src) {
-    return src
-  }
-  
+		return src
+	}
+
 	var out interface{}
 
-  objs := listify(src)
-  
+	objs := listify(src)
+
 	if len(objs) == 0 {
 		out = nil
 
@@ -633,8 +680,8 @@ func Merge(src interface{}) interface{} {
 
 		// Merge the rest onto the first
 		for i := 1; i < len(objs); i++ {
-      obj := objs[i]
-      
+			obj := objs[i]
+
 			if !IsNode(obj) {
 
 				// Nodes win.
@@ -652,8 +699,8 @@ func Merge(src interface{}) interface{} {
 
 					var cur []interface{} = make([]interface{}, 11)
 					cI := 0
-          cur[cI] = out
-          
+					cur[cI] = out
+
 					Walk(obj, func(
 						key *string,
 						val interface{},
@@ -681,23 +728,23 @@ func Merge(src interface{}) interface{} {
 						}
 
 						if IsNode(val) {
-						  cur[cI] = SetProp(cur[cI], *key, cur[cI+1])
-						  cur[cI+1] = nil
+							cur[cI] = SetProp(cur[cI], *key, cur[cI+1])
+							cur[cI+1] = nil
 
 						} else {
-						  cur[cI] = SetProp(cur[cI], *key, val)
+							cur[cI] = SetProp(cur[cI], *key, val)
 						}
 
 						return val
 
 					}, nil, nil, nil)
 
-          out = cur[0]
-        }
+					out = cur[0]
+				}
 			}
 		}
 	}
-  
+
 	return out
 }
 
@@ -731,8 +778,8 @@ func GetPath(path interface{}, store interface{}) interface{} {
 func GetPathState(path interface{}, store interface{}, current interface{}, state *Injection) interface{} {
 	var parts []string
 
-  val := store
-  root := store
+	val := store
+	root := store
 
 	switch pp := path.(type) {
 	case []string:
@@ -744,12 +791,12 @@ func GetPathState(path interface{}, store interface{}, current interface{}, stat
 		} else {
 			parts = strings.Split(pp, DT)
 		}
-  default:
-    if IsList(path) {
-      parts = resolveStrings(pp.([]interface{}))
-    } else {
-      return nil
-    }    
+	default:
+		if IsList(path) {
+			parts = resolveStrings(pp.([]interface{}))
+		} else {
+			return nil
+		}
 	}
 
 	if nil == path || nil == store || (1 == len(parts) && EMPTY == parts[0]) {
@@ -757,45 +804,44 @@ func GetPathState(path interface{}, store interface{}, current interface{}, stat
 
 	} else if 0 < len(parts) {
 
-    
 		pI := 0
 
 		if parts[0] == EMPTY {
-      pI = 1
+			pI = 1
 			root = current
 		}
 
-    var part *string
+		var part *string
 		if pI < len(parts) {
 			part = &parts[pI]
-    }
+		}
 
-    first := GetProp(root, *part)
+		first := GetProp(root, *part)
 
-    val = first
-    if pI == 0 && first == nil  {
-      val = GetProp(GetProp(root, (GetProp(state, BASE))), *part)
-    }
-      
-    pI++
-    for nil != val && pI < len(parts) {
-      val = GetProp(val, parts[pI])
-      pI++
+		val = first
+		if pI == 0 && first == nil {
+			val = GetProp(GetProp(root, (GetProp(state, BASE))), *part)
+		}
+
+		pI++
+		for nil != val && pI < len(parts) {
+			val = GetProp(val, parts[pI])
+			pI++
 		}
 	}
 
 	if state != nil && state.Handler != nil {
-    val = state.Handler(state, val, current, store)
+		val = state.Handler(state, val, current, store)
 	}
 
 	return val
 }
 
 func getType(v interface{}) string {
-  if nil == v {
-    return "nil"
-  }
-  return reflect.TypeOf(v).String()
+	if nil == v {
+		return "nil"
+	}
+	return reflect.TypeOf(v).String()
 }
 
 // ---------------------------------------------------------------------
@@ -824,9 +870,9 @@ func injectStr(val string, store interface{}, current interface{}, state *Inject
 			ref = strings.ReplaceAll(ref, "$DS", DS)
 		}
 		out := GetPathState(ref, store, current, state)
-    // fmt.Println("INJECTSTR", val, out)
-    
-    return out
+		// fmt.Println("INJECTSTR", val, out)
+
+		return out
 	}
 
 	// Partial injection
@@ -843,7 +889,7 @@ func injectStr(val string, store interface{}, current interface{}, state *Inject
 		}
 		found := GetPathState(inner, store, current, state)
 
-    if found == nil {
+		if found == nil {
 			return ""
 		}
 		switch fv := found.(type) {
@@ -883,7 +929,7 @@ func Inject(
 	val interface{},
 	store interface{},
 ) interface{} {
-  return InjectState(val, store, nil, nil, nil)
+	return InjectState(val, store, nil, nil, nil)
 }
 
 func InjectState(
@@ -930,55 +976,55 @@ func InjectState(
 	// Descend into node
 	if IsNode(val) {
 
-    childkeys := Keys(val)
+		childkeys := Keys(val)
 
-    var normalKeys []string
-    var transformKeys []string
-    for _, k := range childkeys {
-      // If k includes `$`, treat it as a transform key
-      if strings.Contains(k, DS) {
-        transformKeys = append(transformKeys, k)
-      } else {
-        normalKeys = append(normalKeys, k)
-      }
-    }
+		var normalKeys []string
+		var transformKeys []string
+		for _, k := range childkeys {
+			// If k includes `$`, treat it as a transform key
+			if strings.Contains(k, DS) {
+				transformKeys = append(transformKeys, k)
+			} else {
+				normalKeys = append(normalKeys, k)
+			}
+		}
 
-    // Sort transform keys so they run in alphanumeric order
-    sort.Strings(transformKeys)
-    origKeys := append(normalKeys, transformKeys...)
+		// Sort transform keys so they run in alphanumeric order
+		sort.Strings(transformKeys)
+		origKeys := append(normalKeys, transformKeys...)
 
-    for okI, origKey := range origKeys {
-      childPath := append(state.Path, origKey)
-      childNodes := append(state.Nodes, val)
+		for okI, origKey := range origKeys {
+			childPath := append(state.Path, origKey)
+			childNodes := append(state.Nodes, val)
 
-      // 1) mode = "key:pre"
-      childState := &Injection{
-        Mode:    InjectModeKeyPre,
-        Full:    false,
-        KeyI:    okI,
-        Keys:    origKeys,
-        Key:     origKey,
-        Val:     val,
-        Parent:  val,
-        Path:    childPath,
-        Nodes:   childNodes,
-        Handler: injectHandler,
-        Base:    state.Base,
-        Modify:  state.Modify,
-      }
-      preKey := injectStr(origKey, store, current, childState)
+			// 1) mode = "key:pre"
+			childState := &Injection{
+				Mode:    InjectModeKeyPre,
+				Full:    false,
+				KeyI:    okI,
+				Keys:    origKeys,
+				Key:     origKey,
+				Val:     val,
+				Parent:  val,
+				Path:    childPath,
+				Nodes:   childNodes,
+				Handler: injectHandler,
+				Base:    state.Base,
+				Modify:  state.Modify,
+			}
+			preKey := injectStr(origKey, store, current, childState)
 
-      if preKey != nil {
-        // 2) mode = "val"
-        childVal := GetProp(val, origKey)
-        childState.Mode = InjectModeVal
-        InjectState(childVal, store, modify, current, childState)
-        
-        // 3) mode = "key:post"
-        childState.Mode = InjectModeKeyPost
-        injectStr(origKey, store, current, childState)
-      }
-    }
+			if preKey != nil {
+				// 2) mode = "val"
+				childVal := GetProp(val, origKey)
+				childState.Mode = InjectModeVal
+				InjectState(childVal, store, modify, current, childState)
+
+				// 3) mode = "key:post"
+				childState.Mode = InjectModeKeyPost
+				injectStr(origKey, store, current, childState)
+			}
+		}
 	} else if valType == STRING {
 		state.Mode = InjectModeVal
 		strVal, ok := val.(string)
@@ -1008,21 +1054,21 @@ var injectHandler InjectHandler = func(
 	store interface{},
 ) interface{} {
 
-  isfunc := false
-  if nil != val {
-    isfunc = reflect.TypeOf(val).Kind() == reflect.Func
-  }
+	isfunc := false
+	if nil != val {
+		isfunc = reflect.TypeOf(val).Kind() == reflect.Func
+	}
 
 	if isfunc {
 		// If val is a "function" transform, call it.
 		// In Go, we store them as a special variable or a typed value.
 		// For simplicity, we’ll do a type assertion check:
 
-    fn, ok := val.(InjectHandler)
+		fn, ok := val.(InjectHandler)
 
-    if ok {
+		if ok {
 			out := fn(state, val, current, store)
-      val = out
+			val = out
 		}
 	}
 
@@ -1184,29 +1230,29 @@ var Transform_EACH InjectHandler = func(
 	tval = []interface{}{}
 	var tcur interface{}
 	tcur = []interface{}{}
-  
+
 	// If src is a list, map each item
 	if IsList(src) {
 		srcList := src.([]interface{})
 		newlist := make([]interface{}, len(srcList))
 		for i := range srcList {
 			newlist[i] = Clone(child)
-      SetProp(tcur, i, srcList[i])
+			SetProp(tcur, i, srcList[i])
 		}
 		tval = newlist
 	} else if IsMap(src) {
 
-    items := Items(src)
+		items := Items(src)
 
-    // If src is a map, create a list of child clones, storing the KEY in TMeta
+		// If src is a map, create a list of child clones, storing the KEY in TMeta
 		srcMap := src.(map[string]interface{})
 		newlist := make([]interface{}, 0, len(srcMap))
-    // i := 0
+		// i := 0
 		// for k, v := range srcMap {
-    for i, item := range items {
-      k := item[0]
-      v := item[1]
-      
+		for i, item := range items {
+			k := item[0]
+			v := item[1]
+
 			cclone := Clone(child)
 			// record the key in TMeta => KEY
 			setp, ok := cclone.(map[string]interface{})
@@ -1218,8 +1264,8 @@ var Transform_EACH InjectHandler = func(
 			newlist = append(newlist, cclone)
 			// _ = v // we just want the same length
 
-      tcur = SetProp(tcur, i, v)
-      i++
+			tcur = SetProp(tcur, i, v)
+			i++
 		}
 		tval = newlist
 	}
@@ -1350,9 +1396,8 @@ func Transform(
 	data interface{}, // source data
 	spec interface{}, // transform specification
 ) interface{} {
-  return TransformModify(data, spec, nil, nil)
+	return TransformModify(data, spec, nil, nil)
 }
-
 
 func TransformModify(
 	data interface{}, // source data

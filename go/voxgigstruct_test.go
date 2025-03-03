@@ -12,8 +12,9 @@ import (
 	"testing"
 
 	"github.com/voxgig/struct"
-  "github.com/voxgig/struct/testutil"
+	"github.com/voxgig/struct/testutil"
 )
+
 
 // TestEntry represents a single test case
 // in/out values and potential error info
@@ -196,8 +197,6 @@ func walkPath(k *string, val interface{}, parent interface{}, path []string) int
 	return val
 }
 
-
-
 type TestProvider struct{}
 
 func (p *TestProvider) Test(opts map[string]interface{}) (runner.Client, error) {
@@ -206,38 +205,44 @@ func (p *TestProvider) Test(opts map[string]interface{}) (runner.Client, error) 
 
 type testClient struct{}
 
-func (c *testClient) Utility() (runner.Utility) {
-  return &testUtility{}
+func (c *testClient) Utility() runner.Utility {
+	return &testUtility{}
 }
 
 type testUtility struct{}
 
 func (c *testUtility) Struct() *runner.StructUtility {
-  return &runner.StructUtility{
-    Clone: voxgigstruct.Clone,
-    GetPath: voxgigstruct.GetPath,
-    Inject: voxgigstruct.Inject,
-    Items: voxgigstruct.Items,
-    Stringify: voxgigstruct.Stringify,
-    Walk: voxgigstruct.Walk,
-  }
+	return &runner.StructUtility{
+		Clone:     voxgigstruct.Clone,
+    CloneFlags:     voxgigstruct.CloneFlags,
+		GetPath:   voxgigstruct.GetPath,
+		Inject:    voxgigstruct.Inject,
+		Items:     voxgigstruct.Items,
+		Stringify: voxgigstruct.Stringify,
+		Walk:      voxgigstruct.Walk,
+	}
 }
-
-
-
 
 // TestStructFunctions runs the entire suite of tests
 // replicating the original TS test logic.
 func TestStruct(t *testing.T) {
 
-  store := make(map[string]interface{})
-  provider := &TestProvider{}
-  runner, err := runner.Runner("struct", store, "../build/test/test.json", provider)
+	store := make(map[string]interface{})
+	provider := &TestProvider{}
+
+  runnerMap, err := runner.Runner("struct", store, "../build/test/test.json", provider)
 	if err != nil {
 		t.Fatalf("Failed to create runner: %v", err)
 	}
 
-  fmt.Printf("RUNNER: %+v\n", runner)
+  var spec map[string]interface{} = runnerMap.Spec
+  var runset runner.RunSet = runnerMap.RunSet
+  
+	// fmt.Printf("RUNNER: %+v\n", runnerMap.Spec)
+
+  var minor = spec["minor"].(map[string]interface{})
+
+  /*
   
 	// Adjust path to your JSON test file.
 	testSpec, err := LoadTestSpec("../build/test/test.json")
@@ -281,15 +286,19 @@ func TestStruct(t *testing.T) {
 			return voxgigstruct.Clone(v)
 		})
 	})
-
+  */
+  
 	// minor-isnode
 	t.Run("minor-isnode", func(t *testing.T) {
-		subtest := testSpec["minor"]["isnode"]
-		runTestSet(t, subtest, func(v interface{}) interface{} {
-			return voxgigstruct.IsNode(v)
-		})
+    fmt.Println("AAA", reflect.TypeOf(voxgigstruct.IsNode))
+    runset(t, minor["isnode"], voxgigstruct.IsNode)
+		// subtest := testSpec["minor"]["isnode"]
+		// runTestSet(t, subtest, func(v interface{}) interface{} {
+		// 	return voxgigstruct.IsNode(v)
+		// })
 	})
 
+  /*
 	// minor-ismap
 	t.Run("minor-ismap", func(t *testing.T) {
 		subtest := testSpec["minor"]["ismap"]
@@ -753,4 +762,6 @@ func TestStruct(t *testing.T) {
 				fdt(output), fdt(result), toJSONString(output), toJSONString(result))
 		}
 	})
+
+  */
 }

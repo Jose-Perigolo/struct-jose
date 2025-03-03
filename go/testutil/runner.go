@@ -3,18 +3,17 @@ package runner
 import (
 	"fmt"
 
-  "github.com/voxgig/struct"
-  
-  "os"
+	"github.com/voxgig/struct"
+
 	"encoding/json"
 	"errors"
-	// "io/ioutil"
+	"os"
 	"path/filepath"
 	"reflect"
 	"regexp"
 	"strings"
+	"testing"
 )
-
 
 type Provider interface {
 	Test(opts map[string]interface{}) (Client, error)
@@ -29,38 +28,67 @@ type Utility interface {
 }
 
 type StructUtility struct {
-	Clone func(val interface{}) interface{}
-	GetPath func(path interface{}, store interface{}) interface{}
-	Inject func(val interface{}, store interface{}) interface{}
-	Items func(val interface{}) [][2]interface{} // each element => [key, value]
-	Stringify func(val interface{}, maxlen ...int) string
-	Walk func(
+	Clone      func(val interface{}) interface{}
+	CloneFlags func(val interface{}, flags map[string]bool) interface{}
+	GetPath    func(path interface{}, store interface{}) interface{}
+	Inject     func(val interface{}, store interface{}) interface{}
+	Items      func(val interface{}) [][2]interface{} // each element => [key, value]
+	Stringify  func(val interface{}, maxlen ...int) string
+	Walk       func(
 		val interface{},
-    apply voxgigstruct.WalkApply,
-    key *string,
-    parent interface{},
-    path []string,
+		apply voxgigstruct.WalkApply,
+		key *string,
+		parent interface{},
+		path []string,
 	) interface{}
 }
 
-type RunnerMap struct {
-  spec map[string]interface{}
-  clients map[string]Client
-  subject interface{}
-  runset RunSet
+type RunPack struct {
+	Spec    map[string]interface{}
+	RunSet  RunSet
+}
+
+type RunSet func(
+	t *testing.T,
+	testspec interface{},
+	testsubject interface{},
+)
+
+type Subject func(args ...interface{}) (interface{}, error)
+
+type TestPack struct {
+	Client  Client
+	Subject Subject
+	Utility Utility
 }
 
 
-type RunSet func(testspec map[string]interface{}, testsubject func(...interface{}) interface{})
+func subjectify(val interface{}) Subject {
+  subject, ok := val.(Subject)
+  if ok {
+    return subject
+  }
 
+  booler, ok := val.(func(arg interface{}) bool)
+  if ok {
+    return func(args ...interface{}) (interface{}, error) {
+      fmt.Println("BBB", reflect.TypeOf(booler), args[0])
+      return true, nil
+      // return booler(args[0]), nil
+    }
+  }
+
+  panic(fmt.Sprintf("SUBJECTIFY FAILED: %v", val))
+  return nil
+}
 
 
 func Runner(
-  name string,
-  store interface{},
-  testfile string,
-  provider Provider,
-) (*RunnerMap, error) {
+	name string,
+	store interface{},
+	testfile string,
+	provider Provider,
+) (*RunPack, error) {
 	client, err := provider.Test(nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to retrieve client: %w", err)
@@ -69,93 +97,279 @@ func Runner(
 	utility := client.Utility()
 	structUtil := utility.Struct()
 
-	// cloneFn := structUtil.Clone
-	// getpathFn := structUtil.GetPath
-	// injectFn := structUtil.Inject
-	// itemsFn := structUtil.Items
-	// stringifyFn := structUtil.Stringify
-	// walkFn := structUtil.Walk
+	spec := resolveSpec(name, testfile)
+	clients, err := resolveClients(spec, store, provider, structUtil)
+	if err != nil {
+		return nil, err
+	}
 
-	// _ = cloneFn
-	// _ = getpathFn
-	// _ = injectFn
-	// _ = itemsFn
-	// _ = stringifyFn
-	// _ = walkFn
+	subject, err := resolveSubject(name, structUtil)
+	if err != nil {
+		return nil, err
+	}
 
-  spec := resolveSpec(name, testfile)
-  clients, err := resolveClients(spec, store, provider, structUtil)
-  if err != nil {
-    return nil, err
-  }
+  var runset RunSet = func(
+		t *testing.T,
+		testspec interface{},
+		testsubject interface{},
+  ) {
 
-  subject, err := resolveSubject(name, structUtil)
-  if err != nil {
-    return nil, err
-  }
-  
+    if testsubject != nil {
+			subject = subjectify(testsubject)
+		}
 
-  var runset RunSet = func(testspec map[string]interface{}, testsubject func(...interface{}) interface{}) {
-    if testsubject == nil {
-      testsubject = subject
-    }
-  }
+    var testspecmap = testspec.(map[string]interface{})
+    
+		set, ok := testspecmap["set"].([]interface{})
+		if !ok {
+			fmt.Printf("No test set in %v", name)
+			return
+		}
 
-  
-  return &RunnerMap{
-    spec: spec,
-    clients: clients,
-    subject: subject,
-    runset: runset,
-  }, nil
+		for _, entryVal := range set {
+			entry := entryVal.(map[string]interface{})
+
+			testpack, err := resolveTestPack(name, entry, subject, client, clients)
+			if err != nil {
+				fmt.Print("TESTPACK FAIL", err)
+				return
+			}
+
+			args := resolveArgs(entry, testpack)
+
+			res, err := testpack.Subject(args...)
+      fmt.Println("CCC", res, err)
+
+      entry["res"] = res
+			entry["thrown"] = err
+
+			if nil == err {
+				checkResult(t, entry, res, structUtil)
+			} else {
+				// handleError(t, entry, err, structUtil)
+			}
+		}
+	}
+
+	return &RunPack{
+		Spec:    spec,
+		RunSet:  runset,
+	}, nil
 }
 
+func checkResult(
+	t *testing.T,
+	entry map[string]interface{},
+	res interface{},
+	structUtils *StructUtility,
+) {
 
+	if entry["match"] == nil || entry["out"] != nil {
+		var cleanRes interface{}
+		if res != nil {
+      flags := map[string]bool{"func": false}
+      fmt.Println("SSS", res, flags)
+			cleanRes = structUtils.CloneFlags(res, nil)
+      // cleanRes = structUtils.Clone(res)
+		} else {
+			cleanRes = res
+		}
 
-func resolveSpec(name string, testfile string) (map[string]interface{}) {
+		if !reflect.DeepEqual(cleanRes, entry["out"]) {
+			t.Error("FAIL")
+			// t.Errorf("Expected: %s, \nGot: %s \nExpected JSON: %s \nGot JSON: %s",
+			//		fdt(output), fdt(result), toJSONString(output), toJSONString(result))
+		}
+	}
 
-  data, err := os.ReadFile(filepath.Join(".", testfile))
-  if err != nil {
-    panic(err)
-  }
+	// if entry["match"] != nil {
+	// 	pass, err := MatchNode(
+	// 		entry["match"],
+	// 		map[string]interface{}{
+	// 			"in":  entry["in"],
+	// 			"out": entry["res"],
+	// 			"ctx": entry["ctx"],
+	// 		},
+	// 		structUtils,
+	// 	)
+	// 	if err != nil {
+	// 		t.Error(fmt.Sprintf("match error: %v", err))
+	// 		return
+	// 	}
+	// 	if !pass {
+	// 		t.Error(fmt.Sprintf("match fail: %v", err))
+	// 		return
+	// 	}
+	// }
 
-  var alltests map[string]interface{}
-  if err := json.Unmarshal(data, &alltests); err != nil {
-    panic(err)
-  }
-
-  var spec map[string]interface{}
-
-  // Check if there's a "primary" key that is a map, and if it has our 'name'
-  if primaryRaw, hasPrimary := alltests["primary"]; hasPrimary {
-    if primaryMap, ok := primaryRaw.(map[string]interface{}); ok {
-      if found, ok := primaryMap[name]; ok {
-        spec = found.(map[string]interface{})
-      }
-    }
-  }
-
-  if spec == nil {
-    if found, ok := alltests[name]; ok {
-      spec = found.(map[string]interface{})
-    }
-  }
-
-  if spec == nil {
-    spec = alltests
-  }
-
-  return spec
 }
 
+func handleError(
+	t *testing.T,
+	entry map[string]interface{},
+	testerr error,
+	structUtils *StructUtility,
+) {
+	entryErr := entry["err"]
 
+	if nil == entryErr {
+		t.Error(fmt.Sprintf("%s\n\nENTRY: %s", testerr.Error(), structUtils.Stringify(entry)))
+		return
+	}
 
+  boolErr, hasBoolErr := entryErr.(bool)
+	if hasBoolErr && !boolErr {
+		t.Error(fmt.Sprintf("%s\n\nENTRY: %s", testerr.Error(), structUtils.Stringify(entry)))
+		return
+	}
+
+	matchErr, err := MatchNode(entryErr, testerr.Error(), structUtils)
+
+	if boolErr || matchErr {
+		if entry["match"] != nil {
+			matchErr, err := MatchNode(
+				entry["match"],
+				map[string]interface{}{
+					"in":  entry["in"],
+					"out": entry["res"],
+					"ctx": entry["ctx"],
+					"err": err.Error(),
+				},
+				structUtils,
+			)
+
+      if(!matchErr) {
+				t.Error(fmt.Sprintf("match failed: %v", matchErr))
+			}
+
+      if(nil != err) {
+				t.Error(fmt.Sprintf("match failed: %v", err))
+			}
+		}
+	}
+
+	// If we didn't match, then fail with an error message.
+	t.Error(fmt.Sprintf("ERROR MATCH: [%s] <=> [%s]",
+		structUtils.Stringify(entryErr),
+		err.Error(),
+	))
+}
+
+func resolveArgs(entry map[string]interface{}, testpack TestPack) []interface{} {
+	structUtils := testpack.Utility.Struct()
+
+	var args []interface{}
+	if inVal, ok := entry["in"]; ok {
+		args = []interface{}{structUtils.Clone(inVal)}
+	} else {
+		args = []interface{}{}
+	}
+
+	if ctx, exists := entry["ctx"]; exists && ctx != nil {
+		args = []interface{}{ctx}
+	} else if rawArgs, exists := entry["args"]; exists && rawArgs != nil {
+		if slice, ok := rawArgs.([]interface{}); ok {
+			args = slice
+		}
+	}
+
+	if entry["ctx"] != nil || entry["args"] != nil {
+		if len(args) > 0 {
+			first := args[0]
+			if firstMap, ok := first.(map[string]interface{}); ok && first != nil {
+				clonedFirst := structUtils.Clone(firstMap)
+				args[0] = clonedFirst
+				entry["ctx"] = clonedFirst
+				if m, ok := clonedFirst.(map[string]interface{}); ok {
+					m["client"] = testpack.Client
+					m["utility"] = testpack.Utility
+				}
+			}
+		}
+	}
+
+	return args
+}
+
+func resolveTestPack(
+	name string,
+	entry interface{},
+	testsubject interface{},
+	client Client,
+	clients map[string]Client,
+) (TestPack, error) {
+
+  subject, ok := testsubject.(Subject) 
+  if !ok {
+    panic("QQQ")
+  }
+  
+  pack := TestPack{
+		Client:  client,
+		Subject: subject,
+		Utility: client.Utility(),
+	}
+
+	var err error
+
+	if e, ok := entry.(map[string]interface{}); ok {
+		if rawClient, exists := e["client"]; exists {
+			if clientKey, ok := rawClient.(string); ok {
+				if cl, found := clients[clientKey]; found {
+					pack.Client = cl
+					pack.Utility = cl.Utility()
+					pack.Subject, err = resolveSubject(name, pack.Utility.Struct())
+				}
+			}
+		}
+	}
+
+	return pack, err
+}
+
+func resolveSpec(name string, testfile string) map[string]interface{} {
+
+	data, err := os.ReadFile(filepath.Join(".", testfile))
+	if err != nil {
+		panic(err)
+	}
+
+	var alltests map[string]interface{}
+	if err := json.Unmarshal(data, &alltests); err != nil {
+		panic(err)
+	}
+
+	// fmt.Print("ALLTESTS %v", alltests)
+
+	var spec map[string]interface{}
+
+	// Check if there's a "primary" key that is a map, and if it has our 'name'
+	if primaryRaw, hasPrimary := alltests["primary"]; hasPrimary {
+		if primaryMap, ok := primaryRaw.(map[string]interface{}); ok {
+			if found, ok := primaryMap[name]; ok {
+				spec = found.(map[string]interface{})
+			}
+		}
+	}
+
+	if spec == nil {
+		if found, ok := alltests[name]; ok {
+			spec = found.(map[string]interface{})
+		}
+	}
+
+	if spec == nil {
+		spec = alltests
+	}
+
+	return spec
+}
 
 func resolveClients(
-  spec map[string]interface{},
-  store interface{},
-  provider Provider,
-  structUtil *StructUtility,
+	spec map[string]interface{},
+	store interface{},
+	provider Provider,
+	structUtil *StructUtility,
 ) (map[string]Client, error) {
 	clients := make(map[string]Client)
 
@@ -180,7 +394,7 @@ func resolveClients(
 	}
 
 	for _, cdef := range structUtil.Items(clientMap) {
-		key, _ := cdef[0].(string)       // cdef[0]
+		key, _ := cdef[0].(string)                    // cdef[0]
 		valMap, _ := cdef[1].(map[string]interface{}) // cdef[1]
 
 		if valMap == nil {
@@ -193,7 +407,7 @@ func resolveClients(
 			opts = make(map[string]interface{})
 		}
 
-    structUtil.Inject(opts, store)
+		structUtil.Inject(opts, store)
 
 		client, err := provider.Test(opts)
 		if err != nil {
@@ -206,8 +420,10 @@ func resolveClients(
 	return clients, nil
 }
 
-
-func resolveSubject(name string, structUtil *StructUtility) (func(...interface{}) interface{}, error) {
+func resolveSubject(
+	name string,
+	structUtil *StructUtility,
+) (Subject, error) {
 	// Get a reflect.Value of the struct
 	val := reflect.ValueOf(structUtil)
 
@@ -227,55 +443,55 @@ func resolveSubject(name string, structUtil *StructUtility) (func(...interface{}
 		return nil, fmt.Errorf("resolveSubject: field %q is not a func", name)
 	}
 
-  fn, ok := fieldVal.Interface().(func(...interface{}) interface{})
-  if !ok {
-    return nil, fmt.Errorf("resolveSubject: field %q does not match expected signature", name)
-  }
+	fn, ok := fieldVal.Interface().(Subject)
+	if !ok {
+		return nil, fmt.Errorf("resolveSubject: field %q does not match expected signature", name)
+	}
 
-  return fn, nil
+	return fn, nil
 }
 
 
-func Match(
+func MatchNode(
 	check interface{},
 	base interface{},
-  structUtil *StructUtility,
+	structUtil *StructUtility,
 ) (bool, error) {
-  pass := true
-  var err error = nil
-  
+	pass := true
+	var err error = nil
+
 	structUtil.Walk(
-    check,
-    func(key *string, val interface{}, _parent interface{}, path []string) interface{} {
-      scalar := true
+		check,
+		func(key *string, val interface{}, _parent interface{}, path []string) interface{} {
+			scalar := true
 
-      switch val.(type) {
-      case map[string]interface{}, []interface{}:
-        scalar = true
-      }
+			switch val.(type) {
+			case map[string]interface{}, []interface{}:
+				scalar = true
+			}
 
-      if scalar {
-        baseval := structUtil.GetPath(path, base)
-        if !MatchVal(val, baseval, structUtil) {
-          pass = false
-          err = fmt.Errorf(
-					"MATCH: %s: [%s] <=> [%s]",
-            strings.Join(path, "."),
-            structUtil.Stringify(val),
-            structUtil.Stringify(baseval),
-          )
-        }
-      }
-      return val
-    },
-    nil,
-    nil,
-    nil,
-  )
-  return pass, err
+			if scalar {
+				baseval := structUtil.GetPath(path, base)
+				if !MatchScalar(val, baseval, structUtil) {
+					pass = false
+					err = fmt.Errorf(
+						"MATCH: %s: [%s] <=> [%s]",
+						strings.Join(path, "."),
+						structUtil.Stringify(val),
+						structUtil.Stringify(baseval),
+					)
+				}
+			}
+			return val
+		},
+		nil,
+		nil,
+		nil,
+	)
+	return pass, err
 }
 
-func MatchVal(check, base interface{}, structUtil *StructUtility) bool {
+func MatchScalar(check, base interface{}, structUtil *StructUtility) bool {
 	if s, ok := check.(string); ok && s == "__UNDEF__" {
 		check = nil
 	}
@@ -301,8 +517,8 @@ func MatchVal(check, base interface{}, structUtil *StructUtility) bool {
 				)
 			}
 		} else {
-      cv := reflect.ValueOf(check)
-      isf := cv.Kind() == reflect.Func
+			cv := reflect.ValueOf(check)
+			isf := cv.Kind() == reflect.Func
 			if isf {
 				pass = true
 			}

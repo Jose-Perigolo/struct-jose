@@ -8,44 +8,18 @@ async function runner(name, store, testfile, provider) {
     const client = await provider.test();
     const utility = client.utility();
     const structUtils = utility.struct;
-    const alltests = JSON.parse((0, node_fs_1.readFileSync)((0, node_path_1.join)(__dirname, testfile), 'utf8'));
-    let spec = resolveSpec(alltests, name);
+    let spec = resolveSpec(name, testfile);
     let clients = await resolveClients(spec, store, provider, structUtils);
     let subject = utility[name];
     let runset = async (testspec, testsubject) => {
-        testsubject = testsubject || subject;
+        subject = testsubject || subject;
         next_entry: for (let entry of testspec.set) {
             try {
-                let testclient = client;
-                if (entry.client) {
-                    testclient = clients[entry.client];
-                    let utility = client.utility();
-                    testsubject = utility[name];
-                }
-                let args = [structUtils.clone(entry.in)];
-                if (entry.ctx) {
-                    args = [entry.ctx];
-                }
-                else if (entry.args) {
-                    args = entry.args;
-                }
-                if (entry.ctx || entry.args) {
-                    let first = args[0];
-                    if ('object' === typeof first && null != first) {
-                        entry.ctx = first = args[0] = structUtils.clone(args[0]);
-                        first.client = testclient;
-                        first.utility = testclient.utility();
-                    }
-                }
-                let res = await testsubject(...args);
+                let testpack = resolveTestPack(name, entry, subject, client, clients);
+                let args = resolveArgs(entry, testpack);
+                let res = await testpack.subject(...args);
                 entry.res = res;
-                if (undefined === entry.match || undefined !== entry.out) {
-                    // NOTE: don't use clone as we want to strip functions
-                    (0, node_assert_1.deepEqual)(null != res ? JSON.parse(JSON.stringify(res)) : res, entry.out);
-                }
-                if (entry.match) {
-                    match(entry.match, { in: entry.in, out: entry.res, ctx: entry.ctx }, structUtils);
-                }
+                checkResult(entry, res, structUtils);
             }
             catch (err) {
                 entry.thrown = err;
@@ -76,7 +50,49 @@ async function runner(name, store, testfile, provider) {
         subject,
     };
 }
-function resolveSpec(alltests, name) {
+function checkResult(entry, res, structUtils) {
+    if (undefined === entry.match || undefined !== entry.out) {
+        // NOTE: don't use clone as we want to strip functions
+        (0, node_assert_1.deepEqual)(null != res ? JSON.parse(JSON.stringify(res)) : res, entry.out);
+    }
+    if (entry.match) {
+        match(entry.match, { in: entry.in, out: entry.res, ctx: entry.ctx }, structUtils);
+    }
+}
+function resolveArgs(entry, testpack) {
+    const structUtils = testpack.utility.struct;
+    let args = [structUtils.clone(entry.in)];
+    if (entry.ctx) {
+        args = [entry.ctx];
+    }
+    else if (entry.args) {
+        args = entry.args;
+    }
+    if (entry.ctx || entry.args) {
+        let first = args[0];
+        if ('object' === typeof first && null != first) {
+            entry.ctx = first = args[0] = structUtils.clone(args[0]);
+            first.client = testpack.client;
+            first.utility = testpack.utility;
+        }
+    }
+    return args;
+}
+function resolveTestPack(name, entry, subject, client, clients) {
+    const pack = {
+        client,
+        subject,
+        utility: client.utility(),
+    };
+    if (entry.client) {
+        pack.client = clients[entry.client];
+        pack.utility = pack.client.utility();
+        pack.subject = pack.utility[name];
+    }
+    return pack;
+}
+function resolveSpec(name, testfile) {
+    const alltests = JSON.parse((0, node_fs_1.readFileSync)((0, node_path_1.join)(__dirname, testfile), 'utf8'));
     let spec = alltests.primary?.[name] || alltests[name] || alltests;
     return spec;
 }

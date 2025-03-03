@@ -35,69 +35,41 @@ type StructUtility = {
 }
 
 
+type Subject = (...args: any[]) => any
+
+type TestPack = {
+  client: Client,
+  subject: Subject
+  utility: Utility,
+}
+
+
 async function runner(name: string, store: any, testfile: string, provider: Provider) {
 
   const client = await provider.test()
   const utility = client.utility()
   const structUtils = utility.struct
 
-  const alltests =
-    JSON.parse(readFileSync(join(
-      __dirname, testfile), 'utf8'))
-
-  let spec = resolveSpec(alltests, name)
+  let spec = resolveSpec(name, testfile)
 
   let clients = await resolveClients(spec, store, provider, structUtils)
 
   let subject = (utility as any)[name]
 
   let runset = async (testspec: any, testsubject: Function) => {
-    testsubject = testsubject || subject
+    subject = testsubject || subject
 
     next_entry:
     for (let entry of testspec.set) {
       try {
-        let testclient = client
+        let testpack = resolveTestPack(name, entry, subject, client, clients)
+        let args = resolveArgs(entry, testpack)
 
-        if (entry.client) {
-          testclient = clients[entry.client]
-          let utility = client.utility()
-          testsubject = (utility as any)[name]
-        }
-
-        let args = [structUtils.clone(entry.in)]
-
-        if (entry.ctx) {
-          args = [entry.ctx]
-        }
-        else if (entry.args) {
-          args = entry.args
-        }
-
-        if (entry.ctx || entry.args) {
-          let first = args[0]
-          if ('object' === typeof first && null != first) {
-            entry.ctx = first = args[0] = structUtils.clone(args[0])
-            first.client = testclient
-            first.utility = testclient.utility()
-          }
-        }
-
-        let res = await testsubject(...args)
+        let res = await testpack.subject(...args)
         entry.res = res
 
-        if (undefined === entry.match || undefined !== entry.out) {
-          // NOTE: don't use clone as we want to strip functions
-          deepEqual(null != res ? JSON.parse(JSON.stringify(res)) : res, entry.out)
-        }
+        checkResult(entry, res, structUtils)
 
-        if (entry.match) {
-          match(
-            entry.match,
-            { in: entry.in, out: entry.res, ctx: entry.ctx },
-            structUtils
-          )
-        }
       }
       catch (err: any) {
         entry.thrown = err
@@ -141,7 +113,75 @@ async function runner(name: string, store: any, testfile: string, provider: Prov
 }
 
 
-function resolveSpec(alltests: Record<string, any>, name: string): Record<string, any> {
+function checkResult(entry: any, res: any, structUtils: StructUtility) {
+  if (undefined === entry.match || undefined !== entry.out) {
+    // NOTE: don't use clone as we want to strip functions
+    deepEqual(null != res ? JSON.parse(JSON.stringify(res)) : res, entry.out)
+  }
+
+  if (entry.match) {
+    match(
+      entry.match,
+      { in: entry.in, out: entry.res, ctx: entry.ctx },
+      structUtils
+    )
+  }
+
+}
+
+
+function resolveArgs(entry: any, testpack: TestPack): any[] {
+  const structUtils = testpack.utility.struct
+  let args = [structUtils.clone(entry.in)]
+
+  if (entry.ctx) {
+    args = [entry.ctx]
+  }
+  else if (entry.args) {
+    args = entry.args
+  }
+
+  if (entry.ctx || entry.args) {
+    let first = args[0]
+    if ('object' === typeof first && null != first) {
+      entry.ctx = first = args[0] = structUtils.clone(args[0])
+      first.client = testpack.client
+      first.utility = testpack.utility
+    }
+  }
+
+  return args
+}
+
+
+function resolveTestPack(
+  name: string,
+  entry: any,
+  subject: Subject,
+  client: Client,
+  clients: Record<string, Client>
+) {
+  const pack: TestPack = {
+    client,
+    subject,
+    utility: client.utility(),
+  }
+
+  if (entry.client) {
+    pack.client = clients[entry.client]
+    pack.utility = pack.client.utility()
+    pack.subject = (pack.utility as any)[name]
+  }
+
+  return pack
+}
+
+
+function resolveSpec(name: string, testfile: string): Record<string, any> {
+  const alltests =
+    JSON.parse(readFileSync(join(
+      __dirname, testfile), 'utf8'))
+
   let spec = alltests.primary?.[name] || alltests[name] || alltests
   return spec
 }
