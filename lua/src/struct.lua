@@ -95,32 +95,23 @@ end
 
 -- Value is a defined list (array) with integer keys (indexes).
 local function islist(val)
-  if val == nil or type(val) ~= 'table' then
+  -- Check if it's a table
+  if type(val) ~= "table" then
     return false
   end
 
-  -- Empty tables should be treated as maps, not lists, to match TypeScript behavior
-  if next(val) == nil then
-    return false
-  end
-
-  -- Check if table has sequential integer keys starting at 1 (Lua convention)
+  -- Count total elements and max integer key
   local count = 0
+  local max = 0
   for k, _ in pairs(val) do
-    if type(k) ~= 'number' or k <= 0 or math.floor(k) ~= k then
-      return false
-    end
-    count = count + 1
-  end
-
-  -- A proper Lua array has no gaps and starts at index 1
-  for i = 1, count do
-    if val[i] == nil then
-      return false
+    if type(k) == "number" then
+      if k > max then max = k end
+      count = count + 1
     end
   end
 
-  return count > 0
+  -- Check if all keys are consecutive integers starting from 1
+  return count > 0 and max == count
 end
 
 -- Value is a defined map (hash) with string keys.
@@ -553,82 +544,60 @@ local function merge(objs)
     return objs[1]
   end
 
-  -- For type determination
-  local isArrayList = function(t)
-    if type(t) ~= 'table' then return false end
+  -- Merge a list of values.
+  local out = getprop(objs, 0, {})
 
-    -- In Lua, an "array" has sequential numeric keys starting from 1
-    local count = 0
-    for _ in pairs(t) do count = count + 1 end
+  for oI = 2, #objs do
+    local obj = objs[oI]
 
-    -- If no elements, not an array
-    if count == 0 then return false end
-
-    -- Check if all keys are sequential numbers
-    for i = 1, count do
-      if t[i] == nil then return false end
-    end
-
-    return true
-  end
-
-  -- First, check for scalar values (non-table)
-  for i = #objs, 1, -1 do
-    if objs[i] ~= nil and type(objs[i]) ~= 'table' then
-      return objs[i] -- Last scalar wins
-    end
-  end
-
-  -- Check for the special cases where we have array vs object conflicts
-  -- The last non-nil, non-empty object type wins
-  local lastArrayIndex = nil
-  local lastObjectIndex = nil
-
-  for i = 1, #objs do
-    if objs[i] ~= nil and type(objs[i]) == 'table' then
-      if isArrayList(objs[i]) then
-        lastArrayIndex = i
+    if not isnode(obj) then
+      -- Nodes win.
+      out = obj
+    else
+      -- Nodes win, also over nodes of a different kind.
+      if not isnode(out) or
+          (ismap(obj) and islist(out)) or
+          (islist(obj) and ismap(out)) then
+        out = obj
       else
-        lastObjectIndex = i
-      end
-    end
-  end
+        -- Node stack. walking down the current obj.
+        local cur = { out }
+        local cI = 0
 
-  -- If we have both arrays and objects, the last type wins
-  local lastTypeIndex = math.max(lastArrayIndex or 0, lastObjectIndex or 0)
-  if lastTypeIndex > 0 then
-    local lastType = isArrayList(objs[lastTypeIndex])
+        local function merger(key, val, parent, path)
+          if key == nil then
+            return val
+          end
 
-    -- If the last type is array, result should be array
-    if lastType then
-      return objs[lastTypeIndex]
-    end
-  end
+          -- Get the current value at the current path in obj.
+          local lenpath = #path
+          cI = lenpath
+          if cur[cI] == UNDEF then
+            cur[cI] = getpath(
+              table.pack(table.unpack(path, 1, lenpath - 1)),
+              out
+            )
+          end
 
-  -- Check for the special case [{}, null, {a:{b:14}}]
-  local nonEmptyObjects = {}
-  for i = 1, #objs do
-    if objs[i] ~= nil and type(objs[i]) == 'table' and next(objs[i]) ~= nil then
-      table.insert(nonEmptyObjects, objs[i])
-    end
-  end
+          -- Create node if needed.
+          if not isnode(cur[cI]) then
+            cur[cI] = islist(parent) and {} or {}
+          end
 
-  if #nonEmptyObjects == 1 then
-    return nonEmptyObjects[1]
-  end
+          -- Node child is just ahead of us on the stack, since
+          -- `walk` traverses leaves before nodes.
+          if isnode(val) and not isempty(val) then
+            setprop(cur[cI], key, cur[cI + 1])
+            cur[cI + 1] = UNDEF
+          else
+            setprop(cur[cI], key, val)
+          end
 
-  -- Standard object merging for objects of the same type
-  local out = {}
-  for i = 1, #objs do
-    if objs[i] ~= nil and type(objs[i]) == 'table' then
-      for k, v in pairs(objs[i]) do
-        -- If both values are tables, recursively merge them
-        if type(v) == 'table' and type(out[k]) == 'table' then
-          out[k] = merge({ out[k], v })
-        else
-          -- Otherwise, later value overrides
-          out[k] = v
+          return val
         end
+
+        -- Walk overriding node, creating paths in output as needed.
+        walk(obj, merger)
       end
     end
   end
