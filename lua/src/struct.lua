@@ -785,7 +785,25 @@ function getpath(path, store, current, state, skipHandler)
 
   -- State may provide a custom handler to modify found value
   if not skipHandler and state ~= UNDEF and isfunc(state.handler) then
-    val = state.handler(state, val, current, _pathify(path), store)
+    -- Create and prepare wrapper handler that protects against Lua concatenation errors
+    local safe_handler = function(...)
+      local args = { ... }
+      -- Convert the val argument (args[2]) to string if it's a table
+      if type(args[2]) == 'table' then
+        -- For a table with a single value (like {'$TOP':'12'}), extract that value
+        local key, value = next(args[2])
+        if key ~= nil and next(args[2], key) == nil then
+          -- Only one key/value pair exists
+          args[2] = value
+        else
+          -- Otherwise convert to string representation
+          args[2] = tostring(args[2])
+        end
+      end
+      return state.handler(table.unpack(args))
+    end
+
+    val = safe_handler(state, val, current, _pathify(path), store)
   end
 
   return val
