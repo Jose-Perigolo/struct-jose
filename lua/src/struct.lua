@@ -656,17 +656,28 @@ local function merge(objs)
   -- Merge a list of values (normal case for regular arrays).
   local out = getprop(objs, 0, {})
 
+  -- Start with first entry of the array
+  if islist(objs) and #objs > 0 then
+    out = objs[1]
+  end
+
   for oI = 2, #objs do
     local obj = objs[oI]
 
-    if not isnode(obj) then
-      -- Nodes win.
+    -- Skip nil values
+    if obj == UNDEF then
+      -- Skip but do nothing (retain existing values)
+      -- Handle empty arrays - don't override values with empty arrays
+    elseif islist(obj) and #obj == 0 then
+      -- Skip but do nothing (retain existing values)
+    elseif not isnode(obj) then
+      -- Non-nodes win.
       out = obj
     else
       -- Nodes win, also over nodes of a different kind.
       if not isnode(out) or
-          (ismap(obj) and islist(out)) or
-          (islist(obj) and ismap(out)) or
+          (ismap(obj) and islist(out) and not isempty(obj)) or
+          (islist(obj) and ismap(out) and not isempty(obj)) or
           (isnode(out) and isempty(out) and not isempty(obj)) then
         out = obj
       else
