@@ -277,10 +277,11 @@ describe("struct", function()
 
   -- -- getpath tests
   -- -- =============
-  -- it("getpath-exists", function()
-  --   assert.equal("function", type(getpath))
-  -- end)
-  --
+
+  test("getpath-exists", function()
+    assert.equal("function", type(getpath))
+  end)
+
   -- it("getpath-basic", function()
   --   test_set(clone(TESTSPEC.getpath.basic), function(vin)
   --     return getpath(vin.path, vin.store)
