@@ -535,6 +535,23 @@ end
 -- override each other, and do *not* merge. The first element is
 -- modified.
 local function merge(objs)
+  -- Handle cases of empty inputs
+  if objs == UNDEF then
+    return UNDEF
+  end
+
+  -- Check if it's an empty table
+  if type(objs) == 'table' then
+    local isEmpty = true
+    for _ in pairs(objs) do
+      isEmpty = false
+      break
+    end
+    if isEmpty then
+      return UNDEF -- Empty table/array should return nil
+    end
+  end
+
   -- Handle basic edge cases
   if not islist(objs) then
     -- Special case for sparse arrays (tables with only numeric keys)
@@ -629,6 +646,10 @@ local function merge(objs)
   elseif #objs == 0 then
     return UNDEF
   elseif #objs == 1 then
+    -- If the only item is an empty table, return nil
+    if isnode(objs[1]) and isempty(objs[1]) then
+      return UNDEF
+    end
     return objs[1]
   end
 

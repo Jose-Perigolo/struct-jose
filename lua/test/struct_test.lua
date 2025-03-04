@@ -262,10 +262,10 @@ describe("struct", function()
     runset(spec.merge.cases, merge)
   end)
 
-  -- it("merge-array", function()
-  --   test_set(clone(TESTSPEC.merge.array), merge)
-  -- end)
-  --
+  test("merge-array", function()
+    runset(spec.merge.array, merge)
+  end)
+
   -- -- getpath tests
   -- -- =============
   -- it("getpath-exists", function()
