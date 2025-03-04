@@ -58,6 +58,7 @@ int main() {
 
     json arr = json::parse("[ \"a\" ]");
 
+    // TODO: Add a testcase for this
     key = "0a1"; // THIS WILL CAUSE PROBLEMS
 
     std::cout << arr[std::stoi(key.get<std::string>())] << std::endl;
