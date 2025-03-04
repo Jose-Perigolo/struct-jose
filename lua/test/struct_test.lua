@@ -319,12 +319,13 @@ describe("struct", function()
     end)
   end)
 
-  -- -- inject tests
-  -- -- ============
-  -- it("inject-exists", function()
-  --   assert.equal("function", type(inject))
-  -- end)
-  --
+  -- inject tests
+  -- ============
+
+  test("inject-exists", function()
+    assert.equal("function", type(inject))
+  end)
+
   -- it("inject-basic", function()
   --   local test = clone(TESTSPEC.inject.basic)
   --   assert.same(test.out, inject(test['in'].val, test['in'].store))
