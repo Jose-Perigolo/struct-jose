@@ -135,6 +135,14 @@ int main() {
       runset(spec["minor"]["getprop"], getprop_wrapper, nullptr);
     }
 
+    TEST_CASE("test_minor_keysof") {
+      runset(spec["minor"]["keysof"], keysof, nullptr);
+    }
+
+    TEST_CASE("test_minor_haskey") {
+      runset(spec["minor"]["haskey"], haskey, nullptr);
+    }
+
   }
 
   return 0;

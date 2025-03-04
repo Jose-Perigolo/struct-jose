@@ -46,4 +46,23 @@ class Provider {
     hash_table<std::string, Utility> utility(void);
 };
 
+namespace Auxiliary {
+
+  void validate_int(const std::string& str) {
+    const char* const_str = str.c_str();
+
+    while(*const_str != 0) {
+      if(*const_str >= '0' && *const_str <= '9') {
+        const_str++;
+        continue;
+      }
+
+      throw std::runtime_error("Invalid Integer");
+
+    }
+
+  }
+
+}
+
 #endif

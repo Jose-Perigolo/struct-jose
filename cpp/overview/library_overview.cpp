@@ -63,6 +63,10 @@ int main() {
 
     std::cout << arr[std::stoi(key.get<std::string>())] << std::endl;
 
+
+    std::cout << json::parse(R"({"b": 1, "a": 2})") << std::endl;
+    std::cout << json::parse(R"(["b", "a"])") << std::endl;
+
     /*
     key = "0";
 

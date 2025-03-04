@@ -178,6 +178,8 @@ cleaned_res = json.loads(json.dumps(res, default=str))
           // cleaned_res = false;
           // cleaned_res[0];
           // std::cout << "CHECK: " << (cleaned_res == expected_out) << std::endl;
+          // std::cout << cleaned_res << std::endl;
+          // std::cout << expected_out << std::endl;
 
           if(cleaned_res != expected_out) {
             throw assertion_error(

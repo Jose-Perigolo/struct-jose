@@ -140,6 +140,8 @@ namespace VoxgigStruct {
 
         try {
           std::string __key = key.get<std::string>();
+          // TODO: Refactor: this is O(2n)
+          Auxiliary::validate_int(__key);
           _key = std::stoi(__key);
           goto try_access;
 
@@ -164,6 +166,35 @@ try_access:
 
 
     return out;
+  }
+
+
+  json keysof(args_container&& args) {
+    json val = args.size() == 0 ? nullptr : args[0];
+
+    if(isnode({val}) == false) {
+      return json::array();
+    } else if(ismap({val})) {
+      json keys = json::array();
+      for(json::iterator it = val.begin(); it != val.end(); it++) {
+        keys.push_back(it.key());
+      }
+      return keys; // TODO: sorted(val.keys()). HOWEVER, the keys appear to be sorted (in order) by default. Try "std::cout << json::parse(R"({"b": 1, "a": 2})") << std::endl;"
+    } else {
+      json arr = json::array();
+      for(int i = 0; i < val.size(); i++) {
+        arr.push_back(i);
+      }
+      return arr;
+    }
+
+  }
+
+  json haskey(args_container&& args) {
+    json val = args.size() == 0 ? nullptr : std::move(args[0]);
+    json key = args.size() < 2 ? nullptr : std::move(args[1]);
+
+    return getprop({val, key}) != nullptr;
   }
 
 }
