@@ -288,12 +288,12 @@ describe("struct", function()
     end)
   end)
 
-  -- it("getpath-current", function()
-  --   test_set(clone(TESTSPEC.getpath.current), function(vin)
-  --     return getpath(vin.path, vin.store, vin.current)
-  --   end)
-  -- end)
-  --
+  test("getpath-current", function()
+    runset(spec.getpath.current, function(vin)
+      return getpath(vin.path, vin.store, vin.current)
+    end)
+  end)
+
   -- it("getpath-state", function()
   --   local state = {
   --     handler = function(st, val, current, store)
