@@ -144,4 +144,6 @@ __pycache__
 
 *.class
 *.out
+
+*.swp
  

@@ -1,3 +1,8 @@
+
+#ifndef UTILITY_DECLS
+
+#define UTILITY_DECLS
+
 using json = nlohmann::json;
 
 using arg_container = std::vector<json>;
@@ -18,6 +23,8 @@ class Utility {
 
     function_pointer& get_key(const std::string&);
 
+    void set_table(hash_table<std::string, function_pointer>&&);
+
     function_pointer& operator[](const std::string&);
 
     ~Utility() = default;
@@ -36,3 +43,5 @@ class Provider {
 
     hash_table<std::string, Utility> utility(void);
 };
+
+#endif

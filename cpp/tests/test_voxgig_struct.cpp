@@ -3,27 +3,13 @@
 
 #include <nlohmann/json.hpp>
 
-#include "utility_decls.hpp"
-#include "runner.hpp"
+#include <voxgig_struct.hpp>
+#include <runner.hpp>
 
 
 #define TEST_CASE(TEST_NAME) std::cout << "Running: " << TEST_NAME << " at " << __LINE__ << std::endl;
 
-
-// Struct Utility Functions
-
-json isList(arg_container&& args) {
-  json obj = args.size() == 0 ? nullptr : std::move(args[0]);
-
-  return static_cast<bool>(obj.is_array());
-}
-
-json isNode(arg_container&& args) {
-  json obj = args.size() == 0 ? nullptr : std::move(args[0]);
-
-  return static_cast<bool>(obj.is_array() || obj.is_object());
-}
-
+#define TEST_STRUCT std::cout << "TEST STRUCT " << " at " << __LINE__ << std::endl;
 
 
 inline void Utility::set_key(const std::string& key, function_pointer p) {
@@ -38,11 +24,18 @@ inline function_pointer& Utility::operator[](const std::string& key) {
   return get_key(key);
 }
 
+inline void Utility::set_table(hash_table<std::string, function_pointer>&& new_table) {
+  table = std::move(new_table);
+}
+
 struct Struct : public Utility {
 
   Struct() {
-    set_key("islist", isList);
-    set_key("isnode", isNode);
+    set_table({
+        { "islist", islist },
+        { "isnode", isnode },
+        { "ismap",  ismap  }
+    });
   }
 
   function_pointer& operator[](const std::string& key) {
@@ -87,12 +80,20 @@ int main() {
   auto runset = runparts.runset;
 
 
-  TEST_CASE("test_minor_isnode") {
-    runset(spec["minor"]["isnode"], isNode, { { "fixjson", false } });
-  }
+  TEST_STRUCT {
 
-  TEST_CASE("test_minor_islist") {
-    runset(spec["minor"]["islist"], isList, { { "fixjson", false } });
+    TEST_CASE("test_minor_isnode") {
+      runset(spec["minor"]["isnode"], isnode, { { "fixjson", false } });
+    }
+
+    TEST_CASE("test_minor_ismap") {
+      runset(spec["minor"]["ismap"], ismap, { { "fixjson", false } });
+    }
+
+    TEST_CASE("test_minor_islist") {
+      runset(spec["minor"]["islist"], islist, { { "fixjson", false } });
+    }
+
   }
 
   return 0;
