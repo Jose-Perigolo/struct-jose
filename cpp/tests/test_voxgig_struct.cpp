@@ -34,9 +34,15 @@ struct Struct : public Utility {
 
   Struct() {
     set_table({
-        { "islist", islist },
         { "isnode", isnode },
-        { "ismap",  ismap  }
+        { "ismap",  ismap  },
+        { "islist", islist },
+        { "iskey", iskey },
+        { "isempty", isempty },
+        { "isfunc", isfunc<args_container&&> },
+        { "getprop", getprop },
+        { "keysof", keysof },
+        { "haskey", haskey },
     });
   }
 
