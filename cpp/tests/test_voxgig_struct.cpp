@@ -12,6 +12,8 @@
 #define TEST_STRUCT std::cout << "TEST STRUCT " << " at " << __LINE__ << std::endl;
 
 
+using namespace VoxgigStruct;
+
 inline void Utility::set_key(const std::string& key, function_pointer p) {
   table[key] = p;
 }
