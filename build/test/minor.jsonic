@@ -6,8 +6,8 @@ isnode: {
     { in: 1, out: false }
     { in: 'a', out: false }
     { in: true, out: false }
-    # { in: null, out: false }
-    # { out: false }
+    { in: null, out: false }
+    { out: false }
   ]
 }
 

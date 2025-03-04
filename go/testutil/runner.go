@@ -69,12 +69,21 @@ func subjectify(val interface{}) Subject {
     return subject
   }
 
-  booler, ok := val.(func(arg interface{}) bool)
+  booler1arg, ok := val.(func(arg interface{}) bool)
   if ok {
     return func(args ...interface{}) (interface{}, error) {
-      fmt.Println("BBB", reflect.TypeOf(booler), args[0])
-      return true, nil
-      // return booler(args[0]), nil
+      if 0 == len(args) {
+        return booler1arg(nil), nil
+      } else {
+        return booler1arg(args[0]), nil
+      }
+    }
+  }
+
+  booler, ok := val.(func(arg ...interface{}) bool)
+  if ok {
+    return func(args ...interface{}) (interface{}, error) {
+      return booler(args...), nil
     }
   }
 
@@ -138,7 +147,6 @@ func Runner(
 			args := resolveArgs(entry, testpack)
 
 			res, err := testpack.Subject(args...)
-      fmt.Println("CCC", res, err)
 
       entry["res"] = res
 			entry["thrown"] = err
@@ -146,7 +154,7 @@ func Runner(
 			if nil == err {
 				checkResult(t, entry, res, structUtil)
 			} else {
-				// handleError(t, entry, err, structUtil)
+				handleError(t, entry, err, structUtil)
 			}
 		}
 	}
@@ -168,41 +176,77 @@ func checkResult(
 		var cleanRes interface{}
 		if res != nil {
       flags := map[string]bool{"func": false}
-      fmt.Println("SSS", res, flags)
-			cleanRes = structUtils.CloneFlags(res, nil)
-      // cleanRes = structUtils.Clone(res)
+			cleanRes = structUtils.CloneFlags(res, flags)
 		} else {
 			cleanRes = res
 		}
 
+    // fmt.Println("CR", cleanRes, entry["out"], "DE", reflect.DeepEqual(cleanRes, entry["out"]))
+    
 		if !reflect.DeepEqual(cleanRes, entry["out"]) {
-			t.Error("FAIL")
-			// t.Errorf("Expected: %s, \nGot: %s \nExpected JSON: %s \nGot JSON: %s",
-			//		fdt(output), fdt(result), toJSONString(output), toJSONString(result))
+			t.Error(outFail(entry, cleanRes, entry["out"]))
+      return
 		}
 	}
 
-	// if entry["match"] != nil {
-	// 	pass, err := MatchNode(
-	// 		entry["match"],
-	// 		map[string]interface{}{
-	// 			"in":  entry["in"],
-	// 			"out": entry["res"],
-	// 			"ctx": entry["ctx"],
-	// 		},
-	// 		structUtils,
-	// 	)
-	// 	if err != nil {
-	// 		t.Error(fmt.Sprintf("match error: %v", err))
-	// 		return
-	// 	}
-	// 	if !pass {
-	// 		t.Error(fmt.Sprintf("match fail: %v", err))
-	// 		return
-	// 	}
-	// }
-
+	if entry["match"] != nil {
+		pass, err := MatchNode(
+			entry["match"],
+			map[string]interface{}{
+				"in":  entry["in"],
+				"out": entry["res"],
+				"ctx": entry["ctx"],
+			},
+			structUtils,
+		)
+		if err != nil {
+			t.Error(fmt.Sprintf("match error: %v", err))
+			return
+		}
+		if !pass {
+			t.Error(fmt.Sprintf("match fail: %v", err))
+			return
+		}
+	}
 }
+
+
+func outFail(entry interface{}, res interface{}, out interface{}) string {
+  return fmt.Sprintf("Entry:\n%s\nExpected:\n%s\nGot:\n%s\n",
+    inspect(entry), inspect(out), inspect(res))
+}
+
+func inspect(val interface{}) string {
+  return inspectIndent(val, "")
+}
+
+func inspectIndent(val interface{}, indent string) string {
+	result := ""
+
+	switch v := val.(type) {
+	case map[string]interface{}:
+		result += indent + "{\n"
+		for key, value := range v {
+			result += fmt.Sprintf("%s  \"%s\": %s", indent, key, inspectIndent(value, indent+"  "))
+		}
+		result += indent + "}\n"
+
+	case []interface{}:
+		result += indent + "[\n"
+		for _, value := range v {
+			result += fmt.Sprintf("%s  - %s", indent, inspectIndent(value, indent+"  "))
+		}
+		result += indent + "]\n"
+
+	default:
+		result += fmt.Sprintf("%v (%s)\n", v, reflect.TypeOf(v))
+	}
+
+	return result
+}
+
+
+
 
 func handleError(
 	t *testing.T,
@@ -338,8 +382,6 @@ func resolveSpec(name string, testfile string) map[string]interface{} {
 	if err := json.Unmarshal(data, &alltests); err != nil {
 		panic(err)
 	}
-
-	// fmt.Print("ALLTESTS %v", alltests)
 
 	var spec map[string]interface{}
 

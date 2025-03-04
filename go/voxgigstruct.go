@@ -402,13 +402,10 @@ func Items(val interface{}) [][2]interface{} {
 // }
 
 func Clone(val interface{}) interface{} {
-  fmt.Println("VVV", val)
 	return CloneFlags(val, nil)
 }
 
 func CloneFlags(val interface{}, flags map[string]bool) interface{} {
-  fmt.Println("CF", val, flags)
-  
 	if val == nil {
 		return nil
 	}
@@ -421,8 +418,6 @@ func CloneFlags(val interface{}, flags map[string]bool) interface{} {
 		}
 	}
 
-  fmt.Println("FFF", val, flags)
-  
 	typ := reflect.TypeOf(val)
 	if typ.Kind() == reflect.Func {
 		if flags["func"] {
@@ -431,8 +426,6 @@ func CloneFlags(val interface{}, flags map[string]bool) interface{} {
 		return nil
 	}
 
-  fmt.Println("GGG", typ, val, flags)
-  
 	switch v := val.(type) {
 	case map[string]interface{}:
 		// Clone each entry in the map recursively.
@@ -870,7 +863,6 @@ func injectStr(val string, store interface{}, current interface{}, state *Inject
 			ref = strings.ReplaceAll(ref, "$DS", DS)
 		}
 		out := GetPathState(ref, store, current, state)
-		// fmt.Println("INJECTSTR", val, out)
 
 		return out
 	}

@@ -238,8 +238,6 @@ func TestStruct(t *testing.T) {
   var spec map[string]interface{} = runnerMap.Spec
   var runset runner.RunSet = runnerMap.RunSet
   
-	// fmt.Printf("RUNNER: %+v\n", runnerMap.Spec)
-
   var minor = spec["minor"].(map[string]interface{})
 
   /*
@@ -288,41 +286,27 @@ func TestStruct(t *testing.T) {
 	})
   */
   
-	// minor-isnode
 	t.Run("minor-isnode", func(t *testing.T) {
-    fmt.Println("AAA", reflect.TypeOf(voxgigstruct.IsNode))
     runset(t, minor["isnode"], voxgigstruct.IsNode)
-		// subtest := testSpec["minor"]["isnode"]
-		// runTestSet(t, subtest, func(v interface{}) interface{} {
-		// 	return voxgigstruct.IsNode(v)
-		// })
 	})
 
-  /*
-	// minor-ismap
 	t.Run("minor-ismap", func(t *testing.T) {
-		subtest := testSpec["minor"]["ismap"]
-		runTestSet(t, subtest, func(v interface{}) interface{} {
-			return voxgigstruct.IsMap(v)
-		})
+    runset(t, minor["ismap"], voxgigstruct.IsMap)
 	})
+
 
 	// minor-islist
 	t.Run("minor-islist", func(t *testing.T) {
-		subtest := testSpec["minor"]["islist"]
-		runTestSet(t, subtest, func(v interface{}) interface{} {
-			return voxgigstruct.IsList(v)
-		})
+    runset(t, minor["islist"], voxgigstruct.IsList)
 	})
+
 
 	// minor-iskey
 	t.Run("minor-iskey", func(t *testing.T) {
-		subtest := testSpec["minor"]["iskey"]
-		runTestSet(t, subtest, func(v interface{}) interface{} {
-			return voxgigstruct.IsKey(v)
-		})
+    runset(t, minor["iskey"], voxgigstruct.IsKey)
 	})
 
+  /*
 	// minor-isempty
 	t.Run("minor-isempty", func(t *testing.T) {
 		subtest := testSpec["minor"]["isempty"]

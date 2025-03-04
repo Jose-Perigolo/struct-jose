@@ -69,7 +69,6 @@ async function runner(name: string, store: any, testfile: string, provider: Prov
         entry.res = res
 
         checkResult(entry, res, structUtils)
-
       }
       catch (err: any) {
         entry.thrown = err
@@ -103,7 +102,6 @@ async function runner(name: string, store: any, testfile: string, provider: Prov
       }
     }
   }
-
 
   return {
     spec,
