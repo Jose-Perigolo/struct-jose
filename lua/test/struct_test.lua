@@ -326,11 +326,11 @@ describe("struct", function()
     assert.equal("function", type(inject))
   end)
 
-  -- it("inject-basic", function()
-  --   local test = clone(TESTSPEC.inject.basic)
-  --   assert.same(test.out, inject(test['in'].val, test['in'].store))
-  -- end)
-  --
+  test("inject-basic", function()
+    local test = clone(spec.inject.basic)
+    assert.same(test.out, inject(test['in'].val, test['in'].store))
+  end)
+
   -- it("inject-string", function()
   --   test_set(clone(TESTSPEC.inject.string), function(vin)
   --     return inject(vin.val, vin.store, nullModifier, vin.current)
