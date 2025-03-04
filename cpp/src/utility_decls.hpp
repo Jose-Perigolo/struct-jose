@@ -5,8 +5,10 @@
 
 using json = nlohmann::json;
 
-using arg_container = std::vector<json>;
-using function_pointer = json(*)(arg_container&&);
+// TODO: Don't use std::vector due to performance concerns as it is creating double copies, being the initializer_list first
+using args_container = std::vector<json>;
+using function_pointer = json(*)(args_container&&);
+using JsonFunction = std::function<json(args_container&&)>;
 
 // NOTE: Standard Library for now
 template<class T_K, class T_V>

@@ -10,13 +10,15 @@ json fixJSON(json&);
 json unfixJSON(json&&);
 
 struct RunnerResult {
+  using Function = std::function<void(const json&, function_pointer, json&&)>;
+
   json spec;
-  std::function<void(const json&, function_pointer, json&&)> runset;
+  Function runset;
   // TODO: TBD: function_pointer subject
 
   RunnerResult() = default;
 
-  RunnerResult(json&& spec, std::function<void(const json&, function_pointer, json&&)>&& runset) : runset{std::move(runset)} {
+  RunnerResult(json&& spec, Function&& runset) : runset{std::move(runset)} {
     // NOTE: NEVER DO spec{...} in the constructor - it will treat it as an json::array. e.g. evaluates to [spec]
     this->spec = std::move(spec);
   }
@@ -80,7 +82,8 @@ clients[c_name] = provider.test(copts)
   // TODO
   // auto subject = utility[name];
 
-  auto runset = [=](const json& testspec, function_pointer testsubject = nullptr, json&& flags = nullptr){
+  // NOTE: Use std::function (instead of function_pointer) in case lambdas are being passed
+  auto runset = [=](const json& testspec, JsonFunction testsubject = nullptr, json&& flags = nullptr){
 
     if(flags == nullptr) {
       flags = json::object();

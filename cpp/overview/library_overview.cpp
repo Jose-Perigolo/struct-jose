@@ -1,3 +1,29 @@
+#include <iostream>
+
+#include <nlohmann/json.hpp>
+
+
+using json = nlohmann::json;
+
+// g++ library_overview.cpp --std=c++11 -o out.out -I ~/Project/json/include && ./out.out
+
+int main() {
+  {
+    json d = "AAA";
+
+    json a = nullptr;
+
+    json b = "";
+
+    std::cout << (a == nullptr) << std::endl;
+    std::cout << (b == "") << std::endl;
+    
+    if(d.is_string()) {
+      std::string conv = d.get<std::string>();
+
+      std::cout << conv << std::endl;
+    }
+  }
 /*
      {
   // Provider check
@@ -154,3 +180,4 @@
   std::cout << obj2.dump(2) << std::endl;
   }
    */
+}

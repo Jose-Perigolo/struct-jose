@@ -94,6 +94,23 @@ int main() {
       runset(spec["minor"]["islist"], islist, { { "fixjson", false } });
     }
 
+    TEST_CASE("test_minor_iskey") {
+      runset(spec["minor"]["iskey"], iskey, { { "fixjson", false } });
+    }
+
+    TEST_CASE("test_minor_isempty") {
+      runset(spec["minor"]["isempty"], isempty, { { "fixjson", false } });
+    }
+
+    TEST_CASE("test_minor_isfunc") {
+      runset(spec["minor"]["isfunc"], isfunc<args_container>, { { "fixjson", false } });
+    }
+
+    TEST_CASE("test_minor_getprop") {
+      // TODO: Use nullptr for now since we can't have std::function with optional arguments. Instead, we need to rewrite the entire class to implement our own closure and "operator()"
+      runset(spec["minor"]["getprop"], getprop, nullptr);
+    }
+
   }
 
   return 0;
