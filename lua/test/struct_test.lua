@@ -266,6 +266,15 @@ describe("struct", function()
     runset(spec.merge.array, merge)
   end)
 
+  test("merge-special", function()
+    local f0 = function() return nil end
+
+    assert.same(f0, merge({ f0 }))
+    assert.same(f0, merge({ nil, f0 }))
+    assert.same({ a = f0 }, merge({ { a = f0 } }))
+    assert.same({ a = { b = f0 } }, merge({ { a = { b = f0 } } }))
+  end)
+
   -- -- getpath tests
   -- -- =============
   -- it("getpath-exists", function()
