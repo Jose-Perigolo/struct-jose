@@ -282,12 +282,12 @@ describe("struct", function()
     assert.equal("function", type(getpath))
   end)
 
-  -- it("getpath-basic", function()
-  --   test_set(clone(TESTSPEC.getpath.basic), function(vin)
-  --     return getpath(vin.path, vin.store)
-  --   end)
-  -- end)
-  --
+  test("getpath-basic", function()
+    runset(spec.getpath.basic, function(vin)
+      return getpath(vin.path, vin.store)
+    end)
+  end)
+
   -- it("getpath-current", function()
   --   test_set(clone(TESTSPEC.getpath.current), function(vin)
   --     return getpath(vin.path, vin.store, vin.current)
