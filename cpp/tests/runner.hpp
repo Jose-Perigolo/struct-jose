@@ -205,7 +205,7 @@ match(entry['match'], {
 catch(const std::exception& err) {
 
   (*entry)["thrown"] = err.what();
-  json entry_err = entry->value("err", nullptr);
+  json entry_err = entry->value("err", json(nullptr));
 
   if(entry_err != nullptr) {
     // TODO: if entry_err is True or matchval(entry_err, str(err))

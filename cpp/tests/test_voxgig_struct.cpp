@@ -103,17 +103,29 @@ int main() {
     }
 
     TEST_CASE("test_minor_isfunc") {
-      runset(spec["minor"]["isfunc"], (function_pointer)isfunc<args_container&&>, { { "fixjson", false } });
+      // resolve by (function_pointer)
+      runset(spec["minor"]["isfunc"],
+          static_cast<function_pointer>(isfunc<args_container&&>),
+          { { "fixjson", false } }
+      );
     }
 
     TEST_CASE("test_minor_getprop") {
       JsonFunction getprop_wrapper = [](args_container&& args) -> json {
         json& vin = args[0];
         // std::cout << "json vin: " << vin << std::endl;
+        // NOTE: operator[] is not good (isn't the best lookup) for auxiliary space since it creates an empty entry if the value is not found
         if(!vin.contains("alt")) {
-          return getprop({ vin["val"], vin["key"]});
+          return getprop({
+              vin.value("val", json(nullptr)),
+              vin.value("key", json(nullptr))
+          });
         } else {
-          return getprop({ vin["val"], vin["key"], vin["alt"]});
+          return getprop({
+              vin.value("val", json(nullptr)), 
+              vin.value("key", json(nullptr)),
+              vin.value("alt", json(nullptr))
+          });
         }
       };
 
