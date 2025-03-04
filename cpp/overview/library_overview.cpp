@@ -24,6 +24,27 @@ int main() {
       std::cout << conv << std::endl;
     }
   }
+
+  // vector conversion
+  {
+    json obj = json::parse("[1, 2, 3, \"A\"]");
+    // This conversion takes the same amount of auxiliary space both for std::move and copy operations
+    std::vector<json> obj1 = obj;
+
+    std::cout << obj << std::endl;
+    // std::cout << obj1 << std::endl;
+
+  }
+
+  {
+    json obj = json::parse("{}");
+
+    // non-existent key for this lookup creates an entry in the memory so contains or better, "find" is recommended.
+    std::cout << obj["a"] << std::endl;
+    std::cout << obj.contains("a") << std::endl; // True :)
+
+  }
+
 /*
      {
   // Provider check
