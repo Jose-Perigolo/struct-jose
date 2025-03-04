@@ -96,7 +96,7 @@ json isfunc(T& args) {
 }
 
 template<>
-json isfunc<args_container>(args_container&& args) {
+json isfunc<args_container&&>(args_container&& args) {
   return false;
 }
 
@@ -112,9 +112,6 @@ json isfunc<std::function<json(args_container&&)>>(std::function<json(args_conta
 
 
 json getprop(args_container&& args) {
-  std::cout << args << std::endl;
-  std::cout << "size(): " << args.size() << std::endl;
-
   json val = args.size() == 0 ? nullptr : std::move(args[0]);
   json key = args.size() < 2 ? nullptr : std::move(args[1]);
   json alt = args.size() < 3 ? nullptr : std::move(args[2]);
@@ -127,7 +124,43 @@ json getprop(args_container&& args) {
     return alt;
   }
 
+  json out = alt;
 
-  return false;
+  if(ismap({val})) {
+    out = val.value(key.is_string() ? key : json(key.dump()), alt);
+  }
+  else if(islist({val})) {
+    int _key {0};
+
+    try {
+      _key = key.get<int>();
+    } catch(const json::exception&) {
+
+      try {
+        std::string __key = key.get<std::string>();
+        _key = std::stoi(__key);
+        goto try_access;
+
+      } catch(...) {}
+
+      return alt;
+    }
+
+try_access:
+    if(0 <= _key && _key < val.size()) {
+      return val[_key];
+    } else {
+      return alt;
+    }
+
+  }
+
+  if(out.is_null()) {
+    out = alt;
+  }
+
+
+
+  return out;
 }
 

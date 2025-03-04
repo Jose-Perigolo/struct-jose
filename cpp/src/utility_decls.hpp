@@ -5,7 +5,7 @@
 
 using json = nlohmann::json;
 
-// TODO: Don't use std::vector due to performance concerns as it is creating double copies, being the initializer_list first
+// TODO: Don't use std::vector due to performance concerns as it is creating double copies, being the initializer_list first. However, this improvement is optimal due to the way the runner is written where arguments are read dynamically from parsed json
 using args_container = std::vector<json>;
 using function_pointer = json(*)(args_container&&);
 using JsonFunction = std::function<json(args_container&&)>;

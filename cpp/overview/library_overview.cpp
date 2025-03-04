@@ -45,6 +45,31 @@ int main() {
 
   }
 
+  {
+    // Non-string key lookup test
+    json a = json::parse("{\"1\": 2}");
+
+    json key = "1"; // fails
+    key = 1;
+    // a[1] fails
+    std::cout << a["1"] << std::endl;
+    std::cout << a[key.dump()] << std::endl;
+
+
+    json arr = json::parse("[ \"a\" ]");
+
+    key = "0a1"; // THIS WILL CAUSE PROBLEMS
+
+    std::cout << arr[std::stoi(key.get<std::string>())] << std::endl;
+
+    /*
+    key = "0";
+
+    key.get<int>();
+    */
+
+  }
+
 /*
      {
   // Provider check

@@ -10,7 +10,7 @@ json fixJSON(json&);
 json unfixJSON(json&&);
 
 struct RunnerResult {
-  using Function = std::function<void(const json&, function_pointer, json&&)>;
+  using Function = std::function<void(const json&, JsonFunction, json&&)>;
 
   json spec;
   Function runset;
@@ -123,11 +123,14 @@ testsubject = testclient.utility()[name]
          */
 
         std::vector<json> args;
+
+        // TODO: Refactor double lookup
         // Build up the call arguments
         if(entry->contains("ctx")) {
           args = { (*entry)["ctx"] };
-        } else if(entry->contains("args")) {
-          args = { (*entry)["args"] };
+        // Addition - ensure "args" is an array so the implicit conversion isn't dangerous and doesn't crash at runtime
+        } else if(entry->contains("args") && entry->at("args").is_array()) {
+          args = (*entry)["args"];
         } else {
           if(entry->contains("in")) {
             // TODO: Ensure clone since it is cloning by default this way
@@ -158,6 +161,7 @@ first_arg["utility"] = testclient.utility()
         json res = testsubject(std::move(args));
 
         res = fixJSON(res);
+
 
         // NOTE: COPY ENFORCED
         (*entry)["res"] = res;

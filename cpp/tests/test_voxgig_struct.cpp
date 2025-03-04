@@ -103,12 +103,22 @@ int main() {
     }
 
     TEST_CASE("test_minor_isfunc") {
-      runset(spec["minor"]["isfunc"], isfunc<args_container>, { { "fixjson", false } });
+      runset(spec["minor"]["isfunc"], (function_pointer)isfunc<args_container&&>, { { "fixjson", false } });
     }
 
     TEST_CASE("test_minor_getprop") {
+      JsonFunction getprop_wrapper = [](args_container&& args) -> json {
+        json& vin = args[0];
+        // std::cout << "json vin: " << vin << std::endl;
+        if(!vin.contains("alt")) {
+          return getprop({ vin["val"], vin["key"]});
+        } else {
+          return getprop({ vin["val"], vin["key"], vin["alt"]});
+        }
+      };
+
       // TODO: Use nullptr for now since we can't have std::function with optional arguments. Instead, we need to rewrite the entire class to implement our own closure and "operator()"
-      runset(spec["minor"]["getprop"], getprop, nullptr);
+      runset(spec["minor"]["getprop"], getprop_wrapper, nullptr);
     }
 
   }
