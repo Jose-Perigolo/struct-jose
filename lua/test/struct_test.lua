@@ -294,30 +294,31 @@ describe("struct", function()
     end)
   end)
 
-  -- it("getpath-state", function()
-  --   local state = {
-  --     handler = function(st, val, current, store)
-  --       local out = tostring(st.step) .. ":" .. val
-  --       st.step = st.step + 1
-  --       return out
-  --     end,
-  --     step = 0,
-  --     mode = "val",
-  --     full = false,
-  --     keyI = 0,
-  --     keys = { "$TOP" },
-  --     key = "$TOP",
-  --     val = "",
-  --     parent = {},
-  --     path = { "$TOP" },
-  --     nodes = { {} },
-  --     base = "$TOP"
-  --   }
-  --   test_set(clone(TESTSPEC.getpath.state), function(vin)
-  --     return getpath(vin.path, vin.store, vin.current, state)
-  --   end)
-  -- end)
-  --
+  test("getpath-state", function()
+    local state = {
+      handler = function(state, val, _current, _ref, _store)
+        local out = state.meta.step .. ':' .. val
+        state.meta.step = state.meta.step + 1
+        return out
+      end,
+      meta = { step = 0 },
+      mode = 'val',
+      full = false,
+      keyI = 0,
+      keys = { '$TOP' },
+      key = '$TOP',
+      val = '',
+      parent = {},
+      path = { '$TOP' },
+      nodes = { {} },
+      base = '$TOP',
+      errs = {}
+    }
+    runset(spec.getpath.state, function(vin)
+      return getpath(vin.path, vin.store, vin.current, state)
+    end)
+  end)
+
   -- -- inject tests
   -- -- ============
   -- it("inject-exists", function()
