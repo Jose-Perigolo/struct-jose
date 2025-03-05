@@ -203,27 +203,15 @@ func IsKey(key interface{}) bool {
 	}
 }
 
-// IsEmpty replicates the TS function checking for “empty” values:
-//   - nil
-//   - ""
-//   - false
-//   - 0
-//   - empty array
-//   - empty object
+
+// Check for an "empty" value - nil, empty string, array, object.
 func IsEmpty(val interface{}) bool {
 	if val == nil {
 		return true
 	}
 	switch vv := val.(type) {
-	case bool:
-		return vv == false
 	case string:
 		return vv == EMPTY
-	case float64:
-		// JSON decoding of numeric 0 becomes float64(0)
-		return vv == 0
-	case int:
-		return vv == 0
 	case []interface{}:
 		return len(vv) == 0
 	case map[string]interface{}:
@@ -379,28 +367,6 @@ func Items(val interface{}) [][2]interface{} {
 // ---------------------------------------------------------------------
 // Clone a JSON-like data structure using JSON round-trips.
 
-// func Clone(val interface{}) interface{} {
-// 	switch v := val.(type) {
-// 	case map[string]interface{}:
-// 		// Clone a map
-// 		newMap := make(map[string]interface{}, len(v))
-// 		for key, value := range v {
-// 			newMap[key] = Clone(value)
-// 		}
-// 		return newMap
-// 	case []interface{}:
-// 		// Clone a list
-// 		newSlice := make([]interface{}, len(v))
-// 		for i, value := range v {
-// 			newSlice[i] = Clone(value)
-// 		}
-// 		return newSlice
-// 	default:
-// 		// Primitive types (string, number, bool, nil) are immutable, so return as-is
-// 		return v
-// 	}
-// }
-
 func Clone(val interface{}) interface{} {
 	return CloneFlags(val, nil)
 }
@@ -412,12 +378,13 @@ func CloneFlags(val interface{}, flags map[string]bool) interface{} {
 
 	if nil == flags {
 		flags = map[string]bool{}
-
-		if _, ok := flags["func"]; !ok {
-			flags["func"] = true
-		}
 	}
 
+  if _, ok := flags["func"]; !ok {
+    flags["func"] = true
+  }
+
+  
 	typ := reflect.TypeOf(val)
 	if typ.Kind() == reflect.Func {
 		if flags["func"] {
