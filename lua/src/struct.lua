@@ -817,72 +817,79 @@ end
 -- The path can also have the special syntax $NAME999 where NAME is upper case letters only,
 -- and 999 is any digits, which are discarded. This syntax specifies the name of a transform,
 -- and optionally allows transforms to be ordered by alphanumeric sorting.
+-- Modified _injectstr function
 function _injectstr(val, store, current, state)
   -- Can't inject into non-strings
   if type(val) ~= 'string' then
     return ''
   end
 
-  local out = val
-
   -- Pattern examples: "`a.b.c`", "`$NAME`", "`$NAME1`"
-  local m = { val:match("^`([$]%u+|[^`]+)[0-9]*`$") }
+  -- local m = { val:match("^`([$][A-Z]+|[^`]+)[0-9]*`$") }
 
   -- Full string of the val is an injection
-  if m[1] then
+  -- if m[1] then
+  --   if state then
+  --     state.full = true
+  --   end
+  --   local pathref = m[1]
+
+  -- Check for full injection pattern: `path`
+  if val:match("^`[^`]+`$") then
     if state then
       state.full = true
     end
-    local pathref = m[1]
+    -- Extract the path without the backticks
+    local pathref = val:sub(2, -2)
 
     -- Special escapes inside injection
     if #pathref > 3 then
       pathref = pathref:gsub("%$BT", S.BT):gsub("%$DS", S.DS)
     end
 
-    -- Get the extracted path reference
-    out = getpath(pathref, store, current, state)
-    -- Check for injections within the string
-  else
-    out = val:gsub("`([^`]+)`", function(ref)
-      -- Special escapes inside injection
-      if #ref > 3 then
-        ref = ref:gsub("%$BT", S.BT):gsub("%$DS", S.DS)
-      end
+    -- Get the extracted path reference directly without any string conversion
+    return getpath(pathref, store, current, state)
+  end
 
-      if state then
-        state.full = false
-      end
-
-      local found = getpath(ref, store, current, state)
-
-      -- Ensure inject value is a string
-      if found == UNDEF then
-        return ''
-      elseif type(found) == 'table' then
-        -- Simple table to JSON string conversion
-        local json = '{'
-        local items = {}
-        for k, v in pairs(found) do
-          if type(v) == 'string' then
-            table.insert(items, '"' .. tostring(k) .. '":"' .. v .. '"')
-          else
-            table.insert(items, '"' .. tostring(k) .. '":' .. tostring(v))
-          end
-        end
-        json = json .. table.concat(items, ',') .. '}'
-        return json
-      else
-        return tostring(found)
-      end
-    end)
-
-    -- Also call the state handler on the entire string, providing the
-    -- option for custom injection
-    if state and state.handler then
-      state.full = true
-      out = state.handler(state, out, current, val, store)
+  -- Check for injections within the string
+  local out = val:gsub("`([^`]+)`", function(ref)
+    -- Special escapes inside injection
+    if #ref > 3 then
+      ref = ref:gsub("%$BT", S.BT):gsub("%$DS", S.DS)
     end
+
+    if state then
+      state.full = false
+    end
+
+    local found = getpath(ref, store, current, state)
+
+    -- For partial injections we do need to convert to string
+    if found == nil then
+      return ''
+    elseif type(found) == 'table' then
+      -- Simple table to JSON string conversion
+      local json = '{'
+      local items = {}
+      for k, v in pairs(found) do
+        if type(v) == 'string' then
+          table.insert(items, '"' .. tostring(k) .. '":"' .. v .. '"')
+        else
+          table.insert(items, '"' .. tostring(k) .. '":' .. tostring(v))
+        end
+      end
+      json = json .. table.concat(items, ',') .. '}'
+      return json
+    else
+      return tostring(found)
+    end
+  end)
+
+  -- Also call the state handler on the entire string, providing the
+  -- option for custom injection
+  if state and state.handler then
+    state.full = true
+    out = state.handler(state, out, current, val, store)
   end
 
   return out
@@ -895,7 +902,7 @@ function injecthandler(state, val, current, ref, store)
 
   -- Only call val function if it is a special command ($NAME format)
   if isfunc(val) and
-      (ref == UNDEF or (type(ref) == 'string' and ref:sub(1, 1) == S.DS)) then
+      (ref == nil or (type(ref) == 'string' and ref:sub(1, 1) == S.DS)) then
     out = val(state, val, current, store)
     -- Update parent with value. Ensures references remain in node tree
   elseif state.mode == S.MVAL and state.full then
@@ -914,7 +921,7 @@ function inject(val, store, modify, current, state)
   -- Create state if at root of injection
   -- The input value is placed inside a virtual parent holder
   -- to simplify edge cases
-  if state == UNDEF then
+  if state == nil then
     local parent = {}
     parent[S.DTOP] = val
 
@@ -938,11 +945,11 @@ function inject(val, store, modify, current, state)
   end
 
   -- Resolve current node in store for local paths
-  if current == UNDEF then
+  if current == nil then
     current = { [S.DTOP] = store }
   else
     local parentkey = state.path[#state.path - 1]
-    current = parentkey == UNDEF and current or getprop(current, parentkey)
+    current = parentkey == nil and current or getprop(current, parentkey)
   end
 
   -- Descend into node
@@ -957,7 +964,7 @@ function inject(val, store, modify, current, state)
       local dsKeys = {}
 
       for k, _ in pairs(val) do
-        if not string.find(k, S.DS) then
+        if not string.find(tostring(k), S.DS) then
           table.insert(nonDSKeys, k)
         else
           table.insert(dsKeys, k)
@@ -1020,7 +1027,7 @@ function inject(val, store, modify, current, state)
       okI = childstate.keyI
 
       -- Prevent further processing by returning an undefined prekey
-      if prekey ~= UNDEF then
+      if prekey ~= nil then
         local child = getprop(val, prekey)
         childstate.mode = S.MVAL
 
@@ -1065,15 +1072,6 @@ function inject(val, store, modify, current, state)
   -- Original val reference may no longer be correct
   -- This return value is only used as the top level result
   return getprop(state.parent, S.DTOP)
-end
-
--- The transform_* functions are special command inject handlers
-
--- Delete a key from a map or list
-local function transform_DELETE(state)
-  local key, parent = state.key, state.parent
-  setprop(parent, key, UNDEF)
-  return UNDEF
 end
 
 -- Copy value from source data
