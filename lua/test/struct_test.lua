@@ -78,14 +78,15 @@ local function walkpath(_key, val, _parent, path)
 end
 --
 -- Modifier function to replace "__NULL__" markers with nil (Lua's null equivalent)
--- local function nullModifier(key, val, parent)
---   if val == "__NULL__" then
---     setprop(parent, key, nil)
---   elseif type(val) == "string" then
---     local replaced = string.gsub(val, "__NULL__", "null")
---     setprop(parent, key, replaced)
---   end
--- end
+local function nullModifier(key, val, parent)
+  if val == "__NULL__" then
+    setprop(parent, key, nil)
+  elseif type(val) == "string" then
+    local replaced = string.gsub(val, "__NULL__", "null")
+    setprop(parent, key, replaced)
+  end
+end
+
 
 -- Test suite using Busted
 describe("struct", function()
@@ -331,12 +332,13 @@ describe("struct", function()
     assert.same(test.out, inject(test['in'].val, test['in'].store))
   end)
 
-  -- it("inject-string", function()
-  --   test_set(clone(TESTSPEC.inject.string), function(vin)
-  --     return inject(vin.val, vin.store, nullModifier, vin.current)
-  --   end)
-  -- end)
-  --
+  test("inject-string", function()
+    runset(spec.inject.string, function(vin)
+      local result = inject(vin.val, vin.store, nullModifier, vin.current)
+      return result
+    end)
+  end)
+
   -- it("inject-deep", function()
   --   test_set(clone(TESTSPEC.inject.deep), function(vin)
   --     return inject(vin.val, vin.store)
