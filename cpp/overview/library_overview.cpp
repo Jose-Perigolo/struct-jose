@@ -1,13 +1,80 @@
 #include <iostream>
+#include <sstream>
+#include <vector>
 
 #include <nlohmann/json.hpp>
 
 
 using json = nlohmann::json;
 
+using JsonFunction = std::function<json(std::vector<json>)>;
+using function_pointer = json(*)(std::vector<json>);
+
 // g++ library_overview.cpp --std=c++11 -o out.out -I ~/Project/json/include && ./out.out
 
+
+struct address
+{
+    std::string m_val;
+    address(std::string rhs = "") : m_val(std::move(rhs)) {}
+};
+
+struct function_wrapper
+{
+  JsonFunction function;
+
+  function_wrapper(JsonFunction function) {
+    this->function = function;
+  }
+
+  std::string to_string() const {
+    std::stringstream ss;
+
+    // std::cout << (void*)(this->function).target() << std::endl;
+    // ss << typeid(function).name();
+    ss << &function;
+
+    return ss.str();
+
+  }
+
+};
+
+static void to_json(nlohmann::json& j, const address& a)
+{
+    j = a.m_val;
+}
+
+static void to_json(nlohmann::json& j, const function_wrapper& function)
+{
+  j = function.to_string();
+}
+
+/*
+template <typename BasicJsonType>
+static void from_json(BasicJsonType& j, const JsonFunction& function)
+{
+}
+*/
+
+
+json d(std::vector<json> args) {
+  return true;
+}
+
 int main() {
+
+  {
+    JsonFunction dd = d;
+    function_wrapper f = dd;
+
+
+    json obj = json(f);
+    
+    std::cout << obj << std::endl;
+
+  }
+
   {
     json d = "AAA";
 
