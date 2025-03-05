@@ -1373,6 +1373,15 @@ local function transform(
   return out
 end
 
+-- Build a type validation error message
+local function _invalidTypeMsg(path, type, vt, v)
+  -- Deal with lua table type
+  vt = islist(v) and vt == 'table' and S.array or vt
+  v = stringify(v)
+  return 'Expected ' .. type .. ' at ' .. _pathify(path) ..
+      ', found ' .. (v ~= UNDEF and vt .. ': ' or '') .. v
+end
+
 -- A required string value. NOTE: Rejects empty strings.
 local function validate_STRING(state, _val, current)
   local out = getprop(current, state.key)
@@ -1595,14 +1604,6 @@ local function validate_ONE(state, _val, current)
   end
 end
 
--- Build a type validation error message
-local function _invalidTypeMsg(path, type, vt, v)
-  -- Deal with lua table type
-  vt = islist(v) and vt == 'table' and S.array or vt
-  v = stringify(v)
-  return 'Expected ' .. type .. ' at ' .. _pathify(path) ..
-      ', found ' .. (v ~= UNDEF and vt .. ': ' or '') .. v
-end
 
 -- This is the "modify" argument to inject. Use this to perform
 -- generic validation. Runs *after* any special commands.

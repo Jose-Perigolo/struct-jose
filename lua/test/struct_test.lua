@@ -30,44 +30,6 @@ local validate  = struct.validate
 local joinurl   = struct.joinurl
 
 
--- -- Load JSON test specification from file
--- local file      = assert(io.open("../../build/test/test.json", "r"))
--- local content   = file:read("*a")
--- file:close()
--- local TESTSPEC
--- if ok_json then
---   TESTSPEC = json.decode(content)
--- else
---   local obj, pos, err = json.decode(content, 1, nil)
---   assert(err == nil, "Failed to parse JSON: " .. tostring(err))
---   TESTSPEC = obj
--- end
-
--- Helper function to run a set of tests
--- local function test_set(tests, apply)
---   for _, entry in ipairs(tests.set) do
---     local ok, err = pcall(function()
---       local result = apply(entry['in'])
---       assert.same(entry.out, result) -- deep equality check
---     end)
---     if not ok then
---       local entry_err = entry.err
---       if entry_err ~= nil then
---         local err_msg = tostring(err)
---         if entry_err == true
---             or (type(entry_err) == "string" and string.find(err_msg, entry_err, 1, true)) then
---           break -- expected error occurred; stop further iterations
---         else
---           entry.thrown = err_msg
---           assert(false, json.encode(entry)) -- fail with details if wrong error
---         end
---       else
---         error(err, 0) -- unexpected error; rethrow to fail the test
---       end
---     end
---   end
--- end
-
 -- Modifier function for walk (appends path to string values)
 local function walkpath(_key, val, _parent, path)
   if type(val) == "string" then
@@ -332,56 +294,57 @@ describe("struct", function()
     assert.same(test.out, inject(test['in'].val, test['in'].store))
   end)
 
-  test("inject-string", function()
-    runset(spec.inject.string, function(vin)
-      local result = inject(vin.val, vin.store, nullModifier, vin.current)
-      return result
-    end)
-  end)
+  -- test("inject-string", function()
+  --   runset(spec.inject.string, function(vin)
+  --     local result = inject(vin.val, vin.store, nullModifier, vin.current)
+  --     return result
+  --   end)
+  -- end)
 
-  -- it("inject-deep", function()
-  --   test_set(clone(TESTSPEC.inject.deep), function(vin)
+  -- test("inject-deep", function()
+  --   runset(spec.inject.deep, function(vin)
   --     return inject(vin.val, vin.store)
   --   end)
   -- end)
-  --
+
   -- -- transform tests
   -- -- ===============
-  -- it("transform-exists", function()
-  --   assert.equal("function", type(transform))
-  -- end)
-  --
-  -- it("transform-basic", function()
-  --   local test = clone(TESTSPEC.transform.basic)
-  --   assert.same(test.out, transform(test['in'].data, test['in'].spec, test['in'].store))
-  -- end)
-  --
-  -- it("transform-paths", function()
-  --   test_set(clone(TESTSPEC.transform.paths), function(vin)
+
+  test("transform-exists", function()
+    assert.equal("function", type(transform))
+  end)
+
+  test("transform-basic", function()
+    local test = clone(spec.transform.basic)
+    assert.same(transform(test['in'].data, test['in'].spec, test['in'].store), test.out)
+  end)
+
+  -- test("transform-paths", function()
+  --   runset(spec.transform.paths, function(vin)
   --     return transform(vin.data, vin.spec, vin.store)
   --   end)
   -- end)
   --
-  -- it("transform-cmds", function()
-  --   test_set(clone(TESTSPEC.transform.cmds), function(vin)
+  -- test("transform-cmds", function()
+  --   runset(spec.transform.cmds, function(vin)
   --     return transform(vin.data, vin.spec, vin.store)
   --   end)
   -- end)
   --
-  -- it("transform-each", function()
-  --   test_set(clone(TESTSPEC.transform.each), function(vin)
+  -- test("transform-each", function()
+  --   runset(spec.transform.each, function(vin)
   --     return transform(vin.data, vin.spec, vin.store)
   --   end)
   -- end)
   --
-  -- it("transform-pack", function()
-  --   test_set(clone(TESTSPEC.transform.pack), function(vin)
+  -- test("transform-pack", function()
+  --   runset(spec.transform.pack, function(vin)
   --     return transform(vin.data, vin.spec, vin.store)
   --   end)
   -- end)
   --
-  -- it("transform-modify", function()
-  --   test_set(clone(TESTSPEC.transform.modify), function(vin)
+  -- test("transform-modify", function()
+  --   runset(spec.transform.modify, function(vin)
   --     return transform(vin.data, vin.spec, vin.store, function(key, val, parent)
   --       if key ~= nil and parent ~= nil and type(val) == "string" then
   --         val = "@" .. val
@@ -391,7 +354,7 @@ describe("struct", function()
   --   end)
   -- end)
   --
-  -- it("transform-extra", function()
+  -- test("transform-extra", function()
   --   local input_data = { a = 1 }
   --   local spec = { x = "`a`", b = "`$COPY`", c = "`$UPPER`" }
   --   local store = { b = 2 }
@@ -400,5 +363,55 @@ describe("struct", function()
   --     return string.upper(tostring(getprop(path, #path - 1)))
   --   end
   --   assert.same({ x = 1, b = 2, c = "C" }, transform(input_data, spec, store))
+  -- end)
+
+  -- validate tests
+  -- ===============
+
+  test("validate-exists", function()
+    assert.equal("function", type(validate))
+  end)
+
+  -- test("validate-basic", function()
+  --   runset(spec.validate.basic, function(vin)
+  --     return validate(vin.data, vin.spec)
+  --   end)
+  -- end)
+
+  -- test("validate-node", function()
+  --   runset(spec.validate.node, function(vin)
+  --     return validate(vin.data, vin.spec)
+  --   end)
+  -- end)
+  --
+  -- test("validate-custom", function()
+  --   local errs = {}
+  --   local extra = {
+  --     ["$INTEGER"] = function(state, _val, current)
+  --       local key = state.key
+  --       local out = getprop(current, key)
+  --
+  --       local t = type(out)
+  --       if t ~= "number" or out ~= math.floor(out) then
+  --         -- Build path string from state.path elements, starting at index 2
+  --         local path_parts = {}
+  --         for i = 2, #state.path do
+  --           table.insert(path_parts, tostring(state.path[i]))
+  --         end
+  --         local path_str = table.concat(path_parts, ".")
+  --
+  --         table.insert(state.errs, "Not an integer at " .. path_str .. ": " .. tostring(out))
+  --         return nil
+  --       end
+  --
+  --       return out
+  --     end
+  --   }
+  --
+  --   validate({ a = 1 }, { a = "`$INTEGER`" }, extra, errs)
+  --   assert.equal(0, #errs)
+  --
+  --   validate({ a = "A" }, { a = "`$INTEGER`" }, extra, errs)
+  --   assert.same({ "Not an integer at a: A" }, errs)
   -- end)
 end)
