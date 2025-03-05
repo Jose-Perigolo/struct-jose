@@ -866,7 +866,7 @@ function _injectstr(val, store, current, state)
 
     -- For partial injections we do need to convert to string
     if found == nil then
-      return ''
+      return 'null'
     elseif type(found) == 'table' then
       -- Simple table to JSON string conversion
       local json = '{'
@@ -880,6 +880,9 @@ function _injectstr(val, store, current, state)
       end
       json = json .. table.concat(items, ',') .. '}'
       return json
+    elseif type(found) == 'boolean' then
+      -- Handle boolean values properly
+      return found and 'true' or 'false'
     else
       return tostring(found)
     end
