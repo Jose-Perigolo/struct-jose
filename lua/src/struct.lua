@@ -53,15 +53,15 @@ local S = {
   ["DMETA"]    = "`$META`",
 
   -- General strings.
-  ["array"]    = "table",
+  ["array"]    = "array",
   ["base"]     = "base",
   ["boolean"]  = "boolean",
   ["empty"]    = "",
   ["function"] = "function",
   ["number"]   = "number",
-  ["object"]   = "table",
+  ["object"]   = "object",
   ["string"]   = "string",
-  ["null"]     = "none",
+  ["null"]     = "null",
   ["key"]      = "key",
   ["parent"]   = "parent",
   ["BT"]       = "`",

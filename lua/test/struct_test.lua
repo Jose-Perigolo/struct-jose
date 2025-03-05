@@ -78,7 +78,7 @@ local function walkpath(_key, val, _parent, path)
 end
 --
 -- Modifier function to replace "__NULL__" markers with nil (Lua's null equivalent)
-local function nullModifier(key, val, parent)
+local function nullModifier(val, key, parent, _state, _current, _store)
   if val == "__NULL__" then
     setprop(parent, key, nil)
   elseif type(val) == "string" then
