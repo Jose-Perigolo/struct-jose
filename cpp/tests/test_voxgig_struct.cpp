@@ -9,7 +9,7 @@
 
 #define TEST_CASE(TEST_NAME) std::cout << "Running: " << TEST_NAME << " at " << __LINE__ << std::endl;
 
-#define TEST_STRUCT std::cout << "TEST STRUCT " << " at " << __LINE__ << std::endl;
+#define TEST_SUITE(NAME) std::cout << NAME << " " << " at " << __LINE__ << std::endl;
 
 
 using namespace VoxgigStruct;
@@ -88,7 +88,7 @@ int main() {
   auto runset = runparts.runset;
 
 
-  TEST_STRUCT {
+  TEST_SUITE("TEST_STRUCT") {
 
     TEST_CASE("test_minor_isnode") {
       runset(spec["minor"]["isnode"], isnode, { { "fixjson", false } });
