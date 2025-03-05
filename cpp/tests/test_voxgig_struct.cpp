@@ -149,6 +149,10 @@ int main() {
       runset(spec["minor"]["haskey"], haskey, nullptr);
     }
 
+    TEST_CASE("test_minor_items") {
+      runset(spec["minor"]["items"], items, nullptr);
+    }
+
   }
 
   return 0;

@@ -197,4 +197,37 @@ try_access:
     return getprop({val, key}) != nullptr;
   }
 
+  json items(args_container&& args) {
+    json val = args.size() == 0 ? nullptr : std::move(args[0]);
+
+    if(ismap({ val })) {
+      json _items = json::array();
+      for(json::iterator it = val.begin(); it != val.end(); it++) {
+        json pair = json::array();
+        pair.push_back(it.key());
+        pair.push_back(it.value());
+
+        _items.push_back(pair);
+      }
+      return _items;
+
+    } else if(islist({ val })) {
+      json _items = json::array();
+      int i = 0;
+
+      for(json::iterator it = val.begin(); it != val.end(); it++, i++) {
+        json pair = json::array();
+        pair.push_back(i);
+        pair.push_back(it.value());
+        _items.push_back(pair);
+      }
+
+      return _items;
+    } else {
+      return json::array();
+    }
+
+  }
+
+
 }
