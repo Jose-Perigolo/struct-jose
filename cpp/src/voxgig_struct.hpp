@@ -229,5 +229,89 @@ try_access:
 
   }
 
+  json escre(args_container&& args) {
+    json s = args.size() == 0 ? nullptr : std::move(args[0]);
+
+    if(s == nullptr) {
+      s = S::empty;
+    }
+
+    const std::string& s_string = s.get<std::string>();
+
+    const std::regex pattern(R"([.*+?^${}()|[\]\\])");
+
+    return std::regex_replace(s_string, pattern, R"(\$&)");
+
+  }
+
+  json escurl(args_container&& args) {
+    json s = args.size() == 0 ? nullptr : std::move(args[0]);
+
+    if(s == nullptr) {
+      s = S::empty;
+    }
+
+    const std::string& s_string = s.get<std::string>();
+
+    std::ostringstream escaped;
+    escaped.fill('0');
+    escaped << std::hex;
+
+    for (unsigned char c : s_string) {
+      // Encode non-alphanumeric characters except '-' '_' '.' '~'
+      if (isalnum(c) || c == '-' || c == '_' || c == '.' || c == '~') {
+        escaped << c;
+      } else {
+        escaped << '%' << std::uppercase << std::setw(2) << int(c);
+        escaped << std::nouppercase;
+      }
+    }
+
+    return escaped.str();
+  }
+
+  json joinurl(args_container&& args) {
+    json _sarr = args.size() == 0 ? nullptr : std::move(args[0]);
+
+    std::vector<std::string> sarr;
+
+    std::vector<std::string> parts;
+
+    for(json::iterator it = _sarr.begin(); it != _sarr.end(); it++) {
+      json v = it.value();
+      if(v != nullptr && v != "") {
+        sarr.push_back(v.get<std::string>());
+      }
+    }
+
+
+    // Refactor: double loop
+    for (size_t i = 0; i < sarr.size(); ++i) {
+      std::string s = sarr[i];
+
+      if(i == 0) {
+            s = std::regex_replace(s, std::regex(R"(([^/])/+)"), "$1/");
+            s = std::regex_replace(s, std::regex(R"(/+$)"), "");
+      } else {
+            s = std::regex_replace(s, std::regex(R"(([^/])/+)"), "$1/"); // Merge multiple slashes after a character
+            s = std::regex_replace(s, std::regex(R"(^/+)"), ""); // Remove leading slashes
+            s = std::regex_replace(s, std::regex(R"(/+$)"), "");
+      }
+
+      if (!s.empty()) {
+        parts.push_back(s);
+      }
+
+    }
+
+    std::string out = parts.empty() ? "" : std::accumulate(parts.begin() + 1, parts.end(), parts[0],
+        [](const std::string& a, const std::string& b) {
+          return a + "/" + b;
+        });
+
+    return out;
+
+  }
+
 
 }

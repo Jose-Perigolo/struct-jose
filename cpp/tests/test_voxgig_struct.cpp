@@ -153,6 +153,18 @@ int main() {
       runset(spec["minor"]["items"], items, nullptr);
     }
 
+    TEST_CASE("test_minor_escre") {
+      runset(spec["minor"]["escre"], escre, nullptr);
+    }
+
+    TEST_CASE("test_minor_escurl") {
+      runset(spec["minor"]["escurl"], escurl, nullptr);
+    }
+
+    TEST_CASE("test_minor_joinurl") {
+      runset(spec["minor"]["joinurl"], joinurl, { { "fixjson", false } });
+    }
+
   }
 
   return 0;
