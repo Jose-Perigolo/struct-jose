@@ -322,7 +322,7 @@ try_access:
     try {
       _json = val.dump();
     } catch(const json::exception&) {
-      _json = val;
+      _json = val; // TODO: Possibly an edge case
     }
 
     std::string _jsonstr = std::regex_replace(_json.get<std::string>(), std::regex("(\")"), "");
