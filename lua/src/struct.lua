@@ -824,16 +824,6 @@ function _injectstr(val, store, current, state)
     return ''
   end
 
-  -- Pattern examples: "`a.b.c`", "`$NAME`", "`$NAME1`"
-  -- local m = { val:match("^`([$][A-Z]+|[^`]+)[0-9]*`$") }
-
-  -- Full string of the val is an injection
-  -- if m[1] then
-  --   if state then
-  --     state.full = true
-  --   end
-  --   local pathref = m[1]
-
   -- Check for full injection pattern: `path`
   if val:match("^`[^`]+`$") then
     if state then
@@ -868,18 +858,30 @@ function _injectstr(val, store, current, state)
     if found == nil then
       return ''
     elseif type(found) == 'table' then
-      -- Simple table to JSON string conversion
-      local json = '{'
-      local items = {}
-      for k, v in pairs(found) do
-        if type(v) == 'string' then
-          table.insert(items, '"' .. tostring(k) .. '":"' .. v .. '"')
-        else
-          table.insert(items, '"' .. tostring(k) .. '":' .. tostring(v))
+      -- Handle both maps and lists properly
+      if islist(found) then
+        -- Array serialization
+        local items = {}
+        for _, v in ipairs(found) do
+          if type(v) == 'string' then
+            table.insert(items, '"' .. v .. '"')
+          else
+            table.insert(items, tostring(v))
+          end
         end
+        return '[' .. table.concat(items, ',') .. ']'
+      else
+        -- Object serialization
+        local items = {}
+        for k, v in pairs(found) do
+          if type(v) == 'string' then
+            table.insert(items, '"' .. tostring(k) .. '":"' .. v .. '"')
+          else
+            table.insert(items, '"' .. tostring(k) .. '":' .. tostring(v))
+          end
+        end
+        return '{' .. table.concat(items, ',') .. '}'
       end
-      json = json .. table.concat(items, ',') .. '}'
-      return json
     elseif type(found) == 'boolean' then
       -- Handle boolean values properly
       return found and 'true' or 'false'
