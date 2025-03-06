@@ -818,7 +818,11 @@ end
 -- and 999 is any digits, which are discarded. This syntax specifies the name of a transform,
 -- and optionally allows transforms to be ordered by alphanumeric sorting.
 -- Modified _injectstr function
+-- Modified _injectstr function with proper JSON serialization
 function _injectstr(val, store, current, state)
+  -- Load JSON library for proper serialization
+  local json = require("dkjson")
+
   -- Can't inject into non-strings
   if type(val) ~= 'string' then
     return ''
@@ -837,12 +841,12 @@ function _injectstr(val, store, current, state)
       pathref = pathref:gsub("%$BT", S.BT):gsub("%$DS", S.DS)
     end
 
-    -- Get the extracted path reference directly without any string conversion
+    -- Get the extracted path reference directly
     return getpath(pathref, store, current, state)
   end
 
-  -- Check for injections within the string
-  local out = val:gsub("`([^`]+)`", function(ref)
+  -- Use gsub instead of gmatch for more reliable pattern handling
+  local result = val:gsub("`([^`]+)`", function(ref)
     -- Special escapes inside injection
     if #ref > 3 then
       ref = ref:gsub("%$BT", S.BT):gsub("%$DS", S.DS)
@@ -854,67 +858,26 @@ function _injectstr(val, store, current, state)
 
     local found = getpath(ref, store, current, state)
 
-    -- For partial injections we do need to convert to string
+    -- Convert found value to appropriate string representation
     if found == nil then
-      return ''
+      return ""
     elseif type(found) == 'table' then
-      -- Handle both maps and lists properly
-      if islist(found) then
-        -- Array serialization
-        local items = {}
-        for _, v in ipairs(found) do
-          if type(v) == 'string' then
-            table.insert(items, '"' .. v .. '"')
-          else
-            table.insert(items, tostring(v))
-          end
-        end
-        return '[' .. table.concat(items, ',') .. ']'
-      else
-        -- Object serialization
-        local items = {}
-        for k, v in pairs(found) do
-          if type(v) == 'string' then
-            table.insert(items, '"' .. tostring(k) .. '":"' .. v .. '"')
-          else
-            table.insert(items, '"' .. tostring(k) .. '":' .. tostring(v))
-          end
-        end
-        return '{' .. table.concat(items, ',') .. '}'
-      end
+      -- Use JSON encoding for tables to ensure correct formatting
+      return json.encode(found)
     elseif type(found) == 'boolean' then
-      -- Handle boolean values properly
-      return found and 'true' or 'false'
+      return found and "true" or "false"
     else
       return tostring(found)
     end
   end)
 
-  -- Also call the state handler on the entire string, providing the
-  -- option for custom injection
+  -- Call the state handler on the entire string
   if state and state.handler then
     state.full = true
-    out = state.handler(state, out, current, val, store)
+    result = state.handler(state, result, current, val, store)
   end
 
-  return out
-end
-
--- Default inject handler for transforms. If the path resolves to a function,
--- call the function passing the injection state. This is how transforms operate.
-function injecthandler(state, val, current, ref, store)
-  local out = val
-
-  -- Only call val function if it is a special command ($NAME format)
-  if isfunc(val) and
-      (ref == nil or (type(ref) == 'string' and ref:sub(1, 1) == S.DS)) then
-    out = val(state, val, current, store)
-    -- Update parent with value. Ensures references remain in node tree
-  elseif state.mode == S.MVAL and state.full then
-    setprop(state.parent, state.key, val)
-  end
-
-  return out
+  return result
 end
 
 -- Inject values from a data store into a node recursively, resolving paths against the store,
