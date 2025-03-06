@@ -165,6 +165,28 @@ int main() {
       runset(spec["minor"]["joinurl"], joinurl, { { "fixjson", false } });
     }
 
+    TEST_CASE("test_minor_stringify") {
+      JsonFunction stringify_wrapper = [](args_container&& args) -> json {
+        json& vin = args[0];
+        // std::cout << "json vin: " << vin << std::endl;
+        // NOTE: operator[] is not good (isn't the best lookup) for auxiliary space since it creates an empty entry if the value is not found
+        if(!vin.contains("max")) {
+          return stringify({
+              vin.value("val", json(nullptr))
+          });
+        } else {
+          return stringify({
+              vin.value("val", json(nullptr)),
+              vin.value("max", json(nullptr))
+          });
+        }
+      };
+
+      // TODO: Use nullptr for now since we can't have std::function with optional arguments. Instead, we need to rewrite the entire class to implement our own closure and "operator()"
+      runset(spec["minor"]["stringify"], stringify_wrapper, nullptr);
+    }
+
+
   }
 
   return 0;

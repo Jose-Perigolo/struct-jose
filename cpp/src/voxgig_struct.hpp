@@ -313,5 +313,30 @@ try_access:
 
   }
 
+  json stringify(args_container&& args) {
+    json val = args.size() == 0 ? nullptr : std::move(args[0]);
+    json maxlen = args.size() < 2 ? nullptr : std::move(args[1]);
+
+    json _json = S::empty;
+
+    try {
+      _json = val.dump();
+    } catch(const json::exception&) {
+      _json = val;
+    }
+
+    std::string _jsonstr = std::regex_replace(_json.get<std::string>(), std::regex("(\")"), "");
+
+    if(maxlen != nullptr) {
+      int _maxlen = maxlen.get<int>();
+
+      std::string js = _jsonstr.substr(0, _maxlen);
+
+      _jsonstr = _maxlen < _jsonstr.length() ? (js.substr(0, _maxlen-3)) + "..." : _jsonstr;
+    }
+
+    return _jsonstr;
+  }
+
 
 }
