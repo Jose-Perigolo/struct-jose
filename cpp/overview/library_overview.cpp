@@ -149,6 +149,17 @@ int main() {
 
   }
 
+  {
+    json value = 1;
+
+    value = value.dump();
+
+
+    std::string c = value.get<std::string>();
+
+    assert(c == "1");
+  }
+
 /*
      {
   // Provider check
