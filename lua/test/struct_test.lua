@@ -319,12 +319,12 @@ describe("struct", function()
     assert.same(transform(test['in'].data, test['in'].spec, test['in'].store), test.out)
   end)
 
-  -- test("transform-paths", function()
-  --   runset(spec.transform.paths, function(vin)
-  --     return transform(vin.data, vin.spec, vin.store)
-  --   end)
-  -- end)
-  --
+  test("transform-paths", function()
+    runset(spec.transform.paths, function(vin)
+      return transform(vin.data, vin.spec, vin.store)
+    end)
+  end)
+
   -- test("transform-cmds", function()
   --   runset(spec.transform.cmds, function(vin)
   --     return transform(vin.data, vin.spec, vin.store)
