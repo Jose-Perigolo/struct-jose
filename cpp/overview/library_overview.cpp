@@ -142,6 +142,13 @@ int main() {
 
   }
 
+  {
+    assert(json::parse(R"({"a": 1})") == json::parse(R"({"a": 1.0})"));
+    assert(json::parse(R"({"a": 1})") != json::parse(R"({"a": 1.1})"));
+    assert(json::parse(R"({"a": 1})") == json::parse(R"({"a": 1})"));
+
+  }
+
 /*
      {
   // Provider check
