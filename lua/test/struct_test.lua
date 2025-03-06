@@ -301,11 +301,11 @@ describe("struct", function()
     end)
   end)
 
-  -- test("inject-deep", function()
-  --   runset(spec.inject.deep, function(vin)
-  --     return inject(vin.val, vin.store)
-  --   end)
-  -- end)
+  test("inject-deep", function()
+    runset(spec.inject.deep, function(vin)
+      return inject(vin.val, vin.store)
+    end)
+  end)
 
   -- -- transform tests
   -- -- ===============
