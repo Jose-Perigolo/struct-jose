@@ -18,27 +18,37 @@ import (
 // String constants (mirroring the TypeScript S object).
 
 const (
-	MKEYPRE  = "key:pre"
-	MKEYPOST = "key:post"
-	MVAL     = "val"
+	// Mode value for inject step.
+	S_MKEYPRE  = "key:pre"
+	S_MKEYPOST = "key:post"
+	S_MVAL     = "val"
+	S_MKEY     = "key"
 
-	TKEY  = "`$KEY`"
-	TMETA = "`$META`"
+	// Special keys.
+	S_TKEY  = "`$KEY`"
+	S_TMETA = "`$META`"
+	S_DTOP  = "$TOP"
+	S_DERRS = "$ERRS"
 
-	KEY  = "KEY"
-	DTOP = "$TOP"
-
-	OBJECT   = "object"
-	NUMBER   = "number"
-	STRING   = "string"
-	FUNCTION = "function"
-	EMPTY    = ""
-	BASE     = "Base"
-
-	BT = "`"
-	DS = "$"
-	DT = "."
+	// General strings.
+	S_array    = "array"
+	S_base     = "base"
+	S_boolean  = "boolean"
+	S_empty    = ""
+	S_function = "function"
+	S_number   = "number"
+	S_object   = "object"
+	S_string   = "string"
+	S_null     = "null"
+	S_key      = "key"
+	S_parent   = "parent"
+	S_BT       = "`"
+	S_DS       = "$"
+	S_DT       = "."
+	S_KEY      = "KEY"
 )
+
+var UNDEF interface{} = nil
 
 // ---------------------------------------------------------------------
 // Basic type aliases to replicate the TS definitions.
@@ -51,9 +61,9 @@ type PropKey interface{}
 type InjectMode string
 
 const (
-	InjectModeKeyPre  InjectMode = MKEYPRE
-	InjectModeKeyPost InjectMode = MKEYPOST
-	InjectModeVal     InjectMode = MVAL
+	InjectModeKeyPre  InjectMode = S_MKEYPRE
+	InjectModeKeyPost InjectMode = S_MKEYPOST
+	InjectModeVal     InjectMode = S_MVAL
 )
 
 // Injection replicates the recursive state used during injection.
@@ -193,7 +203,7 @@ func IsList(val interface{}) bool {
 func IsKey(key interface{}) bool {
 	switch k := key.(type) {
 	case string:
-		return k != EMPTY
+		return k != S_empty
 	case int, float64, int8, int16, int32, int64:
 		return true
 	case uint8, uint16, uint32, uint64, uint, float32:
@@ -203,7 +213,6 @@ func IsKey(key interface{}) bool {
 	}
 }
 
-
 // Check for an "empty" value - nil, empty string, array, object.
 func IsEmpty(val interface{}) bool {
 	if val == nil {
@@ -211,7 +220,7 @@ func IsEmpty(val interface{}) bool {
 	}
 	switch vv := val.(type) {
 	case string:
-		return vv == EMPTY
+		return vv == S_empty
 	case []interface{}:
 		return len(vv) == 0
 	case map[string]interface{}:
@@ -220,202 +229,13 @@ func IsEmpty(val interface{}) bool {
 	return false
 }
 
-// ---------------------------------------------------------------------
-// Misc string utilities
-
-// Stringify attempts to JSON-stringify `val`, then remove quotes, for debug printing.
-// If maxlen is provided, the string is truncated.
-func Stringify(val interface{}, maxlen ...int) string {
-	// if nil == val {
-	//   return "null"
-	// }
-
-	b, err := json.Marshal(val)
-	if err != nil {
-		// fallback
-		return ""
-	}
-	jsonStr := string(b)
-
-	// Remove double quotes from the edges if they exist.
-	jsonStr = strings.ReplaceAll(jsonStr, `"`, "")
-
-	if len(maxlen) > 0 && maxlen[0] > 0 {
-		ml := maxlen[0]
-		if len(jsonStr) > ml {
-			// ensure space for "..."
-			if ml >= 3 {
-				jsonStr = jsonStr[:ml-3] + "..."
-			} else {
-				// fallback
-				jsonStr = jsonStr[:ml]
-			}
-		}
-	}
-
-	return jsonStr
+// Value is a function.
+func IsFunc(val interface{}) bool {
+	return reflect.ValueOf(val).Kind() == reflect.Func
 }
 
-// EscRe escapes a string for use in a regular expression.
-func EscRe(s string) string {
-	if s == "" {
-		return ""
-	}
-	// In TS, /[.*+?^${}()|[\]\\]/g => \\$&
-	re := regexp.MustCompile(`[.*+?^${}()|\[\]\\]`)
-	return re.ReplaceAllString(s, `\${0}`)
-}
-
-// EscUrl escapes a string for safe inclusion in a URL.
-func EscUrl(s string) string {
-	return url.QueryEscape(s)
-}
-
-// ---------------------------------------------------------------------
-// Items lists the key/value pairs (like Object.entries).
-
-func Keys(val interface{}) []string {
-	if IsMap(val) {
-		m := val.(map[string]interface{})
-
-		keys := make([]string, 0, len(m))
-		for k := range m {
-			keys = append(keys, k)
-		}
-
-		sort.Strings(keys)
-
-		return keys
-
-	} else if IsList(val) {
-		arr := val.([]interface{})
-		keys := make([]string, len(arr))
-		for i := range arr {
-			keys[i] = strKey(i)
-		}
-		return keys
-	}
-
-	return make([]string, 0)
-}
-
-func SortedKeys(val interface{}, ckey string) []string {
-	type pair struct {
-		k string
-		c string
-	}
-
-	if IsMap(val) {
-		m := val.(map[string]interface{})
-
-		pairs := make([]pair, 0, len(m))
-		for k, v := range m {
-			pairs = append(pairs, pair{k: k, c: strKey(GetProp(v, ckey))})
-		}
-
-		sort.Slice(pairs, func(i, j int) bool {
-			return pairs[i].c < pairs[j].c
-		})
-
-		keys := make([]string, len(pairs))
-		for i, pair := range pairs {
-			keys[i] = pair.k
-		}
-
-		return keys
-
-	} else if IsList(val) {
-		arr := val.([]interface{})
-		keys := make([]string, len(arr))
-		for i := range arr {
-			keys[i] = strKey(i)
-		}
-		return keys
-	}
-
-	return make([]string, 0)
-}
-
-func Items(val interface{}) [][2]interface{} {
-	if IsMap(val) {
-		m := val.(map[string]interface{})
-		out := make([][2]interface{}, 0, len(m))
-
-		// Step 1: Extract and sort keys
-		keys := make([]string, 0, len(m))
-		for k := range m {
-			keys = append(keys, k)
-		}
-		sort.Strings(keys) // Ensures deterministic order
-
-		// Step 2: Iterate over sorted keys
-		for _, k := range keys {
-			out = append(out, [2]interface{}{k, m[k]})
-		}
-		return out
-	} else if IsList(val) {
-		arr := val.([]interface{})
-		out := make([][2]interface{}, 0, len(arr))
-		for i, v := range arr {
-			out = append(out, [2]interface{}{i, v})
-		}
-		return out
-	}
-	return nil
-}
-
-// ---------------------------------------------------------------------
-// Clone a JSON-like data structure using JSON round-trips.
-
-func Clone(val interface{}) interface{} {
-	return CloneFlags(val, nil)
-}
-
-func CloneFlags(val interface{}, flags map[string]bool) interface{} {
-	if val == nil {
-		return nil
-	}
-
-	if nil == flags {
-		flags = map[string]bool{}
-	}
-
-  if _, ok := flags["func"]; !ok {
-    flags["func"] = true
-  }
-
-  
-	typ := reflect.TypeOf(val)
-	if typ.Kind() == reflect.Func {
-		if flags["func"] {
-			return val
-		}
-		return nil
-	}
-
-	switch v := val.(type) {
-	case map[string]interface{}:
-		// Clone each entry in the map recursively.
-		newMap := make(map[string]interface{}, len(v))
-		for key, value := range v {
-			newMap[key] = CloneFlags(value, flags)
-		}
-		return newMap
-	case []interface{}:
-		// Clone each element in the slice recursively.
-		newSlice := make([]interface{}, len(v))
-		for i, value := range v {
-			newSlice[i] = CloneFlags(value, flags)
-		}
-		return newSlice
-	default:
-		return v
-	}
-}
-
-// ---------------------------------------------------------------------
-// GetProp: safely get val[key], or alt if missing.
-
+// Safely get a property of a node. Undefined arguments return undefined.
+// If the key is not found, return the alternative value.
 func GetProp(val interface{}, key interface{}, alt ...interface{}) interface{} {
 	var out interface{}
 
@@ -480,6 +300,203 @@ func GetProp(val interface{}, key interface{}, alt ...interface{}) interface{} {
 
 	return out
 }
+
+func KeysOf(val interface{}) []string {
+	if IsMap(val) {
+		m := val.(map[string]interface{})
+
+		keys := make([]string, 0, len(m))
+		for k := range m {
+			keys = append(keys, k)
+		}
+
+		sort.Strings(keys)
+
+		return keys
+
+	} else if IsList(val) {
+		arr := val.([]interface{})
+		keys := make([]string, len(arr))
+		for i := range arr {
+			keys[i] = strKey(i)
+		}
+		return keys
+	}
+
+	return make([]string, 0)
+}
+
+// Value of property with name key in node val is defined.
+func HasKey(val interface{}, key interface{}) bool {
+	return nil != GetProp(val, key)
+}
+
+// EscRe escapes a string for use in a regular expression.
+func EscRe(s string) string {
+	if s == "" {
+		return ""
+	}
+	re := regexp.MustCompile(`[.*+?^${}()|\[\]\\]`)
+	return re.ReplaceAllString(s, `\${0}`)
+}
+
+// EscUrl escapes a string for safe inclusion in a URL.
+func EscUrl(s string) string {
+	return url.QueryEscape(s)
+}
+
+var (
+	reNonSlashSlash = regexp.MustCompile(`([^/])/+`)
+	reTrailingSlash = regexp.MustCompile(`/+$`)
+	reLeadingSlash  = regexp.MustCompile(`^/+`)
+)
+
+// Concatenate url part strings, merging forward slashes as needed.
+func JoinUrl(parts []interface{}) string {
+	var filtered []string
+	for _, p := range parts {
+		if "" != p && nil != p {
+			ps, ok := p.(string)
+			if !ok {
+				ps = Stringify(p)
+			}
+			filtered = append(filtered, ps)
+		}
+	}
+
+	for i, s := range filtered {
+		s = reNonSlashSlash.ReplaceAllString(s, `$1/`)
+
+		if i == 0 {
+			s = reTrailingSlash.ReplaceAllString(s, "")
+		} else {
+			s = reLeadingSlash.ReplaceAllString(s, "")
+			s = reTrailingSlash.ReplaceAllString(s, "")
+		}
+		filtered[i] = s
+	}
+
+	finalParts := filtered[:0]
+	for _, s := range filtered {
+		if s != "" {
+			finalParts = append(finalParts, s)
+		}
+	}
+
+	return strings.Join(finalParts, "/")
+}
+
+func Items(val interface{}) [][2]interface{} {
+	if IsMap(val) {
+		m := val.(map[string]interface{})
+		out := make([][2]interface{}, 0, len(m))
+
+		// Step 1: Extract and sort keys
+		keys := make([]string, 0, len(m))
+		for k := range m {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys) // Ensures deterministic order
+
+		// Step 2: Iterate over sorted keys
+		for _, k := range keys {
+			out = append(out, [2]interface{}{k, m[k]})
+		}
+		return out
+	} else if IsList(val) {
+		arr := val.([]interface{})
+		out := make([][2]interface{}, 0, len(arr))
+		for i, v := range arr {
+			out = append(out, [2]interface{}{i, v})
+		}
+		return out
+	}
+	return nil
+}
+
+// Stringify attempts to JSON-stringify `val`, then remove quotes, for debug printing.
+// If maxlen is provided, the string is truncated.
+func Stringify(val interface{}, maxlen ...int) string {
+	// if nil == val {
+	//   return "null"
+	// }
+
+	b, err := json.Marshal(val)
+	if err != nil {
+		// fallback
+		return ""
+	}
+	jsonStr := string(b)
+
+	// Remove double quotes from the edges if they exist.
+	jsonStr = strings.ReplaceAll(jsonStr, `"`, "")
+
+	if len(maxlen) > 0 && maxlen[0] > 0 {
+		ml := maxlen[0]
+		if len(jsonStr) > ml {
+			// ensure space for "..."
+			if ml >= 3 {
+				jsonStr = jsonStr[:ml-3] + "..."
+			} else {
+				// fallback
+				jsonStr = jsonStr[:ml]
+			}
+		}
+	}
+
+	return jsonStr
+}
+
+// ---------------------------------------------------------------------
+// Clone a JSON-like data structure using JSON round-trips.
+
+func Clone(val interface{}) interface{} {
+	return CloneFlags(val, nil)
+}
+
+func CloneFlags(val interface{}, flags map[string]bool) interface{} {
+	if val == nil {
+		return nil
+	}
+
+	if nil == flags {
+		flags = map[string]bool{}
+	}
+
+	if _, ok := flags["func"]; !ok {
+		flags["func"] = true
+	}
+
+	typ := reflect.TypeOf(val)
+	if typ.Kind() == reflect.Func {
+		if flags["func"] {
+			return val
+		}
+		return nil
+	}
+
+	switch v := val.(type) {
+	case map[string]interface{}:
+		// Clone each entry in the map recursively.
+		newMap := make(map[string]interface{}, len(v))
+		for key, value := range v {
+			newMap[key] = CloneFlags(value, flags)
+		}
+		return newMap
+	case []interface{}:
+		// Clone each element in the slice recursively.
+		newSlice := make([]interface{}, len(v))
+		for i, value := range v {
+			newSlice[i] = CloneFlags(value, flags)
+		}
+		return newSlice
+	default:
+		return v
+	}
+}
+
+// ---------------------------------------------------------------------
+// GetProp: safely get val[key], or alt if missing.
 
 // ---------------------------------------------------------------------
 // SetProp: safely set val[key] = newval (or delete if newval==nil).
@@ -593,6 +610,13 @@ func (e *ParseIntError) Error() string {
 func Walk(
 	val interface{},
 	apply WalkApply,
+) interface{} {
+	return WalkDescend(val, apply, nil, nil, nil)
+}
+
+func WalkDescend(
+	val interface{},
+	apply WalkApply,
 	key *string,
 	parent interface{},
 	path []string,
@@ -603,7 +627,7 @@ func Walk(
 			ckey := kv[0]
 			child := kv[1]
 			ckeyStr := strKey(ckey)
-			newChild := Walk(child, apply, &ckeyStr, val, append(path, ckeyStr))
+			newChild := WalkDescend(child, apply, &ckeyStr, val, append(path, ckeyStr))
 			val = SetProp(val, ckey, newChild)
 		}
 
@@ -620,87 +644,89 @@ func Walk(
 // ---------------------------------------------------------------------
 // Merge: merges an array of nodes from left to right; later override earlier.
 
-func Merge(src interface{}) interface{} {
-	if !IsList(src) {
-		return src
+func Merge(val interface{}) interface{} {
+	var out interface{} = UNDEF
+
+	if !IsList(val) {
+		return val
 	}
 
-	var out interface{}
+	list := listify(val)
+	lenlist := len(list)
 
-	objs := listify(src)
+	if 0 == lenlist {
+		return UNDEF
+	}
 
-	if len(objs) == 0 {
-		out = nil
+	if 1 == lenlist {
+		return list[0]
+	}
 
-	} else if len(objs) == 1 {
-		out = objs[0]
+	out = GetProp(list, 0, make(map[string]interface{}))
 
-	} else {
-		out = objs[0]
+	// Merge the rest onto the first
+	for i := 1; i < lenlist; i++ {
+		obj := list[i]
 
-		// Merge the rest onto the first
-		for i := 1; i < len(objs); i++ {
-			obj := objs[i]
+		if !IsNode(obj) {
 
-			if !IsNode(obj) {
+			// Nodes win.
+			out = obj
 
-				// Nodes win.
+		} else {
+			// Nodes win, also over nodes of a different kind.
+			if !IsNode(out) ||
+				(IsMap(obj) && IsList(out)) ||
+				(IsList(obj) && IsMap(out)) {
+
 				out = obj
 
 			} else {
-				// Nodes win, also over nodes of a different kind.
-				if !IsNode(out) ||
-					(IsMap(obj) && IsList(out)) ||
-					(IsList(obj) && IsMap(out)) {
 
-					out = obj
+				var cur []interface{} = make([]interface{}, 11)
+				cI := 0
+				cur[cI] = out
 
-				} else {
+				merger := func(
+					key *string,
+					val interface{},
+					parent interface{},
+					path []string,
+				) interface{} {
 
-					var cur []interface{} = make([]interface{}, 11)
-					cI := 0
-					cur[cI] = out
-
-					Walk(obj, func(
-						key *string,
-						val interface{},
-						parent interface{},
-						path []string,
-					) interface{} {
-
-						if nil == key {
-							return val
-						}
-
-						lenpath := len(path)
-						cI = lenpath - 1
-
-						if nil == cur[cI] {
-							cur[cI] = GetPath(path[:lenpath-1], out)
-						}
-
-						if nil == cur[cI] {
-							if IsList(parent) {
-								cur[cI] = make([]interface{}, 0)
-							} else {
-								cur[cI] = make(map[string]interface{})
-							}
-						}
-
-						if IsNode(val) {
-							cur[cI] = SetProp(cur[cI], *key, cur[cI+1])
-							cur[cI+1] = nil
-
-						} else {
-							cur[cI] = SetProp(cur[cI], *key, val)
-						}
-
+					if nil == key {
 						return val
+					}
 
-					}, nil, nil, nil)
+					lenpath := len(path)
+					cI = lenpath - 1
 
-					out = cur[0]
+					if nil == cur[cI] {
+						cur[cI] = GetPath(path[:lenpath-1], out)
+					}
+
+					if nil == cur[cI] {
+						if IsList(parent) {
+							cur[cI] = make([]interface{}, 0)
+						} else {
+							cur[cI] = make(map[string]interface{})
+						}
+					}
+
+					if IsNode(val) && !IsEmpty(val) {
+						cur[cI] = SetProp(cur[cI], *key, cur[cI+1])
+						cur[cI+1] = nil
+
+					} else {
+						cur[cI] = SetProp(cur[cI], *key, val)
+					}
+
+					return val
 				}
+
+				Walk(obj, merger)
+
+				out = cur[0]
 			}
 		}
 	}
@@ -747,9 +773,9 @@ func GetPathState(path interface{}, store interface{}, current interface{}, stat
 
 	case string:
 		if pp == "" {
-			parts = []string{EMPTY}
+			parts = []string{S_empty}
 		} else {
-			parts = strings.Split(pp, DT)
+			parts = strings.Split(pp, S_DT)
 		}
 	default:
 		if IsList(path) {
@@ -759,14 +785,14 @@ func GetPathState(path interface{}, store interface{}, current interface{}, stat
 		}
 	}
 
-	if nil == path || nil == store || (1 == len(parts) && EMPTY == parts[0]) {
-		val = GetProp(store, GetProp(state, BASE), store)
+	if nil == path || nil == store || (1 == len(parts) && S_empty == parts[0]) {
+		val = GetProp(store, GetProp(state, S_base), store)
 
 	} else if 0 < len(parts) {
 
 		pI := 0
 
-		if parts[0] == EMPTY {
+		if parts[0] == S_empty {
 			pI = 1
 			root = current
 		}
@@ -780,7 +806,7 @@ func GetPathState(path interface{}, store interface{}, current interface{}, stat
 
 		val = first
 		if pI == 0 && first == nil {
-			val = GetProp(GetProp(root, (GetProp(state, BASE))), *part)
+			val = GetProp(GetProp(root, (GetProp(state, S_base))), *part)
 		}
 
 		pI++
@@ -826,8 +852,8 @@ func injectStr(val string, store interface{}, current interface{}, state *Inject
 
 		// Special escapes
 		if len(ref) > 3 {
-			ref = strings.ReplaceAll(ref, "$BT", BT)
-			ref = strings.ReplaceAll(ref, "$DS", DS)
+			ref = strings.ReplaceAll(ref, "$BT", S_BT)
+			ref = strings.ReplaceAll(ref, "$DS", S_DS)
 		}
 		out := GetPathState(ref, store, current, state)
 
@@ -840,8 +866,8 @@ func injectStr(val string, store interface{}, current interface{}, state *Inject
 	out := partialRe.ReplaceAllStringFunc(val, func(m string) string {
 		inner := strings.Trim(m, "`")
 		if len(inner) > 3 {
-			inner = strings.ReplaceAll(inner, "$BT", BT)
-			inner = strings.ReplaceAll(inner, "$DS", DS)
+			inner = strings.ReplaceAll(inner, "$BT", S_BT)
+			inner = strings.ReplaceAll(inner, "$DS", S_DS)
 		}
 		if state != nil {
 			state.Full = false
@@ -853,7 +879,6 @@ func injectStr(val string, store interface{}, current interface{}, state *Inject
 		}
 		switch fv := found.(type) {
 		case map[string]interface{}, []interface{}:
-			// for partial injection, JSON-stringify
 			b, _ := json.Marshal(fv)
 			return string(b)
 		default:
@@ -903,27 +928,27 @@ func InjectState(
 	// Create state if at the root
 	if state == nil {
 		parent := map[string]interface{}{
-			DTOP: val,
+			S_DTOP: val,
 		}
 		state = &Injection{
 			Mode:    InjectModeVal,
 			Full:    false,
 			KeyI:    0,
-			Keys:    []string{DTOP},
-			Key:     DTOP,
+			Keys:    []string{S_DTOP},
+			Key:     S_DTOP,
 			Val:     val,
 			Parent:  parent,
-			Path:    []string{DTOP},
+			Path:    []string{S_DTOP},
 			Nodes:   []interface{}{parent},
 			Handler: injectHandler,
-			Base:    DTOP,
+			Base:    S_DTOP,
 			Modify:  modify,
 		}
 	}
 
 	if current == nil {
 		current = map[string]interface{}{
-			DTOP: store,
+			S_DTOP: store,
 		}
 	} else {
 		if len(state.Path) > 1 {
@@ -934,14 +959,13 @@ func InjectState(
 
 	// Descend into node
 	if IsNode(val) {
-
-		childkeys := Keys(val)
+		childkeys := KeysOf(val)
 
 		var normalKeys []string
 		var transformKeys []string
 		for _, k := range childkeys {
 			// If k includes `$`, treat it as a transform key
-			if strings.Contains(k, DS) {
+			if strings.Contains(k, S_DS) {
 				transformKeys = append(transformKeys, k)
 			} else {
 				normalKeys = append(normalKeys, k)
@@ -984,7 +1008,7 @@ func InjectState(
 				injectStr(origKey, store, current, childState)
 			}
 		}
-	} else if valType == STRING {
+	} else if valType == S_string {
 		state.Mode = InjectModeVal
 		strVal, ok := val.(string)
 		if ok {
@@ -1000,7 +1024,7 @@ func InjectState(
 	}
 
 	// Return possibly updated root
-	return GetProp(state.Parent, DTOP)
+	return GetProp(state.Parent, S_DTOP)
 }
 
 // ---------------------------------------------------------------------
@@ -1083,16 +1107,16 @@ var Transform_KEY InjectHandler = func(
 	}
 
 	// If there's a `"$KEY"` property, that indicates the "name" of the key
-	keyspec := GetProp(state.Parent, TKEY)
+	keyspec := GetProp(state.Parent, S_TKEY)
 	if keyspec != nil {
-		// remove the TKEY property
-		SetProp(state.Parent, TKEY, nil)
+		// remove the S_TKEY property
+		SetProp(state.Parent, S_TKEY, nil)
 		return GetProp(current, keyspec)
 	}
 
-	// If no TKEY property, fallback to the parent's stored key in TMETA => KEY
-	tmeta := GetProp(state.Parent, TMETA)
-	pkey := GetProp(tmeta, KEY)
+	// If no S_TKEY property, fallback to the parent's stored key in S_TMETA => KEY
+	tmeta := GetProp(state.Parent, S_TMETA)
+	pkey := GetProp(tmeta, S_KEY)
 	if pkey != nil {
 		return pkey
 	}
@@ -1113,7 +1137,7 @@ var Transform_META InjectHandler = func(
 	current interface{},
 	store interface{},
 ) interface{} {
-	SetProp(state.Parent, TMETA, nil)
+	SetProp(state.Parent, S_TMETA, nil)
 	return nil
 }
 
@@ -1129,8 +1153,8 @@ var Transform_MERGE InjectHandler = func(
 	}
 	if state.Mode == InjectModeKeyPost {
 		args := GetProp(state.Parent, state.Key)
-		if args == EMPTY {
-			args = []interface{}{GetProp(store, DTOP)}
+		if args == S_empty {
+			args = []interface{}{GetProp(store, S_DTOP)}
 		} else if IsList(args) {
 			// do nothing
 		} else {
@@ -1216,8 +1240,8 @@ var Transform_EACH InjectHandler = func(
 			// record the key in TMeta => KEY
 			setp, ok := cclone.(map[string]interface{})
 			if ok {
-				setp[TMETA] = map[string]interface{}{
-					KEY: k,
+				setp[S_TMETA] = map[string]interface{}{
+					S_KEY: k,
 				}
 			}
 			newlist = append(newlist, cclone)
@@ -1231,7 +1255,7 @@ var Transform_EACH InjectHandler = func(
 
 	// Build parallel `current` for injection
 	tcur = map[string]interface{}{
-		DTOP: tcur,
+		S_DTOP: tcur,
 	}
 
 	// Perform sub-injection
@@ -1275,7 +1299,7 @@ var Transform_PACK InjectHandler = func(
 
 	srcpath := args[0]
 	child := Clone(args[1])
-	keyprop := GetProp(child, TKEY)
+	keyprop := GetProp(child, S_TKEY)
 
 	tkey := ""
 	if len(state.Path) >= 2 {
@@ -1299,13 +1323,13 @@ var Transform_PACK InjectHandler = func(
 		tmp := make([]interface{}, 0, len(m))
 		for k, v := range m {
 			// carry forward the KEY in TMeta
-			vmeta := GetProp(v, TMETA)
+			vmeta := GetProp(v, S_TMETA)
 			if vmeta == nil {
 				vmeta = map[string]interface{}{}
-				SetProp(v, TMETA, vmeta)
+				SetProp(v, S_TMETA, vmeta)
 			}
 			vm := vmeta.(map[string]interface{})
-			vm[KEY] = k
+			vm[S_KEY] = k
 			tmp = append(tmp, v)
 		}
 		srclist = tmp
@@ -1320,8 +1344,8 @@ var Transform_PACK InjectHandler = func(
 	if childKey == nil {
 		childKey = keyprop
 	}
-	// remove TKEY so it doesn’t interfere
-	SetProp(child, TKEY, nil)
+	// remove S_TKEY so it doesn’t interfere
+	SetProp(child, S_TKEY, nil)
 
 	tval := map[string]interface{}{}
 	tcurrent := map[string]interface{}{}
@@ -1331,14 +1355,14 @@ var Transform_PACK InjectHandler = func(
 		if kstr, ok := kname.(string); ok && kstr != "" {
 			tval[kstr] = Clone(child)
 			if _, ok2 := tval[kstr].(map[string]interface{}); ok2 {
-				SetProp(tval[kstr], TMETA, GetProp(item, TMETA))
+				SetProp(tval[kstr], S_TMETA, GetProp(item, S_TMETA))
 			}
 			tcurrent[kstr] = item
 		}
 	}
 
 	tcur := map[string]interface{}{
-		DTOP: tcurrent,
+		S_DTOP: tcurrent,
 	}
 
 	tvalout := InjectState(tval, store, state.Modify, tcur, nil)
@@ -1373,7 +1397,7 @@ func TransformModify(
 		for _, kv := range pairs {
 			k, _ := kv[0].(string)
 			v := kv[1]
-			if strings.HasPrefix(k, DS) {
+			if strings.HasPrefix(k, S_DS) {
 				extraTransforms[k] = v
 			} else {
 				extraData[k] = v
@@ -1390,11 +1414,11 @@ func TransformModify(
 	// The injection store with transform functions
 	store := map[string]interface{}{
 		// Merged data is at $TOP
-		DTOP: dataClone,
+		S_DTOP: dataClone,
 
 		// Handy escapes
-		"$BT": func() interface{} { return BT },
-		"$DS": func() interface{} { return DS },
+		"$BT": func() interface{} { return S_BT },
+		"$DS": func() interface{} { return S_DS },
 
 		// Insert current date/time
 		"$WHEN": func() interface{} {
@@ -1418,6 +1442,43 @@ func TransformModify(
 
 	out := InjectState(spec, store, modify, store, nil)
 	return out
+}
+
+func SortedKeys(val interface{}, ckey string) []string {
+	type pair struct {
+		k string
+		c string
+	}
+
+	if IsMap(val) {
+		m := val.(map[string]interface{})
+
+		pairs := make([]pair, 0, len(m))
+		for k, v := range m {
+			pairs = append(pairs, pair{k: k, c: strKey(GetProp(v, ckey))})
+		}
+
+		sort.Slice(pairs, func(i, j int) bool {
+			return pairs[i].c < pairs[j].c
+		})
+
+		keys := make([]string, len(pairs))
+		for i, pair := range pairs {
+			keys[i] = pair.k
+		}
+
+		return keys
+
+	} else if IsList(val) {
+		arr := val.([]interface{})
+		keys := make([]string, len(arr))
+		for i := range arr {
+			keys[i] = strKey(i)
+		}
+		return keys
+	}
+
+	return make([]string, 0)
 }
 
 // DEBUG

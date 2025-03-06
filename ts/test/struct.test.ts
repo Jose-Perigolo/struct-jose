@@ -53,6 +53,7 @@ function nullModifier(
 }
 
 
+// NOTE: tests are in order of increasing dependence.
 describe('struct', async () => {
 
   const { spec, runset } =
@@ -96,38 +97,47 @@ describe('struct', async () => {
     equal('function', typeof escurl)
     equal('function', typeof getprop)
     equal('function', typeof haskey)
+
     equal('function', typeof isempty)
     equal('function', typeof isfunc)
     equal('function', typeof iskey)
     equal('function', typeof islist)
     equal('function', typeof ismap)
+
     equal('function', typeof isnode)
     equal('function', typeof items)
     equal('function', typeof joinurl)
     equal('function', typeof keysof)
     equal('function', typeof setprop)
+
     equal('function', typeof stringify)
   })
+
 
   test('minor-isnode', async () => {
     await runset(spec.minor.isnode, isnode)
   })
 
+
   test('minor-ismap', async () => {
     await runset(spec.minor.ismap, ismap)
   })
+
 
   test('minor-islist', async () => {
     await runset(spec.minor.islist, islist)
   })
 
+
   test('minor-iskey', async () => {
     await runset(spec.minor.iskey, iskey)
   })
 
+
   test('minor-isempty', async () => {
     await runset(spec.minor.isempty, isempty)
   })
+
 
   test('minor-isfunc', async () => {
     await runset(spec.minor.isfunc, isfunc)
@@ -136,46 +146,56 @@ describe('struct', async () => {
     equal(isfunc(() => null), true)
   })
 
+
   test('minor-clone', async () => {
     await runset(spec.minor.clone, clone)
     const f0 = () => null
     deepEqual({ a: f0 }, clone({ a: f0 }))
   })
 
+
   test('minor-escre', async () => {
     await runset(spec.minor.escre, escre)
   })
 
+
   test('minor-escurl', async () => {
     await runset(spec.minor.escurl, escurl)
   })
+
 
   test('minor-stringify', async () => {
     await runset(spec.minor.stringify, (vin: any) =>
       null == vin.max ? stringify(vin.val) : stringify(vin.val, vin.max))
   })
 
+
   test('minor-items', async () => {
     await runset(spec.minor.items, items)
   })
+
 
   test('minor-getprop', async () => {
     await runset(spec.minor.getprop, (vin: any) =>
       null == vin.alt ? getprop(vin.val, vin.key) : getprop(vin.val, vin.key, vin.alt))
   })
 
+
   test('minor-setprop', async () => {
     await runset(spec.minor.setprop, (vin: any) =>
       setprop(vin.parent, vin.key, vin.val))
   })
 
+
   test('minor-haskey', async () => {
     await runset(spec.minor.haskey, haskey)
   })
 
+
   test('minor-keysof', async () => {
     await runset(spec.minor.keysof, keysof)
   })
+
 
   test('minor-joinurl', async () => {
     await runset(spec.minor.joinurl, joinurl)

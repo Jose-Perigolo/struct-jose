@@ -193,8 +193,8 @@ keysof: {
     { in: {a:1}, out: [a] }
     { in: {a:2,b:3}, out: [a,b] }
     { in: {b:4,a:5}, out: [a,b] }
-    { in: [a], out: [0] }
-    { in: [a,b], out: [0,1] }
+    { in: [a], out: ['0'] }
+    { in: [a,b], out: ['0','1'] }
   ]
 }
 
@@ -228,7 +228,7 @@ haskey: {
 setprop: {
   set: [
     { in: { parent: {}, key: x, val: 1,  }, out: {x:1} }
-    { in: { key: x, val: 1,  } }
+    { in: { key: x, val: 1 } }
     { in: { parent: {}, val: 1 }, out: {} }
     { in: { parent: {}, key: x }, out: {} }
 

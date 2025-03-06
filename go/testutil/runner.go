@@ -32,15 +32,9 @@ type StructUtility struct {
 	CloneFlags func(val interface{}, flags map[string]bool) interface{}
 	GetPath    func(path interface{}, store interface{}) interface{}
 	Inject     func(val interface{}, store interface{}) interface{}
-	Items      func(val interface{}) [][2]interface{} // each element => [key, value]
+	Items      func(val interface{}) [][2]interface{}
 	Stringify  func(val interface{}, maxlen ...int) string
-	Walk       func(
-		val interface{},
-		apply voxgigstruct.WalkApply,
-		key *string,
-		parent interface{},
-		path []string,
-	) interface{}
+	Walk       func(val interface{}, apply voxgigstruct.WalkApply) interface{}
 }
 
 type RunSet func(
@@ -52,16 +46,15 @@ type RunSet func(
 type RunSetFlags func(
 	t *testing.T,
 	testspec interface{},
-  flags map[string]bool,
+	flags map[string]bool,
 	testsubject interface{},
 )
 
 type RunPack struct {
-	Spec   map[string]interface{}
-	RunSet RunSet
-  RunSetFlags RunSetFlags
+	Spec        map[string]interface{}
+	RunSet      RunSet
+	RunSetFlags RunSetFlags
 }
-
 
 type TestPack struct {
 	Client  Client
@@ -70,7 +63,6 @@ type TestPack struct {
 }
 
 type Subject func(args ...interface{}) (interface{}, error)
-
 
 func Runner(
 	name string,
@@ -100,26 +92,29 @@ func Runner(
 	var runsetFlags RunSetFlags = func(
 		t *testing.T,
 		testspec interface{},
-    flags map[string]bool,
+		flags map[string]bool,
 		testsubject interface{},
 	) {
-    if nil == flags {
-      flags = map[string]bool{}
-    }
+		if nil == flags {
+			flags = map[string]bool{}
+		}
 
-    if _, ok := flags["json_null"]; !ok {
-      flags["json_null"] = true
-    }
+		if _, ok := flags["json_null"]; !ok {
+			flags["json_null"] = true
+		}
 
-    jsonFlags := map[string]bool{
-      "null": flags["json_null"],
-    }
-    
+		jsonFlags := map[string]bool{
+			"null": flags["json_null"],
+		}
+
 		if testsubject != nil {
 			subject = subjectify(testsubject)
 		}
 
-		var testspecmap = fixJSONFlags(testspec.(map[string]interface{}), jsonFlags).(map[string]interface{})
+		var testspecmap = fixJSONFlags(
+			testspec.(map[string]interface{}),
+			jsonFlags,
+		).(map[string]interface{})
 
 		set, ok := testspecmap["set"].([]interface{})
 		if !ok {
@@ -128,7 +123,8 @@ func Runner(
 		}
 
 		for _, entryVal := range set {
-			entry := entryVal.(map[string]interface{})
+			// entry := entryVal.(map[string]interface{})
+			entry := resolveEntry(entryVal, jsonFlags)
 
 			testpack, err := resolveTestPack(name, entry, subject, client, clients)
 			if err != nil {
@@ -140,10 +136,12 @@ func Runner(
 
 			res, err := testpack.Subject(args...)
 
-      res = fixJSONFlags(res, jsonFlags)
-      
+			res = fixJSONFlags(res, jsonFlags)
+
 			entry["res"] = res
 			entry["thrown"] = err
+
+			// fmt.Println("ENTRY-RESULT", entry)
 
 			if nil == err {
 				checkResult(t, entry, res, structUtil)
@@ -158,16 +156,30 @@ func Runner(
 		testspec interface{},
 		testsubject interface{},
 	) {
-    runsetFlags(t, testspec, nil, testsubject)
-  }
-  
+		runsetFlags(t, testspec, nil, testsubject)
+	}
+
 	return &RunPack{
-		Spec:   spec,
-		RunSet: runset,
-    RunSetFlags: runsetFlags,
+		Spec:        spec,
+		RunSet:      runset,
+		RunSetFlags: runsetFlags,
 	}, nil
 }
 
+func resolveEntry(entryVal interface{}, jsonFlags map[string]bool) map[string]interface{} {
+	entry := entryVal.(map[string]interface{})
+
+	if jsonFlags["null"] {
+
+		// Where `out` is missing in the test spec, set it to the special null symbol __NULL__
+		_, has := entry["out"]
+		if !has {
+			entry["out"] = "__NULL__"
+		}
+	}
+
+	return entry
+}
 
 func checkResult(
 	t *testing.T,
@@ -372,8 +384,8 @@ func resolveTestPack(
 }
 
 func resolveSpec(
-  name string,
-  testfile string,
+	name string,
+	testfile string,
 ) map[string]interface{} {
 
 	data, err := os.ReadFile(filepath.Join(".", testfile))
@@ -528,9 +540,6 @@ func MatchNode(
 			}
 			return val
 		},
-		nil,
-		nil,
-		nil,
 	)
 	return pass, err
 }
@@ -572,7 +581,6 @@ func MatchScalar(check, base interface{}, structUtil *StructUtility) bool {
 	return pass
 }
 
-
 func subjectify(fn interface{}) Subject {
 	v := reflect.ValueOf(fn)
 	if v.Kind() != reflect.Func {
@@ -583,13 +591,13 @@ func subjectify(fn interface{}) Subject {
 
 	return func(args ...interface{}) (interface{}, error) {
 
-    argCount := fnType.NumIn()
+		argCount := fnType.NumIn()
 
-    if len(args) < argCount {
-      extended := make([]interface{}, argCount)
-      copy(extended, args)
-      args = extended
-    }
+		if len(args) < argCount {
+			extended := make([]interface{}, argCount)
+			copy(extended, args)
+			args = extended
+		}
 
 		// Build reflect.Value slice for call
 		in := make([]reflect.Value, fnType.NumIn())
@@ -641,7 +649,6 @@ func subjectify(fn interface{}) Subject {
 		}
 	}
 }
-
 
 func fixJSON(data interface{}) interface{} {
 	return fixJSONFlags(data, map[string]bool{
