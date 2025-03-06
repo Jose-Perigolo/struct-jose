@@ -294,12 +294,12 @@ describe("struct", function()
     assert.same(test.out, inject(test['in'].val, test['in'].store))
   end)
 
-  -- test("inject-string", function()
-  --   runset(spec.inject.string, function(vin)
-  --     local result = inject(vin.val, vin.store, nullModifier, vin.current)
-  --     return result
-  --   end)
-  -- end)
+  test("inject-string", function()
+    runset(spec.inject.string, function(vin)
+      local result = inject(vin.val, vin.store, nullModifier, vin.current)
+      return result
+    end)
+  end)
 
   -- test("inject-deep", function()
   --   runset(spec.inject.deep, function(vin)

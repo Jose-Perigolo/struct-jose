@@ -122,12 +122,12 @@ end
 -- Value is a defined string (non-empty) or integer key.
 local function iskey(key)
   local keytype = type(key)
-  return (keytype == 'string' and key ~= '') or keytype == 'number'
+  return (keytype == S.string and key ~= S.empty and key ~= 'null') or keytype == 'number'
 end
 
 -- Check for an "empty" value - undefined, empty string, array, object.
 local function isempty(val)
-  if val == UNDEF or val == '' then
+  if val == UNDEF or val == '' or val == 'null' then
     return true
   end
 
@@ -866,7 +866,7 @@ function _injectstr(val, store, current, state)
 
     -- For partial injections we do need to convert to string
     if found == nil then
-      return 'null'
+      return ''
     elseif type(found) == 'table' then
       -- Simple table to JSON string conversion
       local json = '{'

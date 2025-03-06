@@ -2,6 +2,9 @@ local json = require("dkjson")
 local lfs = require("lfs")
 local luassert = require("luassert")
 
+-- Custom null value as a string
+local NULL_STRING = "null"
+
 local function readFileSync(path)
   local file = io.open(path, "r")
   if not file then error("Cannot open file: " .. path) end
@@ -79,7 +82,9 @@ local function runner(name, store, testfile, provider)
       utility.struct.clone, utility.struct.getpath, utility.struct.inject,
       utility.struct.items, utility.struct.stringify, utility.struct.walk
 
-  local alltests = json.decode(readFileSync(join(lfs.currentdir(), testfile)))
+  -- Parse with custom null handler
+  local content = readFileSync(join(lfs.currentdir(), testfile))
+  local alltests = json.decode(content, 1, NULL_STRING) -- Using 1,NULL_STRING format
 
   -- TODO: a more coherent namespace perhaps?
   local spec = (alltests.primary and alltests.primary[name]) or alltests[name] or alltests
@@ -136,7 +141,13 @@ local function runner(name, store, testfile, provider)
 
         if entry.match == nil or entry.out ~= nil then
           -- NOTE: don't use clone as we want to strip functions
-          deepEqual(res ~= nil and json.decode(json.encode(res)) or res, entry.out)
+          if res ~= nil then
+            local json_str = json.encode(res)
+            local decoded = json.decode(json_str, 1, NULL_STRING) -- Use same format here
+            deepEqual(decoded, entry.out)
+          else
+            deepEqual(res, entry.out)
+          end
         end
 
         if entry.match then
