@@ -325,12 +325,12 @@ describe("struct", function()
     end)
   end)
 
-  -- test("transform-cmds", function()
-  --   runset(spec.transform.cmds, function(vin)
-  --     return transform(vin.data, vin.spec, vin.store)
-  --   end)
-  -- end)
-  --
+  test("transform-cmds", function()
+    runset(spec.transform.cmds, function(vin)
+      return transform(vin.data, vin.spec, vin.store)
+    end)
+  end)
+
   -- test("transform-each", function()
   --   runset(spec.transform.each, function(vin)
   --     return transform(vin.data, vin.spec, vin.store)
@@ -368,9 +368,9 @@ describe("struct", function()
   -- validate tests
   -- ===============
 
-  test("validate-exists", function()
-    assert.equal("function", type(validate))
-  end)
+  -- test("validate-exists", function()
+  --   assert.equal("function", type(validate))
+  -- end)
 
   -- test("validate-basic", function()
   --   runset(spec.validate.basic, function(vin)

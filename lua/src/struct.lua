@@ -852,10 +852,20 @@ function _injectstr(val, store, current, state)
       end
     end
 
+    -- FIX: Check if result is a function and call it with proper parameters
+    if type(result) == 'function' then
+      if state ~= nil then
+        -- For transform functions that expect state
+        result = result(state, val, current)
+      else
+        -- For simple utility functions that don't need parameters
+        result = result()
+      end
+    end
+
     return result
   end
 
-  -- The rest of the function remains the same...
   -- Use gsub for pattern replacing
   local result = val:gsub("`([^`]+)`", function(ref)
     -- Special escapes inside injection
@@ -881,6 +891,15 @@ function _injectstr(val, store, current, state)
     -- Convert found value to appropriate string representation
     if found == nil then
       return ""
+    elseif type(found) == 'function' then
+      -- FIX: Call the function with proper parameters
+      if state ~= nil then
+        -- For transform functions that expect state
+        return tostring(found(state, val, current))
+      else
+        -- For simple utility functions that don't need parameters
+        return tostring(found())
+      end
     elseif type(found) == 'table' then
       return json.encode(found)
     elseif type(found) == 'boolean' then
@@ -1069,6 +1088,23 @@ function inject(val, store, modify, current, state)
   return getprop(state.parent, S.DTOP)
 end
 
+-- Delete a property from the parent node
+-- Format: { key: '`$DELETE`' }
+local function transform_DELETE(state, _val, _current)
+  local mode, key, parent = state.mode, state.key, state.parent
+
+  if mode == S.MKEYPRE then
+    return key
+  end
+
+  if mode == S.MKEYPOST then
+    -- Delete the property
+    setprop(parent, key, UNDEF)
+  end
+
+  return UNDEF
+end
+
 -- Copy value from source data
 local function transform_COPY(state, _val, current)
   local mode, key, parent = state.mode, state.key, state.parent
@@ -1117,7 +1153,7 @@ end
 -- If the value is an array, the elements are first merged using `merge`.
 -- If the value is the empty string, merge the top level store.
 -- Format: { '`$MERGE`': '`source-path`' | ['`source-paths`', ...] }
-local function transform_MERGE(state, _val, store)
+local function transform_MERGE(state, val, store)
   local mode, key, parent = state.mode, state.key, state.parent
 
   if mode == S.MKEYPRE then return key end
@@ -1125,19 +1161,24 @@ local function transform_MERGE(state, _val, store)
   -- Operate after child values have been transformed
   if mode == S.MKEYPOST then
     local args = getprop(parent, key)
-    args = args == '' and { store["$TOP"] } or (type(args) == 'table' and args or { args })
+
+    if args == S.empty or args == nil then
+      args = { store["$TOP"] }
+    elseif not islist(args) then
+      args = { args }
+    end
 
     -- Remove the $MERGE command
     setprop(parent, key, UNDEF)
 
-    -- Literals in the parent have precedence, but we still merge onto
-    -- the parent object, so that node tree references are not changed
+    -- Create the mergelist exactly as in TypeScript
     local mergelist = { parent }
     for _, arg in ipairs(args) do
       table.insert(mergelist, arg)
     end
     table.insert(mergelist, clone(parent))
 
+    -- Let the merge function do all the work
     merge(mergelist)
 
     return key
