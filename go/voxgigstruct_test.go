@@ -187,15 +187,6 @@ func LoadTestSpec(filename string) (FullTest, error) {
 	return testSpec, nil
 }
 
-// walkPath mimics the TS function walkpath,
-// appending path info to any string values.
-func walkPath(k *string, val interface{}, parent interface{}, path []string) interface{} {
-	if str, ok := val.(string); ok {
-		return str + "~" + strings.Join(path, ".") // fmt.Sprint(path)
-	}
-	return val
-}
-
 type TestProvider struct{}
 
 func (p *TestProvider) Test(opts map[string]interface{}) (runner.Client, error) {
@@ -240,13 +231,13 @@ func TestStruct(t *testing.T) {
 	var minor = spec["minor"].(map[string]interface{})
 	var walk = spec["walk"].(map[string]interface{})
 	var merge = spec["merge"].(map[string]interface{})
+	var getpath = spec["getpath"].(map[string]interface{})
 	// var inject = spec["inject"].(map[string]interface{})
 	// var transform = spec["transform"].(map[string]interface{})
 	// var validate = spec["validate"].(map[string]interface{})
 
-	// =========================
 	// minor tests
-	// =========================
+	// ===========
 
 	t.Run("minor-exists", func(t *testing.T) {
 		checks := map[string]interface{}{
@@ -336,6 +327,11 @@ func TestStruct(t *testing.T) {
 		runset(t, minor["stringify"], func(v interface{}) interface{} {
 			m := v.(map[string]interface{})
 			val := m["val"]
+
+			if "__NULL__" == val {
+				val = "null"
+			}
+
 			max, hasMax := m["max"]
 			if !hasMax || nil == max {
 				return voxgigstruct.Stringify(val)
@@ -343,6 +339,41 @@ func TestStruct(t *testing.T) {
 				return voxgigstruct.Stringify(val, int(max.(int)))
 			}
 		})
+	})
+
+	t.Run("minor-pathify", func(t *testing.T) {
+		runsetFlags(
+			t,
+			minor["pathify"],
+			map[string]bool{"json_null": true},
+			func(v interface{}) interface{} {
+				m := v.(map[string]interface{})
+				path := m["path"]
+				from, hasFrom := m["from"]
+
+				// NOTE: JSON null is not really nil, so special handling needed since
+				// the JSON parser does give us nil for null!
+				if "__NULL__" == m["path"] {
+					path = nil
+				}
+
+				pathstr := ""
+
+				if !hasFrom || nil == from {
+					pathstr = voxgigstruct.Pathify(path)
+				} else {
+					pathstr = voxgigstruct.Pathify(path, int(from.(int)))
+				}
+
+				if "__NULL__" == m["path"] {
+					pathstr = strings.ReplaceAll(pathstr, ">", ":null>")
+				}
+
+				pathstr = strings.ReplaceAll(pathstr, "__NULL__.", "")
+
+				return pathstr
+			},
+		)
 	})
 
 	t.Run("minor-items", func(t *testing.T) {
@@ -396,9 +427,8 @@ func TestStruct(t *testing.T) {
 		runsetFlags(t, minor["joinurl"], map[string]bool{"json_null": false}, voxgigstruct.JoinUrl)
 	})
 
-	// =========================
 	// walk tests
-	// =========================
+	// ==========
 
 	t.Run("walk-exists", func(t *testing.T) {
 		fnVal := reflect.ValueOf(voxgigstruct.Walk)
@@ -407,18 +437,51 @@ func TestStruct(t *testing.T) {
 		}
 	})
 
+	t.Run("walk-log", func(t *testing.T) {
+		test := voxgigstruct.Clone(walk["log"]).(map[string]interface{})
+
+		var log []interface{}
+
+		walklog := func(k *string, v interface{}, p interface{}, t []string) interface{} {
+			var ks string
+			if nil == k {
+				ks = ""
+			} else {
+				ks = *k
+			}
+			entry := "k=" + voxgigstruct.Stringify(ks) +
+				", v=" + voxgigstruct.Stringify(v) +
+				", p=" + voxgigstruct.Stringify(p) +
+				", t=" + voxgigstruct.Pathify(t)
+			log = append(log, entry)
+			return v
+		}
+
+		voxgigstruct.Walk(test["in"], walklog)
+
+		if !reflect.DeepEqual(log, test["out"]) {
+			t.Errorf("log mismatch:\n got:  %v\n want: %v\n", log, test["out"])
+		}
+	})
+
 	t.Run("walk-basic", func(t *testing.T) {
+		walkpath := func(k *string, val interface{}, parent interface{}, path []string) interface{} {
+			if str, ok := val.(string); ok {
+				return str + "~" + strings.Join(path, ".")
+			}
+			return val
+		}
+
 		runset(t, walk["basic"], func(v interface{}) interface{} {
 			if "__NULL__" == v {
 				v = nil
 			}
-			return voxgigstruct.Walk(v, walkPath)
+			return voxgigstruct.Walk(v, walkpath)
 		})
 	})
 
-	// =========================
 	// merge tests
-	// =========================
+	// ===========
 
 	t.Run("merge-exists", func(t *testing.T) {
 		fnVal := reflect.ValueOf(voxgigstruct.Merge)
@@ -441,93 +504,79 @@ func TestStruct(t *testing.T) {
 		runset(t, merge["cases"], voxgigstruct.Merge)
 	})
 
+	t.Run("merge-array", func(t *testing.T) {
+		runset(t, merge["array"], voxgigstruct.Merge)
+	})
+
+	// getpath tests
+	// =============
+
+	t.Run("getpath-exists", func(t *testing.T) {
+		fnVal := reflect.ValueOf(voxgigstruct.GetPath)
+		if fnVal.Kind() != reflect.Func {
+			t.Errorf("getpath should be a function, but got %s", fnVal.Kind().String())
+		}
+	})
+
+	t.Run("getpath-basic", func(t *testing.T) {
+		runset(t, getpath["basic"], func(v interface{}) interface{} {
+			m := v.(map[string]interface{})
+			path := m["path"]
+			store := m["store"]
+
+			return voxgigstruct.GetPath(path, store)
+		})
+	})
+
+	t.Run("getpath-current", func(t *testing.T) {
+		runset(t, getpath["current"], func(v interface{}) interface{} {
+			m := v.(map[string]interface{})
+			path := m["path"]
+			store := m["store"]
+			current := m["current"]
+			return voxgigstruct.GetPathState(path, store, current, nil)
+		})
+	})
+
+	t.Run("getpath-state", func(t *testing.T) {
+		state := &voxgigstruct.Injection{
+			Handler: func(
+				s *voxgigstruct.Injection,
+				val interface{},
+				cur interface{},
+				ref string,
+				st interface{},
+			) interface{} {
+				out := voxgigstruct.Stringify(s.Meta["step"]) + ":" + voxgigstruct.Stringify(val)
+				s.Meta["step"] = 1 + s.Meta["step"].(int)
+				// fmt.Println("QQQ",val,out, s)
+				return out
+			},
+			Mode:   "val",
+			Full:   false,
+			KeyI:   0,
+			Keys:   []string{"$TOP"},
+			Key:    "$TOP",
+			Val:    "",
+			Parent: nil,
+			Path:   []string{"$TOP"},
+			Nodes:  make([]interface{}, 1),
+			Base:   "$TOP",
+			Errs:   make([]interface{}, 0),
+			Meta:   map[string]interface{}{"step": 0},
+		}
+
+		runset(t, getpath["state"], func(v interface{}) interface{} {
+			m := v.(map[string]interface{})
+			path := m["path"]
+			store := m["store"]
+			current := m["current"]
+
+			return voxgigstruct.GetPathState(path, store, current, state)
+		})
+	})
+
 	/*
-
-		t.Run("merge-array", func(t *testing.T) {
-			runTestSet(t, testSpec["merge"]["array"], func(in interface{}) interface{} {
-				return voxgigstruct.Merge(in)
-			})
-		})
-
-		// =========================
-		// getpath tests
-		// =========================
-
-		// getpath-exists
-		t.Run("getpath-exists", func(t *testing.T) {
-			fnVal := reflect.ValueOf(voxgigstruct.GetPath)
-			if fnVal.Kind() != reflect.Func {
-				t.Errorf("getpath should be a function, but got %s", fnVal.Kind().String())
-			}
-		})
-
-		// getpath-basic
-		t.Run("getpath-basic", func(t *testing.T) {
-			runTestSet(t, testSpec["getpath"]["basic"], func(v interface{}) interface{} {
-				m, ok := v.(map[string]interface{})
-				if !ok {
-					return nil
-				}
-				path := m["path"]
-				store := m["store"]
-
-				return voxgigstruct.GetPath(path, store)
-			})
-		})
-
-		// getpath-current
-		t.Run("getpath-current", func(t *testing.T) {
-			runTestSet(t, testSpec["getpath"]["current"], func(v interface{}) interface{} {
-				m, ok := v.(map[string]interface{})
-				if !ok {
-					return nil
-				}
-				path := m["path"]
-				store := m["store"]
-				current := m["current"]
-				return voxgigstruct.GetPathState(path, store, current, nil)
-			})
-		})
-
-		// getpath-state
-		t.Run("getpath-state", func(t *testing.T) {
-			step := 0
-
-			runTestSet(t, testSpec["getpath"]["state"], func(v interface{}) interface{} {
-				m, ok := v.(map[string]interface{})
-				if !ok {
-					return nil
-				}
-				path := m["path"]
-				store := m["store"]
-				current := m["current"]
-
-				// We'll define a custom state in Go.
-				state := &voxgigstruct.Injection{
-					Handler: func(s *voxgigstruct.Injection, val interface{}, cur interface{}, st interface{}) interface{} {
-						// out := fmt.Sprintf("%d:%v", s.Step, val)
-						// s.Step++
-						out := fmt.Sprintf("%d:%v", step, val)
-						step++
-						return out
-					},
-					// Step:   0,
-					Mode:   "val",
-					Full:   false,
-					KeyI:   0,
-					Keys:   []string{"$TOP"},
-					Key:    "$TOP",
-					Val:    "",
-					Parent: nil,
-					Path:   []string{"$TOP"},
-					Nodes:  make([]interface{}, 1),
-					Base:   "$TOP",
-				}
-
-				return voxgigstruct.GetPathState(path, store, current, state)
-			})
-		})
-
 		// =========================
 		// inject tests
 		// =========================

@@ -20,6 +20,7 @@ import {
   joinurl,
   keysof,
   merge,
+  pathify,
   setprop,
   stringify,
   transform,
@@ -28,15 +29,12 @@ import {
 } from '../dist/struct'
 
 import type {
-  InjectState
+  Injection
 } from '../dist/struct'
 
 import { runner } from './runner'
 
 
-function walkpath(_key: any, val: any, _parent: any, path: any) {
-  return 'string' === typeof val ? val + '~' + path.join('.') : val
-}
 
 
 function nullModifier(
@@ -170,6 +168,11 @@ describe('struct', async () => {
   })
 
 
+  test('minor-pathify', async () => {
+    await runset(spec.minor.pathify, (vin: any) => pathify(vin.path, vin.from))
+  })
+
+
   test('minor-items', async () => {
     await runset(spec.minor.items, items)
   })
@@ -210,7 +213,28 @@ describe('struct', async () => {
     equal('function', typeof walk)
   })
 
+  test('walk-log', async () => {
+    const test = clone(spec.walk.log)
+
+    const log: string[] = []
+
+    function walklog(key: any, val: any, parent: any, path: any) {
+      log.push('k=' + stringify(key) +
+        ', v=' + stringify(val) +
+        ', p=' + stringify(parent) +
+        ', t=' + pathify(path))
+      return val
+    }
+
+    walk(test.in, walklog)
+    deepEqual(log, test.out)
+  })
+
   test('walk-basic', async () => {
+    function walkpath(_key: any, val: any, _parent: any, path: any) {
+      return 'string' === typeof val ? val + '~' + path.join('.') : val
+    }
+
     await runset(spec.walk.basic, (vin: any) => walk(vin, walkpath))
   })
 
@@ -265,7 +289,7 @@ describe('struct', async () => {
   })
 
   test('getpath-state', async () => {
-    const state: InjectState = {
+    const state: Injection = {
       handler: (state: any, val: any, _current: any, _ref: any, _store: any) => {
         let out = state.meta.step + ':' + val
         state.meta.step++

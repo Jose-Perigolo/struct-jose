@@ -164,6 +164,10 @@ items: {
   set: [
     { in: {a:11}, out: [['a',11]] }
     { in: {a:1,b:2}, out: [['a',1],['b',2]] }
+
+    # Keys are sorted.
+    { in: {b:22,a:21}, out: [['a',21],['b',22]] }
+        
     { in: {a:{x:1},b:{x:2},c:{x:3}}, out: [['a',{x:1}],['b',{x:2}],['c',{x:3}]] }
     { in: {a:[111],b:[222],c:[333],d:[444]},
       out: [['a',[111]],['b',[222]],['c',[333]],['d',[444]]] }
@@ -275,11 +279,59 @@ stringify: {
     { in: { val: 1 }, out: '1' }
     { in: { val: 'a' }, out: 'a' }
     { in: { val: false }, out: 'false' }
+    { in: { val: null }, out: 'null' }
+    { in: { }, out: '' }
     { in: { val: [2,'b',true] }, out: '[2,b,true]' }
     { in: { val: [[3],{x:1}] }, out: '[[3],{x:1}]' }
     { in: { val: {x:4,y:'c',z:false} }, out: '{x:4,y:c,z:false}' }
     { in: { val: {x:{y:5,z:'d'},y:[6]} }, out: '{x:{y:5,z:d},y:[6]}' }
     { in: { val: {x:{y:5,z:'d'},y:[6]}, max:10 }, out: '{x:{y:5...' }
+  ]
+}
+
+
+pathify: {
+  set: [
+    { in: { path: [a] }, out:'a' }
+    { in: { path: [a,b] }, out:'a.b' }
+    { in: { path: [a,b,c] }, out:'a.b.c' }
+    { in: { path: [a,b,c,d] }, out:'a.b.c.d' }
+    { in: { path: [a,b,c,d,e] }, out:'a.b.c.d.e' }
+    { in: { path: [0] }, out:'0' }
+    { in: { path: [1] }, out:'1' }
+    { in: { path: [2,3] }, out:'2.3' }
+    { in: { path: [4,5,6] }, out:'4.5.6' }
+    { in: { path: [7,f,8,g,9,h] }, out:'7.f.8.g.9.h' }
+    { in: { path: ['11',22,'33',44.4,'55.5'] }, out:'11.22.33.44.555' }
+    { in: { path: [a,true,null,[],{},1] }, out:'a.1' }
+    { in: { path: [] }, out:'<root>' }
+    { in: { path: a }, out:'a' }
+    { in: { path: 1 }, out:'1' }
+    { in: { path: true }, out:'<unknown-path:true>' }
+    { in: { path: {} }, out:'<unknown-path:{}>' }
+    { in: { path: null }, out:'<unknown-path:null>' }
+    { in: { }, out:'<unknown-path>' }
+
+    { in: { path: [A], from: 1 }, out:'<root>' }
+    { in: { path: [A,b], from: 1 }, out:'b' }
+    { in: { path: [A,b,c], from: 1 }, out:'b.c' }
+    { in: { path: [A,b,c,d], from: 1 }, out:'b.c.d' }
+    { in: { path: [A,b,c,d,e], from: 1 }, out:'b.c.d.e' }
+    { in: { path: [0], from: 1 }, out:'<root>' }
+    { in: { path: [11], from: 1 }, out:'<root>' }
+    { in: { path: [22,33], from: 1 }, out:'33' }
+    { in: { path: [44,55,66], from: 1 }, out:'55.66' }
+    { in: { path: [77,f,88,g,99,h], from: 1 }, out:'f.88.g.99.h' }
+    { in: { path: ['111',222,'333',444.4,'555.5'], from: 1 }, out:'222.333.444.5555' }
+    { in: { path: [A,true,null,[],{},1], from: 1 }, out:'1' }
+    { in: { path: [], from: 1 }, out:'<root>' }
+    { in: { path: a, from: 1 }, out:'<root>' }
+    { in: { from: 1 }, out:'<unknown-path>' }
+    { in: { path: 1, from: 1 }, out:'<root>' }
+    { in: { path: true, from: 1 }, out:'<unknown-path:true>' }
+    { in: { path: {}, from: 1 }, out:'<unknown-path:{}>' }
+    { in: { path: null, from: 1 }, out:'<unknown-path:null>' }
+    { in: { from: 1 }, out:'<unknown-path>' }
   ]
 }
 

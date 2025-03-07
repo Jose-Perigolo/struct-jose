@@ -4,9 +4,6 @@ const node_test_1 = require("node:test");
 const node_assert_1 = require("node:assert");
 const struct_1 = require("../dist/struct");
 const runner_1 = require("./runner");
-function walkpath(_key, val, _parent, path) {
-    return 'string' === typeof val ? val + '~' + path.join('.') : val;
-}
 function nullModifier(key, val, parent) {
     if ("__NULL__" === val) {
         (0, struct_1.setprop)(parent, key, null);
@@ -101,6 +98,9 @@ function nullModifier(key, val, parent) {
     (0, node_test_1.test)('minor-stringify', async () => {
         await runset(spec.minor.stringify, (vin) => null == vin.max ? (0, struct_1.stringify)(vin.val) : (0, struct_1.stringify)(vin.val, vin.max));
     });
+    (0, node_test_1.test)('minor-pathify', async () => {
+        await runset(spec.minor.pathify, (vin) => (0, struct_1.pathify)(vin.path, vin.from));
+    });
     (0, node_test_1.test)('minor-items', async () => {
         await runset(spec.minor.items, struct_1.items);
     });
@@ -124,7 +124,23 @@ function nullModifier(key, val, parent) {
     (0, node_test_1.test)('walk-exists', async () => {
         (0, node_assert_1.equal)('function', typeof struct_1.walk);
     });
+    (0, node_test_1.test)('walk-log', async () => {
+        const test = (0, struct_1.clone)(spec.walk.log);
+        const log = [];
+        function walklog(key, val, parent, path) {
+            log.push('k=' + (0, struct_1.stringify)(key) +
+                ', v=' + (0, struct_1.stringify)(val) +
+                ', p=' + (0, struct_1.stringify)(parent) +
+                ', t=' + (0, struct_1.pathify)(path));
+            return val;
+        }
+        (0, struct_1.walk)(test.in, walklog);
+        (0, node_assert_1.deepEqual)(log, test.out);
+    });
     (0, node_test_1.test)('walk-basic', async () => {
+        function walkpath(_key, val, _parent, path) {
+            return 'string' === typeof val ? val + '~' + path.join('.') : val;
+        }
         await runset(spec.walk.basic, (vin) => (0, struct_1.walk)(vin, walkpath));
     });
     // merge tests
