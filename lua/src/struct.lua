@@ -1431,12 +1431,6 @@ local function transform(
     [S.DS .. 'KEY'] = transform_KEY,
     [S.DS .. 'META'] = transform_META,
     [S.DS .. 'MERGE'] = transform_MERGE,
-    -- Add numbered merge variants
-    [S.DS .. 'MERGE0'] = transform_MERGE,
-    [S.DS .. 'MERGE1'] = transform_MERGE,
-    [S.DS .. 'MERGE2'] = transform_MERGE,
-    [S.DS .. 'MERGE3'] = transform_MERGE,
-    [S.DS .. 'MERGE4'] = transform_MERGE,
     [S.DS .. 'EACH'] = transform_EACH,
     [S.DS .. 'PACK'] = transform_PACK,
   }
