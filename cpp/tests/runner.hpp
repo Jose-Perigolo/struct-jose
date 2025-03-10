@@ -40,9 +40,11 @@ class assertion_error : public std::exception {
 
 RunnerResult runner(const std::string& name, const json& store, const std::string& testfile, const Provider& provider) {
 
+  using hash_utility = hash_table<std::string, Utility>;
+
   Provider client = provider.test();
 
-  auto utility = client.utility();
+  hash_utility utility = client.utility();
 
   Utility _struct = utility["struct"];
 

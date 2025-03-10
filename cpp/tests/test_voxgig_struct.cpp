@@ -43,11 +43,11 @@ struct Struct : public Utility {
         { "getprop", getprop },
         { "keysof", keysof },
         { "haskey", haskey },
+        { "items", items },
+        { "escre", escre },
+        { "joinurl", joinurl },
+        { "stringify", stringify },
     });
-  }
-
-  function_pointer& operator[](const std::string& key) {
-    return get_key(key);
   }
 
   ~Struct() = default;
