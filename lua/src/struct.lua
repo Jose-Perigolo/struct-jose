@@ -966,22 +966,28 @@ function inject(val, store, modify, current, state)
       end
     end
 
-    -- Continue with regular node processing
-    -- Keys are sorted alphanumerically to ensure determinism
+    -- UPDATED KEY SORTING LOGIC HERE
     local origkeys = {}
     if ismap(val) then
       local nonDSKeys = {}
       local dsKeys = {}
 
+      -- Separate transform keys from regular keys
       for k, _ in pairs(val) do
-        if not string.find(tostring(k), S.DS) then
-          table.insert(nonDSKeys, k)
-        else
+        local strKey = tostring(k)
+        if string.match(strKey, S.DS) then
           table.insert(dsKeys, k)
+        else
+          table.insert(nonDSKeys, k)
         end
       end
 
-      table.sort(dsKeys)
+      -- Sort transform keys alphabetically - this is critical for $MERGE0/$MERGE1 ordering
+      table.sort(dsKeys, function(a, b)
+        return tostring(a) < tostring(b)
+      end)
+
+      -- Apply non-transform keys first, then transform keys in alphabetical order
       for _, k in ipairs(nonDSKeys) do
         table.insert(origkeys, k)
       end
@@ -989,16 +995,15 @@ function inject(val, store, modify, current, state)
         table.insert(origkeys, k)
       end
     else
+      -- For arrays, maintain index order
       for i = 1, #val do
         table.insert(origkeys, i)
       end
     end
 
-    -- The rest of the node processing code remains the same
+    -- Process each key in order
     local okI = 1
     while okI <= #origkeys do
-      -- Process each key as before
-      -- ...
       local origkey = tostring(origkeys[okI])
 
       local childpath = {}
@@ -1143,89 +1148,119 @@ local function transform_META(state)
   return UNDEF
 end
 
-local function transform_MERGE(state, val, store)
+-- transform_MERGE merges data from different sources into the parent object
+local function transform_MERGE(state, _val, store)
   local mode, key, parent = state.mode, state.key, state.parent
 
+  -- Handle key:pre mode by returning the key unchanged
   if mode == S.MKEYPRE then
     return key
   end
 
-  if mode == S.MKEYPOST then
-    -- Get the args - could be a string, list, or empty
-    local args = getprop(parent, key)
+  -- Only process further in key:post mode
+  if mode ~= S.MKEYPOST then
+    return UNDEF
+  end
 
-    if args == S.empty or args == nil then
-      args = { store[S.DTOP] }
-    elseif not islist(args) then
-      args = { args }
+  -- Get the argument value - could be string, list, or empty
+  local argval = getprop(parent, key)
+
+  -- Process the argument value into a list of data sources to merge
+  local args = {}
+
+  -- Empty string case - use top level data
+  if argval == S.empty or argval == "" or argval == nil then
+    table.insert(args, store[S.DTOP])
+    -- String path case - resolve the path
+  elseif type(argval) == 'string' and argval:match("^`([^`]+)`$") then
+    local pathref = argval:sub(2, -2)
+    local resolved = getpath(pathref, store, UNDEF, state)
+    if resolved ~= nil then
+      table.insert(args, resolved)
     end
-
-    -- Process each argument to handle backtick paths
-    local processed_args = {}
-    for i, arg in ipairs(args) do
+    -- Array of paths case - resolve each path
+  elseif islist(argval) then
+    for i, arg in ipairs(argval) do
       if type(arg) == 'string' and arg:match("^`([^`]+)`$") then
         local pathref = arg:sub(2, -2)
         local resolved = getpath(pathref, store, UNDEF, state)
-        table.insert(processed_args, resolved)
-      else
-        table.insert(processed_args, arg)
-      end
-    end
-    args = processed_args
-
-    -- Remove the $MERGE command
-    setprop(parent, key, UNDEF)
-
-    -- Special handling for arrays
-    if islist(parent) then
-
-      -- When we have a '$MERGE' in an array, we need to clear the entire array
-      -- as per the test expectations
-      while #parent > 0 do
-        table.remove(parent)
-      end
-
-      return key
-    end
-
-    -- Special handling for empty parent (only had the $MERGE key)
-    if isempty(parent) and #args > 0 then
-      -- For multiple arguments, merge them all manually
-      local result = {}
-      for _, arg in ipairs(args) do
-        if isnode(arg) then
-          for _, item in ipairs(items(arg)) do
-            local k, v = item[1], item[2]
-            result[k] = v
-          end
-        else
-          -- If a non-node is provided, just return it directly
-          return arg
+        if resolved ~= nil then
+          table.insert(args, resolved)
         end
+      elseif arg ~= nil then
+        table.insert(args, arg)
       end
-
-      -- Copy merged results into parent
-      for k, v in pairs(result) do
-        parent[k] = v
-      end
-
-      -- Update the top-level store
-      store[S.DTOP] = parent
-    else
-      -- Regular merging
-      local mergelist = { parent }
-      for _, arg in ipairs(args) do
-        table.insert(mergelist, arg)
-      end
-      table.insert(mergelist, clone(parent))
-
-      merge(mergelist)
     end
+    -- Other non-nil value
+  elseif argval ~= nil then
+    table.insert(args, argval)
+  end
 
+  -- Remove this merge key from parent before merging
+  setprop(parent, key, UNDEF)
+
+  -- Special case for top-level empty parent
+  local is_top_level = key == '`$MERGE`' or key == '$MERGE'
+  local is_empty_parent = true
+  for k, _ in pairs(parent) do
+    is_empty_parent = false
+    break
+  end
+
+  -- Handle special case where parent is completely empty
+  if is_top_level and is_empty_parent and #args > 0 then
+    -- Direct copy from first arg for empty top-level parent
+    for k, v in pairs(args[1]) do
+      parent[k] = v
+    end
     return key
   end
 
-  return UNDEF
+  -- For numeric merge keys, use the special handling with mergelist
+  if key:match("^`?%$MERGE[0-9]+`?$") then
+    local mergelist = { parent }
+    for _, arg in ipairs(args) do
+      if type(arg) == 'table' then
+        table.insert(mergelist, arg)
+      end
+    end
+    -- Add parent clone at the end to ensure properties are preserved
+    table.insert(mergelist, clone(parent))
+    -- Perform the merge
+    merge(mergelist)
+    return key
+  end
+
+  local explicit_props = {}
+
+  -- For array-based merges, we need to apply sources in order
+  if islist(argval) then
+    -- Process arguments in the correct order (for arrays, later overrides earlier)
+    for i = 1, #args do
+      local arg = args[i]
+      if type(arg) == 'table' then
+        for k, v in pairs(arg) do
+          parent[k] = v
+        end
+      end
+    end
+  else
+    -- For string-based merge with explicit props, collect original props first
+    for k, v in pairs(parent) do
+      explicit_props[k] = v
+    end
+
+    -- Then add all props from the source
+    if #args > 0 and type(args[1]) == 'table' then
+      for k, v in pairs(args[1]) do
+        if explicit_props[k] == nil then -- Don't override explicit props
+          parent[k] = v
+        end
+      end
+    end
+  end
+
+  return key
 end
 
 -- Convert a node to a list
