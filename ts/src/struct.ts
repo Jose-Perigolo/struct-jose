@@ -37,6 +37,16 @@
  * uniformly across many languages, meaning that some code that may be
  * functionally redundant in specific languages is still retained to
  * keep the code human comparable.
+ *
+ * NOTE: In this code JSON nulls are in general *not* considered the
+ * same as the undefined value in the given language. However most
+ * JSON parsers do use the undefined value to represent JSON
+ * null. This is ambiguous as JSON null is a separate value, not an
+ * undefined value. You should convert such values to a special value
+ * to represent JSON null, if this ambiguity creates issues
+ * (thankfully in most APIs, JSON nulls are not used). For example,
+ * the unit tests use the string "__NULL__" where necessary.
+ *
  */
 
 
@@ -182,24 +192,20 @@ function isfunc(val: any) {
 
 
 // Safely get a property of a node. Undefined arguments return undefined.
-// If the key is not found, return the alternative value.
+// If the key is not found, return the alternative value, if any.
 function getprop(val: any, key: any, alt?: any) {
-  if (UNDEF === val) {
-    return alt
-  }
-
-  if (UNDEF === key) {
-    return alt
-  }
-
   let out = alt
+
+  if (UNDEF === val || UNDEF === key) {
+    return alt
+  }
 
   if (isnode(val)) {
     out = val[key]
   }
 
   if (UNDEF === out) {
-    out = alt
+    return alt
   }
 
   return out
@@ -222,9 +228,6 @@ function haskey(val: any, key: any) {
 // List the sorted keys of a map or list as an array of tuples of the form [key, value].
 function items(val: any): [number | string, any][] {
   return keysof(val).map((k: any) => [k, val[k]])
-  // return ismap(val) ? Object.entries(val) :
-  //  islist(val) ? val.map((n: any, i: number) => [i, n]) :
-  //    []
 }
 
 
@@ -339,12 +342,12 @@ function clone(val: any): any {
 
 
 // Safely set a property. Undefined arguments and invalid keys are ignored.
-// Returns the (possible modified) parent.
-// If the value is undefined it the key will be deleted from the parent.
+// Returns the (possibly modified) parent.
+// If the value is undefined the key will be deleted from the parent.
 // If the parent is a list, and the key is negative, prepend the value.
 // NOTE: If the key is above the list size, append the value; below, prepend.
 // If the value is undefined, remove the list element at index key, and shift the
-// remaining elements down.  These rules avoids "holes" in the list.
+// remaining elements down.  These rules avoid "holes" in the list.
 function setprop<PARENT>(parent: PARENT, key: any, val: any): PARENT {
   if (!iskey(key)) {
     return parent
@@ -507,13 +510,13 @@ function merge(val: any): any {
 }
 
 
-// Get a value deep inside a node using a key path.
-// For example the path `a.b` gets the value 1 from {a:{b:1}}.
-// The path can specified as a dotted string, or a string array.
-// If the path starts with a dot (or the first element is ''), the path is considered local,
-// and resolved against the `current` argument, if defined.
-// Integer path parts are used as array indexes.
-// The state argument allows for custom handling when called from `inject` or `transform`.
+// Get a value deep inside a node using a key path.  For example the
+// path `a.b` gets the value 1 from {a:{b:1}}.  The path can specified
+// as a dotted string, or a string array.  If the path starts with a
+// dot (or the first element is ''), the path is considered local, and
+// resolved against the `current` argument, if defined.  Integer path
+// parts are used as array indexes.  The state argument allows for
+// custom handling when called from `inject` or `transform`.
 function getpath(path: string | string[], store: any, current?: any, state?: Injection) {
 
   // Operate on a string array.
@@ -525,11 +528,12 @@ function getpath(path: string | string[], store: any, current?: any, state?: Inj
 
   let root = store
   let val = store
+  const base = getprop(state, S_base)
 
   // An empty path (incl empty string) just finds the store.
   if (null == path || null == store || (1 === parts.length && S_MT === parts[0])) {
     // The actual store data may be in a store sub property, defined by state.base.
-    val = getprop(store, getprop(state, S_base), store)
+    val = getprop(store, base, store)
   }
   else if (0 < parts.length) {
     let pI = 0
@@ -545,7 +549,7 @@ function getpath(path: string | string[], store: any, current?: any, state?: Inj
 
     // At top level, check state.base, if provided
     val = (UNDEF === first && 0 === pI) ?
-      getprop(getprop(root, getprop(state, S_base)), part) :
+      getprop(getprop(root, base), part) :
       first
 
     // Move along the path, trying to descend into the store.
@@ -565,15 +569,21 @@ function getpath(path: string | string[], store: any, current?: any, state?: Inj
 }
 
 
-// Inject store values into a string. Not a public utility - used by `inject`.
-// Inject are marked with `path` where path is resolved with getpath against the
-// store or current (if defined) arguments. See `getpath`.
-// Custom injection handling can be provided by state.handler (this is used for
-// transform functions).
-// The path can also have the special syntax $NAME999 where NAME is upper case letters only,
-// and 999 is any digits, which are discarded. This syntax specifies the name of a transform,
-// and optionally allows transforms to be ordered by alphanumeric sorting.
-function _injectstr(val: string, store: any, current?: any, state?: any): any {
+// Inject store values into a string. Not a public utility - used by
+// `inject`.  Inject are marked with `path` where path is resolved
+// with getpath against the store or current (if defined)
+// arguments. See `getpath`.  Custom injection handling can be
+// provided by state.handler (this is used for transform functions).
+// The path can also have the special syntax $NAME999 where NAME is
+// upper case letters only, and 999 is any digits, which are
+// discarded. This syntax specifies the name of a transform, and
+// optionally allows transforms to be ordered by alphanumeric sorting.
+function _injectstr(
+  val: string,
+  store: any,
+  current?: any,
+  state?: Injection
+): any {
 
   // Can't inject into non-strings
   if (S_string !== typeof val) {
@@ -598,41 +608,42 @@ function _injectstr(val: string, store: any, current?: any, state?: any): any {
 
     // Get the extracted path reference.
     out = getpath(pathref, store, current, state)
+
+    return out
   }
 
   // Check for injections within the string.
-  else {
-    out = val.replace(/`([^`]+)`/g,
-      (_m: string, ref: string) => {
+  out = val.replace(/`([^`]+)`/g,
+    (_m: string, ref: string) => {
 
-        // Special escapes inside injection.
-        ref = 3 < ref.length ? ref.replace(/\$BT/g, S_BT).replace(/\$DS/g, S_DS) : ref
-        if (state) {
-          state.full = false
-        }
-        const found = getpath(ref, store, current, state)
+      // Special escapes inside injection.
+      ref = 3 < ref.length ? ref.replace(/\$BT/g, S_BT).replace(/\$DS/g, S_DS) : ref
+      if (state) {
+        state.full = false
+      }
+      const found = getpath(ref, store, current, state)
 
-        // Ensure inject value is a string.
-        return UNDEF === found ? S_MT :
-          S_object === typeof found ? JSON.stringify(found) :
-            found
-      })
+      // Ensure inject value is a string.
+      return UNDEF === found ? S_MT :
+        S_object === typeof found ? JSON.stringify(found) :
+          found
+    })
 
-    // Also call the state handler on the entire string, providing the
-    // option for custom injection.
-    if (state.handler) {
-      state.full = true
-      out = state.handler(state, out, current, val, store)
-    }
+  // Also call the state handler on the entire string, providing the
+  // option for custom injection.
+  if (null != state && isfunc(state.handler)) {
+    state.full = true
+    out = state.handler(state, out, current, val, store)
   }
 
   return out
 }
 
 
-// Inject values from a data store into a node recursively, resolving paths against the store,
-// or current if they are local. THe modify argument allows custom modification of the result.
-// The state (InjectState) argument is used to maintain recursive state.
+// Inject values from a data store into a node recursively, resolving
+// paths against the store, or current if they are local. THe modify
+// argument allows custom modification of the result.  The state
+// (InjectState) argument is used to maintain recursive state.
 function inject(
   val: any,
   store: any,
@@ -642,9 +653,8 @@ function inject(
 ) {
   const valtype = typeof val
 
-  // Create state if at root of injection.
-  // The input value is placed inside a virtual parent holder
-  // to simplify edge cases.
+  // Create state if at root of injection.  The input value is placed
+  // inside a virtual parent holder to simplify edge cases.
   if (UNDEF === state) {
     const parent = { [S_DTOP]: val }
 
@@ -681,8 +691,8 @@ function inject(
 
     // Keys are sorted alphanumerically to ensure determinism.
     // Injection transforms ($FOO) are processed *after* other keys.
-    // NOTE: the optional digits suffix of the transform can thsu be used to
-    // order the transforms.
+    // NOTE: the optional digits suffix of the transform can thus be
+    // used to order the transforms.
     const origkeys = ismap(val) ? [
       ...Object.keys(val).filter(k => !k.includes(S_DS)),
       ...Object.keys(val).filter(k => k.includes(S_DS)).sort(),
@@ -746,10 +756,8 @@ function inject(
   // Inject paths into string scalars.
   else if (S_string === valtype) {
     state.mode = S_MVAL as InjectMode
-    const newval = _injectstr(val, store, current, state)
-    val = newval
-
-    setprop(state.parent, state.key, newval)
+    val = _injectstr(val, store, current, state)
+    setprop(state.parent, state.key, val)
   }
 
   // Custom modification.
@@ -779,12 +787,11 @@ const injecthandler: InjectHandler = (
   ref: string,
   store: any
 ): any => {
-  let out = val
 
   // Only call val function if it is a special command ($NAME format).
   if (isfunc(val) &&
     (UNDEF === ref || ref.startsWith(S_DS))) {
-    out = (val as InjectHandler)(state, val, current, ref, store)
+    val = (val as InjectHandler)(state, val, current, ref, store)
   }
 
   // Update parent with value. Ensures references remain in node tree.
@@ -792,12 +799,11 @@ const injecthandler: InjectHandler = (
     setprop(state.parent, state.key, val)
   }
 
-  return out
+  return val
 }
 
 
 // The transform_* functions are special command inject handlers (see InjectHandler).
-
 
 // Delete a key from a map or list.
 const transform_DELETE: InjectHandler = (state: Injection) => {
@@ -811,11 +817,8 @@ const transform_DELETE: InjectHandler = (state: Injection) => {
 const transform_COPY: InjectHandler = (state: Injection, _val: any, current: any) => {
   const { mode, key, parent } = state
 
-  let out
-  if (mode.startsWith(S_MKEY)) {
-    out = key
-  }
-  else {
+  let out = key
+  if (!mode.startsWith(S_MKEY)) {
     out = getprop(current, key)
     setprop(parent, key, out)
   }
