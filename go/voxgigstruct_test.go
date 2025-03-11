@@ -203,6 +203,7 @@ type testUtility struct{}
 
 func (c *testUtility) Struct() *runner.StructUtility {
 	return &runner.StructUtility{
+		IsNode:     voxgigstruct.IsNode,
 		Clone:      voxgigstruct.Clone,
 		CloneFlags: voxgigstruct.CloneFlags,
 		GetPath:    voxgigstruct.GetPath,
@@ -619,7 +620,7 @@ func TestStruct(t *testing.T) {
 			Path:   []string{"$TOP"},
 			Nodes:  make([]interface{}, 1),
 			Base:   "$TOP",
-			Errs:   make([]interface{}, 0),
+			Errs:   voxgigstruct.ListRefCreate[any](),
 			Meta:   map[string]interface{}{"step": 0},
 		}
 
@@ -816,11 +817,16 @@ func TestStruct(t *testing.T) {
 	})
 
 	t.Run("validate-basic", func(t *testing.T) {
-		runset(t, validate["basic"], func(v interface{}) interface{} {
+		runset(t, validate["basic"], func(v interface{}) (interface{}, error) {
 			m := v.(map[string]interface{})
 			data := m["data"]
 			spec := m["spec"]
 			return voxgigstruct.Validate(data, spec)
+			// out, err := voxgigstruct.Validate(data, spec)
+			// if nil != err {
+			//   t.Error(err)
+			// }
+			// return out
 		})
 	})
 
@@ -829,12 +835,16 @@ func TestStruct(t *testing.T) {
 			m := v.(map[string]interface{})
 			data := m["data"]
 			spec := m["spec"]
-			return voxgigstruct.Validate(data, spec)
+			out, err := voxgigstruct.Validate(data, spec)
+			if nil != err {
+				t.Error(err)
+			}
+			return out
 		})
 	})
 
 	t.Run("validate-custom", func(t *testing.T) {
-		errs := []string{}
+		errs := voxgigstruct.ListRefCreate[any]() // make([]interface{},0)
 
 		integerCheck := voxgigstruct.Injector(func(
 			state *voxgigstruct.Injection,
@@ -848,9 +858,9 @@ func TestStruct(t *testing.T) {
 			case int:
 				return x
 			default:
-				msg := fmt.Sprintf("Not an integer at %s: %v",
-					voxgigstruct.Pathify(state.Path), out)
-				state.Errs = append(state.Errs, msg)
+				// msg := fmt.Sprintf("Not an integer at %s: %v",
+				//	voxgigstruct.Pathify(state.Path), out)
+				// state.Errs = append(state.Errs, msg)
 				return out
 			}
 		})
@@ -863,12 +873,16 @@ func TestStruct(t *testing.T) {
 			"a": "`$INTEGER`",
 		}
 
-		out := voxgigstruct.ValidateCollect(
+		out, err := voxgigstruct.ValidateCollect(
 			map[string]interface{}{"a": 1},
 			schema,
 			extra,
 			errs,
 		)
+		if nil != err {
+			t.Error(err)
+		}
+
 		expected0 := map[string]interface{}{"a": 1}
 		if !reflect.DeepEqual(out, expected0) {
 			t.Errorf("Expected: %v, Got: %v", expected0, out)
@@ -878,12 +892,15 @@ func TestStruct(t *testing.T) {
 			t.Errorf("Expected: %v, Got: %v", errs0, errs)
 		}
 
-		out = voxgigstruct.ValidateCollect(
+		out, err = voxgigstruct.ValidateCollect(
 			map[string]interface{}{"a": "A"},
 			schema,
 			extra,
 			errs,
 		)
+		if nil != err {
+			t.Error(err)
+		}
 		expected1 := map[string]interface{}{"a": "A"}
 		if !reflect.DeepEqual(out, expected0) {
 			t.Errorf("Expected: %v, Got: %v", expected1, out)

@@ -70,12 +70,13 @@ async function runner(name: string, store: any, testfile: string, provider: Prov
         checkResult(entry, res, structUtils)
       }
       catch (err: any) {
+        console.log('RUNNER-ERROR', err)
+
         entry.thrown = err
 
         const entry_err = entry.err
 
         if (null != entry_err) {
-          // if (true === entry_err || (err.message.includes(entry_err))) {
           if (true === entry_err || matchval(entry_err, err.message, structUtils)) {
 
             if (entry.match) {

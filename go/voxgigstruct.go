@@ -138,7 +138,7 @@ type Injection struct {
 	Path    []string               // Path to current node.
 	Nodes   []interface{}          // Stack of ancestor nodes.
 	Handler Injector               // Custom handler for injections.
-	Errs    []interface{}          // Error collector.
+	Errs    *ListRef[any]          // Error collector.
 	Meta    map[string]interface{} // Custom meta data.
 	Base    string                 // Base key for data in store, if any.
 	Modify  Modify                 // Modify injection output.
@@ -845,6 +845,8 @@ func GetPathState(
 	current interface{},
 	state *Injection,
 ) interface{} {
+	fmt.Println("GPS-A", path)
+
 	var parts []string
 
 	val := store
@@ -874,10 +876,13 @@ func GetPathState(
 		base = &state.Base
 	}
 
+	fmt.Println("GPS-B", parts, len(parts), base)
+
 	// An empty path (incl empty string) just finds the store.
 	if nil == path || nil == store || (1 == len(parts) && S_MT == parts[0]) {
 		// The actual store data may be in a store sub property, defined by state.base.
 		val = GetProp(store, base, store)
+		fmt.Println("GPS-C", val)
 
 	} else if 0 < len(parts) {
 
@@ -895,6 +900,7 @@ func GetPathState(
 		}
 
 		first := GetProp(root, *part)
+		fmt.Println("GPS-D", first)
 
 		// At top level, check state.base, if provided
 		val = first
@@ -912,8 +918,12 @@ func GetPathState(
 
 	if nil != state && state.Handler != nil {
 		ref := Pathify(path)
+		fmt.Println("GPS-H0", ref, val, IsFunc(val), store.(map[string]interface{})["$STRING"])
 		val = state.Handler(state, val, current, &ref, store)
+		fmt.Println("GPS-H1", ref, val, IsFunc(val))
 	}
+
+	fmt.Println("GPS-Z", val)
 
 	return val
 }
@@ -1039,7 +1049,7 @@ func InjectDescend(
 			Handler: injectHandler,
 			Base:    S_DTOP,
 			Modify:  modify,
-			Errs:    GetProp(store, S_DERRS, make([]interface{}, 0)).([]interface{}),
+			Errs:    GetProp(store, S_DERRS, ListRefCreate[any]()).(*ListRef[any]),
 			Meta:    make(map[string]interface{}),
 		}
 	}
@@ -1104,6 +1114,8 @@ func InjectDescend(
 				Handler: injectHandler,
 				Base:    state.Base,
 				Modify:  state.Modify,
+				Errs:    state.Errs,
+				Meta:    state.Meta,
 			}
 
 			// Peform the key:pre mode injection on the child key.
@@ -1184,8 +1196,11 @@ var injectHandler Injector = func(
 
 	iscmd := IsFunc(val) && (nil == ref || strings.HasPrefix(*ref, S_DS))
 
+	fmt.Println("IH-A", iscmd, *ref, val)
+
 	if iscmd {
 		fnih, ok := val.(Injector)
+		fmt.Println("IH-B", ok, fnih)
 
 		if ok {
 			val = fnih(state, val, current, ref, store)
@@ -1430,20 +1445,8 @@ var Transform_EACH Injector = func(
 
 	// Build the substructure.
 	tval = InjectDescend(tval, store, state.Modify, tcur, nil)
-	// fmt.Println("EACH-TVAL", tval)
-
-	// set the result in the node (the parent’s parent)
-	// if len(state.Path) >= 2 {
-	// 	tkey := state.Path[len(state.Path)-2]
-	// 	target := state.Nodes[len(state.Path)-2]
-	//   fmt.Println("EACH-SP", tkey, target, "S=", state.Key, state.Parent, state.Nodes)
-	// 	SetProp(target, tkey, tval)
-	// }
-
-	// _setPropOfStateParent(state, tval)
 	state.Parent = tval
 	_updateStateNodeAncestors(state, tval)
-	// fmt.Println("EACH-SP", tval, "S=", state.Key, state.Parent, state.Nodes)
 
 	// Return the first element
 	listVal, ok := tval.([]interface{})
@@ -1628,96 +1631,320 @@ func TransformModify(
 	return out
 }
 
-func invalidTypeMsg(path []string, expected string, actual string, val interface{}) string {
-	return fmt.Sprintf(
-		"Expected %s at %s, found %s: %s",
-		expected,
-		Pathify(path, 1),
-		actual,
-		val,
-	)
-}
-
-func validate_STRING(state *Injection, _val, current interface{}) interface{} {
+var validate_STRING Injector = func(
+	state *Injection,
+	_val interface{},
+	current interface{},
+	ref *string,
+	store interface{},
+) interface{} {
 	out := GetProp(current, state.Key)
 
 	str, ok := out.(string)
 	if !ok {
-		state.Errs = append(state.Errs, invalidTypeMsg(state.Path, S_string, fmt.Sprintf("%T", out), out))
+		msg := _invalidTypeMsg(state.Path, S_string, _typify(out), out)
+		state.Errs.Append(msg)
 		return nil
 	}
 
 	// Reject empty
 	if str == S_MT {
-		state.Errs = append(state.Errs, "Empty string at "+Pathify(state.Path, 0))
+		msg := "Empty string at " + Pathify(state.Path, 0)
+		state.Errs.Append(msg)
 		return nil
 	}
 
 	return str
 }
 
-func validate_NUMBER(state *Injection, _val, current interface{}) interface{} {
+var validate_NUMBER Injector = func(
+	state *Injection,
+	_val interface{},
+	current interface{},
+	ref *string,
+	store interface{},
+) interface{} {
 	out := GetProp(current, state.Key)
 
 	switch n := out.(type) {
 	case int, float64:
 		return n
 	default:
-		state.Errs = append(state.Errs, invalidTypeMsg(state.Path, S_number, fmt.Sprintf("%T", out), out))
+		msg := _invalidTypeMsg(state.Path, S_number, _typify(out), out)
+		state.Errs.Append(msg)
 		return nil
 	}
 }
 
-func validate_BOOLEAN(state *Injection, _val, current interface{}) interface{} {
+var validate_BOOLEAN Injector = func(
+	state *Injection,
+	_val interface{},
+	current interface{},
+	ref *string,
+	store interface{},
+) interface{} {
 	out := GetProp(current, state.Key)
 
 	b, ok := out.(bool)
 	if !ok {
-		state.Errs = append(state.Errs, invalidTypeMsg(state.Path, S_boolean, fmt.Sprintf("%T", out), out))
+		msg := _invalidTypeMsg(state.Path, S_boolean, _typify(out), out)
+		state.Errs.Append(msg)
 		return nil
 	}
 
 	return b
 }
 
-func validate_OBJECT(state *Injection, _val, current interface{}) interface{} {
+var validate_OBJECT Injector = func(
+	state *Injection,
+	_val interface{},
+	current interface{},
+	ref *string,
+	store interface{},
+) interface{} {
 	out := GetProp(current, state.Key)
 	if !IsMap(out) {
 		// We also check that out != nil
-		state.Errs = append(state.Errs, invalidTypeMsg(state.Path, S_object, fmt.Sprintf("%T", out), out))
+		// state.Errs = append(state.Errs, _invalidTypeMsg(state.Path, S_object, fmt.Sprintf("%T", out), out))
 		return nil
 	}
 	return out
 }
 
-func validate_ARRAY(state *Injection, _val, current interface{}) interface{} {
+var validate_ARRAY Injector = func(
+	state *Injection,
+	_val interface{},
+	current interface{},
+	ref *string,
+	store interface{},
+) interface{} {
 	out := GetProp(current, state.Key)
 	if !IsList(out) {
-		state.Errs = append(state.Errs, invalidTypeMsg(state.Path, S_array, fmt.Sprintf("%T", out), out))
+		// state.Errs = append(state.Errs, _invalidTypeMsg(state.Path, S_array, fmt.Sprintf("%T", out), out))
 		return nil
 	}
 	return out
 }
 
-func validate_FUNCTION(state *Injection, _val, current interface{}) interface{} {
+var validate_FUNCTION Injector = func(
+	state *Injection,
+	_val interface{},
+	current interface{},
+	ref *string,
+	store interface{},
+) interface{} {
 	out := GetProp(current, state.Key)
 	if reflect.TypeOf(out).Kind() != reflect.Func {
-		state.Errs = append(state.Errs, invalidTypeMsg(state.Path, S_function, fmt.Sprintf("%T", out), out))
+		// state.Errs = append(state.Errs, _invalidTypeMsg(state.Path, S_function, fmt.Sprintf("%T", out), out))
 		return nil
 	}
 	return out
 }
 
-func validate_ANY(state *Injection, _val, current interface{}) interface{} {
+var validate_ANY Injector = func(
+	state *Injection,
+	_val interface{},
+	current interface{},
+	ref *string,
+	store interface{},
+) interface{} {
 	return GetProp(current, state.Key)
 }
 
-func validate_CHILD(state *Injection, _val, current interface{}) interface{} {
+var validate_CHILD Injector = func(
+	state *Injection,
+	_val interface{},
+	current interface{},
+	ref *string,
+	store interface{},
+) interface{} {
+	mode := state.Mode
+	key := state.Key
+	parent := state.Parent
+	keys := state.Keys
+	path := state.Path
+
+	// Map syntax
+	if mode == S_MKEYPRE {
+		child := GetProp(parent, key)
+
+		// The current object to match is found at 'pkey'
+		if len(path) < 2 {
+			return nil
+		}
+		pkey := path[len(path)-2]
+
+		tval := GetProp(current, pkey)
+		if tval == nil {
+			// Create an empty object as a default
+			tval = map[string]interface{}{}
+		} else if !IsMap(tval) {
+			// Not a map => error
+			state.Errs.Append(
+				_invalidTypeMsg(
+					path[:len(path)-1], // slice(0, path.length-1)
+					"object",
+					fmt.Sprintf("%T", tval),
+					tval,
+				))
+			return nil
+		}
+
+		// For each key in tval, clone the child into parent
+		ckeys := KeysOf(tval)
+		for _, ckey := range ckeys {
+			SetProp(parent, ckey, Clone(child))
+			// Extend the "child value loop" by adding new keys to state.Keys
+			keys = append(keys, ckey)
+		}
+		state.Keys = keys
+
+		// Remove $CHILD from parent to clean up
+		SetProp(parent, key, nil)
+		return nil
+	}
+
+	// List syntax
+	if mode == S_MVAL {
+		// We expect 'parent' to be a slice of interface{}, like ["`$CHILD`", childTemplate].
+		if !IsList(parent) {
+			state.Errs.Append("Invalid $CHILD as value")
+			return nil
+		}
+
+		// We'll interpret 'parent' as a []interface{}.
+		parentSlice, ok := parent.([]interface{})
+		if !ok || len(parentSlice) < 2 {
+			state.Errs.Append("Invalid parent structure for $CHILD")
+			return nil
+		}
+
+		child := parentSlice[1]
+
+		// If current is nil => empty list default
+		if current == nil {
+			parent = []interface{}{}
+			return nil
+		}
+
+		// If current is not a list => error
+		if !IsList(current) {
+			state.Errs.Append(
+				_invalidTypeMsg(
+					path[:len(path)-1],
+					"array",
+					fmt.Sprintf("%T", current),
+					current,
+				))
+			state.KeyI = len(parentSlice)
+			return current
+		}
+
+		// Otherwise, current is a list => clone child for each element in current
+		rv := reflect.ValueOf(current)
+		length := rv.Len()
+
+		// Make a new slice to hold the child clones, sized to length
+		newParent := make([]interface{}, length)
+		// For each element in 'current', set newParent[i] = clone(child)
+		for i := 0; i < length; i++ {
+			newParent[i] = Clone(child)
+		}
+
+		// Replace parent with the new slice
+		parent = newParent
+
+		// In JS, you do `return current[0]` at the end to feed the next step.
+		// We'll do something analogous in Go:
+		if length > 0 {
+			return rv.Index(0).Interface()
+		}
+		return nil
+	}
+
 	return nil
 }
 
-func validate_ONE(state *Injection, _val, current interface{}) interface{} {
+var validate_ONE Injector = func(
+	state *Injection,
+	_val interface{},
+	current interface{},
+	ref *string,
+	store interface{},
+) interface{} {
+	// Only operate in "val mode" (list mode).
+	if state.Mode == S_MVAL {
+		// Once we handle `$ONE`, we skip further iteration by setting KeyI to keys.length
+		state.KeyI = len(state.Keys)
+
+		// The parent is assumed to be a slice: ["`$ONE`", alt0, alt1, ...].
+		parentSlice, ok := state.Parent.([]interface{})
+		if !ok || len(parentSlice) < 2 {
+
+			return nil
+		}
+
+		// The shape alternatives are everything after the first element.
+		tvals := parentSlice[1:] // alt0, alt1, ...
+
+		// Try each alternative shape
+		for _, tval := range tvals {
+			// Collect errors in a temporary slice
+			var terrs = ListRefCreate[any]()
+
+			// Attempt validation of `current` with shape `tval`
+      fmt.Println("tval", tval)
+			// ValidateCollect(current, tval, nil, terrs)
+
+			// The parent is the list we are inside.
+			// We look up one level: that is `nodes[nodes.length - 2]`.
+			if len(state.Nodes) < 2 {
+				continue
+			}
+			grandparent := state.Nodes[len(state.Nodes)-2]
+
+			// The grandkey is path[path.length - 2]
+			if len(state.Path) < 2 {
+				continue
+			}
+			grandkey := state.Path[len(state.Path)-2]
+
+			if IsNode(grandparent) {
+				if len(terrs.List) == 0 {
+					// If we found a match, accept current
+					SetProp(grandparent, grandkey, current)
+					return nil
+				} else {
+					// If we fail, set that property to nil so we don't cause other errors
+					SetProp(grandparent, grandkey, nil)
+				}
+			}
+		}
+
+		// If we reach here, no shape matched.
+		// Build a descriptive string with all the shapes.
+		valDescParts := make([]string, 0, len(tvals))
+		for _, v := range tvals {
+			str := Stringify(v)
+			// Replace any `$XYZ` substring to lower, like your .replace() in JS
+			str = strings.ReplaceAll(str, "`$STRING`", "string")
+			str = strings.ReplaceAll(str, "`$NUMBER`", "number")
+			// etc. for your different placeholders
+			valDescParts = append(valDescParts, str)
+		}
+		valdesc := strings.Join(valDescParts, ", ")
+
+		actualType := fmt.Sprintf("%T", current)
+		msg := _invalidTypeMsg(
+			state.Path[:len(state.Path)-1],
+			"one of "+valdesc,
+			actualType,
+			current,
+		)
+		state.Errs.Append(msg)
+	}
 	return nil
+
 }
 
 func validation(
@@ -1745,51 +1972,62 @@ func validation(
 	}
 
 	if pval != nil && reflect.TypeOf(pval) != reflect.TypeOf(cval) {
-		state.Errs = append(state.Errs, invalidTypeMsg(state.Path, fmt.Sprintf("%T", pval), fmt.Sprintf("%T", cval), cval))
+		// state.Errs = append(state.Errs, _invalidTypeMsg(state.Path, fmt.Sprintf("%T", pval), fmt.Sprintf("%T", cval), cval))
 		return
 	}
 
 	if IsMap(cval) && !IsMap(val) {
-		ex := S_object
-		if IsList(val) {
-			ex = S_array
-		}
-		state.Errs = append(state.Errs, invalidTypeMsg(state.Path, ex, fmt.Sprintf("%T", cval), cval))
+		// ex := S_object
+		// if IsList(val) {
+		// 		ex = S_array
+		// }
+		// state.Errs = append(state.Errs, _invalidTypeMsg(state.Path, ex, fmt.Sprintf("%T", cval), cval))
 		return
 	}
 
 	if IsList(cval) && !IsList(val) {
-		state.Errs = append(state.Errs, invalidTypeMsg(state.Path, fmt.Sprintf("%T", val), fmt.Sprintf("%T", cval), cval))
+		// state.Errs = append(state.Errs, _invalidTypeMsg(state.Path, fmt.Sprintf("%T", val), fmt.Sprintf("%T", cval), cval))
 		return
 	}
 
 	SetProp(parent, key, cval)
-  
+
 	return
 }
-
 
 func Validate(
 	data interface{}, // The input data
 	spec interface{}, // The shape specification
-) interface{} {
-  return ValidateCollect(data,spec,nil,nil)
+) (interface{}, error) {
+	return ValidateCollect(data, spec, nil, nil)
 }
 
 func ValidateCollect(
-	data interface{}, // The input data
-	spec interface{}, // The shape specification
-	extra interface{}, // Additional custom checks
-	collecterrs []string, // If you provide an existing slice of errs
-) interface{} {
+	data interface{},
+	spec interface{},
+	extra map[string]interface{},
+	collecterrs *ListRef[any],
+) (interface{}, error) {
 
-  
-	errs := collecterrs
+	if nil == collecterrs {
+		collecterrs = ListRefCreate[any]()
+	}
 
-	commands := map[string]interface{}{
-    "$ERRS": errs,
+	store := map[string]interface{}{
+		"$ERRS": collecterrs,
 
-    "$STRING":   validate_STRING,
+		"$BT":     nil,
+		"$DS":     nil,
+		"$WHEN":   nil,
+		"$DELETE": nil,
+		"$COPY":   nil,
+		"$KEY":    nil,
+		"$META":   nil,
+		"$MERGE":  nil,
+		"$EACH":   nil,
+		"$PACK":   nil,
+
+		"$STRING":   validate_STRING,
 		"$NUMBER":   validate_NUMBER,
 		"$BOOLEAN":  validate_BOOLEAN,
 		"$OBJECT":   validate_OBJECT,
@@ -1798,26 +2036,93 @@ func ValidateCollect(
 		"$ANY":      validate_ANY,
 		"$CHILD":    validate_CHILD,
 		"$ONE":      validate_ONE,
-		// ...
 	}
 
-	if extraMap, ok := extra.(map[string]func(*Injection, interface{}, interface{}) interface{}); ok {
-		for k, fn := range extraMap {
-			commands[k] = fn
-		}
+	for k, fn := range extra {
+		store[k] = fn
 	}
 
-	out := TransformModify(data, spec, commands, validation)
+	out := TransformModify(data, spec, store, validation)
 
-	if len(collecterrs) == 0 && len(errs) > 0 {
-		panic(fmt.Sprintf("Invalid data:\n%s", strings.Join(errs, "\n")))
+	fmt.Println("CE", collecterrs)
+
+	var err error
+
+	if 0 < len(collecterrs.List) {
+		err = fmt.Errorf("Invalid data:\n%s", _join(collecterrs.List, "\n"))
 	}
-  
-	return out
+
+	return out, err
 }
 
 // Internal utilities
 // ==================
+
+type ListRef[T any] struct {
+	List []T
+}
+
+func ListRefCreate[T any]() *ListRef[T] {
+	return &ListRef[T]{
+		List: make([]T, 0),
+	}
+}
+
+func (l *ListRef[T]) Append(elem T) {
+	l.List = append(l.List, elem)
+}
+
+func (l *ListRef[T]) Prepend(elem T) {
+	l.List = append([]T{elem}, l.List...)
+}
+
+func _typify(value interface{}) string {
+	if value == nil {
+		return "null"
+	}
+
+	t := reflect.TypeOf(value)
+
+	switch t.Kind() {
+	case reflect.Bool:
+		return "boolean"
+
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
+		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64,
+		reflect.Float32, reflect.Float64:
+		return "number"
+
+	case reflect.String:
+		return "string"
+
+	case reflect.Func:
+		return "function"
+
+	case reflect.Slice, reflect.Array:
+		return "array"
+
+	default:
+		return "object"
+	}
+}
+
+func _join(vals []interface{}, sep string) string {
+	strVals := make([]string, len(vals))
+	for i, v := range vals {
+		strVals[i] = fmt.Sprint(v)
+	}
+	return strings.Join(strVals, sep)
+}
+
+func _invalidTypeMsg(path []string, expected string, actual string, val interface{}) string {
+	return fmt.Sprintf(
+		"Expected %s at %s, found %s: %s",
+		expected,
+		Pathify(path, 1),
+		actual,
+		Stringify(val),
+	)
+}
 
 func _getType(v interface{}) string {
 	if nil == v {
@@ -1977,7 +2282,6 @@ func _setPropOfStateParent(state *Injection, val interface{}) {
 	parent := SetProp(state.Parent, state.Key, val)
 	if IsList(parent) && len(parent.([]interface{})) != len(state.Parent.([]interface{})) {
 		state.Parent = parent
-		// fmt.Println("SPP", state.Key, val, state.Parent, state.Nodes)
 		_updateStateNodeAncestors(state, parent)
 	}
 }

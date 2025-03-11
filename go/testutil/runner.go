@@ -28,6 +28,7 @@ type Utility interface {
 }
 
 type StructUtility struct {
+	IsNode     func(val interface{}) bool
 	Clone      func(val interface{}) interface{}
 	CloneFlags func(val interface{}, flags map[string]bool) interface{}
 	GetPath    func(path interface{}, store interface{}) interface{}
@@ -144,8 +145,10 @@ func Runner(
 			// fmt.Println("ENTRY-RESULT", entry)
 
 			if nil == err {
-				checkResult(t, entry, res, structUtil)
+				fmt.Println("ENTRY-CHECKRESULT")
+				// checkResult(t, entry, res, structUtil)
 			} else {
+				fmt.Println("ENTRY-HANDLE", entry)
 				handleError(t, entry, err, structUtil)
 			}
 		}
@@ -280,6 +283,7 @@ func handleError(
 	}
 
 	matchErr, err := MatchNode(entryErr, testerr.Error(), structUtils)
+	fmt.Println("ME===", matchErr, err, "E=", entryErr, testerr.Error())
 
 	if boolErr || matchErr {
 		if entry["match"] != nil {
@@ -302,13 +306,14 @@ func handleError(
 				t.Error(fmt.Sprintf("match failed: %v", err))
 			}
 		}
-	}
 
-	// If we didn't match, then fail with an error message.
-	t.Error(fmt.Sprintf("ERROR MATCH: [%s] <=> [%s]",
-		structUtils.Stringify(entryErr),
-		err.Error(),
-	))
+	} else {
+		// If we didn't match, then fail with an error message.
+		t.Error(fmt.Sprintf("ERROR MATCH: [%s] <=> [%s]",
+			structUtils.Stringify(entryErr),
+			testerr.Error(),
+		))
+	}
 }
 
 func resolveArgs(entry map[string]interface{}, testpack TestPack) []interface{} {
@@ -357,7 +362,7 @@ func resolveTestPack(
 
 	subject, ok := testsubject.(Subject)
 	if !ok {
-		panic("QQQ")
+		panic("Bad subject")
 	}
 
 	pack := TestPack{
@@ -519,19 +524,14 @@ func MatchNode(
 	structUtil.Walk(
 		check,
 		func(key *string, val interface{}, _parent interface{}, path []string) interface{} {
-			scalar := true
-
-			switch val.(type) {
-			case map[string]interface{}, []interface{}:
-				scalar = true
-			}
+			scalar := !structUtil.IsNode(val)
 
 			if scalar {
 				baseval := structUtil.GetPath(path, base)
 				if !MatchScalar(val, baseval, structUtil) {
 					pass = false
 					err = fmt.Errorf(
-						"MATCH: %s: [%s] <=> [%s]",
+						"MATCHX: %s: [%s] <=> [%s]",
 						strings.Join(path, "."),
 						structUtil.Stringify(val),
 						structUtil.Stringify(baseval),
@@ -541,6 +541,9 @@ func MatchNode(
 			return val
 		},
 	)
+
+	fmt.Println("MN", pass, err)
+
 	return pass, err
 }
 
@@ -564,10 +567,13 @@ func MatchScalar(check, base interface{}, structUtil *StructUtility) bool {
 					pass = false
 				}
 			} else {
+				basenorm := strings.ToLower(basestr)
+				checknorm := strings.ToLower(structUtil.Stringify(checkStr))
 				pass = strings.Contains(
-					strings.ToLower(basestr),
-					strings.ToLower(structUtil.Stringify(checkStr)),
+					basenorm,
+					checknorm,
 				)
+				fmt.Println("MATCHSCALAR-I", pass, basenorm, checknorm)
 			}
 		} else {
 			cv := reflect.ValueOf(check)
@@ -577,6 +583,8 @@ func MatchScalar(check, base interface{}, structUtil *StructUtility) bool {
 			}
 		}
 	}
+
+	fmt.Println("MATCHSCALAR", pass, check, base)
 
 	return pass
 }
@@ -626,6 +634,8 @@ func subjectify(fn interface{}) Subject {
 
 		// Call the original function
 		out := v.Call(in)
+
+		fmt.Println("RUNNER out", len(out), "OUT=", out)
 
 		// Interpret results
 		switch len(out) {

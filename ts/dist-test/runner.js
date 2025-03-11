@@ -22,10 +22,10 @@ async function runner(name, store, testfile, provider) {
                 checkResult(entry, res, structUtils);
             }
             catch (err) {
+                console.log('RUNNER-ERROR', err);
                 entry.thrown = err;
                 const entry_err = entry.err;
                 if (null != entry_err) {
-                    // if (true === entry_err || (err.message.includes(entry_err))) {
                     if (true === entry_err || matchval(entry_err, err.message, structUtils)) {
                         if (entry.match) {
                             match(entry.match, { in: entry.in, out: entry.res, ctx: entry.ctx, err }, structUtils);

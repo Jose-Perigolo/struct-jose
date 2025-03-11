@@ -1277,8 +1277,6 @@ const validate_CHILD: Injector = (state: Injection, _val: any, current: any) => 
   return UNDEF
 }
 
-
-
 // Match at least one of the specified shapes.
 // Syntax: ['`$ONE`', alt0, alt1, ...]okI
 const validate_ONE: Injector = (state: Injection, _val: any, current: any) => {
