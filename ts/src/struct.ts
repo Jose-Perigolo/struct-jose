@@ -101,7 +101,7 @@ type InjectMode = 'key:pre' | 'key:post' | 'val'
 // Handle value injections using backtick escape sequences:
 // - `a.b.c`: insert value at {a:{b:{c:1}}}
 // - `$FOO`: apply transform FOO
-type InjectHandler = (
+type Injector = (
   state: Injection,  // Injection state.
   val: any,            // Injection value specification.
   current: any,        // Current source parent value.
@@ -121,7 +121,7 @@ type Injection = {
   parent: any               // Current parent (in transform specification).
   path: string[]            // Path to current node.
   nodes: any[]              // Stack of ancestor nodes.
-  handler: InjectHandler    // Custom handler for injections.
+  handler: Injector    // Custom handler for injections.
   errs: any[]               // Error collector.  
   meta: Record<string, any> // Custom meta data.
   base?: string             // Base key for data in store, if any. 
@@ -584,7 +584,6 @@ function _injectstr(
   current?: any,
   state?: Injection
 ): any {
-
   // Can't inject into non-strings
   if (S_string !== typeof val) {
     return S_MT
@@ -706,8 +705,10 @@ function inject(
     for (let okI = 0; okI < origkeys.length; okI++) {
       const origkey = S_MT + origkeys[okI]
 
+      // let child = parent[origkey]
       let childpath = [...(state.path || []), origkey]
       let childnodes = [...(state.nodes || []), val]
+      let child = getprop(val, origkey)
 
       const childstate: Injection = {
         mode: S_MKEYPRE as InjectMode,
@@ -715,7 +716,8 @@ function inject(
         keyI: okI,
         keys: origkeys,
         key: origkey,
-        val,
+        // val,
+        val: child,
         parent: val,
         path: childpath,
         nodes: childnodes,
@@ -733,7 +735,7 @@ function inject(
 
       // Prevent further processing by returning an undefined prekey
       if (UNDEF !== prekey) {
-        let child = getprop(val, prekey)
+        childstate.val = child = getprop(val, prekey)
         childstate.mode = S_MVAL as InjectMode
 
         // Perform the val mode injection on the child value.
@@ -780,7 +782,7 @@ function inject(
 
 // Default inject handler for transforms. If the path resolves to a function,
 // call the function passing the injection state. This is how transforms operate.
-const injecthandler: InjectHandler = (
+const injecthandler: Injector = (
   state: Injection,
   val: any,
   current: any,
@@ -788,10 +790,11 @@ const injecthandler: InjectHandler = (
   store: any
 ): any => {
 
+  const iscmd = isfunc(val) && (UNDEF === ref || ref.startsWith(S_DS))
+
   // Only call val function if it is a special command ($NAME format).
-  if (isfunc(val) &&
-    (UNDEF === ref || ref.startsWith(S_DS))) {
-    val = (val as InjectHandler)(state, val, current, ref, store)
+  if (iscmd) {
+    val = (val as Injector)(state, val, current, ref, store)
   }
 
   // Update parent with value. Ensures references remain in node tree.
@@ -803,10 +806,10 @@ const injecthandler: InjectHandler = (
 }
 
 
-// The transform_* functions are special command inject handlers (see InjectHandler).
+// The transform_* functions are special command inject handlers (see Injector).
 
 // Delete a key from a map or list.
-const transform_DELETE: InjectHandler = (state: Injection) => {
+const transform_DELETE: Injector = (state: Injection) => {
   const { key, parent } = state
   setprop(parent, key, UNDEF)
   return UNDEF
@@ -814,7 +817,7 @@ const transform_DELETE: InjectHandler = (state: Injection) => {
 
 
 // Copy value from source data.
-const transform_COPY: InjectHandler = (state: Injection, _val: any, current: any) => {
+const transform_COPY: Injector = (state: Injection, _val: any, current: any) => {
   const { mode, key, parent } = state
 
   let out = key
@@ -829,7 +832,7 @@ const transform_COPY: InjectHandler = (state: Injection, _val: any, current: any
 
 // As a value, inject the key of the parent node.
 // As a key, defined the name of the key property in the source object.
-const transform_KEY: InjectHandler = (state: Injection, _val: any, current: any) => {
+const transform_KEY: Injector = (state: Injection, _val: any, current: any) => {
   const { mode, path, parent } = state
 
   // Do nothing in val mode.
@@ -849,8 +852,9 @@ const transform_KEY: InjectHandler = (state: Injection, _val: any, current: any)
 }
 
 
-// Store meta data about a node.
-const transform_META: InjectHandler = (state: Injection) => {
+// Store meta data about a node.  Does nothing itself, just used by
+// other injectors, and is removed when called.
+const transform_META: Injector = (state: Injection) => {
   const { parent } = state
   setprop(parent, S_DMETA, UNDEF)
   return UNDEF
@@ -862,7 +866,7 @@ const transform_META: InjectHandler = (state: Injection) => {
 // If the value is an array, the elements are first merged using `merge`. 
 // If the value is the empty string, merge the top level store.
 // Format: { '`$MERGE`': '`source-path`' | ['`source-paths`', ...] }
-const transform_MERGE: InjectHandler = (
+const transform_MERGE: Injector = (
   state: Injection, _val: any, current: any
 ) => {
   const { mode, key, parent } = state
@@ -875,10 +879,10 @@ const transform_MERGE: InjectHandler = (
     let args = getprop(parent, key)
     args = S_MT === args ? [current.$TOP] : Array.isArray(args) ? args : [args]
 
-    // Remove the $MERGE command.
+    // Remove the $MERGE command from a parent map.
     setprop(parent, key, UNDEF)
 
-    // Literals in the parent have precedence, but we still merg onto
+    // Literals in the parent have precedence, but we still merge onto
     // the parent object, so that node tree references are not changed.
     const mergelist = [parent, ...args, clone(parent)]
 
@@ -887,17 +891,18 @@ const transform_MERGE: InjectHandler = (
     return key
   }
 
+  // Ensures $MERGE is removed from parent list.
   return UNDEF
 }
 
 
 // Convert a node to a list.
 // Format: ['`$EACH`', '`source-path-of-node`', child-template]
-const transform_EACH: InjectHandler = (
+const transform_EACH: Injector = (
   state: Injection,
   _val: any,
   current: any,
-  ref: string,
+  _ref: string,
   store: any
 ) => {
   const { mode, keys, path, parent, nodes } = state
@@ -907,52 +912,49 @@ const transform_EACH: InjectHandler = (
     keys.length = 1
   }
 
-  // Defensive context checks.
-  if (S_MVAL !== mode || null == path || null == nodes) {
+  if (S_MVAL !== mode) {
     return UNDEF
   }
 
-  // Get arguments.
-  const srcpath = parent[1] // Path to source data.
-  const child = clone(parent[2]) // Child template.
+  // Get arguments: ['`$EACH`', 'source-path', child-template].
+  const srcpath = parent[1]
+  const child = clone(parent[2])
 
-  // Source data
+  // Source data.
   const src = getpath(srcpath, store, current, state)
 
   // Create parallel data structures:
   // source entries :: child templates
-  let tcurrent: any = []
+  let tcur: any = []
   let tval: any = []
 
   const tkey = path[path.length - 2]
   const target = nodes[path.length - 2] || nodes[path.length - 1]
 
   // Create clones of the child template for each value of the current soruce.
-  if (isnode(src)) {
-    if (islist(src)) {
-      tval = src.map(() => clone(child))
-    }
-    else {
-      tval = Object.entries(src).map(n => ({
-        ...clone(child),
+  if (islist(src)) {
+    tval = src.map(() => clone(child))
+  }
+  else if (ismap(src)) {
+    tval = Object.entries(src).map(n => ({
+      ...clone(child),
 
-        // Make a note of the key for $KEY transforms.
-        [S_DMETA]: { KEY: n[0] }
-      }))
-    }
-
-    tcurrent = Object.values(src)
+      // Make a note of the key for $KEY transforms.
+      [S_DMETA]: { KEY: n[0] }
+    }))
   }
 
+  tcur = null == src ? UNDEF : Object.values(src)
+
   // Parent structure.
-  tcurrent = { $TOP: tcurrent }
+  tcur = { $TOP: tcur }
 
   // Build the substructure.
   tval = inject(
     tval,
     store,
     state.modify,
-    tcurrent,
+    tcur,
   )
 
   setprop(target, tkey, tval)
@@ -965,7 +967,7 @@ const transform_EACH: InjectHandler = (
 
 // Convert a node to a map.
 // Format: { '`$PACK`':['`source-path`', child-template]}
-const transform_PACK: InjectHandler = (
+const transform_PACK: Injector = (
   state: Injection,
   _val: any,
   current: any,
@@ -1102,7 +1104,7 @@ function transform(
 
 
 // A required string value. NOTE: Rejects empty strings.
-const validate_STRING: InjectHandler = (state: Injection, _val: any, current: any) => {
+const validate_STRING: Injector = (state: Injection, _val: any, current: any) => {
   let out = getprop(current, state.key)
 
   let t = typeof out
@@ -1123,7 +1125,7 @@ const validate_STRING: InjectHandler = (state: Injection, _val: any, current: an
 
 
 // A required number value (int or float).
-const validate_NUMBER: InjectHandler = (state: Injection, _val: any, current: any) => {
+const validate_NUMBER: Injector = (state: Injection, _val: any, current: any) => {
   let out = getprop(current, state.key)
 
   let t = typeof out
@@ -1137,7 +1139,7 @@ const validate_NUMBER: InjectHandler = (state: Injection, _val: any, current: an
 
 
 // A required boolean value.
-const validate_BOOLEAN: InjectHandler = (state: Injection, _val: any, current: any) => {
+const validate_BOOLEAN: Injector = (state: Injection, _val: any, current: any) => {
   let out = getprop(current, state.key)
 
   let t = typeof out
@@ -1151,7 +1153,7 @@ const validate_BOOLEAN: InjectHandler = (state: Injection, _val: any, current: a
 
 
 // A required object (map) value (contents not validated).
-const validate_OBJECT: InjectHandler = (state: Injection, _val: any, current: any) => {
+const validate_OBJECT: Injector = (state: Injection, _val: any, current: any) => {
   let out = getprop(current, state.key)
 
   let t = typeof out
@@ -1166,7 +1168,7 @@ const validate_OBJECT: InjectHandler = (state: Injection, _val: any, current: an
 
 
 // A required array (list) value (contents not validated).
-const validate_ARRAY: InjectHandler = (state: Injection, _val: any, current: any) => {
+const validate_ARRAY: Injector = (state: Injection, _val: any, current: any) => {
   let out = getprop(current, state.key)
 
   let t = typeof out
@@ -1180,7 +1182,7 @@ const validate_ARRAY: InjectHandler = (state: Injection, _val: any, current: any
 
 
 // A required function value.
-const validate_FUNCTION: InjectHandler = (state: Injection, _val: any, current: any) => {
+const validate_FUNCTION: Injector = (state: Injection, _val: any, current: any) => {
   let out = getprop(current, state.key)
 
   let t = typeof out
@@ -1194,7 +1196,7 @@ const validate_FUNCTION: InjectHandler = (state: Injection, _val: any, current: 
 
 
 // Allow any value.
-const validate_ANY: InjectHandler = (state: Injection, _val: any, current: any) => {
+const validate_ANY: Injector = (state: Injection, _val: any, current: any) => {
   let out = getprop(current, state.key)
   return out
 }
@@ -1204,7 +1206,7 @@ const validate_ANY: InjectHandler = (state: Injection, _val: any, current: any) 
 // Specify child values for map or list.
 // Map syntax: {'`$CHILD`': child-template }
 // List syntax: ['`$CHILD`', child-template ]
-const validate_CHILD: InjectHandler = (state: Injection, _val: any, current: any) => {
+const validate_CHILD: Injector = (state: Injection, _val: any, current: any) => {
   const { mode, key, parent, keys, path } = state
 
   // Setup data structures for validation by cloning child template.
@@ -1280,7 +1282,7 @@ const validate_CHILD: InjectHandler = (state: Injection, _val: any, current: any
 
 // Match at least one of the specified shapes.
 // Syntax: ['`$ONE`', alt0, alt1, ...]okI
-const validate_ONE: InjectHandler = (state: Injection, _val: any, current: any) => {
+const validate_ONE: Injector = (state: Injection, _val: any, current: any) => {
   const { mode, parent, path, nodes } = state
 
   // Only operate in val mode, since parent is a list.
@@ -1528,6 +1530,6 @@ export {
 
 export type {
   Injection,
-  InjectHandler,
+  Injector,
   WalkApply
 }

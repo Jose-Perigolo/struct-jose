@@ -107,8 +107,26 @@ function nullModifier(key, val, parent) {
     (0, node_test_1.test)('minor-getprop', async () => {
         await runset(spec.minor.getprop, (vin) => null == vin.alt ? (0, struct_1.getprop)(vin.val, vin.key) : (0, struct_1.getprop)(vin.val, vin.key, vin.alt));
     });
+    (0, node_test_1.test)('minor-edge-getprop', async () => {
+        let strarr = ['a', 'b', 'c', 'd', 'e'];
+        (0, node_assert_1.deepEqual)((0, struct_1.getprop)(strarr, 2), 'c');
+        (0, node_assert_1.deepEqual)((0, struct_1.getprop)(strarr, '2'), 'c');
+        let intarr = [2, 3, 5, 7, 11];
+        (0, node_assert_1.deepEqual)((0, struct_1.getprop)(intarr, 2), 5);
+        (0, node_assert_1.deepEqual)((0, struct_1.getprop)(intarr, '2'), 5);
+    });
     (0, node_test_1.test)('minor-setprop', async () => {
         await runset(spec.minor.setprop, (vin) => (0, struct_1.setprop)(vin.parent, vin.key, vin.val));
+    });
+    (0, node_test_1.test)('minor-edge-getprop', async () => {
+        let strarr0 = ['a', 'b', 'c', 'd', 'e'];
+        let strarr1 = ['a', 'b', 'c', 'd', 'e'];
+        (0, node_assert_1.deepEqual)((0, struct_1.setprop)(strarr0, 2, 'C'), ['a', 'b', 'C', 'd', 'e']);
+        (0, node_assert_1.deepEqual)((0, struct_1.setprop)(strarr1, '2', 'CC'), ['a', 'b', 'CC', 'd', 'e']);
+        let intarr0 = [2, 3, 5, 7, 11];
+        let intarr1 = [2, 3, 5, 7, 11];
+        (0, node_assert_1.deepEqual)((0, struct_1.setprop)(intarr0, 2, 55), [2, 3, 55, 7, 11]);
+        (0, node_assert_1.deepEqual)((0, struct_1.setprop)(intarr1, '2', 555), [2, 3, 555, 7, 11]);
     });
     (0, node_test_1.test)('minor-haskey', async () => {
         await runset(spec.minor.haskey, struct_1.haskey);

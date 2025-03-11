@@ -90,9 +90,9 @@ cmds: {
     { in: { data: {a:{b:76},c:{b:86}}, spec: {x:{'`$MERGE0`':'`a`','`$MERGE1`':'`c`'}} },
       out: {x:{b:76}} }
       
-    { in: { data: {a:{b:7}}, spec: {a:{'`$MERGE`':['`a`',{b:71}]}} }, out: {a:{b:71}} }
+    { in: { data: {a:{b:8}}, spec: {a:{'`$MERGE`':['`a`',{b:81}]}} }, out: {a:{b:81}} }
 
-    { in: { data: {a:{b:71}}, spec: {a:['`$MERGE`']}}, out: {a:[]} }
+    { in: { data: {a:{b:81}}, spec: {a:['`$MERGE`']}}, out: {a:[]} }
     { in: { data: {a:{b:72}}, spec: {a:['`$MERGE`',77]}}, out: {a:[77]} }
 
     { in: { data: {a:{b:73}}, spec: {x:{'`$MERGE`':'`a`',b:74,c:75}} },
@@ -194,6 +194,16 @@ each: {
     { in: { data: {x:{p:{q:{a:{y:10}}}}},
             spec: {z:['`$EACH`','x.p.q',{y:'`$COPY`',w:'w1',k:'`$KEY`'}]} },
       out: {z:[{y:10,w:'w1',k:'a'}]} }
+
+
+    { in: { data: {x:{a0:{y:0}}}, spec: {r0:[['`$EACH`','x',{y:'`$COPY`',q:'T0'}]]} },
+      out: {r0:[[{y:0,q:T0}]]} }
+
+    { in: { data: {x:{a1:{y:0}}}, spec: {r1:[[['`$EACH`','x',{y:'`$COPY`',q:'T1'}]]]} },
+      out: {r1:[[[{y:0,q:T1}]]]} }
+
+    { in: { data: {x:{a2:{y:0}}}, spec: {r2:[[[['`$EACH`','x',{y:'`$COPY`',q:'T2'}]]]]} },
+      out: {r2:[[[[{y:0,q:T2}]]]]} }
 
   ]
 }
