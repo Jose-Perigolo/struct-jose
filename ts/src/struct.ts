@@ -1102,7 +1102,6 @@ function transform(
 }
 
 
-
 // A required string value. NOTE: Rejects empty strings.
 const validate_STRING: Injector = (state: Injection, _val: any, current: any) => {
   let out = getprop(current, state.key)
@@ -1478,15 +1477,6 @@ function validate(
 
 // Internal utilities
 // ==================
-
-
-function _typify(val: any) {
-  let t: string = typeof val
-  t = null == val ? S_null :
-    Array.isArray(val) ? S_array :
-      t
-  return t
-}
 
 
 // Build a type validation error message.

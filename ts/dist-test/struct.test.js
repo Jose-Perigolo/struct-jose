@@ -306,9 +306,12 @@ function nullModifier(key, val, parent) {
                 return out;
             },
         };
-        (0, struct_1.validate)({ a: 1 }, { a: '`$INTEGER`' }, extra, errs);
+        const shape = { a: '`$INTEGER`' };
+        let out = (0, struct_1.validate)({ a: 1 }, shape, extra, errs);
+        (0, node_assert_1.deepEqual)(out, { a: 1 });
         (0, node_assert_1.equal)(errs.length, 0);
-        (0, struct_1.validate)({ a: 'A' }, { a: '`$INTEGER`' }, extra, errs);
+        out = (0, struct_1.validate)({ a: 'A' }, shape, extra, errs);
+        (0, node_assert_1.deepEqual)(out, { a: 'A' });
         (0, node_assert_1.deepEqual)(errs, ['Not an integer at a: A']);
     });
 });

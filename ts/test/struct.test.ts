@@ -463,10 +463,14 @@ describe('struct', async () => {
       },
     }
 
-    validate({ a: 1 }, { a: '`$INTEGER`' }, extra, errs)
+    const shape = { a: '`$INTEGER`' }
+
+    let out = validate({ a: 1 }, shape, extra, errs)
+    deepEqual(out, { a: 1 })
     equal(errs.length, 0)
 
-    validate({ a: 'A' }, { a: '`$INTEGER`' }, extra, errs)
+    out = validate({ a: 'A' }, shape, extra, errs)
+    deepEqual(out, { a: 'A' })
     deepEqual(errs, ['Not an integer at a: A'])
   })
 
