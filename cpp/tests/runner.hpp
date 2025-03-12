@@ -113,37 +113,57 @@ clients[c_name] = provider.test(copts)
           *entry = fixJSON(*entry);
         }
 
+        Provider testclient = client;
         // TODO
         /*
-           testclient = client
-
 # If a particular entry wants to use a different client:
 if 'client' in entry:
 testclient = clients[entry['client']]
 testsubject = testclient.utility()[name]
          */
 
-        std::vector<json> args;
+        json args = json::array();
 
         // TODO: Refactor double lookup
         // Build up the call arguments
         if(entry->contains("ctx")) {
-          args = { (*entry)["ctx"] };
-          // Addition - ensure "args" is an array so the implicit conversion isn't dangerous and doesn't crash at runtime
+          args = json::array({ (*entry)["ctx"] });
         } else if(entry->contains("args") && entry->at("args").is_array()) {
           args = (*entry)["args"];
         } else {
           if(entry->contains("in")) {
             // TODO: Ensure clone since it is cloning by default this way
             // args = [clone(entry['in'])] if 'in' in entry else []
-            args = { (*entry)["in"] };
+            args = json::array({ (*entry)["in"] });
           } else {
-            args = {};
+            args = json::array();
           }
         }
 
-        // TODO
+        if(entry->contains("ctx") || entry->contains("args")) {
+          json first_arg;
+
+         if(args.is_null() || args.size() == 0) {
+           first_arg = nullptr;
+         } 
+
+         if(first_arg.is_object()) {
+
+           // TODO: first_arg = clone(first_arg)
+         
+           args[0] = first_arg;
+           (*entry)["ctx"] = first_arg;
+
+           if(first_arg.is_object()) {
+             // first_arg["client"] = testclient;
+           }
+         
+         }
+
+        }
+
         /*
+        // TODO
 # If we have a context or arguments, we might need to patch them:
 if 'ctx' in entry or 'args' in entry:
 first_arg = None if args is None or 0 == len(args) else args[0]
@@ -157,9 +177,18 @@ if isinstance(first_arg, dict):
 first_arg["client"] = testclient
 first_arg["utility"] = testclient.utility()
          */
-        // std::cout << args << std::endl;
 
-        json res = testsubject(std::move(args));
+        // std::cout << "json::args: " << args << std::endl;
+
+        json res;
+
+        if(args.is_array()) {
+          res = testsubject(
+            std::move(args.get<std::vector<json>>())
+          );
+        } else {
+          res = testsubject({ std::move(args) });
+        }
 
         res = fixJSON(res);
 
