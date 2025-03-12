@@ -36,6 +36,7 @@ function nullModifier(key, val, parent) {
                     setprop: struct_1.setprop,
                     stringify: struct_1.stringify,
                     transform: struct_1.transform,
+                    typify: struct_1.typify,
                     walk: struct_1.walk,
                     validate: struct_1.validate,
                     joinurl: struct_1.joinurl,
@@ -62,6 +63,7 @@ function nullModifier(key, val, parent) {
         (0, node_assert_1.equal)('function', typeof struct_1.keysof);
         (0, node_assert_1.equal)('function', typeof struct_1.setprop);
         (0, node_assert_1.equal)('function', typeof struct_1.stringify);
+        (0, node_assert_1.equal)('function', typeof struct_1.typify);
     });
     (0, node_test_1.test)('minor-isnode', async () => {
         await runset(spec.minor.isnode, struct_1.isnode);
@@ -136,6 +138,9 @@ function nullModifier(key, val, parent) {
     });
     (0, node_test_1.test)('minor-joinurl', async () => {
         await runset(spec.minor.joinurl, struct_1.joinurl);
+    });
+    (0, node_test_1.test)('minor-typify', async () => {
+        await runset(spec.minor.typify, struct_1.typify);
     });
     // walk tests
     // ==========

@@ -24,6 +24,7 @@ import {
   setprop,
   stringify,
   transform,
+  typify,
   validate,
   walk,
 } from '../dist/struct'
@@ -77,6 +78,7 @@ describe('struct', async () => {
             setprop,
             stringify,
             transform,
+            typify,
             walk,
             validate,
             joinurl,
@@ -109,6 +111,7 @@ describe('struct', async () => {
     equal('function', typeof setprop)
 
     equal('function', typeof stringify)
+    equal('function', typeof typify)
   })
 
 
@@ -226,6 +229,10 @@ describe('struct', async () => {
 
   test('minor-joinurl', async () => {
     await runset(spec.minor.joinurl, joinurl)
+  })
+
+  test('minor-typify', async () => {
+    await runset(spec.minor.typify, typify)
   })
 
 
