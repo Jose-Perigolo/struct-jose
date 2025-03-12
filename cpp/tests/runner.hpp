@@ -259,13 +259,10 @@ catch(const std::exception& err) {
 
       continue;
     } else {
-      // TODO
-      /*
-         raise AssertionError_(
-         f"ERROR MATCH: [{stringify(entry_err)}] <=> [{str(err)}]\n"
-         f"Entry: {json.dumps(entry, indent=2)}"
-         )
-       */
+      throw assertion_error(
+          "ERROR MATCH: [" + stringify(entry_err).get<std::string>() + "] <=> [" + err.what() + "]\n" +
+          "Entry: " + entry->dump(2)
+      );
     }
 
 
