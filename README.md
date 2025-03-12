@@ -1,2 +1,5 @@
 # struct
-Data structure manipulations
+
+Uniform data structure manipulations in multiple languages.
+
+
