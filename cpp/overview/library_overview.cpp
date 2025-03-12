@@ -47,7 +47,9 @@ static void to_json(nlohmann::json& j, const address& a)
 
 static void to_json(nlohmann::json& j, const function_wrapper& function)
 {
-  j = function.to_string();
+  // j = std::stoi(function.to_string());
+  j = reinterpret_cast<uintptr_t>(&function.function);
+  // std::cout << "COUT: " << &(function.function) << std::endl;
 }
 
 /*
@@ -59,7 +61,7 @@ static void from_json(BasicJsonType& j, const JsonFunction& function)
 
 
 json d(std::vector<json> args) {
-  return true;
+  return 10101;
 }
 
 int main() {
@@ -72,6 +74,12 @@ int main() {
     json obj = json(f);
     
     std::cout << obj << std::endl;
+    std::cout << obj.get<uintptr_t>() << std::endl;
+
+    JsonFunction* ptr_function = reinterpret_cast<JsonFunction*>(obj.get<uintptr_t>());
+
+    // NOTE: VERY UNSAFE BUT SHOULD BE OK FOR FUNCTIONS DECLARED AT C LEVEL
+    std::cout << (*ptr_function)({}) << std::endl;
 
   }
 

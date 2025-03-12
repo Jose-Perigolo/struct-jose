@@ -411,10 +411,11 @@ try_access:
           for(int pI = key_i; pI < parent.size() - 1; pI++) {
             parent[pI] = parent[pI + 1];
           }
-          // STL - vector
-          // TODO: Pop_back
-          // parent.get<std::vector<json>>().pop_back(); // WON'T CUT IT. See the note below
-          parent.erase(parent.size() - 1);
+          // STL - vector pointer
+          // NOTE: parent.get<std::vector<json>>().pop_back(); // WON'T CUT IT. See the note below
+          std::vector<json>* parent_arr = parent.get_ptr<std::vector<json>*>();
+          parent_arr->pop_back();
+          // Inefficient: parent.erase(parent.size() - 1);
 
         }
       } else {
@@ -430,8 +431,17 @@ try_access:
           // NOTE: This is bad due to the implicit copy operator
           std::vector<json> json_vector = parent.get<std::vector<json>>();
           json_vector.emplace(json_vector.begin(), val);
+          // This won't cut it either
+          std::vector<json> json_vector;
+          parent.get_to(json_vector);
+
+          json_vector.insert(json_vector.begin(), val);
           */
-          parent.insert(parent.begin(), val);
+
+          std::vector<json>* parent_arr = parent.get_ptr<std::vector<json>*>();
+          parent_arr->insert(parent_arr->begin(), val);
+
+          // Alternatively: parent.insert(parent.begin(), val);
         }
       }
 
@@ -440,6 +450,10 @@ try_access:
 
     return parent;
 
+  }
+
+  json walk(args_container&& args) {
+    return false;
   }
 
 
