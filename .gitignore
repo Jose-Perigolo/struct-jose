@@ -141,4 +141,9 @@ dist
 __pycache__
 
  package-lock.json
+
+*.class
+*.out
+
+*.swp
  
