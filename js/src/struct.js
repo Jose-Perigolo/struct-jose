@@ -1042,7 +1042,7 @@ function transform(
 const validate_STRING = (state, _val, current) => {
   let out = getprop(current, state.key)
 
-  let t = typeof out
+  const t = _typify(out)
   if (S_string === t) {
     if (S_MT === out) {
       state.errs.push('Empty string at ' + pathify(state.path, 1))
@@ -1063,7 +1063,7 @@ const validate_STRING = (state, _val, current) => {
 const validate_NUMBER = (state, _val, current) => {
   let out = getprop(current, state.key)
 
-  let t = typeof out
+  const t = _typify(out)
   if (S_number !== t) {
     state.errs.push(_invalidTypeMsg(state.path, S_number, t, out))
     return UNDEF
@@ -1077,7 +1077,7 @@ const validate_NUMBER = (state, _val, current) => {
 const validate_BOOLEAN = (state, _val, current) => {
   let out = getprop(current, state.key)
 
-  let t = typeof out
+  const t = _typify(out)
   if (S_boolean !== t) {
     state.errs.push(_invalidTypeMsg(state.path, S_boolean, t, out))
     return UNDEF
@@ -1091,9 +1091,8 @@ const validate_BOOLEAN = (state, _val, current) => {
 const validate_OBJECT = (state, _val, current) => {
   let out = getprop(current, state.key)
 
-  let t = typeof out
-
-  if (null == out || S_object !== t) {
+  const t = _typify(out)
+  if (S_object !== t) {
     state.errs.push(_invalidTypeMsg(state.path, S_object, t, out))
     return UNDEF
   }
@@ -1106,8 +1105,8 @@ const validate_OBJECT = (state, _val, current) => {
 const validate_ARRAY = (state, _val, current) => {
   let out = getprop(current, state.key)
 
-  let t = typeof out
-  if (!Array.isArray(out)) {
+  const t = _typify(out)
+  if (S_array !== t) {
     state.errs.push(_invalidTypeMsg(state.path, S_array, t, out))
     return UNDEF
   }
@@ -1120,7 +1119,7 @@ const validate_ARRAY = (state, _val, current) => {
 const validate_FUNCTION = (state, _val, current) => {
   let out = getprop(current, state.key)
 
-  let t = typeof out
+  const t = _typify(out)
   if (S_function !== t) {
     state.errs.push(_invalidTypeMsg(state.path, S_function, t, out))
     return UNDEF
@@ -1265,7 +1264,7 @@ const validate_ONE = (state, _val, current) => {
     state.errs.push(_invalidTypeMsg(
       state.path.slice(0, state.path.length - 1),
       'one of ' + valdesc,
-      typeof current, current))
+      _typify(current), current))
   }
 }
 
@@ -1289,14 +1288,14 @@ const validation = (
   }
 
   const pval = getprop(parent, key)
-  const t = typeof pval
+  const t = _typify(pval)
 
   // Delete any special commands remaining.
   if (S_string === t && pval.includes(S_DS)) {
     return UNDEF
   }
 
-  const ct = typeof cval
+  const ct = _typify(cval)
 
   // Type mismatch.
   if (t !== ct && UNDEF !== pval) {
@@ -1403,7 +1402,7 @@ function validate(
   )
 
   if (0 < errs.length && null == collecterrs) {
-    throw new Error('Invalid data: ' + errs.join('\n'))
+    throw new Error('Invalid data: ' + errs.join(' | '))
   }
 
   return out
@@ -1413,14 +1412,31 @@ function validate(
 // Internal utilities
 // ==================
 
+// Determine the type of a value as a string
+function _typify(value) {
+  if (value === null || value === undefined) {
+    return 'null'
+  }
+  
+  const type = typeof value
+  
+  if (Array.isArray(value)) {
+    return 'array'
+  }
+  
+  if (type === 'object') {
+    return 'object'
+  }
+  
+  return type // 'string', 'number', 'boolean', 'function'
+}
 
 // Build a type validation error message.
 function _invalidTypeMsg(path, type, vt, v) {
-  // Deal with js array type returns 'object' 
-  vt = Array.isArray(v) && S_object === vt ? S_array : vt
-  v = stringify(v)
+  let vs = stringify(v)
+
   return 'Expected ' + type + ' at ' + pathify(path, 1) +
-    ', found ' + (null != v ? vt + ': ' : '') + v
+    ', found ' + (null != v ? vt + ': ' : '') + vs
 }
 
 
