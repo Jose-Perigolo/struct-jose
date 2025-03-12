@@ -340,8 +340,106 @@ try_access:
   
   json clone(args_container&& args) {
     json val = args.size() == 0 ? nullptr : std::move(args[0]);
+
+    if(val.is_null()) {
+      return nullptr;
+    }
+
+    /* NOTE: Simple clone without replace/reviver as this use case is impractical in C++ unless we do it in as part of our own interface */
+
+    /*
+    if(val.is_array()) {
+      json arr = json::array();
+
+      for(json::iterator item = val.begin(); item != val.end(); item++) {
+        arr.push_back(
+            clone({item.value()})
+        );
+      }
+
+      return arr;
+
+    } else if(val.is_object()) {
+      json obj = json::object();
+
+      for(json::iterator item = val.begin(); item != val.end(); item++) {
+        obj[item.key()] = clone({ item.value() });
+      }
+
+      return obj;
+    }
+    */
     
     return val;
+  }
+
+  json setprop(args_container&& args) {
+    json parent = args.size() == 0 ? nullptr : std::move(args[0]);
+    json key = args.size() < 2 ? nullptr : std::move(args[1]);
+    json val = args.size() < 3 ? nullptr : std::move(args[2]);
+
+    if(iskey({key}) == false) {
+      return parent;
+    }
+
+    if(ismap({parent})) {
+      std::string _key;
+      try {
+        _key = key.get<std::string>();
+      } catch(const json::exception&) {
+        _key = key.dump();
+      }
+
+      if(val.is_null()) {
+        parent.erase(_key);
+      } else {
+        // NOTE: [json.exception.type_error.305] cannot use operator[] with a numeric argument with object
+        parent[_key] = val;
+      }
+
+    } else if(islist({parent})) {
+      int key_i;
+      try {
+        key_i = key.get<int>();
+      } catch(const json::exception&) {
+        return parent;
+      }
+
+      if(val.is_null()) {
+        if(0 <= key_i && key_i < parent.size()) {
+          // Shift items left
+          for(int pI = key_i; pI < parent.size() - 1; pI++) {
+            parent[pI] = parent[pI + 1];
+          }
+          // STL - vector
+          // TODO: Pop_back
+          // parent.get<std::vector<json>>().pop_back(); // WON'T CUT IT. See the note below
+          parent.erase(parent.size() - 1);
+
+        }
+      } else {
+        // Non-empty insert
+        if(key_i >= 0) {
+          if(key_i >= parent.size()) {
+            parent.push_back(val);
+          } else {
+            parent[key_i] = val;
+          }
+        } else {
+          /*
+          // NOTE: This is bad due to the implicit copy operator
+          std::vector<json> json_vector = parent.get<std::vector<json>>();
+          json_vector.emplace(json_vector.begin(), val);
+          */
+          parent.insert(parent.begin(), val);
+        }
+      }
+
+
+    }
+
+    return parent;
+
   }
 
 

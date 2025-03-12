@@ -49,6 +49,7 @@ RunnerResult runner(const std::string& name, const json& store, const std::strin
 
   function_pointer items = _struct["items"];
   function_pointer stringify = _struct["stringify"];
+  function_pointer clone = _struct["clone"];
 
 
   // Read and parse the test JSON file
@@ -108,6 +109,7 @@ clients[c_name] = provider.test(copts)
 
     json set = testspec.value("set", json::array());
 
+    // Each testspec should have a "set" array of test entries
     FOR(entry, set) {
       try {
         if(!entry->contains("out")) {
@@ -137,9 +139,10 @@ testsubject = testclient.utility()[name]
           args = (*entry)["args"];
         } else {
           if(entry->contains("in")) {
-            // TODO: Ensure clone since it is cloning by default this way
+            // TODO: Ensure clone. However, it is still cloning by default so we double the memory
             // args = [clone(entry['in'])] if 'in' in entry else []
-            args = json::array({ (*entry)["in"] });
+            // json in = (*entry)["in"];
+            args = json::array({ clone({ (*entry)["in"] }) });
           } else {
             args = json::array();
           }
@@ -153,8 +156,8 @@ testsubject = testclient.utility()[name]
          } 
 
          if(first_arg.is_object()) {
-
-           // TODO: first_arg = clone(first_arg)
+           // Deep clone first_arg
+           first_arg = clone({ first_arg });
          
            args[0] = first_arg;
            (*entry)["ctx"] = first_arg;

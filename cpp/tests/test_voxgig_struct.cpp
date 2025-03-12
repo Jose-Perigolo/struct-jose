@@ -47,6 +47,8 @@ struct Struct : public Utility {
         { "escre", escre },
         { "joinurl", joinurl },
         { "stringify", stringify },
+        { "clone", clone },
+        { "setprop", setprop },
     });
   }
 
@@ -184,6 +186,24 @@ int main() {
 
       // TODO: Use nullptr for now since we can't have std::function with optional arguments. Instead, we need to rewrite the entire class to implement our own closure and "operator()"
       runset(spec["minor"]["stringify"], stringify_wrapper, nullptr);
+    }
+
+    TEST_CASE("test_minor_clone") {
+      runset(spec["minor"]["clone"], static_cast<function_pointer>(clone), nullptr);
+    }
+
+    TEST_CASE("test_minor_setprop") {
+      JsonFunction setprop_wrapper = [](args_container&& args) -> json {
+        json& vin = args[0];
+        return setprop({
+            vin.value("parent", json(nullptr)),
+            vin.value("key", json(nullptr)),
+            vin.value("val", json(nullptr))
+        });
+      };
+
+      // TODO: Use nullptr for now since we can't have std::function with optional arguments. Instead, we need to rewrite the entire class to implement our own closure and "operator()"
+      runset(spec["minor"]["setprop"], setprop_wrapper, nullptr);
     }
 
 
