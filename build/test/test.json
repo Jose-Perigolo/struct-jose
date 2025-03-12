@@ -603,6 +603,16 @@
             "val": [
               "a"
             ],
+            "key": "0a",
+            "alt": false
+          },
+          "out": false
+        },
+        {
+          "in": {
+            "val": [
+              "a"
+            ],
             "key": "x",
             "alt": [
               {
