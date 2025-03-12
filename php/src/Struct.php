@@ -18,7 +18,6 @@ class Struct {
         'BT'       => '`',
         'DS'       => '$',
         'DT'       => '.',
-        // Keys used in transforms:
         'TKEY'     => '`$KEY`',
         'TMETA'    => '`$META`',
         'KEY'      => 'KEY',
@@ -65,7 +64,13 @@ class Struct {
         if (!is_string($key) && !is_int($key)) {
             throw new \TypeError("Invalid key type: " . gettype($key));
         }
-        return isset($val[$key]) ? $val[$key] : $alt;
+        if (is_array($val)) {
+            return isset($val[$key]) ? $val[$key] : $alt;
+        } elseif (is_object($val)) {
+            return isset($val->$key) ? $val->$key : $alt;
+        } else {
+            return $alt;
+        }
     }
     
 
@@ -165,8 +170,7 @@ class Struct {
             ? $path
             : (is_string($path) ? explode(self::S['DT'], $path) : null);
         if ($parts === null) return null;
-        error_log("getPath called with path: " . json_encode($path));
-    
+
         $root = $store;
         $val  = $store;
         $base = $state ? (is_array($state) ? ($state['base'] ?? null) : ($state->base ?? null)) : null;
@@ -198,7 +202,6 @@ class Struct {
                 $val = call_user_func($handler, $state, $val, $current, $store);
             }
         }
-        error_log("getPath resolved value: " . json_encode($val));
         return $val;
     }
     
@@ -487,9 +490,11 @@ class Struct {
             $kn = self::getProp($n, $keyname);
             $tcurrent['$TOP'][$kn] = $n;
         }
-        $tval = self::inject($tval, $store, $state['modify'] ?? null, $tcurrent);
+        foreach ($tval as $kn => $child) {
+            $currentItem = $tcurrent['$TOP'][$kn] ?? null;
+            $tval[$kn] = self::inject($child, $store, $state['modify'] ?? null, $currentItem);
+        }        
         self::setProp($target, $tkey, $tval);
-        // REMOVE the original transform marker from the parent.
         self::setProp($state['parent'], $state['key'], null);
         return null;
     }
@@ -520,8 +525,9 @@ class Struct {
             '$EACH'   => [self::class, 'transform_EACH'],
             '$PACK'   => [self::class, 'transform_PACK'],
         ]);
-        // Pass the merged data as the "current" context.
+
         $out = self::inject($spec, $store, $modify, $dataClone);
+        
         return $out;
     }
     
