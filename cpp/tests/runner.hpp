@@ -47,7 +47,11 @@ RunnerResult runner(const std::string& name, const json& store, const std::strin
 
   Utility _struct = utility["struct"];
 
+  function_pointer items = _struct["items"];
+  function_pointer stringify = _struct["stringify"];
 
+
+  // Read and parse the test JSON file
   std::ifstream f(testfile);
 
   json alltests = json::parse(f);
@@ -55,6 +59,7 @@ RunnerResult runner(const std::string& name, const json& store, const std::strin
   json spec;
 
   // TODO: Copy by reference the first two conditons
+  // Attempt to find the requested spec in the JSON
   if(alltests.contains("primary") && alltests["primary"].contains(name)) {
     spec = alltests["primary"][name];
   }
