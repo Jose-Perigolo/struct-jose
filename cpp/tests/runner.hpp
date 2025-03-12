@@ -205,12 +205,8 @@ first_arg["utility"] = testclient.utility()
         (*entry)["res"] = res;
 
         if(!entry->contains("match") || entry->contains("out")) {
-          /*
-          // TODO:
-# Remove functions/etc. by JSON round trip
-cleaned_res = json.loads(json.dumps(res, default=str))
-           */
-          json cleaned_res = res;
+          // Remove functions/etc. by JSON round trip - even though "json cleaned_res = res;" is good enough for C++
+          json cleaned_res = json::parse(res.dump());
           json expected_out = entry->at("out");
 
           // cleaned_res = false;
