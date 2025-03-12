@@ -191,6 +191,28 @@ function isfunc(val: any) {
 }
 
 
+// Determine the type of a value as a string.
+// Returns one of: 'null', 'string', 'number', 'boolean', 'function', 'array', 'object'
+// Normalizes and simplifies JavaScript's type system for consistency.
+function typify(value: any): string {
+  if (value === null || value === undefined) {
+    return 'null'
+  }
+
+  const type = typeof value
+
+  if (Array.isArray(value)) {
+    return 'array'
+  }
+
+  if (type === 'object') {
+    return 'object'
+  }
+
+  return type // 'string', 'number', 'boolean', 'function'
+}
+
+
 // Safely get a property of a node. Undefined arguments return undefined.
 // If the key is not found, return the alternative value, if any.
 function getprop(val: any, key: any, alt?: any) {
@@ -1111,7 +1133,7 @@ function transform(
 const validate_STRING: Injector = (state: Injection, _val: any, current: any) => {
   let out = getprop(current, state.key)
 
-  const t = _typify(out)
+  const t = typify(out)
   if (S_string !== t) {
     let msg = _invalidTypeMsg(state.path, S_string, t, out)
     state.errs.push(msg)
@@ -1132,7 +1154,7 @@ const validate_STRING: Injector = (state: Injection, _val: any, current: any) =>
 const validate_NUMBER: Injector = (state: Injection, _val: any, current: any) => {
   let out = getprop(current, state.key)
 
-  const t = _typify(out)
+  const t = typify(out)
   if (S_number !== t) {
     state.errs.push(_invalidTypeMsg(state.path, S_number, t, out))
     return UNDEF
@@ -1146,7 +1168,7 @@ const validate_NUMBER: Injector = (state: Injection, _val: any, current: any) =>
 const validate_BOOLEAN: Injector = (state: Injection, _val: any, current: any) => {
   let out = getprop(current, state.key)
 
-  const t = _typify(out)
+  const t = typify(out)
   if (S_boolean !== t) {
     state.errs.push(_invalidTypeMsg(state.path, S_boolean, t, out))
     return UNDEF
@@ -1160,7 +1182,7 @@ const validate_BOOLEAN: Injector = (state: Injection, _val: any, current: any) =
 const validate_OBJECT: Injector = (state: Injection, _val: any, current: any) => {
   let out = getprop(current, state.key)
 
-  const t = _typify(out)
+  const t = typify(out)
   if (t !== S_object) {
     state.errs.push(_invalidTypeMsg(state.path, S_object, t, out))
     return UNDEF
@@ -1174,7 +1196,7 @@ const validate_OBJECT: Injector = (state: Injection, _val: any, current: any) =>
 const validate_ARRAY: Injector = (state: Injection, _val: any, current: any) => {
   let out = getprop(current, state.key)
 
-  const t = _typify(out)
+  const t = typify(out)
   if (t !== S_array) {
     state.errs.push(_invalidTypeMsg(state.path, S_array, t, out))
     return UNDEF
@@ -1188,7 +1210,7 @@ const validate_ARRAY: Injector = (state: Injection, _val: any, current: any) => 
 const validate_FUNCTION: Injector = (state: Injection, _val: any, current: any) => {
   let out = getprop(current, state.key)
 
-  const t = _typify(out)
+  const t = typify(out)
   if (S_function !== t) {
     state.errs.push(_invalidTypeMsg(state.path, S_function, t, out))
     return UNDEF
@@ -1227,7 +1249,7 @@ const validate_CHILD: Injector = (state: Injection, _val: any, current: any) => 
     }
     else if (!ismap(tval)) {
       state.errs.push(_invalidTypeMsg(
-        state.path.slice(0, state.path.length - 1), S_object, _typify(tval), tval))
+        state.path.slice(0, state.path.length - 1), S_object, typify(tval), tval))
       return UNDEF
     }
 
@@ -1333,7 +1355,7 @@ const validate_ONE: Injector = (state: Injection, _val: any, current: any, store
     state.errs.push(_invalidTypeMsg(
       state.path.slice(0, state.path.length - 1),
       'one of ' + valdesc,
-      _typify(current), current))
+      typify(current), current))
   }
 }
 
@@ -1361,14 +1383,14 @@ const validation: Modify = (
   }
 
   // const pval = getprop(parent, key)
-  const ptype = _typify(pval)
+  const ptype = typify(pval)
 
   // Delete any special commands remaining.
   if (S_string === ptype && pval.includes(S_DS)) {
     return
   }
 
-  const ctype = _typify(cval)
+  const ctype = typify(cval)
 
   // Type mismatch.
   if (ptype !== ctype && UNDEF !== pval) {
@@ -1483,25 +1505,6 @@ function validate(
 // Internal utilities
 // ==================
 
-// Determine the type of a value as a string
-function _typify(value: any): string {
-  if (value === null || value === undefined) {
-    return 'null'
-  }
-
-  const type = typeof value
-
-  if (Array.isArray(value)) {
-    return 'array'
-  }
-
-  if (type === 'object') {
-    return 'object'
-  }
-
-  return type // 'string', 'number', 'boolean', 'function'
-}
-
 // Build a type validation error message.
 function _invalidTypeMsg(path: any, type: string, vt: string, v: any) {
   let vs = stringify(v)
@@ -1536,6 +1539,7 @@ export {
   setprop,
   stringify,
   transform,
+  typify,
   validate,
   walk,
 }

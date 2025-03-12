@@ -2269,6 +2269,53 @@
           ]
         }
       ]
+    },
+    "typify": {
+      "set": [
+        {
+          "in": {
+            "a": 1
+          },
+          "out": "object"
+        },
+        {
+          "in": [
+            1
+          ],
+          "out": "array"
+        },
+        {
+          "in": 1,
+          "out": "number"
+        },
+        {
+          "in": 3.14159,
+          "out": "number"
+        },
+        {
+          "in": -0.5,
+          "out": "number"
+        },
+        {
+          "in": "a",
+          "out": "string"
+        },
+        {
+          "in": true,
+          "out": "boolean"
+        },
+        {
+          "in": false,
+          "out": "boolean"
+        },
+        {
+          "in": null,
+          "out": "null"
+        },
+        {
+          "out": "null"
+        }
+      ]
     }
   },
   "getpath": {

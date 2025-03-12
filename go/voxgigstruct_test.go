@@ -261,6 +261,7 @@ func TestStruct(t *testing.T) {
 			"setprop": voxgigstruct.SetProp,
 
 			"stringify": voxgigstruct.Stringify,
+			"typify":    voxgigstruct.Typify,
 		}
 		for name, fn := range checks {
 			if fnVal := reflect.ValueOf(fn); fnVal.Kind() != reflect.Func {
@@ -484,6 +485,10 @@ func TestStruct(t *testing.T) {
 
 	t.Run("minor-joinurl", func(t *testing.T) {
 		runsetFlags(t, minor["joinurl"], map[string]bool{"json_null": false}, voxgigstruct.JoinUrl)
+	})
+
+	t.Run("minor-typify", func(t *testing.T) {
+		runset(t, minor["typify"], voxgigstruct.Typify)
 	})
 
 	// walk tests
