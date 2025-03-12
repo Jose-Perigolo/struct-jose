@@ -231,6 +231,46 @@ func IsFunc(val any) bool {
 	return reflect.ValueOf(val).Kind() == reflect.Func
 }
 
+// Determine the type of a value as a string.
+// Returns one of: 'null', 'string', 'number', 'boolean', 'function', 'array', 'object'
+// Normalizes and simplifies Go's type system for consistency.
+func Typify(value any) string {
+	if value == nil {
+		return "null"
+	}
+
+	val := reflect.ValueOf(value)
+	if !val.IsValid() {
+		return "null"
+	}
+
+	t := val.Type()
+
+	switch t.Kind() {
+	case reflect.Bool:
+		return "boolean"
+
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		return "number"
+
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64,
+		reflect.Float32, reflect.Float64:
+		return "number"
+
+	case reflect.String:
+		return "string"
+
+	case reflect.Func:
+		return "function"
+
+	case reflect.Slice, reflect.Array:
+		return "array"
+
+	default:
+		return "object"
+	}
+}
+
 // Safely get a property of a node. Nil arguments return nil.
 // If the key is not found, return the alternative value, if any.
 func GetProp(val any, key any, alts ...any) any {
@@ -1623,7 +1663,7 @@ var validate_STRING Injector = func(
 ) any {
 	out := GetProp(current, state.Key)
 	
-	t := _typify(out)
+	t := Typify(out)
 	if S_string != t {
 		msg := _invalidTypeMsg(state.Path, S_string, t, out)
 		state.Errs.Append(msg)
@@ -1649,7 +1689,7 @@ var validate_NUMBER Injector = func(
 ) any {
 	out := GetProp(current, state.Key)
 	
-	t := _typify(out)
+	t := Typify(out)
   if S_number != t {
 		msg := _invalidTypeMsg(state.Path, S_number, t, out)
 		state.Errs.Append(msg)
@@ -1669,7 +1709,7 @@ var validate_BOOLEAN Injector = func(
 ) any {
 	out := GetProp(current, state.Key)
 	
-	t := _typify(out)
+	t := Typify(out)
 	if S_boolean != t {
 		msg := _invalidTypeMsg(state.Path, S_boolean, t, out)
 		state.Errs.Append(msg)
@@ -1689,7 +1729,7 @@ var validate_OBJECT Injector = func(
 ) any {
 	out := GetProp(current, state.Key)
 	
-	t := _typify(out)
+	t := Typify(out)
 	if S_object != t {
 		msg := _invalidTypeMsg(state.Path, S_object, t, out)
 		state.Errs.Append(msg)
@@ -1709,7 +1749,7 @@ var validate_ARRAY Injector = func(
 ) any {
 	out := GetProp(current, state.Key)
 	
-	t := _typify(out)
+	t := Typify(out)
 	if S_array != t {
 		msg := _invalidTypeMsg(state.Path, S_array, t, out)
 		state.Errs.Append(msg)
@@ -1729,7 +1769,7 @@ var validate_FUNCTION Injector = func(
 ) any {
 	out := GetProp(current, state.Key)
 	
-	t := _typify(out)
+	t := Typify(out)
 	if S_function != t {
 		msg := _invalidTypeMsg(state.Path, S_function, t, out)
 		state.Errs.Append(msg)
@@ -1773,7 +1813,7 @@ var validate_CHILD Injector = func(
 				_invalidTypeMsg(
 					state.Path[:len(state.Path)-1],
 					S_object,
-					_typify(tval),
+					Typify(tval),
 					tval,
 				))
 			return nil
@@ -1815,7 +1855,7 @@ var validate_CHILD Injector = func(
 				_invalidTypeMsg(
 					state.Path[:len(state.Path)-1],
 					S_array,
-					_typify(current),
+					Typify(current),
 					current,
 				))
 			state.KeyI = len(state.Parent.([]any))
@@ -1916,7 +1956,7 @@ func init_validate_ONE() {
         return match
       })
 	
-			actualType := _typify(current)
+			actualType := Typify(current)
 			msg := _invalidTypeMsg(
 				state.Path[:len(state.Path)-1],
 				"one of "+valdesc,
@@ -1950,7 +1990,7 @@ func validation(
 	}
 
 	pval := GetProp(parent, key)
-	ptype := _typify(pval)
+	ptype := Typify(pval)
 
 	// Delete any special commands remaining.
 	if S_string == ptype && pval != nil {
@@ -1959,7 +1999,7 @@ func validation(
 		}
 	}
 
-	ctype := _typify(cval)
+	ctype := Typify(cval)
 
 
   // fmt.Println("VALID", pval, ptype, cval, ctype)
@@ -2105,38 +2145,6 @@ func (l *ListRef[T]) Prepend(elem T) {
 	l.List = append([]T{elem}, l.List...)
 }
 
-
-func _typify(value any) string {
-	if value == nil {
-		return "null"
-	}
-
-	t := reflect.TypeOf(value)
-
-	switch t.Kind() {
-	case reflect.Bool:
-		return "boolean"
-
-	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-		return "number"
-
-	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64,
-		reflect.Float32, reflect.Float64:
-		return "number"
-
-	case reflect.String:
-		return "string"
-
-	case reflect.Func:
-		return "function"
-
-	case reflect.Slice, reflect.Array:
-		return "array"
-
-	default:
-		return "object"
-	}
-}
 
 func _join(vals []any, sep string) string {
 	strVals := make([]string, len(vals))
