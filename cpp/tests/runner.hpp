@@ -6,7 +6,7 @@
 #define FOR(entry, OBJ) for(json::iterator entry = OBJ.begin(); entry != OBJ.end(); ++entry)
 
 json fixJSON(const json&);
-json unfixJSON(json&&); // UNUSED
+json unfixJSON(const json&); // UNUSED
 
 struct RunnerResult {
   using Function = std::function<void(const json&, JsonFunction, json&&)>;
@@ -283,11 +283,10 @@ json fixJSON(const json& obj) {
 
 
 /*
-   json unfixJSON(json&& obj) {
-   return std::move(obj);
+   json unfixJSON(const json& obj) {
+   return obj;
    }
  */
-
 // TODO
 /*
    def unfixJSON(obj):
