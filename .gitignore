@@ -140,10 +140,11 @@ dist
 
 __pycache__
 
- package-lock.json
+
+*.bak*
 
 *.class
 *.out
 
 *.swp
- 
+

@@ -1,5 +1,3 @@
-
-
 const { readFileSync } = require('node:fs')
 const { join } = require('node:path')
 const { deepEqual, fail, AssertionError } = require('node:assert')
@@ -7,84 +5,29 @@ const { deepEqual, fail, AssertionError } = require('node:assert')
 
 async function runner(name, store, testfile, provider) {
 
-  const client = provider.test()
+  const client = await provider.test()
   const utility = client.utility()
-  const {
-    clone,
-    getpath,
-    inject,
-    items,
-    stringify,
-    walk,
-  } = utility.struct
+  const structUtils = utility.struct
 
-  const alltests =
-    JSON.parse(readFileSync(join(
-      __dirname, testfile), 'utf8'))
+  let spec = resolveSpec(name, testfile)
 
-  // TODO: a more coherent namespace perhaps?
-  let spec = alltests.primary?.[name] || alltests[name] || alltests
-
-  const clients = {}
-  if (spec.DEF) {
-    for (let cdef of items(spec.DEF.client)) {
-      const copts = cdef[1].test.options || {}
-      if ('object' === typeof store) {
-        inject(copts, store)
-      }
-
-      clients[cdef[0]] = await provider.test(copts)
-    }
-  }
+  let clients = await resolveClients(spec, store, provider, structUtils)
 
   let subject = utility[name]
 
-  let runset = async (testspec, testsubject, makesubject) => {
-    testsubject = testsubject || subject
+  let runset = async (testspec, testsubject) => {
+    subject = testsubject || subject
 
     next_entry:
     for (let entry of testspec.set) {
       try {
-        let testclient = client
+        let testpack = resolveTestPack(name, entry, subject, client, clients)
+        let args = resolveArgs(entry, testpack)
 
-        if (entry.client) {
-          testclient = clients[entry.client]
-          testsubject = client.utility()[name]
-        }
-
-        if (makesubject) {
-          testsubject = makesubject(testsubject)
-        }
-
-        let args = [clone(entry.in)]
-
-        if (entry.ctx) {
-          args = [entry.ctx]
-        }
-        else if (entry.args) {
-          args = entry.args
-        }
-
-        if (entry.ctx || entry.args) {
-          let first = args[0]
-          if ('object' === typeof first && null != first) {
-            entry.ctx = first = args[0] = clone(args[0])
-            first.client = testclient
-            first.utility = testclient.utility()
-          }
-        }
-
-        let res = await testsubject(...args)
+        let res = await testpack.subject(...args)
         entry.res = res
 
-        if (undefined === entry.match || undefined !== entry.out) {
-          // NOTE: don't use clone as we want to strip functions
-          deepEqual(null != res ? JSON.parse(JSON.stringify(res)) : res, entry.out)
-        }
-
-        if (entry.match) {
-          match(entry.match, { in: entry.in, out: entry.res, ctx: entry.ctx })
-        }
+        checkResult(entry, res, structUtils)
       }
       catch (err) {
         entry.thrown = err
@@ -92,17 +35,21 @@ async function runner(name, store, testfile, provider) {
         const entry_err = entry.err
 
         if (null != entry_err) {
-          // if (true === entry_err || (err.message.includes(entry_err))) {
-          if (true === entry_err || matchval(entry_err, err.message)) {
+          if (true === entry_err || matchval(entry_err, err.message, structUtils)) {
 
             if (entry.match) {
-              match(entry.match, { in: entry.in, out: entry.res, ctx: entry.ctx, err })
+              match(
+                entry.match,
+                { in: entry.in, out: entry.res, ctx: entry.ctx, err },
+                structUtils
+              )
             }
 
             continue next_entry
           }
 
-          fail('ERROR MATCH: [' + stringify(entry_err) + '] <=> [' + err.message + ']')
+          fail('ERROR MATCH: [' + structUtils.stringify(entry_err) +
+            '] <=> [' + err.message + ']')
         }
         else if (err instanceof AssertionError) {
           fail(err.message + '\n\nENTRY: ' + JSON.stringify(entry, null, 2))
@@ -114,48 +61,6 @@ async function runner(name, store, testfile, provider) {
     }
   }
 
-
-  function match(check, base) {
-    walk(check, (_key, val, _parent, path) => {
-      if ('object' != typeof val) {
-        let baseval = getpath(path, base)
-
-        if (!matchval(val, baseval)) {
-          fail('MATCH: ' + path.join('.') +
-            ': [' + stringify(val) + '] <=> [' + stringify(baseval) + ']')
-        }
-      }
-    })
-  }
-
-
-  function matchval(check, base) {
-    check = '__UNDEF__' === check ? undefined : check
-
-    let pass = check === base
-
-    if (!pass) {
-
-      if ('string' === typeof check) {
-        let basestr = stringify(base)
-
-        let rem = check.match(/^\/(.+)\/$/)
-        if (rem) {
-          pass = new RegExp(rem[1]).test(basestr)
-        }
-        else {
-          pass = basestr.toLowerCase().includes(stringify(check).toLowerCase())
-        }
-      }
-      else if ('function' === typeof check) {
-        pass = true
-      }
-    }
-
-    return pass
-  }
-
-
   return {
     spec,
     runset,
@@ -164,12 +69,154 @@ async function runner(name, store, testfile, provider) {
 }
 
 
+function checkResult(entry, res, structUtils) {
+  if (undefined === entry.match || undefined !== entry.out) {
+    // NOTE: don't use clone as we want to strip functions
+    deepEqual(null != res ? JSON.parse(JSON.stringify(res)) : res, entry.out)
+  }
+
+  if (entry.match) {
+    match(
+      entry.match,
+      { in: entry.in, out: entry.res, ctx: entry.ctx },
+      structUtils
+    )
+  }
+
+}
+
+
+function resolveArgs(entry, testpack) {
+  const structUtils = testpack.utility.struct
+  let args = [structUtils.clone(entry.in)]
+
+  if (entry.ctx) {
+    args = [entry.ctx]
+  }
+  else if (entry.args) {
+    args = entry.args
+  }
+
+  if (entry.ctx || entry.args) {
+    let first = args[0]
+    if ('object' === typeof first && null != first) {
+      entry.ctx = first = args[0] = structUtils.clone(args[0])
+      first.client = testpack.client
+      first.utility = testpack.utility
+    }
+  }
+
+  return args
+}
+
+
+function resolveTestPack(
+  name,
+  entry,
+  subject,
+  client,
+  clients
+) {
+  const pack = {
+    client,
+    subject,
+    utility: client.utility(),
+  }
+
+  if (entry.client) {
+    pack.client = clients[entry.client]
+    pack.utility = pack.client.utility()
+    pack.subject = pack.utility[name]
+  }
+
+  return pack
+}
+
+
+function resolveSpec(name, testfile) {
+  const alltests =
+    JSON.parse(readFileSync(join(
+      __dirname, testfile), 'utf8'))
+
+  let spec = alltests.primary?.[name] || alltests[name] || alltests
+  return spec
+}
+
+
+async function resolveClients(
+  spec,
+  store,
+  provider,
+  structUtils
+) {
+
+  const clients = {}
+  if (spec.DEF) {
+    for (let cdef of structUtils.items(spec.DEF.client)) {
+      const copts = cdef[1].test.options || {}
+      if ('object' === typeof store) {
+        structUtils.inject(copts, store)
+      }
+
+      clients[cdef[0]] = await provider.test(copts)
+    }
+  }
+  return clients
+}
+
+
+function match(
+  check,
+  base,
+  structUtils
+) {
+  structUtils.walk(check, (_key, val, _parent, path) => {
+    let scalar = 'object' != typeof val
+    if (scalar) {
+      let baseval = structUtils.getpath(path, base)
+
+      if (!matchval(val, baseval, structUtils)) {
+        fail('MATCH: ' + path.join('.') +
+          ': [' + structUtils.stringify(val) + '] <=> [' + structUtils.stringify(baseval) + ']')
+      }
+    }
+  })
+}
+
+
+function matchval(
+  check,
+  base,
+  structUtils
+) {
+  check = '__UNDEF__' === check ? undefined : check
+
+  let pass = check === base
+
+  if (!pass) {
+
+    if ('string' === typeof check) {
+      let basestr = structUtils.stringify(base)
+
+      let rem = check.match(/^\/(.+)\/$/)
+      if (rem) {
+        pass = new RegExp(rem[1]).test(basestr)
+      }
+      else {
+        pass = basestr.toLowerCase().includes(structUtils.stringify(check).toLowerCase())
+      }
+    }
+    else if ('function' === typeof check) {
+      pass = true
+    }
+  }
+
+  return pass
+}
+
 
 
 module.exports = {
   runner
 }
-
-
-
 

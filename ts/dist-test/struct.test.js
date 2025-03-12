@@ -4,9 +4,6 @@ const node_test_1 = require("node:test");
 const node_assert_1 = require("node:assert");
 const struct_1 = require("../dist/struct");
 const runner_1 = require("./runner");
-function walkpath(_key, val, _parent, path) {
-    return 'string' === typeof val ? val + '~' + path.join('.') : val;
-}
 function nullModifier(key, val, parent) {
     if ("__NULL__" === val) {
         (0, struct_1.setprop)(parent, key, null);
@@ -15,9 +12,10 @@ function nullModifier(key, val, parent) {
         (0, struct_1.setprop)(parent, key, val.replaceAll('__NULL__', 'null'));
     }
 }
+// NOTE: tests are in order of increasing dependence.
 (0, node_test_1.describe)('struct', async () => {
     const { spec, runset } = await (0, runner_1.runner)('struct', {}, '../../build/test/test.json', {
-        test: () => ({
+        test: async () => ({
             utility: () => ({
                 struct: {
                     clone: struct_1.clone,
@@ -100,14 +98,35 @@ function nullModifier(key, val, parent) {
     (0, node_test_1.test)('minor-stringify', async () => {
         await runset(spec.minor.stringify, (vin) => null == vin.max ? (0, struct_1.stringify)(vin.val) : (0, struct_1.stringify)(vin.val, vin.max));
     });
+    (0, node_test_1.test)('minor-pathify', async () => {
+        await runset(spec.minor.pathify, (vin) => (0, struct_1.pathify)(vin.path, vin.from));
+    });
     (0, node_test_1.test)('minor-items', async () => {
         await runset(spec.minor.items, struct_1.items);
     });
     (0, node_test_1.test)('minor-getprop', async () => {
         await runset(spec.minor.getprop, (vin) => null == vin.alt ? (0, struct_1.getprop)(vin.val, vin.key) : (0, struct_1.getprop)(vin.val, vin.key, vin.alt));
     });
+    (0, node_test_1.test)('minor-edge-getprop', async () => {
+        let strarr = ['a', 'b', 'c', 'd', 'e'];
+        (0, node_assert_1.deepEqual)((0, struct_1.getprop)(strarr, 2), 'c');
+        (0, node_assert_1.deepEqual)((0, struct_1.getprop)(strarr, '2'), 'c');
+        let intarr = [2, 3, 5, 7, 11];
+        (0, node_assert_1.deepEqual)((0, struct_1.getprop)(intarr, 2), 5);
+        (0, node_assert_1.deepEqual)((0, struct_1.getprop)(intarr, '2'), 5);
+    });
     (0, node_test_1.test)('minor-setprop', async () => {
         await runset(spec.minor.setprop, (vin) => (0, struct_1.setprop)(vin.parent, vin.key, vin.val));
+    });
+    (0, node_test_1.test)('minor-edge-getprop', async () => {
+        let strarr0 = ['a', 'b', 'c', 'd', 'e'];
+        let strarr1 = ['a', 'b', 'c', 'd', 'e'];
+        (0, node_assert_1.deepEqual)((0, struct_1.setprop)(strarr0, 2, 'C'), ['a', 'b', 'C', 'd', 'e']);
+        (0, node_assert_1.deepEqual)((0, struct_1.setprop)(strarr1, '2', 'CC'), ['a', 'b', 'CC', 'd', 'e']);
+        let intarr0 = [2, 3, 5, 7, 11];
+        let intarr1 = [2, 3, 5, 7, 11];
+        (0, node_assert_1.deepEqual)((0, struct_1.setprop)(intarr0, 2, 55), [2, 3, 55, 7, 11]);
+        (0, node_assert_1.deepEqual)((0, struct_1.setprop)(intarr1, '2', 555), [2, 3, 555, 7, 11]);
     });
     (0, node_test_1.test)('minor-haskey', async () => {
         await runset(spec.minor.haskey, struct_1.haskey);
@@ -123,7 +142,23 @@ function nullModifier(key, val, parent) {
     (0, node_test_1.test)('walk-exists', async () => {
         (0, node_assert_1.equal)('function', typeof struct_1.walk);
     });
+    (0, node_test_1.test)('walk-log', async () => {
+        const test = (0, struct_1.clone)(spec.walk.log);
+        const log = [];
+        function walklog(key, val, parent, path) {
+            log.push('k=' + (0, struct_1.stringify)(key) +
+                ', v=' + (0, struct_1.stringify)(val) +
+                ', p=' + (0, struct_1.stringify)(parent) +
+                ', t=' + (0, struct_1.pathify)(path));
+            return val;
+        }
+        (0, struct_1.walk)(test.in, walklog);
+        (0, node_assert_1.deepEqual)(log, test.out);
+    });
     (0, node_test_1.test)('walk-basic', async () => {
+        function walkpath(_key, val, _parent, path) {
+            return 'string' === typeof val ? val + '~' + path.join('.') : val;
+        }
         await runset(spec.walk.basic, (vin) => (0, struct_1.walk)(vin, walkpath));
     });
     // merge tests
@@ -271,9 +306,12 @@ function nullModifier(key, val, parent) {
                 return out;
             },
         };
-        (0, struct_1.validate)({ a: 1 }, { a: '`$INTEGER`' }, extra, errs);
+        const shape = { a: '`$INTEGER`' };
+        let out = (0, struct_1.validate)({ a: 1 }, shape, extra, errs);
+        (0, node_assert_1.deepEqual)(out, { a: 1 });
         (0, node_assert_1.equal)(errs.length, 0);
-        (0, struct_1.validate)({ a: 'A' }, { a: '`$INTEGER`' }, extra, errs);
+        out = (0, struct_1.validate)({ a: 'A' }, shape, extra, errs);
+        (0, node_assert_1.deepEqual)(out, { a: 'A' });
         (0, node_assert_1.deepEqual)(errs, ['Not an integer at a: A']);
     });
 });
