@@ -49,7 +49,7 @@ struct Struct : public Utility {
         { "stringify", stringify },
         { "clone", clone },
         { "setprop", setprop },
-    });
+        });
   }
 
   ~Struct() = default;
@@ -79,6 +79,38 @@ hash_table<std::string, Utility> Provider::utility() {
   };
 
 }
+
+json walkpath(args_container&& args) {
+  json _key = args.size() == 0 ? nullptr : std::move(args[0]);
+  json val = args.size() < 2 ? nullptr : std::move(args[1]);
+  json _parent = args.size() < 3 ? nullptr : std::move(args[2]);
+  json path = args.size() < 4 ? nullptr : std::move(args[3]);
+
+  if(val.is_string()) {
+    std::string out;
+    out = val.get<std::string>() + "~";
+
+    std::string path_joint;
+
+    int i = 0;
+    int size = path.size();
+
+    for(json::iterator p = path.begin(); p != path.end(); p++, i++) {
+      path_joint += p->get<std::string>();
+
+      if(i < size-2) {
+        path_joint += '.';
+      }
+    }
+
+
+
+    return out;
+  }
+
+  return val;
+
+};
 
 int main() {
 
@@ -117,7 +149,7 @@ int main() {
       runset(spec["minor"]["isfunc"],
           static_cast<function_pointer>(isfunc<args_container&&>),
           { { "fixjson", false } }
-      );
+          );
     }
 
     TEST_CASE("test_minor_getprop") {
@@ -129,13 +161,13 @@ int main() {
           return getprop({
               vin.value("val", json(nullptr)),
               vin.value("key", json(nullptr))
-          });
+              });
         } else {
           return getprop({
               vin.value("val", json(nullptr)), 
               vin.value("key", json(nullptr)),
               vin.value("alt", json(nullptr))
-          });
+              });
         }
       };
 
@@ -175,12 +207,12 @@ int main() {
         if(!vin.contains("max")) {
           return stringify({
               vin.value("val", json(nullptr))
-          });
+              });
         } else {
           return stringify({
               vin.value("val", json(nullptr)),
               vin.value("max", json(nullptr))
-          });
+              });
         }
       };
 
@@ -199,7 +231,7 @@ int main() {
             vin.value("parent", json(nullptr)),
             vin.value("key", json(nullptr)),
             vin.value("val", json(nullptr))
-        });
+            });
       };
 
       // TODO: Use nullptr for now since we can't have std::function with optional arguments. Instead, we need to rewrite the entire class to implement our own closure and "operator()"
@@ -209,6 +241,23 @@ int main() {
     // -------------------------------------------------
     // walk tests
     // -------------------------------------------------
+
+    /*
+    TEST_CASE("test_walk_basic") {
+
+      JsonFunction walk_wrapper = [](args_container&& args) -> json {
+        json vin = args.size() == 0 ? nullptr : std::move(args[0]);
+        return walk({
+            std::move(vin),
+            (intptr_t)walkpath,
+            });
+      };
+
+      // TODO: Use nullptr for now since we can't have std::function with optional arguments. Instead, we need to rewrite the entire class to implement our own closure and "operator()"
+      runset(spec["minor"]["setprop"], walk_wrapper, nullptr);
+    }
+    */
+
 
 
   }
