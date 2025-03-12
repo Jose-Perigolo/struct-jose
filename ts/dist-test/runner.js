@@ -22,7 +22,6 @@ async function runner(name, store, testfile, provider) {
                 checkResult(entry, res, structUtils);
             }
             catch (err) {
-                console.log('RUNNER-ERROR', err);
                 entry.thrown = err;
                 const entry_err = entry.err;
                 if (null != entry_err) {

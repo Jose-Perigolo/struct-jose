@@ -96,13 +96,18 @@ const (
 	S_DT       = "."
 	S_CN       = ":"
 	S_KEY      = "KEY"
+	
+	// Types for validation
+	S_STRING   = "`$STRING`"
+	S_NUMBER   = "`$NUMBER`"
+	S_BOOLEAN  = "`$BOOLEAN`"
 )
 
 // The standard undefined value for this language.
 // NOTE: `nil` must be used directly.
 
 // Keys are strings for maps, or integers for lists.
-type PropKey interface{}
+type PropKey any
 
 // For each key in a node (map or list), perform value injections in
 // three phases: on key value, before child, and then on key value again.
@@ -120,51 +125,51 @@ const (
 // - `$FOO`: apply transform FOO
 type Injector func(
 	state *Injection, // Injection state.
-	val interface{}, // Injection value specification.
-	current interface{}, // Current source parent value.
+	val any, // Injection value specification.
+	current any, // Current source parent value.
 	ref *string, // Original injection reference string.
-	store interface{}, // Current source root value.
-) interface{}
+	store any, // Current source root value.
+) any
 
 // Injection state used for recursive injection into JSON-like data structures.
 type Injection struct {
-	Mode    InjectMode             // Injection mode: key:pre, val, key:post.
-	Full    bool                   // Transform escape was full key name.
-	KeyI    int                    // Index of parent key in list of parent keys.
-	Keys    []string               // List of parent keys.
-	Key     string                 // Current parent key.
-	Val     interface{}            // Current child value.
-	Parent  interface{}            // Current parent (in transform specification).
-	Path    []string               // Path to current node.
-	Nodes   []interface{}          // Stack of ancestor nodes.
-	Handler Injector               // Custom handler for injections.
-	Errs    *ListRef[any]          // Error collector.
-	Meta    map[string]interface{} // Custom meta data.
-	Base    string                 // Base key for data in store, if any.
-	Modify  Modify                 // Modify injection output.
+	Mode    InjectMode       // Injection mode: key:pre, val, key:post.
+	Full    bool             // Transform escape was full key name.
+	KeyI    int              // Index of parent key in list of parent keys.
+	Keys    []string         // List of parent keys.
+	Key     string           // Current parent key.
+	Val     any              // Current child value.
+	Parent  any              // Current parent (in transform specification).
+	Path    []string         // Path to current node.
+	Nodes   []any            // Stack of ancestor nodes.
+	Handler Injector         // Custom handler for injections.
+	Errs    *ListRef[any]    // Error collector.
+	Meta    map[string]any   // Custom meta data.
+	Base    string           // Base key for data in store, if any.
+	Modify  Modify           // Modify injection output.
 }
 
 // Apply a custom modification to injections.
 type Modify func(
-	val interface{}, // Value.
-	key interface{}, // Value key, if any,
-	parent interface{}, // Parent node, if any.
+	val any, // Value.
+	key any, // Value key, if any,
+	parent any, // Parent node, if any.
 	state *Injection, // Injection state, if any.
-	current interface{}, // Current value in store (matches path).
-	store interface{}, // Store, if any
+	current any, // Current value in store (matches path).
+	store any, // Store, if any
 )
 
 // Function applied to each node and leaf when walking a node structure depth first.
 type WalkApply func(
 	// Map keys are strings, list keys are numbers, top key is nil
 	key *string,
-	val interface{},
-	parent interface{},
+	val any,
+	parent any,
 	path []string,
-) interface{}
+) any
 
 // Value is a node - defined, and a map (hash) or list (array).
-func IsNode(val interface{}) bool {
+func IsNode(val any) bool {
 	if val == nil {
 		return false
 	}
@@ -173,16 +178,16 @@ func IsNode(val interface{}) bool {
 }
 
 // Value is a defined map (hash) with string keys.
-func IsMap(val interface{}) bool {
+func IsMap(val any) bool {
 	if val == nil {
 		return false
 	}
-	_, ok := val.(map[string]interface{})
+	_, ok := val.(map[string]any)
 	return ok
 }
 
 // Value is a defined list (array) with integer keys (indexes).
-func IsList(val interface{}) bool {
+func IsList(val any) bool {
 	if val == nil {
 		return false
 	}
@@ -192,7 +197,7 @@ func IsList(val interface{}) bool {
 }
 
 // Value is a defined string (non-empty) or integer key.
-func IsKey(val interface{}) bool {
+func IsKey(val any) bool {
 	switch k := val.(type) {
 	case string:
 		return k != S_MT
@@ -206,31 +211,31 @@ func IsKey(val interface{}) bool {
 }
 
 // Check for an "empty" value - nil, empty string, array, object.
-func IsEmpty(val interface{}) bool {
+func IsEmpty(val any) bool {
 	if val == nil {
 		return true
 	}
 	switch vv := val.(type) {
 	case string:
 		return vv == S_MT
-	case []interface{}:
+	case []any:
 		return len(vv) == 0
-	case map[string]interface{}:
+	case map[string]any:
 		return len(vv) == 0
 	}
 	return false
 }
 
 // Value is a function.
-func IsFunc(val interface{}) bool {
+func IsFunc(val any) bool {
 	return reflect.ValueOf(val).Kind() == reflect.Func
 }
 
 // Safely get a property of a node. Nil arguments return nil.
 // If the key is not found, return the alternative value, if any.
-func GetProp(val interface{}, key interface{}, alts ...interface{}) interface{} {
-	var out interface{}
-	var alt interface{}
+func GetProp(val any, key any, alts ...any) any {
+	var out any
+	var alt any
 
 	if len(alts) > 0 {
 		alt = alts[0]
@@ -246,7 +251,7 @@ func GetProp(val interface{}, key interface{}, alts ...interface{}) interface{} 
 			ks = _strKey(key)
 		}
 
-		v := val.(map[string]interface{})
+		v := val.(map[string]any)
 		res, has := v[ks]
 		if has {
 			out = res
@@ -268,7 +273,7 @@ func GetProp(val interface{}, key interface{}, alts ...interface{}) interface{} 
 			}
 		}
 
-		v, ok := val.([]interface{})
+		v, ok := val.([]any)
 
 		if !ok {
 			rv := reflect.ValueOf(val)
@@ -309,9 +314,9 @@ func GetProp(val interface{}, key interface{}, alts ...interface{}) interface{} 
 }
 
 // Sorted keys of a map, or indexes of a list.
-func KeysOf(val interface{}) []string {
+func KeysOf(val any) []string {
 	if IsMap(val) {
-		m := val.(map[string]interface{})
+		m := val.(map[string]any)
 
 		keys := make([]string, 0, len(m))
 		for k := range m {
@@ -323,7 +328,7 @@ func KeysOf(val interface{}) []string {
 		return keys
 
 	} else if IsList(val) {
-		arr := val.([]interface{})
+		arr := val.([]any)
 		keys := make([]string, len(arr))
 		for i := range arr {
 			keys[i] = _strKey(i)
@@ -335,15 +340,15 @@ func KeysOf(val interface{}) []string {
 }
 
 // Value of property with name key in node val is defined.
-func HasKey(val interface{}, key interface{}) bool {
+func HasKey(val any, key any) bool {
 	return nil != GetProp(val, key)
 }
 
 // List the sorted keys of a map or list as an array of tuples of the form [key, value].
-func Items(val interface{}) [][2]interface{} {
+func Items(val any) [][2]any {
 	if IsMap(val) {
-		m := val.(map[string]interface{})
-		out := make([][2]interface{}, 0, len(m))
+		m := val.(map[string]any)
+		out := make([][2]any, 0, len(m))
 
 		keys := make([]string, 0, len(m))
 		for k := range m {
@@ -352,20 +357,20 @@ func Items(val interface{}) [][2]interface{} {
 		sort.Strings(keys)
 
 		for _, k := range keys {
-			out = append(out, [2]interface{}{k, m[k]})
+			out = append(out, [2]any{k, m[k]})
 		}
 		return out
 
 	} else if IsList(val) {
-		arr := val.([]interface{})
-		out := make([][2]interface{}, 0, len(arr))
+		arr := val.([]any)
+		out := make([][2]any, 0, len(arr))
 		for i, v := range arr {
-			out = append(out, [2]interface{}{i, v})
+			out = append(out, [2]any{i, v})
 		}
 		return out
 	}
 
-	return make([][2]interface{}, 0, 0)
+	return make([][2]any, 0, 0)
 }
 
 // Escape regular expression.
@@ -389,7 +394,7 @@ var (
 )
 
 // Concatenate url part strings, merging forward slashes as needed.
-func JoinUrl(parts []interface{}) string {
+func JoinUrl(parts []any) string {
 	var filtered []string
 	for _, p := range parts {
 		if "" != p && nil != p {
@@ -424,7 +429,7 @@ func JoinUrl(parts []interface{}) string {
 }
 
 // Safely stringify a value for humans (NOT JSON!).
-func Stringify(val interface{}, maxlen ...int) string {
+func Stringify(val any, maxlen ...int) string {
 	if nil == val {
 		return S_MT
 	}
@@ -452,13 +457,13 @@ func Stringify(val interface{}, maxlen ...int) string {
 }
 
 // Build a human friendly path string.
-func Pathify(val interface{}, from ...int) string {
+func Pathify(val any, from ...int) string {
 	var pathstr *string
 
-	var path []interface{} = nil
+	var path []any = nil
 
 	if IsList(val) {
-		list, ok := val.([]interface{})
+		list, ok := val.([]any)
 		if !ok {
 			list = _listify(val)
 		}
@@ -497,7 +502,7 @@ func Pathify(val interface{}, from ...int) string {
 			pathstr = &root
 
 		} else {
-			var filtered []interface{}
+			var filtered []any
 			for _, p := range sliced {
 				switch x := p.(type) {
 				case string:
@@ -546,11 +551,11 @@ func Pathify(val interface{}, from ...int) string {
 
 // Clone a JSON-like data structure.
 // NOTE: function value references are copied, *not* cloned.
-func Clone(val interface{}) interface{} {
+func Clone(val any) any {
 	return CloneFlags(val, nil)
 }
 
-func CloneFlags(val interface{}, flags map[string]bool) interface{} {
+func CloneFlags(val any, flags map[string]bool) any {
 	if val == nil {
 		return nil
 	}
@@ -572,14 +577,14 @@ func CloneFlags(val interface{}, flags map[string]bool) interface{} {
 	}
 
 	switch v := val.(type) {
-	case map[string]interface{}:
-		newMap := make(map[string]interface{}, len(v))
+	case map[string]any:
+		newMap := make(map[string]any, len(v))
 		for key, value := range v {
 			newMap[key] = CloneFlags(value, flags)
 		}
 		return newMap
-	case []interface{}:
-		newSlice := make([]interface{}, len(v))
+	case []any:
+		newSlice := make([]any, len(v))
 		for i, value := range v {
 			newSlice[i] = CloneFlags(value, flags)
 		}
@@ -596,13 +601,13 @@ func CloneFlags(val interface{}, flags map[string]bool) interface{} {
 // NOTE: If the key is above the list size, append the value; below, prepend.
 // If the value is undefined, remove the list element at index key, and shift the
 // remaining elements down.  These rules avoid "holes" in the list.
-func SetProp(parent interface{}, key interface{}, newval interface{}) interface{} {
+func SetProp(parent any, key any, newval any) any {
 	if !IsKey(key) {
 		return parent
 	}
 
 	if IsMap(parent) {
-		m := parent.(map[string]interface{})
+		m := parent.(map[string]any)
 
 		// Convert key to string
 		ks := ""
@@ -615,7 +620,7 @@ func SetProp(parent interface{}, key interface{}, newval interface{}) interface{
 		}
 
 	} else if IsList(parent) {
-		arr, genarr := parent.([]interface{})
+		arr, genarr := parent.([]any)
 
 		// Convert key to integer
 		var ki int
@@ -640,7 +645,7 @@ func SetProp(parent interface{}, key interface{}, newval interface{}) interface{
 
 		if !genarr {
 			rv := reflect.ValueOf(parent)
-			arr = make([]interface{}, rv.Len())
+			arr = make([]any, rv.Len())
 			for i := 0; i < rv.Len(); i++ {
 				arr[i] = rv.Index(i).Interface()
 			}
@@ -678,7 +683,7 @@ func SetProp(parent interface{}, key interface{}, newval interface{}) interface{
 		// If ki < 0, prepend
 		if ki < 0 {
 			// prepend
-			newarr := make([]interface{}, 0, len(arr)+1)
+			newarr := make([]any, 0, len(arr)+1)
 			newarr = append(newarr, newval)
 			newarr = append(newarr, arr...)
 			if !genarr {
@@ -694,19 +699,19 @@ func SetProp(parent interface{}, key interface{}, newval interface{}) interface{
 
 // Walk a data structure depth first, applying a function to each value.
 func Walk(
-	val interface{},
+	val any,
 	apply WalkApply,
-) interface{} {
+) any {
 	return WalkDescend(val, apply, nil, nil, nil)
 }
 
 func WalkDescend(
-	val interface{},
+	val any,
 	apply WalkApply,
 	key *string,
-	parent interface{},
+	parent any,
 	path []string,
-) interface{} {
+) any {
 
 	if IsNode(val) {
 		for _, kv := range Items(val) {
@@ -733,8 +738,8 @@ func WalkDescend(
 // precedence.  Nodes override scalars. Node kinds (list or map)
 // override each other, and do *not* merge.  The first element is
 // modified.
-func Merge(val interface{}) interface{} {
-	var out interface{} = nil
+func Merge(val any) any {
+	var out any = nil
 
 	if !IsList(val) {
 		return val
@@ -752,7 +757,7 @@ func Merge(val interface{}) interface{} {
 	}
 
 	// Merge a list of values.
-	out = GetProp(list, 0, make(map[string]interface{}))
+	out = GetProp(list, 0, make(map[string]any))
 
 	for i := 1; i < lenlist; i++ {
 		obj := list[i]
@@ -772,16 +777,16 @@ func Merge(val interface{}) interface{} {
 
 			} else {
 				// Node stack. walking down the current obj.
-				var cur []interface{} = make([]interface{}, 11)
+				var cur []any = make([]any, 11)
 				cI := 0
 				cur[cI] = out
 
 				merger := func(
 					key *string,
-					val interface{},
-					parent interface{},
+					val any,
+					parent any,
 					path []string,
-				) interface{} {
+				) any {
 
 					if nil == key {
 						return val
@@ -798,9 +803,9 @@ func Merge(val interface{}) interface{} {
 					// Create node if needed.
 					if nil == cur[cI] {
 						if IsList(parent) {
-							cur[cI] = make([]interface{}, 0)
+							cur[cI] = make([]any, 0)
 						} else {
-							cur[cI] = make(map[string]interface{})
+							cur[cI] = make(map[string]any)
 						}
 					}
 
@@ -831,22 +836,20 @@ func Merge(val interface{}) interface{} {
 // Get a value deep inside a node using a key path.  For example the
 // path `a.b` gets the value 1 from {a:{b:1}}.  The path can specified
 // as a dotted string, or a string array.  If the path starts with a
-// dot (or the first element is ”), the path is considered local, and
+// dot (or the first element is "), the path is considered local, and
 // resolved against the `current` argument, if defined.  Integer path
 // parts are used as array indexes.  The state argument allows for
 // custom handling when called from `inject` or `transform`.
-func GetPath(path interface{}, store interface{}) interface{} {
+func GetPath(path any, store any) any {
 	return GetPathState(path, store, nil, nil)
 }
 
 func GetPathState(
-	path interface{},
-	store interface{},
-	current interface{},
+	path any,
+	store any,
+	current any,
 	state *Injection,
-) interface{} {
-	fmt.Println("GPS-A", path)
-
+) any {
 	var parts []string
 
 	val := store
@@ -865,7 +868,7 @@ func GetPathState(
 		}
 	default:
 		if IsList(path) {
-			parts = _resolveStrings(pp.([]interface{}))
+			parts = _resolveStrings(pp.([]any))
 		} else {
 			return nil
 		}
@@ -876,13 +879,10 @@ func GetPathState(
 		base = &state.Base
 	}
 
-	fmt.Println("GPS-B", parts, len(parts), base)
-
 	// An empty path (incl empty string) just finds the store.
 	if nil == path || nil == store || (1 == len(parts) && S_MT == parts[0]) {
 		// The actual store data may be in a store sub property, defined by state.base.
 		val = GetProp(store, base, store)
-		fmt.Println("GPS-C", val)
 
 	} else if 0 < len(parts) {
 
@@ -900,7 +900,6 @@ func GetPathState(
 		}
 
 		first := GetProp(root, *part)
-		fmt.Println("GPS-D", first)
 
 		// At top level, check state.base, if provided
 		val = first
@@ -918,12 +917,8 @@ func GetPathState(
 
 	if nil != state && state.Handler != nil {
 		ref := Pathify(path)
-		fmt.Println("GPS-H0", ref, val, IsFunc(val), store.(map[string]interface{})["$STRING"])
 		val = state.Handler(state, val, current, &ref, store)
-		fmt.Println("GPS-H1", ref, val, IsFunc(val))
 	}
-
-	fmt.Println("GPS-Z", val)
 
 	return val
 }
@@ -939,10 +934,10 @@ func GetPathState(
 // optionally allows transforms to be ordered by alphanumeric sorting.
 func _injectStr(
 	val string,
-	store interface{},
-	current interface{},
+	store any,
+	current any,
 	state *Injection,
-) interface{} {
+) any {
 	if val == S_MT {
 		return S_MT
 	}
@@ -990,7 +985,7 @@ func _injectStr(
 			return S_MT
 		}
 		switch fv := found.(type) {
-		case map[string]interface{}, []interface{}:
+		case map[string]any, []any:
 			b, _ := json.Marshal(fv)
 			return string(b)
 		default:
@@ -1013,25 +1008,25 @@ func _injectStr(
 // argument allows custom modification of the result.  The state
 // (InjectState) argument is used to maintain recursive state.
 func Inject(
-	val interface{},
-	store interface{},
-) interface{} {
+	val any,
+	store any,
+) any {
 	return InjectDescend(val, store, nil, nil, nil)
 }
 
 func InjectDescend(
-	val interface{},
-	store interface{},
+	val any,
+	store any,
 	modify Modify,
-	current interface{},
+	current any,
 	state *Injection,
-) interface{} {
+) any {
 	valType := _getType(val)
 
 	// Create state if at root of injection.  The input value is placed
 	// inside a virtual parent holder to simplify edge cases.
 	if state == nil {
-		parent := map[string]interface{}{
+		parent := map[string]any{
 			S_DTOP: val,
 		}
 
@@ -1045,18 +1040,18 @@ func InjectDescend(
 			Val:     val,
 			Parent:  parent,
 			Path:    []string{S_DTOP},
-			Nodes:   []interface{}{parent},
+			Nodes:   []any{parent},
 			Handler: injectHandler,
 			Base:    S_DTOP,
 			Modify:  modify,
 			Errs:    GetProp(store, S_DERRS, ListRefCreate[any]()).(*ListRef[any]),
-			Meta:    make(map[string]interface{}),
+			Meta:    make(map[string]any),
 		}
 	}
 
 	// Resolve current node in store for local paths.
 	if nil == current {
-		current = map[string]interface{}{
+		current = map[string]any{
 			S_DTOP: store,
 		}
 	} else {
@@ -1085,32 +1080,31 @@ func InjectDescend(
 		}
 
 		sort.Strings(transformKeys)
-		origKeys := append(normalKeys, transformKeys...)
+		nodekeys := append(normalKeys, transformKeys...)
 
 		// Each child key-value pair is processed in three injection phases:
 		// 1. state.mode='key:pre' - Key string is injected, returning a possibly altered key.
 		// 2. state.mode='val' - The child value is injected.
 		// 3. state.mode='key:post' - Key string is injected again, allowing child mutation.
 
-		// for okI, origKey := range origKeys {
-		okI := 0
-		for okI < len(origKeys) {
-			origKey := origKeys[okI]
+		nkI := 0
+		for nkI < len(nodekeys) {
+			nodekey := nodekeys[nkI]
 
-			childPath := append(state.Path, origKey)
-			childNodes := append(state.Nodes, val)
-			childVal := GetProp(val, origKey)
+			childpath := append(state.Path, nodekey)
+			childnodes := append(state.Nodes, val)
+			childval := GetProp(val, nodekey)
 
-			childState := &Injection{
+			childstate := &Injection{
 				Mode:    InjectModeKeyPre,
 				Full:    false,
-				KeyI:    okI,
-				Keys:    origKeys,
-				Key:     origKey,
-				Val:     val,
+				KeyI:    nkI,
+				Keys:    nodekeys,
+				Key:     nodekey,
+				Val:     childval,
 				Parent:  val,
-				Path:    childPath,
-				Nodes:   childNodes,
+				Path:    childpath,
+				Nodes:   childnodes,
 				Handler: injectHandler,
 				Base:    state.Base,
 				Modify:  state.Modify,
@@ -1119,32 +1113,40 @@ func InjectDescend(
 			}
 
 			// Peform the key:pre mode injection on the child key.
-			preKey := _injectStr(origKey, store, current, childState)
+			preKey := _injectStr(nodekey, store, current, childstate)
 
 			// The injection may modify child processing.
-			okI = childState.KeyI
-
+			nkI = childstate.KeyI
+      nodekeys = childstate.Keys
+      val = childstate.Parent
+      
 			if preKey != nil {
-				childVal = GetProp(val, preKey)
-				childState.Val = childVal
-				childState.Mode = InjectModeVal
+				childval = GetProp(val, preKey)
+				childstate.Val = childval
+				childstate.Mode = InjectModeVal
 
 				// Perform the val mode injection on the child value.
 				// NOTE: return value is not used.
-				InjectDescend(childVal, store, modify, current, childState)
+				InjectDescend(childval, store, modify, current, childstate)
 
 				// The injection may modify child processing.
-				okI = childState.KeyI
-
+				nkI = childstate.KeyI
+        nodekeys = childstate.Keys
+        val = childstate.Parent
+        
 				// Peform the key:post mode injection on the child key.
-				childState.Mode = InjectModeKeyPost
-				_injectStr(origKey, store, current, childState)
+				childstate.Mode = InjectModeKeyPost
+				_injectStr(nodekey, store, current, childstate)
 
 				// The injection may modify child processing.
-				okI = childState.KeyI
+				nkI = childstate.KeyI
+        nodekeys = childstate.Keys
+        val = childstate.Parent
 			}
 
-			okI = okI + 1
+      // fmt.Println("INJECT-CHILD-END", nkI, val, childstate)
+      
+			nkI = nkI + 1
 		}
 
 	} else if valType == S_string {
@@ -1154,25 +1156,19 @@ func InjectDescend(
 		strVal, ok := val.(string)
 		if ok {
 			val = _injectStr(strVal, store, current, state)
-			// fmt.Println("INJECT-STR-A", state.Key, val, state.Parent)
 			_setPropOfStateParent(state, val)
-			// fmt.Println("INJECT-STR-B", state.Key, val, state.Parent, state.Nodes)
-
-			// parent := SetProp(state.Parent, state.Key, val)
-
-			// // Lists are not mutable, so update grandparent reference.
-			// if IsList(parent) {
-			// 	_updateGrandParent(state, parent)
-			// }
 		}
 	}
 
 	// Custom modification
 	if nil != modify {
+    mkey := state.Key
+    mparent := state.Parent
+    mval := GetProp(mparent, mkey)
 		modify(
-			val,
-			state.Key,
-			state.Parent,
+			mval,
+			mkey,
+			mparent,
 			state,
 			current,
 			store,
@@ -1188,26 +1184,23 @@ func InjectDescend(
 // call the function passing the injection state. This is how transforms operate.
 var injectHandler Injector = func(
 	state *Injection,
-	val interface{},
-	current interface{},
+	val any,
+	current any,
 	ref *string,
-	store interface{},
-) interface{} {
+	store any,
+) any {
 
 	iscmd := IsFunc(val) && (nil == ref || strings.HasPrefix(*ref, S_DS))
 
-	fmt.Println("IH-A", iscmd, *ref, val)
-
 	if iscmd {
 		fnih, ok := val.(Injector)
-		fmt.Println("IH-B", ok, fnih)
 
 		if ok {
 			val = fnih(state, val, current, ref, store)
 		} else {
 
 			// In Go, as a convenience, allow injection functions that have no arguments.
-			fn0, ok := val.(func() interface{})
+			fn0, ok := val.(func() any)
 			if ok {
 				val = fn0()
 			}
@@ -1215,17 +1208,8 @@ var injectHandler Injector = func(
 	} else if InjectModeVal == state.Mode && state.Full {
 		// Update parent with value. Ensures references remain in node tree.
 		_setPropOfStateParent(state, val)
-
-		// parent := SetProp(state.Parent, state.Key, val)
-
-		// // Lists are not mutable, so update grandparent reference.
-		// if IsList(parent) {
-		//   _updateGrandParent(state, parent)
-		// }
-
 	}
 
-	// fmt.Println("IH", state.Mode, state.Key, val)
 	return val
 }
 
@@ -1234,11 +1218,11 @@ var injectHandler Injector = func(
 // Delete a key from a map or list.
 var Transform_DELETE Injector = func(
 	state *Injection,
-	val interface{},
-	current interface{},
+	val any,
+	current any,
 	ref *string,
-	store interface{},
-) interface{} {
+	store any,
+) any {
 	// SetProp(state.Parent, state.Key, nil)
 	_setPropOfStateParent(state, nil)
 	return nil
@@ -1247,12 +1231,12 @@ var Transform_DELETE Injector = func(
 // Copy value from source data.
 var Transform_COPY Injector = func(
 	state *Injection,
-	val interface{},
-	current interface{},
+	val any,
+	current any,
 	ref *string,
-	store interface{},
-) interface{} {
-	var out interface{} = state.Key
+	store any,
+) any {
+	var out any = state.Key
 
 	if !strings.HasPrefix(string(state.Mode), "key") {
 		out = GetProp(current, state.Key)
@@ -1267,11 +1251,11 @@ var Transform_COPY Injector = func(
 // As a key, defined the name of the key property in the source object.
 var Transform_KEY Injector = func(
 	state *Injection,
-	val interface{},
-	current interface{},
+	val any,
+	current any,
 	ref *string,
-	store interface{},
-) interface{} {
+	store any,
+) any {
 	if state.Mode != InjectModeVal {
 		return nil
 	}
@@ -1303,11 +1287,11 @@ var Transform_KEY Injector = func(
 // other injectors, and is removed when called.
 var Transform_META Injector = func(
 	state *Injection,
-	val interface{},
-	current interface{},
+	val any,
+	current any,
 	ref *string,
-	store interface{},
-) interface{} {
+	store any,
+) any {
 	SetProp(state.Parent, S_TMETA, nil)
 	return nil
 }
@@ -1319,11 +1303,11 @@ var Transform_META Injector = func(
 // Format: { '`$MERGE`': '`source-path`' | ['`source-paths`', ...] }
 var Transform_MERGE Injector = func(
 	state *Injection,
-	val interface{},
-	current interface{},
+	val any,
+	current any,
 	ref *string,
-	store interface{},
-) interface{} {
+	store any,
+) any {
 	if InjectModeKeyPre == state.Mode {
 		return state.Key
 	}
@@ -1331,27 +1315,25 @@ var Transform_MERGE Injector = func(
 	if InjectModeKeyPost == state.Mode {
 		args := GetProp(state.Parent, state.Key)
 		if S_MT == args {
-			args = []interface{}{GetProp(store, S_DTOP)}
+			args = []any{GetProp(store, S_DTOP)}
 		} else if IsList(args) {
 			// do nothing
 		} else {
 			// wrap in array
-			args = []interface{}{args}
+			args = []any{args}
 		}
 
 		// Remove the $MERGE command from a parent map.
-		// SetProp(state.Parent, state.Key, nil)
 		_setPropOfStateParent(state, nil)
-		// fmt.Print("MERGE", fdt(state.Parent), fdt(state.Nodes))
 
-		list, ok := args.([]interface{})
+		list, ok := args.([]any)
 		if !ok {
 			return state.Key
 		}
 
 		// Literals in the parent have precedence, but we still merge onto
 		// the parent object, so that node tree references are not changed.
-		mergeList := []interface{}{state.Parent}
+		mergeList := []any{state.Parent}
 		mergeList = append(mergeList, list...)
 		mergeList = append(mergeList, Clone(state.Parent))
 
@@ -1368,11 +1350,11 @@ var Transform_MERGE Injector = func(
 // Format: ['`$EACH`', '`source-path-of-node`', child-template]
 var Transform_EACH Injector = func(
 	state *Injection,
-	val interface{},
-	current interface{},
+	val any,
+	current any,
 	ref *string,
-	store interface{},
-) interface{} {
+	store any,
+) any {
 
 	// Remove arguments to avoid spurious processing.
 	if state.Keys != nil {
@@ -1385,7 +1367,7 @@ var Transform_EACH Injector = func(
 
 	// Get arguments: ['`$EACH`', 'source-path', child-template].
 	parent := state.Parent
-	arr, ok := parent.([]interface{})
+	arr, ok := parent.([]any)
 	if !ok || len(arr) < 3 {
 		return nil
 	}
@@ -1397,15 +1379,15 @@ var Transform_EACH Injector = func(
 
 	// Create parallel data structures:
 	// source entries :: child templates
-	var tcur interface{}
-	tcur = []interface{}{}
-	var tval interface{}
-	tval = []interface{}{}
+	var tcur any
+	tcur = []any{}
+	var tval any
+	tval = []any{}
 
 	// Create clones of the child template for each value of the current soruce.
 	if IsList(src) {
-		srcList := src.([]interface{})
-		newlist := make([]interface{}, len(srcList))
+		srcList := src.([]any)
+		newlist := make([]any, len(srcList))
 		for i := range srcList {
 			newlist[i] = Clone(child)
 			SetProp(tcur, i, srcList[i])
@@ -1415,8 +1397,8 @@ var Transform_EACH Injector = func(
 	} else if IsMap(src) {
 		items := Items(src)
 
-		srcMap := src.(map[string]interface{})
-		newlist := make([]interface{}, 0, len(srcMap))
+		srcMap := src.(map[string]any)
+		newlist := make([]any, 0, len(srcMap))
 
 		for i, item := range items {
 			k := item[0]
@@ -1424,9 +1406,9 @@ var Transform_EACH Injector = func(
 			cclone := Clone(child)
 
 			// Make a note of the key for $KEY transforms.
-			setp, ok := cclone.(map[string]interface{})
+			setp, ok := cclone.(map[string]any)
 			if ok {
-				setp[S_TMETA] = map[string]interface{}{
+				setp[S_TMETA] = map[string]any{
 					S_KEY: k,
 				}
 			}
@@ -1439,7 +1421,7 @@ var Transform_EACH Injector = func(
 	}
 
 	// Parent structure.
-	tcur = map[string]interface{}{
+	tcur = map[string]any{
 		S_DTOP: tcur,
 	}
 
@@ -1449,7 +1431,7 @@ var Transform_EACH Injector = func(
 	_updateStateNodeAncestors(state, tval)
 
 	// Return the first element
-	listVal, ok := tval.([]interface{})
+	listVal, ok := tval.([]any)
 	if ok && len(listVal) > 0 {
 		return listVal[0]
 	}
@@ -1460,21 +1442,21 @@ var Transform_EACH Injector = func(
 // transform_PACK => `$PACK`
 var Transform_PACK Injector = func(
 	state *Injection,
-	val interface{},
-	current interface{},
+	val any,
+	current any,
 	ref *string,
-	store interface{},
-) interface{} {
+	store any,
+) any {
 	if state.Mode != InjectModeKeyPre || state.Key == "" || state.Path == nil || state.Nodes == nil {
 		return nil
 	}
 
-	parentMap, ok := state.Parent.(map[string]interface{})
+	parentMap, ok := state.Parent.(map[string]any)
 	if !ok {
 		return nil
 	}
 
-	args, ok := parentMap[state.Key].([]interface{})
+	args, ok := parentMap[state.Key].([]any)
 	if !ok || len(args) < 2 {
 		return nil
 	}
@@ -1487,7 +1469,7 @@ var Transform_PACK Injector = func(
 	if len(state.Path) >= 2 {
 		tkey = state.Path[len(state.Path)-2]
 	}
-	var target interface{}
+	var target any
 	if len(state.Nodes) >= 2 {
 		target = state.Nodes[len(state.Nodes)-2]
 	} else {
@@ -1496,21 +1478,21 @@ var Transform_PACK Injector = func(
 
 	src := GetPathState(srcpath, store, current, state)
 	// Convert map to list if needed
-	var srclist []interface{}
+	var srclist []any
 
 	if IsList(src) {
-		srclist = src.([]interface{})
+		srclist = src.([]any)
 	} else if IsMap(src) {
-		m := src.(map[string]interface{})
-		tmp := make([]interface{}, 0, len(m))
+		m := src.(map[string]any)
+		tmp := make([]any, 0, len(m))
 		for k, v := range m {
 			// carry forward the KEY in TMeta
 			vmeta := GetProp(v, S_TMETA)
 			if vmeta == nil {
-				vmeta = map[string]interface{}{}
+				vmeta = map[string]any{}
 				SetProp(v, S_TMETA, vmeta)
 			}
-			vm := vmeta.(map[string]interface{})
+			vm := vmeta.(map[string]any)
 			vm[S_KEY] = k
 			tmp = append(tmp, v)
 		}
@@ -1526,24 +1508,24 @@ var Transform_PACK Injector = func(
 	if childKey == nil {
 		childKey = keyprop
 	}
-	// remove S_TKEY so it doesn’t interfere
+	// remove S_TKEY so it doesn't interfere
 	SetProp(child, S_TKEY, nil)
 
-	tval := map[string]interface{}{}
-	tcurrent := map[string]interface{}{}
+	tval := map[string]any{}
+	tcurrent := map[string]any{}
 
 	for _, item := range srclist {
 		kname := GetProp(item, childKey)
 		if kstr, ok := kname.(string); ok && kstr != "" {
 			tval[kstr] = Clone(child)
-			if _, ok2 := tval[kstr].(map[string]interface{}); ok2 {
+			if _, ok2 := tval[kstr].(map[string]any); ok2 {
 				SetProp(tval[kstr], S_TMETA, GetProp(item, S_TMETA))
 			}
 			tcurrent[kstr] = item
 		}
 	}
 
-	tcur := map[string]interface{}{
+	tcur := map[string]any{
 		S_DTOP: tcurrent,
 	}
 
@@ -1558,25 +1540,25 @@ var Transform_PACK Injector = func(
 // Transform function: top-level
 
 func Transform(
-	data interface{}, // source data
-	spec interface{}, // transform specification
-) interface{} {
+	data any, // source data
+	spec any, // transform specification
+) any {
 	return TransformModify(data, spec, nil, nil)
 }
 
 func TransformModify(
-	data interface{}, // source data
-	spec interface{}, // transform specification
-	extra interface{}, // extra store
+	data any, // source data
+	spec any, // transform specification
+	extra any, // extra store
 	modify Modify, // optional modify
-) interface{} {
+) any {
 
 	// Clone the spec so that the clone can be modified in place as the transform result.
 	spec = Clone(spec)
 
 	// Split extra transforms from extra data
-	extraTransforms := map[string]interface{}{}
-	extraData := map[string]interface{}{}
+	extraTransforms := map[string]any{}
+	extraData := map[string]any{}
 
 	if extra != nil {
 		pairs := Items(extra)
@@ -1592,22 +1574,22 @@ func TransformModify(
 	}
 
 	// Merge extraData + data
-	dataClone := Merge([]interface{}{
+	dataClone := Merge([]any{
 		Clone(extraData),
 		Clone(data),
 	})
 
 	// The injection store with transform functions
-	store := map[string]interface{}{
+	store := map[string]any{
 		// Merged data is at $TOP
 		S_DTOP: dataClone,
 
 		// Handy escapes
-		"$BT": func() interface{} { return S_BT },
-		"$DS": func() interface{} { return S_DS },
+		"$BT": func() any { return S_BT },
+		"$DS": func() any { return S_DS },
 
 		// Insert current date/time
-		"$WHEN": func() interface{} {
+		"$WHEN": func() any {
 			return time.Now().UTC().Format(time.RFC3339)
 		},
 
@@ -1631,160 +1613,167 @@ func TransformModify(
 	return out
 }
 
+
 var validate_STRING Injector = func(
 	state *Injection,
-	_val interface{},
-	current interface{},
+	_val any,
+	current any,
 	ref *string,
-	store interface{},
-) interface{} {
+	store any,
+) any {
 	out := GetProp(current, state.Key)
-
-	str, ok := out.(string)
-	if !ok {
-		msg := _invalidTypeMsg(state.Path, S_string, _typify(out), out)
+	
+	t := _typify(out)
+	if S_string != t {
+		msg := _invalidTypeMsg(state.Path, S_string, t, out)
 		state.Errs.Append(msg)
 		return nil
 	}
 
-	// Reject empty
-	if str == S_MT {
+	if S_MT == out.(string) {
 		msg := "Empty string at " + Pathify(state.Path, 0)
 		state.Errs.Append(msg)
 		return nil
 	}
 
-	return str
+	return out
 }
+
 
 var validate_NUMBER Injector = func(
 	state *Injection,
-	_val interface{},
-	current interface{},
+	_val any,
+	current any,
 	ref *string,
-	store interface{},
-) interface{} {
+	store any,
+) any {
 	out := GetProp(current, state.Key)
-
-	switch n := out.(type) {
-	case int, float64:
-		return n
-	default:
-		msg := _invalidTypeMsg(state.Path, S_number, _typify(out), out)
+	
+	t := _typify(out)
+  if S_number != t {
+		msg := _invalidTypeMsg(state.Path, S_number, t, out)
 		state.Errs.Append(msg)
 		return nil
 	}
+
+  return out
 }
+
 
 var validate_BOOLEAN Injector = func(
 	state *Injection,
-	_val interface{},
-	current interface{},
+	_val any,
+	current any,
 	ref *string,
-	store interface{},
-) interface{} {
+	store any,
+) any {
 	out := GetProp(current, state.Key)
-
-	b, ok := out.(bool)
-	if !ok {
-		msg := _invalidTypeMsg(state.Path, S_boolean, _typify(out), out)
+	
+	t := _typify(out)
+	if S_boolean != t {
+		msg := _invalidTypeMsg(state.Path, S_boolean, t, out)
 		state.Errs.Append(msg)
 		return nil
 	}
 
-	return b
+	return out
 }
+
 
 var validate_OBJECT Injector = func(
 	state *Injection,
-	_val interface{},
-	current interface{},
+	_val any,
+	current any,
 	ref *string,
-	store interface{},
-) interface{} {
+	store any,
+) any {
 	out := GetProp(current, state.Key)
-	if !IsMap(out) {
-		// We also check that out != nil
-		// state.Errs = append(state.Errs, _invalidTypeMsg(state.Path, S_object, fmt.Sprintf("%T", out), out))
+	
+	t := _typify(out)
+	if S_object != t {
+		msg := _invalidTypeMsg(state.Path, S_object, t, out)
+		state.Errs.Append(msg)
 		return nil
 	}
+	
 	return out
 }
+
 
 var validate_ARRAY Injector = func(
 	state *Injection,
-	_val interface{},
-	current interface{},
+	_val any,
+	current any,
 	ref *string,
-	store interface{},
-) interface{} {
+	store any,
+) any {
 	out := GetProp(current, state.Key)
-	if !IsList(out) {
-		// state.Errs = append(state.Errs, _invalidTypeMsg(state.Path, S_array, fmt.Sprintf("%T", out), out))
+	
+	t := _typify(out)
+	if S_array != t {
+		msg := _invalidTypeMsg(state.Path, S_array, t, out)
+		state.Errs.Append(msg)
 		return nil
 	}
+	
 	return out
 }
+
 
 var validate_FUNCTION Injector = func(
 	state *Injection,
-	_val interface{},
-	current interface{},
+	_val any,
+	current any,
 	ref *string,
-	store interface{},
-) interface{} {
+	store any,
+) any {
 	out := GetProp(current, state.Key)
-	if reflect.TypeOf(out).Kind() != reflect.Func {
-		// state.Errs = append(state.Errs, _invalidTypeMsg(state.Path, S_function, fmt.Sprintf("%T", out), out))
+	
+	t := _typify(out)
+	if S_function != t {
+		msg := _invalidTypeMsg(state.Path, S_function, t, out)
+		state.Errs.Append(msg)
 		return nil
 	}
+	
 	return out
 }
 
+
 var validate_ANY Injector = func(
 	state *Injection,
-	_val interface{},
-	current interface{},
+	_val any,
+	current any,
 	ref *string,
-	store interface{},
-) interface{} {
+	store any,
+) any {
 	return GetProp(current, state.Key)
 }
 
+
 var validate_CHILD Injector = func(
 	state *Injection,
-	_val interface{},
-	current interface{},
+	_val any,
+	current any,
 	ref *string,
-	store interface{},
-) interface{} {
-	mode := state.Mode
-	key := state.Key
-	parent := state.Parent
-	keys := state.Keys
-	path := state.Path
-
+	store any,
+) any {
 	// Map syntax
-	if mode == S_MKEYPRE {
-		child := GetProp(parent, key)
+	if state.Mode == S_MKEYPRE {
+		child := GetProp(state.Parent, state.Key)
 
-		// The current object to match is found at 'pkey'
-		if len(path) < 2 {
-			return nil
-		}
-		pkey := path[len(path)-2]
-
+    pkey := GetProp(state.Path, len(state.Path)-2)
 		tval := GetProp(current, pkey)
-		if tval == nil {
-			// Create an empty object as a default
-			tval = map[string]interface{}{}
+
+		if nil == tval {
+			tval = map[string]any{}
+
 		} else if !IsMap(tval) {
-			// Not a map => error
 			state.Errs.Append(
 				_invalidTypeMsg(
-					path[:len(path)-1], // slice(0, path.length-1)
-					"object",
-					fmt.Sprintf("%T", tval),
+					state.Path[:len(state.Path)-1],
+					S_object,
+					_typify(tval),
 					tval,
 				))
 			return nil
@@ -1793,37 +1782,30 @@ var validate_CHILD Injector = func(
 		// For each key in tval, clone the child into parent
 		ckeys := KeysOf(tval)
 		for _, ckey := range ckeys {
-			SetProp(parent, ckey, Clone(child))
-			// Extend the "child value loop" by adding new keys to state.Keys
-			keys = append(keys, ckey)
+			SetProp(state.Parent, ckey, Clone(child))
+			state.Keys = append(state.Keys, ckey)
 		}
-		state.Keys = keys
 
-		// Remove $CHILD from parent to clean up
-		SetProp(parent, key, nil)
+		SetProp(state.Parent, state.Key, nil)
+
 		return nil
 	}
 
 	// List syntax
-	if mode == S_MVAL {
-		// We expect 'parent' to be a slice of interface{}, like ["`$CHILD`", childTemplate].
-		if !IsList(parent) {
+  if state.Mode == S_MVAL {
+    
+		// We expect 'parent' to be a slice of any, like ["`$CHILD`", childTemplate].
+		if !IsList(state.Parent) {
 			state.Errs.Append("Invalid $CHILD as value")
 			return nil
 		}
 
-		// We'll interpret 'parent' as a []interface{}.
-		parentSlice, ok := parent.([]interface{})
-		if !ok || len(parentSlice) < 2 {
-			state.Errs.Append("Invalid parent structure for $CHILD")
-			return nil
-		}
-
-		child := parentSlice[1]
-
+    child := GetProp(state.Parent, 1)
+    
 		// If current is nil => empty list default
-		if current == nil {
-			parent = []interface{}{}
+		if nil == current {
+			state.Parent = []any{}
+      _updateStateNodeAncestors(state, state.Parent)
 			return nil
 		}
 
@@ -1831,12 +1813,12 @@ var validate_CHILD Injector = func(
 		if !IsList(current) {
 			state.Errs.Append(
 				_invalidTypeMsg(
-					path[:len(path)-1],
-					"array",
-					fmt.Sprintf("%T", current),
+					state.Path[:len(state.Path)-1],
+					S_array,
+					_typify(current),
 					current,
 				))
-			state.KeyI = len(parentSlice)
+			state.KeyI = len(state.Parent.([]any))
 			return current
 		}
 
@@ -1845,175 +1827,223 @@ var validate_CHILD Injector = func(
 		length := rv.Len()
 
 		// Make a new slice to hold the child clones, sized to length
-		newParent := make([]interface{}, length)
+		newParent := make([]any, length)
 		// For each element in 'current', set newParent[i] = clone(child)
 		for i := 0; i < length; i++ {
 			newParent[i] = Clone(child)
 		}
-
+		
 		// Replace parent with the new slice
-		parent = newParent
+		state.Parent = newParent
+		_updateStateNodeAncestors(state, state.Parent)
 
-		// In JS, you do `return current[0]` at the end to feed the next step.
-		// We'll do something analogous in Go:
-		if length > 0 {
-			return rv.Index(0).Interface()
-		}
-		return nil
+    out := GetProp(current, 0)
+    return out
 	}
 
 	return nil
 }
 
-var validate_ONE Injector = func(
-	state *Injection,
-	_val interface{},
-	current interface{},
-	ref *string,
-	store interface{},
-) interface{} {
-	// Only operate in "val mode" (list mode).
-	if state.Mode == S_MVAL {
-		// Once we handle `$ONE`, we skip further iteration by setting KeyI to keys.length
-		state.KeyI = len(state.Keys)
 
-		// The parent is assumed to be a slice: ["`$ONE`", alt0, alt1, ...].
-		parentSlice, ok := state.Parent.([]interface{})
-		if !ok || len(parentSlice) < 2 {
+// Forward declaration for validate_ONE
+var validate_ONE Injector
 
-			return nil
-		}
-
-		// The shape alternatives are everything after the first element.
-		tvals := parentSlice[1:] // alt0, alt1, ...
-
-		// Try each alternative shape
-		for _, tval := range tvals {
-			// Collect errors in a temporary slice
-			var terrs = ListRefCreate[any]()
-
-			// Attempt validation of `current` with shape `tval`
-      fmt.Println("tval", tval)
-			// ValidateCollect(current, tval, nil, terrs)
-
-			// The parent is the list we are inside.
-			// We look up one level: that is `nodes[nodes.length - 2]`.
-			if len(state.Nodes) < 2 {
-				continue
+// Implementation will be set after ValidateCollect is defined
+func init_validate_ONE() {
+	validate_ONE = func(
+		state *Injection,
+		_val any,
+		current any,
+		ref *string,
+		store any,
+	) any {
+		// Only operate in "val mode" (list mode).
+		if state.Mode == S_MVAL {
+			// Once we handle `$ONE`, we skip further iteration by setting KeyI to keys.length
+			state.KeyI = len(state.Keys)
+	
+			// The parent is assumed to be a slice: ["`$ONE`", alt0, alt1, ...].
+			parentSlice, ok := state.Parent.([]any)
+			if !ok || len(parentSlice) < 2 {
+				return nil
 			}
-			grandparent := state.Nodes[len(state.Nodes)-2]
+	
+			// The shape alternatives are everything after the first element.
+			tvals := parentSlice[1:] // alt0, alt1, ...
+	
+			// Try each alternative shape
+			for _, tval := range tvals {
+				// Collect errors in a temporary slice
+				var terrs = ListRefCreate[any]()
+	
+				// Attempt validation of `current` with shape `tval`
+				_, err := ValidateCollect(current, tval, nil, terrs)
+				if err == nil && len(terrs.List) == 0 {
+					// The parent is the list we are inside.
+					// We look up one level: that is `nodes[nodes.length - 2]`.
+					grandparent := GetProp(state.Nodes, len(state.Nodes)-2)
+          grandkey := GetProp(state.Path, len(state.Path)-2)
+	
+					if IsNode(grandparent) {
 
-			// The grandkey is path[path.length - 2]
-			if len(state.Path) < 2 {
-				continue
-			}
-			grandkey := state.Path[len(state.Path)-2]
+            if 0 == len(terrs.List) {
+              SetProp(grandparent, grandkey, current)
+              state.Parent = current
+              // fmt.Println("ONE-GP", grandparent, grandkey)
+              // fmt.Println("ONE-SC", current, state)
 
-			if IsNode(grandparent) {
-				if len(terrs.List) == 0 {
-					// If we found a match, accept current
-					SetProp(grandparent, grandkey, current)
-					return nil
-				} else {
-					// If we fail, set that property to nil so we don't cause other errors
-					SetProp(grandparent, grandkey, nil)
+              return nil
+            } else {
+              SetProp(grandparent, grandkey, nil)
+            }
+					}
 				}
 			}
+
+      mapped := make([]string, len(tvals))
+      for i, v := range tvals {
+        mapped[i] = Stringify(v)
+      }
+
+      joined := strings.Join(mapped, ", ")
+
+      re := regexp.MustCompile("`\\$([A-Z]+)`")
+      valdesc := re.ReplaceAllStringFunc(joined, func(match string) string {
+        submatches := re.FindStringSubmatch(match)
+        if len(submatches) == 2 {
+          return strings.ToLower(submatches[1])
+        }
+        return match
+      })
+	
+			actualType := _typify(current)
+			msg := _invalidTypeMsg(
+				state.Path[:len(state.Path)-1],
+				"one of "+valdesc,
+				actualType,
+				current,
+			)
+			state.Errs.Append(msg)
 		}
 
-		// If we reach here, no shape matched.
-		// Build a descriptive string with all the shapes.
-		valDescParts := make([]string, 0, len(tvals))
-		for _, v := range tvals {
-			str := Stringify(v)
-			// Replace any `$XYZ` substring to lower, like your .replace() in JS
-			str = strings.ReplaceAll(str, "`$STRING`", "string")
-			str = strings.ReplaceAll(str, "`$NUMBER`", "number")
-			// etc. for your different placeholders
-			valDescParts = append(valDescParts, str)
-		}
-		valdesc := strings.Join(valDescParts, ", ")
-
-		actualType := fmt.Sprintf("%T", current)
-		msg := _invalidTypeMsg(
-			state.Path[:len(state.Path)-1],
-			"one of "+valdesc,
-			actualType,
-			current,
-		)
-		state.Errs.Append(msg)
+		return nil
 	}
-	return nil
-
 }
 
-func validation(
-	val interface{},
-	key interface{},
-	parent interface{},
-	state *Injection,
-	current interface{},
-	_store interface{},
-) {
 
+func validation(
+	val any,
+	key any,
+	parent any,
+	state *Injection,
+	current any,
+	_store any,
+) {
 	if state == nil {
 		return
 	}
 
+	// Current val to verify.
 	cval := GetProp(current, key)
 	if cval == nil {
 		return
 	}
 
 	pval := GetProp(parent, key)
-	// If the spec had a transform command leftover, remove it
-	if s, ok := pval.(string); ok && strings.Contains(s, S_DS) {
+	ptype := _typify(pval)
+
+	// Delete any special commands remaining.
+	if S_string == ptype && pval != nil {
+		if strVal, ok := pval.(string); ok && strings.Contains(strVal, S_DS) {
+			return
+		}
+	}
+
+	ctype := _typify(cval)
+
+
+  // fmt.Println("VALID", pval, ptype, cval, ctype)
+  
+	// Type mismatch.
+	if ptype != ctype && pval != nil {
+		state.Errs.Append(_invalidTypeMsg(state.Path, ptype, ctype, cval))
 		return
 	}
 
-	if pval != nil && reflect.TypeOf(pval) != reflect.TypeOf(cval) {
-		// state.Errs = append(state.Errs, _invalidTypeMsg(state.Path, fmt.Sprintf("%T", pval), fmt.Sprintf("%T", cval), cval))
-		return
-	}
+	if IsMap(cval) {
+		if !IsMap(val) {
+			var errType string
+			if IsList(val) {
+				errType = S_array
+			} else {
+				errType = ptype
+			}
+			state.Errs.Append(_invalidTypeMsg(state.Path, errType, ctype, cval))
+			return
+		}
 
-	if IsMap(cval) && !IsMap(val) {
-		// ex := S_object
-		// if IsList(val) {
-		// 		ex = S_array
-		// }
-		// state.Errs = append(state.Errs, _invalidTypeMsg(state.Path, ex, fmt.Sprintf("%T", cval), cval))
-		return
-	}
+		ckeys := KeysOf(cval)
+		pkeys := KeysOf(pval)
 
-	if IsList(cval) && !IsList(val) {
-		// state.Errs = append(state.Errs, _invalidTypeMsg(state.Path, fmt.Sprintf("%T", val), fmt.Sprintf("%T", cval), cval))
-		return
-	}
+		// Empty spec object {} means object can be open (any keys).
+		if len(pkeys) > 0 && GetProp(pval, "`$OPEN`") != true {
+			badkeys := []string{}
+			for _, ckey := range ckeys {
+				if !HasKey(val, ckey) {
+					badkeys = append(badkeys, ckey)
+				}
+			}
 
-	SetProp(parent, key, cval)
+			// Closed object, so reject extra keys not in shape.
+			if len(badkeys) > 0 {
+				state.Errs.Append("Unexpected keys at " + Pathify(state.Path, 1) +
+					": " + strings.Join(badkeys, ", "))
+			}
+		} else {
+			// Object is open, so merge in extra keys.
+			Merge([]any{pval, cval})
+			if IsNode(pval) {
+				SetProp(pval, "`$OPEN`", nil)
+			}
+		}
+	} else if IsList(cval) {
+		if !IsList(val) {
+			state.Errs.Append(_invalidTypeMsg(state.Path, ptype, ctype, cval))
+		}
+	} else {
+		// Spec value was a default, copy over data
+		SetProp(parent, key, cval)
+	}
 
 	return
 }
 
+
 func Validate(
-	data interface{}, // The input data
-	spec interface{}, // The shape specification
-) (interface{}, error) {
+	data any, // The input data
+	spec any, // The shape specification
+) (any, error) {
 	return ValidateCollect(data, spec, nil, nil)
 }
 
 func ValidateCollect(
-	data interface{},
-	spec interface{},
-	extra map[string]interface{},
+	data any,
+	spec any,
+	extra map[string]any,
 	collecterrs *ListRef[any],
-) (interface{}, error) {
+) (any, error) {
 
 	if nil == collecterrs {
 		collecterrs = ListRefCreate[any]()
 	}
+	
+	// Initialize validate_ONE if not already initialized.
+  // This avoids a circular reference error, validate_ONE calls ValidateCollect. 
+	if validate_ONE == nil {
+		init_validate_ONE()
+	}
 
-	store := map[string]interface{}{
+	store := map[string]any{
 		"$ERRS": collecterrs,
 
 		"$BT":     nil,
@@ -2044,16 +2074,15 @@ func ValidateCollect(
 
 	out := TransformModify(data, spec, store, validation)
 
-	fmt.Println("CE", collecterrs)
-
 	var err error
 
 	if 0 < len(collecterrs.List) {
-		err = fmt.Errorf("Invalid data:\n%s", _join(collecterrs.List, "\n"))
+		err = fmt.Errorf("Invalid data: %s", _join(collecterrs.List, " | "))
 	}
 
 	return out, err
 }
+
 
 // Internal utilities
 // ==================
@@ -2076,7 +2105,8 @@ func (l *ListRef[T]) Prepend(elem T) {
 	l.List = append([]T{elem}, l.List...)
 }
 
-func _typify(value interface{}) string {
+
+func _typify(value any) string {
 	if value == nil {
 		return "null"
 	}
@@ -2087,8 +2117,10 @@ func _typify(value interface{}) string {
 	case reflect.Bool:
 		return "boolean"
 
-	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
-		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64,
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		return "number"
+
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64,
 		reflect.Float32, reflect.Float64:
 		return "number"
 
@@ -2106,7 +2138,7 @@ func _typify(value interface{}) string {
 	}
 }
 
-func _join(vals []interface{}, sep string) string {
+func _join(vals []any, sep string) string {
 	strVals := make([]string, len(vals))
 	for i, v := range vals {
 		strVals[i] = fmt.Sprint(v)
@@ -2114,24 +2146,31 @@ func _join(vals []interface{}, sep string) string {
 	return strings.Join(strVals, sep)
 }
 
-func _invalidTypeMsg(path []string, expected string, actual string, val interface{}) string {
+
+func _invalidTypeMsg(path []string, expected string, actual string, val any) string {
+	vs := Stringify(val)
+	valueStr := vs
+	if val != nil {
+		valueStr = actual + ": " + vs
+	}
+	
 	return fmt.Sprintf(
-		"Expected %s at %s, found %s: %s",
+		"Expected %s at %s, found %s",
 		expected,
 		Pathify(path, 1),
-		actual,
-		Stringify(val),
+		valueStr,
 	)
 }
 
-func _getType(v interface{}) string {
+
+func _getType(v any) string {
 	if nil == v {
 		return "nil"
 	}
 	return reflect.TypeOf(v).String()
 }
 
-func _strKey(key interface{}) string {
+func _strKey(key any) string {
 	if nil == key {
 		return S_MT
 	}
@@ -2157,7 +2196,7 @@ func _strKey(key interface{}) string {
 	}
 }
 
-func _resolveStrings(input []interface{}) []string {
+func _resolveStrings(input []any) []string {
 	var result []string
 
 	for _, v := range input {
@@ -2171,8 +2210,8 @@ func _resolveStrings(input []interface{}) []string {
 	return result
 }
 
-func _listify(src interface{}) []interface{} {
-	if list, ok := src.([]interface{}); ok {
+func _listify(src any) []any {
+	if list, ok := src.([]any); ok {
 		return list
 	}
 
@@ -2183,7 +2222,7 @@ func _listify(src interface{}) []interface{} {
 	val := reflect.ValueOf(src)
 	if val.Kind() == reflect.Slice {
 		length := val.Len()
-		result := make([]interface{}, length)
+		result := make([]any, length)
 
 		for i := 0; i < length; i++ {
 			result[i] = val.Index(i).Interface()
@@ -2195,7 +2234,7 @@ func _listify(src interface{}) []interface{} {
 }
 
 // toFloat64 helps unify numeric types for floor conversion.
-func _toFloat64(val interface{}) (float64, error) {
+func _toFloat64(val any) (float64, error) {
 	switch n := val.(type) {
 	case float64:
 		return n, nil
@@ -2220,7 +2259,7 @@ func _toFloat64(val interface{}) (float64, error) {
 	case uint32:
 		return float64(n), nil
 	case uint64:
-		// might overflow if > math.MaxFloat64, but for demonstration that’s rare
+		// might overflow if > math.MaxFloat64, but for demonstration that's rare
 		return float64(n), nil
 	default:
 		return 0, fmt.Errorf("not a numeric type")
@@ -2229,7 +2268,7 @@ func _toFloat64(val interface{}) (float64, error) {
 
 // _parseInt is a helper to convert a string to int safely.
 func _parseInt(s string) (int, error) {
-	// We’ll do a very simple parse:
+	// We'll do a very simple parse:
 	var x int
 	var sign int = 1
 	for i, c := range s {
@@ -2251,7 +2290,7 @@ func (e *ParseIntError) Error() string {
 	return "cannot parse int from: " + e.input
 }
 
-func _makeArrayType(values []interface{}, target interface{}) interface{} {
+func _makeArrayType(values []any, target any) any {
 	targetElem := reflect.TypeOf(target).Elem()
 	out := reflect.MakeSlice(reflect.SliceOf(targetElem), len(values), len(values))
 
@@ -2267,7 +2306,7 @@ func _makeArrayType(values []interface{}, target interface{}) interface{} {
 	return out.Interface()
 }
 
-func _stringifyValue(v interface{}) string {
+func _stringifyValue(v any) string {
 	switch vv := v.(type) {
 	case string:
 		return vv
@@ -2278,15 +2317,15 @@ func _stringifyValue(v interface{}) string {
 	}
 }
 
-func _setPropOfStateParent(state *Injection, val interface{}) {
+func _setPropOfStateParent(state *Injection, val any) {
 	parent := SetProp(state.Parent, state.Key, val)
-	if IsList(parent) && len(parent.([]interface{})) != len(state.Parent.([]interface{})) {
+	if IsList(parent) && len(parent.([]any)) != len(state.Parent.([]any)) {
 		state.Parent = parent
 		_updateStateNodeAncestors(state, parent)
 	}
 }
 
-func _updateStateNodeAncestors(state *Injection, ac interface{}) {
+func _updateStateNodeAncestors(state *Injection, ac any) {
 	aI := len(state.Nodes) - 1
 	if -1 < aI {
 		state.Nodes[aI] = ac
@@ -2295,7 +2334,6 @@ func _updateStateNodeAncestors(state *Injection, ac interface{}) {
 	for -1 < aI {
 		an := state.Nodes[aI]
 		ak := state.Path[aI]
-		// fmt.Println("USNA", aI, ac, ak, an)
 		ac = SetProp(an, ak, ac)
 		if IsMap(ac) {
 			aI = -1
@@ -2307,31 +2345,90 @@ func _updateStateNodeAncestors(state *Injection, ac interface{}) {
 
 // DEBUG
 
-func fdt(data interface{}) string {
+func fdt(data any) string {
 	return fdti(data, "")
 }
 
-func fdti(data interface{}, indent string) string {
+func fdti(data any, indent string) string {
 	result := ""
 
+	if data == nil {
+		return indent + "nil\n"
+	}
+
+	// Get a pointer for memory address
+	memoryAddr := "0x???"
+	val := reflect.ValueOf(data)
+	
+	// For non-pointer types that are addressable, get their pointer
+	if val.Kind() != reflect.Ptr && val.CanAddr() {
+		ptr := val.Addr()
+		memoryAddr = fmt.Sprintf("0x%x", ptr.Pointer())
+	} else if val.Kind() == reflect.Ptr {
+		// For pointer types, use the pointer value directly
+		memoryAddr = fmt.Sprintf("0x%x", val.Pointer())
+	} else if val.Kind() == reflect.Map || val.Kind() == reflect.Slice {
+		// For maps and slices, use the pointer to internal data
+		memoryAddr = fmt.Sprintf("0x%x", val.Pointer())
+	}
+
 	switch v := data.(type) {
-	case map[string]interface{}:
-		result += indent + "{\n"
+	case map[string]any:
+		result += indent + fmt.Sprintf("{ @%s\n", memoryAddr)
 		for key, value := range v {
 			result += fmt.Sprintf("%s  \"%s\": %s", indent, key, fdti(value, indent+"  "))
 		}
 		result += indent + "}\n"
 
-	case []interface{}:
-		result += indent + "[\n"
+	case []any:
+		result += indent + fmt.Sprintf("[ @%s\n", memoryAddr)
 		for _, value := range v {
 			result += fmt.Sprintf("%s  - %s", indent, fdti(value, indent+"  "))
 		}
 		result += indent + "]\n"
 
 	default:
-		// Format value with its type
-		result += fmt.Sprintf("%v (%s)\n", v, reflect.TypeOf(v))
+		// Check if it's a struct using reflection
+		typ := val.Type()
+
+		// Handle pointers by dereferencing
+		isPtr := false
+		if val.Kind() == reflect.Ptr {
+			isPtr = true
+			if val.IsNil() {
+				return indent + "nil\n"
+			}
+			val = val.Elem()
+			typ = val.Type()
+		}
+
+		if val.Kind() == reflect.Struct {
+			structName := typ.Name()
+			if isPtr {
+				structName = "*" + structName
+			}
+			result += indent + fmt.Sprintf("struct %s @%s {\n", structName, memoryAddr)
+			
+			// Iterate over all fields of the struct
+			for i := 0; i < val.NumField(); i++ {
+				field := val.Field(i)
+				fieldType := typ.Field(i)
+				
+				// Skip unexported fields (lowercase field names)
+				if !fieldType.IsExported() {
+					continue
+				}
+				
+				fieldName := fieldType.Name
+				fieldValue := field.Interface()
+				
+				result += fmt.Sprintf("%s  %s: %s", indent, fieldName, fdti(fieldValue, indent+"  "))
+			}
+			result += indent + "}\n"
+		} else {
+			// For non-struct types, just format value with its type
+			result += fmt.Sprintf("%v (%s) @%s\n", v, reflect.TypeOf(v), memoryAddr)
+		}
 	}
 
 	return result

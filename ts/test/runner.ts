@@ -70,8 +70,6 @@ async function runner(name: string, store: any, testfile: string, provider: Prov
         checkResult(entry, res, structUtils)
       }
       catch (err: any) {
-        console.log('RUNNER-ERROR', err)
-
         entry.thrown = err
 
         const entry_err = entry.err
