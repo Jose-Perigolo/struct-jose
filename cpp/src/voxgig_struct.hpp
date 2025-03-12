@@ -337,6 +337,12 @@ try_access:
 
     return _jsonstr;
   }
+  
+  json clone(args_container&& args) {
+    json val = args.size() == 0 ? nullptr : std::move(args[0]);
+    
+    return val;
+  }
 
 
 }

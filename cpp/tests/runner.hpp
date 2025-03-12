@@ -5,9 +5,8 @@
 
 #define FOR(entry, OBJ) for(json::iterator entry = OBJ.begin(); entry != OBJ.end(); ++entry)
 
-json fixJSON(json&&);
-json fixJSON(json&);
-json unfixJSON(json&&);
+json fixJSON(const json&);
+json unfixJSON(json&&); // UNUSED
 
 struct RunnerResult {
   using Function = std::function<void(const json&, JsonFunction, json&&)>;
@@ -130,7 +129,7 @@ testsubject = testclient.utility()[name]
         // Build up the call arguments
         if(entry->contains("ctx")) {
           args = { (*entry)["ctx"] };
-        // Addition - ensure "args" is an array so the implicit conversion isn't dangerous and doesn't crash at runtime
+          // Addition - ensure "args" is an array so the implicit conversion isn't dangerous and doesn't crash at runtime
         } else if(entry->contains("args") && entry->at("args").is_array()) {
           args = (*entry)["args"];
         } else {
@@ -168,7 +167,7 @@ first_arg["utility"] = testclient.utility()
         // NOTE: COPY ENFORCED
         (*entry)["res"] = res;
 
-        if(entry->contains("match") || entry->contains("out")) {
+        if(!entry->contains("match") || entry->contains("out")) {
           /*
           // TODO:
 # Remove functions/etc. by JSON round trip
@@ -259,31 +258,34 @@ return out;
 
 }
 
-// TODO: NOTE: Copies for now
-json fixJSON(json& obj) {
-  return obj;
+json fixJSON(const json& obj) {
+  if(obj.is_null()) {
+    return "__NULL__";
+  } else if(obj.is_array()) {
+    json arr = json::array();
+    for(json::const_iterator item = obj.begin(); item != obj.end(); item++) {
+      arr.push_back(
+          fixJSON(item.value()));
+    }
+    return arr;
+  } else if(obj.is_object()) {
+    json _obj = json::object();
+    for(json::const_iterator item = obj.begin(); item != obj.end(); item++) {
+      _obj[item.key()] = fixJSON(item.value());
+    }
+    return _obj;
+  } else {
+    return obj;
+  }
+
 }
 
-json fixJSON(json&& obj) {
-  return std::move(obj);
-}
-
-json unfixJSON(json&& obj) {
-  return std::move(obj);
-}
 
 
-// TODO
 /*
-   def fixJSON(obj):
-   if obj is None:
-   return "__NULL__"
-   elif isinstance(obj, list):
-   return [fixJSON(item) for item in obj]
-   elif isinstance(obj, dict):
-   return {k: fixJSON(v) for k, v in obj.items()}
-else:
-return obj
+   json unfixJSON(json&& obj) {
+   return std::move(obj);
+   }
  */
 
 // TODO
