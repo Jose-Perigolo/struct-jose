@@ -91,14 +91,6 @@ local S_KEY = 'KEY'
 local UNDEF = nil
 
 
-
-
--- Value is a node - defined, and a map (hash) or list (array).
-local function isnode(val)
-  return val ~= UNDEF and type(val) == 'table'
-end
-
-
 -- Value is a defined list (array) with integer keys (indexes).
 local function islist(val)
   -- Check if it's a table
@@ -110,7 +102,7 @@ local function islist(val)
   local count = 0
   local max = 0
   for k, _ in pairs(val) do
-    if type(k) == "number" then
+    if type(k) == S_number then
       if k > max then max = k end
       count = count + 1
     end
@@ -119,37 +111,113 @@ local function islist(val)
   -- Check if all keys are consecutive integers starting from 1
   return count > 0 and max == count
 end
-
 -- Value is a defined map (hash) with string keys.
-local function ismap(val)
-  return isnode(val) and not islist(val)
+function ismap(val)
+  -- Check if the value is a table
+  if type(val) ~= "table" then
+    return false
+  end
+
+  -- Iterate over the table to check if it has string keys
+  for k, _ in pairs(val) do
+    if type(k) ~= "string" then
+      return false
+    end
+  end
+
+  return true
+end
+
+-- Value is a node - defined, and a map (hash) or list (array).
+local function isnode(val)
+  if val == nil then
+    return false
+  end
+
+  return ismap(val) or islist(val)
 end
 
 -- Value is a defined string (non-empty) or integer key.
 local function iskey(key)
   local keytype = type(key)
-  return (keytype == S.string and key ~= S.empty and key ~= 'null') or keytype == 'number'
+  return (keytype == S_string and key ~= S_MT and key ~= S_null) or keytype == S_number
 end
 
--- Check for an "empty" value - undefined, empty string, array, object.
-local function isempty(val)
-  if val == UNDEF or val == '' or val == 'null' then
+-- Check for an "empty" value - nil, empty string, array, object.
+function isempty(val)
+  -- Check if the value is nil
+  if val == nil or val == "null" then
     return true
   end
 
-  if type(val) == 'table' then
-    for _ in pairs(val) do
-      return false -- If the table has any elements, it's not empty
-    end
-    return true    -- Table exists but has no elements
+  -- Check if the value is an empty string
+  if type(val) == "string" and val == S_MT then
+    return true
   end
 
+  -- Check if the value is an empty table (array or map)
+  if type(val) == "table" then
+    return next(val) == nil
+  end
+
+  -- If none of the above, the value is not empty
   return false
 end
 
 -- Value is a function.
 local function isfunc(val)
   return type(val) == 'function'
+end
+
+-- Determine the type of a value as a string.
+-- Returns one of: 'null', 'string', 'number', 'boolean', 'function', 'array', 'object'
+-- Normalizes and simplifies Lua's type system for consistency.
+function typify(value)
+  if value == nil then
+    return "null"
+  end
+
+  local basicType = type(value)
+
+  -- Handle basic types that map directly
+  if basicType == "string" then
+    return "string"
+  elseif basicType == "number" then
+    return "number"
+  elseif basicType == "boolean" then
+    return "boolean"
+  elseif basicType == "function" then
+    return "function"
+  elseif basicType == "table" then
+    -- In Lua, we need to distinguish between arrays and objects
+    -- Check if the table has sequential numeric keys starting from 1
+    local isArray = true
+    local count = 0
+
+    for k, _ in pairs(value) do
+      if type(k) == "number" and k == math.floor(k) and k > 0 then
+        count = count + 1
+      else
+        isArray = false
+        break
+      end
+    end
+
+    -- Check if all numeric keys are sequential
+    if isArray and count > 0 then
+      for i = 1, count do
+        if value[i] == nil then
+          isArray = false
+          break
+        end
+      end
+    end
+
+    return isArray and "array" or "object"
+  end
+
+  -- For any other types (thread, userdata), return "object"
+  return "object"
 end
 
 -- Safely get a property of a node. Undefined arguments return undefined.
@@ -226,47 +294,50 @@ local function haskey(val, key)
   return getprop(val, key) ~= UNDEF
 end
 
--- List the keys of a map or list as an array of tuples of the form {key, value}.
-local function items(val)
-  if ismap(val) then
-    local result = {}
-    local keys = {}
+-- Helper function to get sorted keys from a table
+local function getKeys(t)
+  local keys = {}
+  for k in pairs(t) do
+    table.insert(keys, k)
+  end
+  table.sort(keys)
+  return keys
+end
 
-    -- Collect all keys
-    for k, _ in pairs(val) do
-      table.insert(keys, k)
-    end
-
-    -- Sort keys (for consistent ordering)
-    table.sort(keys)
-
-    -- Create sorted key-value pairs
-    for _, k in ipairs(keys) do
-      table.insert(result, { k, val[k] })
-    end
-
-    return result
-  elseif islist(val) then
-    local result = {}
-    for i, v in ipairs(val) do
-      -- Subtract 1 from index to match JavaScript's 0-based indexing
-      table.insert(result, { i - 1, v })
-    end
-    return result
-  else
+-- List the sorted keys of a map or list as an array of tuples of the form {key, value}
+function items(val)
+  if type(val) ~= "table" then
     return {}
   end
+
+  local result = {}
+
+  if islist(val) then
+    -- Handle array-like tables
+    for i, v in ipairs(val) do
+      -- Lua is 1-indexed, so we need to adjust the index
+      table.insert(result, {i-1, v})
+    end
+  else
+    -- Handle map-like tables
+    local keys = getKeys(val)
+    for _, k in ipairs(keys) do
+      table.insert(result, {k, val[k]})
+    end
+  end
+
+  return result
 end
 
 -- Escape regular expression.
 local function escre(s)
-  s = s or S.empty
+  s = s or S_MT
   return s:gsub("([.*+?^${}%(%)%[%]\\|])", "\\%1")
 end
 
 -- Escape URLs.
 local function escurl(s)
-  s = s or S.empty
+  s = s or S_MT
   -- Exact match for encodeURIComponent behavior
   return s:gsub("([^%w-_%.~])", function(c)
     return string.format("%%%02X", string.byte(c))
@@ -294,131 +365,160 @@ local function joinurl(sarr)
   return table.concat(result, "/")
 end
 
--- Safely stringify a value for printing (NOT JSON!).
-local function stringify(val, maxlen)
-  local function stringifyTable(t, visited)
-    visited = visited or {}
+-- Safely stringify a value for humans (NOT JSON!)
+function stringify(val, maxlen)
+  -- Handle nil case
+  if val == nil then
+    return S_MT
+  end
 
-    -- Check for recursive references
-    if visited[t] then
-      return "<<recursive>>"
+  local function sort_keys(t)
+    local keys = {}
+    for k in pairs(t) do
+      table.insert(keys, k)
+    end
+    table.sort(keys)
+    return keys
+  end
+
+  local function serialize(obj, seen)
+    seen = seen or {}
+
+    -- Handle cycles in tables
+    if seen[obj] then
+      return "..."
     end
 
-    visited[t] = true
+    local obj_type = type(obj)
 
-    -- Check if table is array-like
-    local isArray = true
-    local maxIndex = 0
-
-    for k, _ in pairs(t) do
-      if type(k) ~= 'number' or k <= 0 or k ~= math.floor(k) then
-        isArray = false
-        break
-      end
-      maxIndex = math.max(maxIndex, k)
+    -- Handle basic types
+    if obj_type == "string" then
+      return string.format("%q", obj)
+    elseif obj_type == "number" or obj_type == "boolean" then
+      return tostring(obj)
+    elseif obj_type ~= "table" then
+      return tostring(obj)
     end
 
-    -- Count actual elements
-    local count = 0
-    for _ in pairs(t) do count = count + 1 end
+    -- Mark this table as seen
+    seen[obj] = true
 
-    -- If array-like (sequential keys from 1 to n)
-    if isArray and count == maxIndex then
-      local items = {}
-      for i = 1, count do
-        local v = t[i]
-        if type(v) == 'table' then
-          table.insert(items, stringifyTable(v, visited))
-        elseif type(v) == 'string' then
-          table.insert(items, v)
-        else
-          table.insert(items, tostring(v))
-        end
+    -- Handle tables (arrays and objects)
+    local parts = {}
+    local is_array = #obj > 0
+
+    if is_array then
+      -- Array-like tables
+      for _, v in ipairs(obj) do
+        table.insert(parts, serialize(v, seen))
       end
-      return '[' .. table.concat(items, ',') .. ']'
     else
-      -- Format as object
-      local items = {}
-      local sortedKeys = {}
-      for k, _ in pairs(t) do
-        table.insert(sortedKeys, k)
+      -- Object-like tables
+      local keys = sort_keys(obj)
+      for _, k in ipairs(keys) do
+        local v = obj[k]
+        table.insert(parts, string.format("%s:%s", k, serialize(v, seen)))
       end
-      table.sort(sortedKeys)
+    end
 
-      for _, k in ipairs(sortedKeys) do
-        local v = t[k]
-        local valStr
-        if type(v) == 'table' then
-          valStr = stringifyTable(v, visited)
-        elseif type(v) == 'string' then
-          valStr = v
-        else
-          valStr = tostring(v)
-        end
-        table.insert(items, tostring(k) .. ':' .. valStr)
-      end
-      return '{' .. table.concat(items, ',') .. '}'
+    -- Remove the seen mark
+    seen[obj] = nil
+
+    if is_array then
+      return "[" .. table.concat(parts, ",") .. "]"
+    else
+      return "{" .. table.concat(parts, ",") .. "}"
     end
   end
 
-  local json = S.empty
+  -- Main stringify logic
+  local str = ""
+  local success, result = pcall(function()
+    return serialize(val)
+  end)
 
-  if type(val) == 'table' then
-    json = stringifyTable(val)
+  if success then
+    str = result
   else
-    json = tostring(val)
+    str = S_MT .. tostring(val)
   end
 
-  json = type(json) ~= 'string' and tostring(json) or json
-  json = json:gsub('"', '')
+  -- Remove quotes
+  str = str:gsub('"', '')
 
-  if maxlen ~= nil then
-    if #json > maxlen then
-      json = json:sub(1, maxlen - 3) .. '...'
+  -- Handle maxlen
+  if maxlen and maxlen > 0 then
+    if #str > maxlen then
+      if maxlen >= 3 then
+        str = string.sub(str, 1, maxlen - 3) .. "..."
+      else
+        str = string.sub(str, 1, maxlen)
+      end
     end
   end
 
-  return json
+  return str
 end
+
 
 -- Clone a JSON-like data structure.
 -- NOTE: function value references are copied, *not* cloned.
-local function clone(val)
-  if val == UNDEF then
-    return UNDEF
+function clone(val, flags)
+  -- Handle nil value
+  if val == nil then
+    return nil
   end
 
-  if type(val) ~= 'table' then
-    return val
+  -- Initialize flags if not provided
+  flags = flags or {}
+  if flags.func == nil then
+    flags.func = true
   end
 
-  local result = {}
-  local refs = {}
-
-  local function deepCopy(obj)
-    if type(obj) ~= 'table' then
-      return obj
+  -- Handle functions
+  if type(val) == "function" then
+    if flags.func then
+      return val
     end
+    return nil
+  end
 
-    if refs[obj] then
-      return refs[obj]
-    end
+  -- Handle tables (both arrays and objects)
+  if type(val) == "table" then
+    local refs = {} -- To store function references
+    local new_table = {}
 
-    local copy = {}
-    refs[obj] = copy
-
-    for k, v in pairs(obj) do
-      if type(v) == 'table' then
-        copy[k] = deepCopy(v)
+    -- Clone table contents
+    for k, v in pairs(val) do
+      -- Handle function values specially
+      if type(v) == "function" then
+        if flags.func then
+          refs[#refs + 1] = v
+          new_table[k] = ("$FUNCTION:" .. #refs)
+        end
       else
-        copy[k] = v
+        new_table[k] = clone(v, flags)
       end
     end
 
-    return copy
+    -- If we have function references, we need to restore them
+    if #refs > 0 then
+      -- Replace function placeholders with actual functions
+      for k, v in pairs(new_table) do
+        if type(v) == "string" then
+          local func_idx = v:match("^%$FUNCTION:(%d+)$")
+          if func_idx then
+            new_table[k] = refs[tonumber(func_idx)]
+          end
+        end
+      end
+    end
+
+    return new_table
   end
 
-  return deepCopy(val)
+  -- For all other types (numbers, strings, booleans), return as is
+  return val
 end
 
 -- Safely set a property. Undefined arguments and invalid keys are ignored.

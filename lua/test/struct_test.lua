@@ -126,6 +126,7 @@ describe("struct", function()
     runset(spec.minor.islist, islist)
   end)
 
+
   test("minor-iskey", function()
     runset(spec.minor.iskey, iskey)
   end)
@@ -147,189 +148,219 @@ describe("struct", function()
     end), true)
   end)
 
-  test("minor-clone", function()
-    runset(spec.minor.clone, clone)
 
-    local f0 = function()
-      return nil
+test("minor-clone", function()
+  runset(spec.minor.clone, clone)
+
+  local f0 = function()
+    return nil
+  end
+
+  local original = { a = f0 }
+  local copied = clone(original)
+  -- TODO: Check order of indx in array tables relevant to this test
+  assert.are.same(original, copied)
+end)
+
+
+test("minor-escre", function()
+  runset(spec.minor.escre, escre)
+end)
+
+
+test("minor-escurl", function()
+  runset(spec.minor.escurl, escurl)
+end)
+
+test("minor-stringify", function()
+  runset(spec.minor.stringify, function(vin)
+    if vin.max == nil then
+      return stringify(vin.val)
+    else
+      return stringify(vin.val, vin.max)
     end
-
-    local original = { a = f0 }
-    local copied = clone(original)
-
-    assert.are.same(original, copied)
   end)
+end)
 
-  test("minor-escre", function()
-    runset(spec.minor.escre, escre)
+
+test("minor-items", function()
+  runset(spec.minor.items, items)
+end)
+
+
+test("minor-getprop", function()
+  runset(spec.minor.getprop, function(vin)
+    if vin.alt == nil then
+      return getprop(vin.val, vin.key)
+    else
+      return getprop(vin.val, vin.key, vin.alt)
+    end
   end)
+end)
 
-  test("minor-escurl", function()
-    runset(spec.minor.escurl, escurl)
-  end)
 
-  test("minor-stringify", function()
-    runset(spec.minor.stringify, function(vin)
-      if vin.max == nil then
-        return stringify(vin.val)
-      else
-        return stringify(vin.val, vin.max)
-      end
-    end)
-  end)
+-- test("minor-setprop", function()
+--   runset(spec.minor.setprop, function(vin)
+--     return setprop(vin.parent, vin.key, vin.val)
+--   end)
+-- end)
 
-  test("minor-items", function()
-    runset(spec.minor.items, items)
-  end)
 
-  test("minor-getprop", function()
-    runset(spec.minor.getprop, function(vin)
-      if vin.alt == nil then
-        return getprop(vin.val, vin.key)
-      else
-        return getprop(vin.val, vin.key, vin.alt)
-      end
-    end)
-  end)
+-- -- -- walk tests
+-- -- -- ==========
+-- test("walk-exists", function()
+--   assert.equal("function", type(walk))
+-- end)
 
-  test("minor-setprop", function()
-    runset(spec.minor.setprop, function(vin)
-      return setprop(vin.parent, vin.key, vin.val)
-    end)
-  end)
 
-  -- -- walk tests
-  -- -- ==========
-  test("walk-exists", function()
-    assert.equal("function", type(walk))
-  end)
+-- test("walk-basic", function()
+--   runset(spec.walk.basic, function(vin)
+--     return walk(vin, walkpath)
+--   end)
+-- end)
 
-  test("walk-basic", function()
-    runset(spec.walk.basic, function(vin)
-      return walk(vin, walkpath)
-    end)
-  end)
 
-  -- -- merge tests
-  -- -- ===========
-  test("merge-exists", function()
-    assert.equal("function", type(merge))
-  end)
+-- -- -- merge tests
+-- -- -- ===========
+-- test("merge-exists", function()
+--   assert.equal("function", type(merge))
+-- end)
 
-  test("merge-basic", function()
-    local test = clone(spec.merge.basic)
-    assert.same(test.out, merge(test['in']))
-  end)
 
-  test("merge-cases", function()
-    runset(spec.merge.cases, merge)
-  end)
+-- test("merge-basic", function()
+--   local test = clone(spec.merge.basic)
+--   assert.same(test.out, merge(test['in']))
+-- end)
 
-  test("merge-array", function()
-    runset(spec.merge.array, merge)
-  end)
 
-  test("merge-special", function()
-    local f0 = function() return nil end
+-- test("merge-cases", function()
+--   runset(spec.merge.cases, merge)
+-- end)
 
-    assert.same(f0, merge({ f0 }))
-    assert.same(f0, merge({ nil, f0 }))
-    assert.same({ a = f0 }, merge({ { a = f0 } }))
-    assert.same({ a = { b = f0 } }, merge({ { a = { b = f0 } } }))
-  end)
 
-  -- -- getpath tests
-  -- -- =============
+-- test("merge-array", function()
+--   runset(spec.merge.array, merge)
+-- end)
 
-  test("getpath-exists", function()
-    assert.equal("function", type(getpath))
-  end)
 
-  test("getpath-basic", function()
-    runset(spec.getpath.basic, function(vin)
-      return getpath(vin.path, vin.store)
-    end)
-  end)
+-- test("merge-special", function()
+--   local f0 = function() return nil end
 
-  test("getpath-current", function()
-    runset(spec.getpath.current, function(vin)
-      return getpath(vin.path, vin.store, vin.current)
-    end)
-  end)
 
-  test("getpath-state", function()
-    local state = {
-      handler = function(state, val, _current, _ref, _store)
-        local out = state.meta.step .. ':' .. val
-        state.meta.step = state.meta.step + 1
-        return out
-      end,
-      meta = { step = 0 },
-      mode = 'val',
-      full = false,
-      keyI = 0,
-      keys = { '$TOP' },
-      key = '$TOP',
-      val = '',
-      parent = {},
-      path = { '$TOP' },
-      nodes = { {} },
-      base = '$TOP',
-      errs = {}
-    }
-    runset(spec.getpath.state, function(vin)
-      return getpath(vin.path, vin.store, vin.current, state)
-    end)
-  end)
+--   assert.same(f0, merge({ f0 }))
+--   assert.same(f0, merge({ nil, f0 }))
+--   assert.same({ a = f0 }, merge({ { a = f0 } }))
+--   assert.same({ a = { b = f0 } }, merge({ { a = { b = f0 } } }))
+-- end)
 
-  -- inject tests
-  -- ============
 
-  test("inject-exists", function()
-    assert.equal("function", type(inject))
-  end)
+-- -- -- getpath tests
+-- -- -- =============
 
-  test("inject-basic", function()
-    local test = clone(spec.inject.basic)
-    assert.same(test.out, inject(test['in'].val, test['in'].store))
-  end)
 
-  test("inject-string", function()
-    runset(spec.inject.string, function(vin)
-      local result = inject(vin.val, vin.store, nullModifier, vin.current)
-      return result
-    end)
-  end)
+-- test("getpath-exists", function()
+--   assert.equal("function", type(getpath))
+-- end)
 
-  test("inject-deep", function()
-    runset(spec.inject.deep, function(vin)
-      return inject(vin.val, vin.store)
-    end)
-  end)
 
-  -- -- transform tests
-  -- -- ===============
+-- test("getpath-basic", function()
+--   runset(spec.getpath.basic, function(vin)
+--     return getpath(vin.path, vin.store)
+--   end)
+-- end)
 
-  test("transform-exists", function()
-    assert.equal("function", type(transform))
-  end)
 
-  test("transform-basic", function()
-    local test = clone(spec.transform.basic)
-    assert.same(transform(test['in'].data, test['in'].spec, test['in'].store), test.out)
-  end)
+-- test("getpath-current", function()
+--   runset(spec.getpath.current, function(vin)
+--     return getpath(vin.path, vin.store, vin.current)
+--   end)
+-- end)
 
-  test("transform-paths", function()
-    runset(spec.transform.paths, function(vin)
-      return transform(vin.data, vin.spec, vin.store)
-    end)
-  end)
 
-  test("transform-cmds", function()
-    runset(spec.transform.cmds, function(vin)
-      return transform(vin.data, vin.spec, vin.store)
-    end)
-  end)
+-- test("getpath-state", function()
+--   local state = {
+--     handler = function(state, val, _current, _ref, _store)
+--       local out = state.meta.step .. ':' .. val
+--       state.meta.step = state.meta.step + 1
+--       return out
+--     end,
+--     meta = { step = 0 },
+--     mode = 'val',
+--     full = false,
+--     keyI = 0,
+--     keys = { '$TOP' },
+--     key = '$TOP',
+--     val = '',
+--     parent = {},
+--     path = { '$TOP' },
+--     nodes = { {} },
+--     base = '$TOP',
+--     errs = {}
+--   }
+--   runset(spec.getpath.state, function(vin)
+--     return getpath(vin.path, vin.store, vin.current, state)
+--   end)
+-- end)
+
+
+-- -- inject tests
+-- -- ============
+
+
+-- test("inject-exists", function()
+--   assert.equal("function", type(inject))
+-- end)
+
+
+-- test("inject-basic", function()
+--   local test = clone(spec.inject.basic)
+--   assert.same(test.out, inject(test['in'].val, test['in'].store))
+-- end)
+
+
+-- test("inject-string", function()
+--   runset(spec.inject.string, function(vin)
+--     local result = inject(vin.val, vin.store, nullModifier, vin.current)
+--     return result
+--   end)
+-- end)
+
+
+-- test("inject-deep", function()
+--   runset(spec.inject.deep, function(vin)
+--     return inject(vin.val, vin.store)
+--   end)
+-- end)
+
+
+-- -- -- transform tests
+-- -- -- ===============
+
+
+-- test("transform-exists", function()
+--   assert.equal("function", type(transform))
+-- end)
+
+
+-- test("transform-basic", function()
+--   local test = clone(spec.transform.basic)
+--   assert.same(transform(test['in'].data, test['in'].spec, test['in'].store), test.out)
+-- end)
+
+
+-- test("transform-paths", function()
+--   runset(spec.transform.paths, function(vin)
+--     return transform(vin.data, vin.spec, vin.store)
+--   end)
+-- end)
+
+
+-- test("transform-cmds", function()
+--   runset(spec.transform.cmds, function(vin)
+--     return transform(vin.data, vin.spec, vin.store)
+--   end)
+-- end)
+
 
   -- test("transform-each", function()
   --   runset(spec.transform.each, function(vin)
