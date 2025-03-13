@@ -7,7 +7,8 @@
 -- structures. These structures assumed to be composed of nested
 -- "nodes", where a node is a list or map, and has named or indexed
 -- fields.  The general design principle is "by-example". Transform
--- specifications mirror the desired output.  This implementation is
+-- specifications mirror the desired output. This implementation is
+
 -- designed for porting to multiple language, and to be tolerant of
 -- undefined values.
 --
@@ -17,7 +18,8 @@
 -- - walk: walk a node tree, applying a function at each node and leaf.
 -- - inject: inject values from a data store into a new data structure.
 -- - transform: transform a data structure to an example structure.
--- - validate: valiate a data structure against a shape specification.
+-- - validate: validate a data structure against a shape specification.
+
 --
 -- Minor utilities
 -- - isnode, islist, ismap, iskey, isfunc: identify value kinds.
@@ -37,49 +39,58 @@
 -- uniformly across many languages, meaning that some code that may be
 -- functionally redundant in specific languages is still retained to
 -- keep the code human comparable.
+--
+-- NOTE: In this code JSON nulls are in general *not* considered the
+-- same as undefined values in the given language. However most
+-- JSON parsers do use the undefined value to represent JSON
+-- null. This is ambiguous as JSON null is a separate value, not an
+-- undefined value. You should convert such values to a special value
+-- to represent JSON null, if this ambiguity creates issues
+-- (thankfully in most APIs, JSON nulls are not used). For example,
+-- the unit tests use the string "__NULL__" where necessary.
+-- 
+
 
 -- String constants are explicitly defined.
-local S = {
-  -- Mode value for inject step.
-  ["MKEYPRE"]  = "key:pre",
-  ["MKEYPOST"] = "key:post",
-  ["MVAL"]     = "val",
-  ["MKEY"]     = "key",
+local S_MKEYPRE = 'key:pre'
+local S_MKEYPOST = 'key:post'
+local S_MVAL = 'val'
+local S_MKEY = 'key'
 
-  -- Special keys.
-  ["DKEY"]     = "`$KEY`",
-  ["DTOP"]     = "$TOP",
-  ["DERRS"]    = "$ERRS",
-  ["DMETA"]    = "`$META`",
 
-  -- General strings.
-  ["array"]    = "array",
-  ["base"]     = "base",
-  ["boolean"]  = "boolean",
-  ["empty"]    = "",
-  ["function"] = "function",
-  ["number"]   = "number",
-  ["object"]   = "object",
-  ["string"]   = "string",
-  ["null"]     = "null",
-  ["key"]      = "key",
-  ["parent"]   = "parent",
-  ["BT"]       = "`",
-  ["DS"]       = "$",
-  ["DT"]       = ".",
-  ["KEY"]      = "KEY",
-}
+-- Special keys.
+
+local S_DKEY = '`$KEY`'
+local S_DMETA = '`$META`'
+local S_DTOP = '$TOP'
+local S_DERRS = '$ERRS'
+
+
+-- General strings.
+
+local S_array = 'array'
+local S_base = 'base'
+local S_boolean = 'boolean'
+
+local S_function = 'function'
+local S_number = 'number'
+local S_object = 'object'
+local S_string = 'string'
+local S_null = 'null'
+local S_key = 'key'
+local S_parent = 'parent'
+local S_MT = ''
+local S_BT = '`'
+local S_DS = '$'
+local S_DT = '.'
+local S_CN = ':'
+local S_KEY = 'KEY'
+
 
 -- The standard undefined value for this language.
 local UNDEF = nil
 
--- Forward declarations for functions that need to reference each other
-local _injectstr
-local injecthandler
-local inject
-local _pathify
-local getpath
-local walk
+
 
 
 -- Value is a node - defined, and a map (hash) or list (array).
