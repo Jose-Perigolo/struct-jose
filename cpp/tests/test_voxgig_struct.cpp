@@ -51,6 +51,7 @@ struct Struct : public Utility {
         { "setprop", setprop },
 
         { "walk", walk },
+        { "merge", merge },
 
     });
 
@@ -269,6 +270,21 @@ int main() {
       // TODO: Use nullptr for now since we can't have std::function with optional arguments. Instead, we need to rewrite the entire class to implement our own closure and "operator()"
       runset(spec["walk"]["basic"], walk_wrapper, nullptr);
     }
+
+    // -------------------------------------------------
+    // merge tests
+    // -------------------------------------------------
+    
+    /*
+    TEST_CASE("test_merge_basic") {
+
+      json test_data = clone({ spec["merge"]["basic"] });
+
+      std::cout << test_data << std::endl;
+
+      assert(merge({ test_data["in"] }) == test_data["out"]);
+    }
+    */
 
 
 

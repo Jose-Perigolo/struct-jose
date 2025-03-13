@@ -516,5 +516,58 @@ try_access:
     return _apply({ key, val, parent, path });
   }
 
+  json merge(args_container&& args) {
+    /*
+      Merge a list of values into each other. Later values have
+      precedence.  Nodes override scalars. Node kinds (list or map)
+      override each other, and do *not* merge.  The first element is
+      modified.
+    */
+
+    json objs = args.size() == 0 ? nullptr : std::move(args[0]);
+
+    if(islist({objs}) == false) {
+      return objs;
+    }
+    if(objs.size() == 0) {
+      return nullptr;
+    }
+    if(objs.size() == 1) {
+      return objs[0];
+    }
+
+    // Merge a list of values.
+    json out = getprop({ objs, 0, json::object() });
+
+    for(int i = 1; i < objs.size(); i++) {
+      json obj = objs[i];
+
+      if(isnode({ obj }) == false) {
+        out = obj;
+      } else {
+
+        // Nodes win, also over nodes of a different kind
+        if(isnode({ out }) == false || 
+            (ismap({ obj }).get<bool>() && islist({ obj }).get<bool>()) ||
+            (islist({ obj }).get<bool>() && ismap({ out }).get<bool>())) {
+          out = obj;
+        } else {
+
+          json cur = json::array({ out });
+          int cI = 0;
+
+
+
+        }
+
+      }
+
+    }
+
+
+
+    return out;
+  }
+
 
 }
