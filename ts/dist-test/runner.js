@@ -13,7 +13,7 @@ async function runner(name, store, testfile, provider) {
     let subject = utility[name];
     let runset = async (testspec, testsubject) => {
         subject = testsubject || subject;
-        next_entry: for (let entry of testspec.set) {
+        for (let entry of testspec.set) {
             try {
                 let testpack = resolveTestPack(name, entry, subject, client, clients);
                 let args = resolveArgs(entry, testpack);
@@ -22,24 +22,7 @@ async function runner(name, store, testfile, provider) {
                 checkResult(entry, res, structUtils);
             }
             catch (err) {
-                entry.thrown = err;
-                const entry_err = entry.err;
-                if (null != entry_err) {
-                    if (true === entry_err || matchval(entry_err, err.message, structUtils)) {
-                        if (entry.match) {
-                            match(entry.match, { in: entry.in, out: entry.res, ctx: entry.ctx, err }, structUtils);
-                        }
-                        continue next_entry;
-                    }
-                    (0, node_assert_1.fail)('ERROR MATCH: [' + structUtils.stringify(entry_err) +
-                        '] <=> [' + err.message + ']');
-                }
-                else if (err instanceof node_assert_1.AssertionError) {
-                    (0, node_assert_1.fail)(err.message + '\n\nENTRY: ' + JSON.stringify(entry, null, 2));
-                }
-                else {
-                    (0, node_assert_1.fail)(err.stack + '\\nnENTRY: ' + JSON.stringify(entry, null, 2));
-                }
+                handleError(entry, err, structUtils);
             }
         }
     };
@@ -56,6 +39,28 @@ function checkResult(entry, res, structUtils) {
     }
     if (entry.match) {
         match(entry.match, { in: entry.in, out: entry.res, ctx: entry.ctx }, structUtils);
+    }
+}
+// Handle errors from test execution
+function handleError(entry, err, structUtils) {
+    entry.thrown = err;
+    const entry_err = entry.err;
+    if (null != entry_err) {
+        if (true === entry_err || matchval(entry_err, err.message, structUtils)) {
+            if (entry.match) {
+                match(entry.match, { in: entry.in, out: entry.res, ctx: entry.ctx, err }, structUtils);
+            }
+            return;
+        }
+        (0, node_assert_1.fail)('ERROR MATCH: [' + structUtils.stringify(entry_err) +
+            '] <=> [' + err.message + ']');
+    }
+    // Unexpected error (test didn't specify an error expectation)
+    else if (err instanceof node_assert_1.AssertionError) {
+        (0, node_assert_1.fail)(err.message + '\n\nENTRY: ' + JSON.stringify(entry, null, 2));
+    }
+    else {
+        (0, node_assert_1.fail)(err.stack + '\\nnENTRY: ' + JSON.stringify(entry, null, 2));
     }
 }
 function resolveArgs(entry, testpack) {

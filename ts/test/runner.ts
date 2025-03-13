@@ -58,7 +58,6 @@ async function runner(name: string, store: any, testfile: string, provider: Prov
   let runset = async (testspec: any, testsubject: Function) => {
     subject = testsubject || subject
 
-    next_entry:
     for (let entry of testspec.set) {
       try {
         let testpack = resolveTestPack(name, entry, subject, client, clients)
@@ -70,33 +69,7 @@ async function runner(name: string, store: any, testfile: string, provider: Prov
         checkResult(entry, res, structUtils)
       }
       catch (err: any) {
-        entry.thrown = err
-
-        const entry_err = entry.err
-
-        if (null != entry_err) {
-          if (true === entry_err || matchval(entry_err, err.message, structUtils)) {
-
-            if (entry.match) {
-              match(
-                entry.match,
-                { in: entry.in, out: entry.res, ctx: entry.ctx, err },
-                structUtils
-              )
-            }
-
-            continue next_entry
-          }
-
-          fail('ERROR MATCH: [' + structUtils.stringify(entry_err) +
-            '] <=> [' + err.message + ']')
-        }
-        else if (err instanceof AssertionError) {
-          fail(err.message + '\n\nENTRY: ' + JSON.stringify(entry, null, 2))
-        }
-        else {
-          fail(err.stack + '\\nnENTRY: ' + JSON.stringify(entry, null, 2))
-        }
+        handleError(entry, err, structUtils)
       }
     }
   }
@@ -122,7 +95,37 @@ function checkResult(entry: any, res: any, structUtils: StructUtility) {
       structUtils
     )
   }
+}
 
+
+// Handle errors from test execution
+function handleError(entry: any, err: any, structUtils: StructUtility) {
+  entry.thrown = err
+
+  const entry_err = entry.err
+
+  if (null != entry_err) {
+    if (true === entry_err || matchval(entry_err, err.message, structUtils)) {
+      if (entry.match) {
+        match(
+          entry.match,
+          { in: entry.in, out: entry.res, ctx: entry.ctx, err },
+          structUtils
+        )
+      }
+      return
+    }
+
+    fail('ERROR MATCH: [' + structUtils.stringify(entry_err) +
+      '] <=> [' + err.message + ']')
+  }
+  // Unexpected error (test didn't specify an error expectation)
+  else if (err instanceof AssertionError) {
+    fail(err.message + '\n\nENTRY: ' + JSON.stringify(entry, null, 2))
+  }
+  else {
+    fail(err.stack + '\\nnENTRY: ' + JSON.stringify(entry, null, 2))
+  }
 }
 
 
