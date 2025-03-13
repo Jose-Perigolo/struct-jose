@@ -470,6 +470,10 @@ try_access:
     // NOTE: CHEAT SINCE WE CAN'T PASS A DATA STRUCTURE LIKE THIS INTO JSON SAFELY
     function_pointer _apply = reinterpret_cast<function_pointer>(apply.get<intptr_t>());
 
+    /*
+      Walk a data structure depth-first, calling apply at each node (after children).
+    */
+
     if(path == nullptr) {
       path = json::array();
     }
@@ -507,6 +511,8 @@ try_access:
 
     }
 
+    // Nodes are applied *after* their children.
+    // For the root node, key and parent will be UNDEF.
     return _apply({ key, val, parent, path });
   }
 
