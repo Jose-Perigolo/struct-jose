@@ -49,7 +49,11 @@ struct Struct : public Utility {
         { "stringify", stringify },
         { "clone", clone },
         { "setprop", setprop },
-        });
+
+        { "walk", walk },
+
+    });
+
   }
 
   ~Struct() = default;
