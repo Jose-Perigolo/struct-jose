@@ -468,7 +468,7 @@ try_access:
 
 
     // NOTE: CHEAT SINCE WE CAN'T PASS A DATA STRUCTURE LIKE THIS INTO JSON SAFELY
-    function_pointer _apply = reinterpret_cast<function_pointer>(apply.get<intptr_t>());
+    JsonFunction* _apply = reinterpret_cast<JsonFunction*>(apply.get<intptr_t>());
 
     /*
       Walk a data structure depth-first, calling apply at each node (after children).
@@ -513,7 +513,7 @@ try_access:
 
     // Nodes are applied *after* their children.
     // For the root node, key and parent will be UNDEF.
-    return _apply({ key, val, parent, path });
+    return _apply->operator()({ key, val, parent, path });
   }
 
   json merge(args_container&& args) {
@@ -536,11 +536,28 @@ try_access:
       return objs[0];
     }
 
+    json out = json::object();
+
+    for(int i = 0; i < objs.size(); i++) {
+      out.merge_patch(objs[i]);
+    }
+
+    /*
+    if(islist({objs}) == false) {
+      return objs;
+    }
+    if(objs.size() == 0) {
+      return nullptr;
+    }
+    if(objs.size() == 1) {
+      return objs[0];
+    }
+
     // Merge a list of values.
     json out = getprop({ objs, 0, json::object() });
 
     for(int i = 1; i < objs.size(); i++) {
-      json obj = objs[i];
+      json& obj = objs[i];
 
       if(isnode({ obj }) == false) {
         out = obj;
@@ -556,6 +573,56 @@ try_access:
           json cur = json::array({ out });
           int cI = 0;
 
+          std::cout << "before cI: " << cI << std::endl;
+
+          JsonFunction* merger = new JsonFunction([&cur, &cI](args_container&& args) -> json {
+              
+              json key = args.size() == 0 ? nullptr : std::move(args[0]);
+              json val = args.size() < 2 ? nullptr : std::move(args[1]);
+              
+              json parent = args.size() < 3 ? nullptr : std::move(args[2]);
+              json path = args.size() < 4 ? nullptr : std::move(args[3]);
+
+
+              if(key == nullptr) {
+                return val;
+              }
+
+              int lenpath = path.size();
+              cI = lenpath - 1;
+
+              for(int i = 0; i < 1+cI-cur.size(); i++) {
+                cur.push_back(json(nullptr));
+              }
+
+              if(cur[cI] == nullptr) {
+                // cur[cI] = get
+              }
+
+              if(isnode({val}).get<bool>() && !(isempty({ val }).get<bool>())) {
+
+                for(int i = 0; i < 2+cI+cur.size(); i++) {
+                  cur.push_back(json(nullptr));
+                }
+
+                cur[cI] = setprop({ cur[cI], key, cur[cI + 1] });
+
+                cur[cI + 1] = json(nullptr);
+
+
+              } else {
+                // Scalar child.
+                cur[cI] = setprop({ cur[cI], key, val });
+              }
+
+              return val;
+          });
+
+          walk({ obj, reinterpret_cast<intptr_t>(merger) });
+
+          std::cout << "after cI: " << cI << std::endl;
+
+          delete merger;
 
 
         }
@@ -563,6 +630,7 @@ try_access:
       }
 
     }
+  */
 
 
 

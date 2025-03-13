@@ -258,33 +258,33 @@ int main() {
     // -------------------------------------------------
 
     TEST_CASE("test_walk_basic") {
+      JsonFunction* _walkpath = new JsonFunction(walkpath);
 
-      JsonFunction walk_wrapper = [](args_container&& args) -> json {
+      JsonFunction walk_wrapper = [=](args_container&& args) -> json {
         json vin = args.size() == 0 ? nullptr : std::move(args[0]);
         return walk({
             std::move(vin),
-            (intptr_t)walkpath,
+            reinterpret_cast<intptr_t>(_walkpath),
             });
       };
 
       // TODO: Use nullptr for now since we can't have std::function with optional arguments. Instead, we need to rewrite the entire class to implement our own closure and "operator()"
       runset(spec["walk"]["basic"], walk_wrapper, nullptr);
+
+      delete _walkpath;
     }
 
     // -------------------------------------------------
     // merge tests
     // -------------------------------------------------
     
-    /*
     TEST_CASE("test_merge_basic") {
 
       json test_data = clone({ spec["merge"]["basic"] });
-
-      std::cout << test_data << std::endl;
+      // std::cout << test_data << std::endl;
 
       assert(merge({ test_data["in"] }) == test_data["out"]);
     }
-    */
 
 
 
