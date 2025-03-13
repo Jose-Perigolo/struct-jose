@@ -18,7 +18,6 @@ async function runner(name, store, testfile, provider) {
   let runset = async (testspec, testsubject) => {
     subject = testsubject || subject
 
-    next_entry:
     for (let entry of testspec.set) {
       try {
         let testpack = resolveTestPack(name, entry, subject, client, clients)
@@ -30,33 +29,7 @@ async function runner(name, store, testfile, provider) {
         checkResult(entry, res, structUtils)
       }
       catch (err) {
-        entry.thrown = err
-
-        const entry_err = entry.err
-
-        if (null != entry_err) {
-          if (true === entry_err || matchval(entry_err, err.message, structUtils)) {
-
-            if (entry.match) {
-              match(
-                entry.match,
-                { in: entry.in, out: entry.res, ctx: entry.ctx, err },
-                structUtils
-              )
-            }
-
-            continue next_entry
-          }
-
-          fail('ERROR MATCH: [' + structUtils.stringify(entry_err) +
-            '] <=> [' + err.message + ']')
-        }
-        else if (err instanceof AssertionError) {
-          fail(err.message + '\n\nENTRY: ' + JSON.stringify(entry, null, 2))
-        }
-        else {
-          fail(err.stack + '\\nnENTRY: ' + JSON.stringify(entry, null, 2))
-        }
+        handleError(entry, err, structUtils)
       }
     }
   }
@@ -66,6 +39,45 @@ async function runner(name, store, testfile, provider) {
     runset,
     subject,
   }
+}
+
+
+// Handle errors from test execution
+function handleError(entry, err, structUtils) {
+  entry.thrown = err
+  
+  const entry_err = entry.err
+
+  // If the test expects an error
+  if (null != entry_err) {
+    // If the test just expects any error, or if the error message matches what's expected
+    if (true === entry_err || matchval(entry_err, err.message, structUtils)) {
+      // If there's a match pattern, try to match it against the error
+      if (entry.match) {
+        match(
+          entry.match,
+          { in: entry.in, out: entry.res, ctx: entry.ctx, err },
+          structUtils
+        )
+      }
+      
+      // Error was expected and matched, so we're done with this test
+      return true
+    }
+
+    // Expected error didn't match the actual error
+    fail('ERROR MATCH: [' + structUtils.stringify(entry_err) +
+      '] <=> [' + err.message + ']')
+  }
+  // Unexpected error (test didn't specify an error expectation)
+  else if (err instanceof AssertionError) {
+    fail(err.message + '\n\nENTRY: ' + JSON.stringify(entry, null, 2))
+  }
+  else {
+    fail(err.stack + '\\nnENTRY: ' + JSON.stringify(entry, null, 2))
+  }
+  
+  return false
 }
 
 
