@@ -18,9 +18,11 @@ from .voxgig_struct import (
     joinurl,
     keysof,
     merge,
+    pathify,
     setprop,
     stringify,
     transform,
+    typify,
     validate,
     walk,
     InjectState
@@ -45,9 +47,11 @@ __all__ = [
     'joinurl',
     'keysof',
     'merge',
+    'pathify',
     'setprop',
     'stringify',
     'transform',
+    'typify',
     'validate',
     'walk',
     'InjectState'

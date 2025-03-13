@@ -1,23 +1,33 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.NULLMARK = void 0;
+exports.nullModifier = nullModifier;
 exports.runner = runner;
 const node_fs_1 = require("node:fs");
 const node_path_1 = require("node:path");
 const node_assert_1 = require("node:assert");
+const NULLMARK = '__NULL__';
+exports.NULLMARK = NULLMARK;
 async function runner(name, store, testfile, provider) {
     const client = await provider.test();
     const utility = client.utility();
     const structUtils = utility.struct;
     let spec = resolveSpec(name, testfile);
     let clients = await resolveClients(spec, store, provider, structUtils);
-    let subject = utility[name];
-    let runset = async (testspec, testsubject) => {
+    // let subject = (utility as any)[name]
+    let subject = resolveSubject(name, utility);
+    let runsetflags = async (testspec, flags, testsubject) => {
         subject = testsubject || subject;
-        for (let entry of testspec.set) {
+        flags = resolveFlags(flags);
+        const testspecmap = fixJSON(testspec, flags);
+        const testset = testspecmap.set;
+        for (let entry of testset) {
             try {
+                entry = resolveEntry(entry, flags);
                 let testpack = resolveTestPack(name, entry, subject, client, clients);
                 let args = resolveArgs(entry, testpack);
                 let res = await testpack.subject(...args);
+                res = fixJSON(res, flags);
                 entry.res = res;
                 checkResult(entry, res, structUtils);
             }
@@ -26,11 +36,46 @@ async function runner(name, store, testfile, provider) {
             }
         }
     };
-    return {
+    let runset = async (testspec, testsubject) => runsetflags(testspec, {}, testsubject);
+    let runpack = {
         spec,
         runset,
+        runsetflags,
         subject,
     };
+    return runpack;
+}
+function resolveSpec(name, testfile) {
+    const alltests = JSON.parse((0, node_fs_1.readFileSync)((0, node_path_1.join)(__dirname, testfile), 'utf8'));
+    let spec = alltests.primary?.[name] || alltests[name] || alltests;
+    return spec;
+}
+async function resolveClients(spec, store, provider, structUtils) {
+    const clients = {};
+    if (spec.DEF) {
+        for (let cdef of structUtils.items(spec.DEF.client)) {
+            const copts = cdef[1].test.options || {};
+            if ('object' === typeof store) {
+                structUtils.inject(copts, store);
+            }
+            clients[cdef[0]] = await provider.test(copts);
+        }
+    }
+    return clients;
+}
+function resolveSubject(name, container) {
+    return container?.[name];
+}
+function resolveFlags(flags) {
+    if (null == flags) {
+        flags = {};
+    }
+    flags.null = null == flags.null ? true : !!flags.null;
+    return flags;
+}
+function resolveEntry(entry, flags) {
+    entry.out = null == entry.out && flags.null ? NULLMARK : entry.out;
+    return entry;
 }
 function checkResult(entry, res, structUtils) {
     if (undefined === entry.match || undefined !== entry.out) {
@@ -83,35 +128,17 @@ function resolveArgs(entry, testpack) {
     return args;
 }
 function resolveTestPack(name, entry, subject, client, clients) {
-    const pack = {
+    const testpack = {
         client,
         subject,
         utility: client.utility(),
     };
     if (entry.client) {
-        pack.client = clients[entry.client];
-        pack.utility = pack.client.utility();
-        pack.subject = pack.utility[name];
+        testpack.client = clients[entry.client];
+        testpack.utility = testpack.client.utility();
+        testpack.subject = resolveSubject(name, testpack.utility);
     }
-    return pack;
-}
-function resolveSpec(name, testfile) {
-    const alltests = JSON.parse((0, node_fs_1.readFileSync)((0, node_path_1.join)(__dirname, testfile), 'utf8'));
-    let spec = alltests.primary?.[name] || alltests[name] || alltests;
-    return spec;
-}
-async function resolveClients(spec, store, provider, structUtils) {
-    const clients = {};
-    if (spec.DEF) {
-        for (let cdef of structUtils.items(spec.DEF.client)) {
-            const copts = cdef[1].test.options || {};
-            if ('object' === typeof store) {
-                structUtils.inject(copts, store);
-            }
-            clients[cdef[0]] = await provider.test(copts);
-        }
-    }
-    return clients;
+    return testpack;
 }
 function match(check, base, structUtils) {
     structUtils.walk(check, (_key, val, _parent, path) => {
@@ -144,5 +171,20 @@ function matchval(check, base, structUtils) {
         }
     }
     return pass;
+}
+function fixJSON(val, flags) {
+    if (null == val) {
+        return flags.null ? NULLMARK : val;
+    }
+    const replacer = (_k, v) => null == v && flags.null ? NULLMARK : v;
+    return JSON.parse(JSON.stringify(val, replacer));
+}
+function nullModifier(val, key, parent) {
+    if ("__NULL__" === val) {
+        parent[key] = null;
+    }
+    else if ('string' === typeof val) {
+        parent[key] = val.replaceAll('__NULL__', 'null');
+    }
 }
 //# sourceMappingURL=runner.js.map

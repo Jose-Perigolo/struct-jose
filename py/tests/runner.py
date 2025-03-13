@@ -1,250 +1,337 @@
+# Test runner that uses the test model in build/test.
 
 import os
 import json
 import re
-from typing import Any, Dict
+from typing import Any, Dict, List, Callable
+
 
 class AssertionError_(AssertionError):
     pass
 
-def runner(name: str, store: Any, testfile: str, provider: Any):
 
+NULLMARK = '__NULL__'
+
+
+def runner(
+    name: str,
+    store: Any,
+    testfile: str,
+    provider: Any
+):
     client = provider.test()
     utility = client.utility()
-    struct = utility["struct"] 
+    structUtils = utility["struct"] 
     
-    clone = struct["clone"]       
-    getpath = struct["getpath"]
-    inject = struct["inject"]       
-    items = struct["items"]       
-    stringify = struct["stringify"]       
-    walk = struct["walk"]       
+    spec = resolve_spec(name, testfile)
+    clients = resolve_clients(spec, store, provider, structUtils)
+    subject = resolve_subject(name, utility)
+        
+    def runsetflags(testspec, flags, testsubject):
+        nonlocal subject, clients
+        
+        subject = testsubject or subject
+        flags = resolve_flags(flags)
+        testspecmap = fixJSON(testspec, flags)
+        testset = testspecmap['set']
+                
+        for entry in testset:
+            try:
+                entry = resolve_entry(entry, flags)
 
-    # Read and parse the test JSON file
+                testpack = resolve_testpack(name, entry, subject, client, clients)
+                args = resolve_args(entry, testpack, structUtils)
+                
+                # Execute the test function
+                res = testpack["subject"](*args)
+                res = fixJSON(res, flags)
+                entry['res'] = res
+                check_result(entry, res, structUtils)
+                
+            except Exception as err:
+                handle_error(entry, err, structUtils)
+
+    def runset(testspec, testsubject):
+        return runsetflags(testspec, {}, testsubject)
+                
+    runpack = {
+        "spec": spec,
+        "runset": runset,
+        "runsetflags": runsetflags,
+        "subject": subject,
+    }
+
+    return runpack
+
+
+def resolve_spec(name: str, testfile: str) -> Dict[str, Any]:
     with open(os.path.join(os.path.dirname(__file__), testfile), 'r', encoding='utf-8') as f:
         alltests = json.load(f)
 
-    # Attempt to find the requested spec in the JSON
     if 'primary' in alltests and name in alltests['primary']:
         spec = alltests['primary'][name]
     elif name in alltests:
         spec = alltests[name]
     else:
         spec = alltests
+        
+    return spec
 
-    # Build up any additional clients from a DEF section, if present
+
+def resolve_clients(spec: Dict[str, Any], store: Any, provider: Any, structUtils: Dict[str, Any]) -> Dict[str, Any]:
     clients = {}
     if 'DEF' in spec and 'client' in spec['DEF']:
-        for c_name, c_val in items(spec['DEF']['client']):
-            copts = c_val.get('test', {}).get('options', {})
+        for client_name, client_val in structUtils["items"](spec['DEF']['client']):
+            # Get client options
+            client_opts = client_val.get('test', {}).get('options', {})
+            
+            # Apply store injections if needed
             if isinstance(store, dict):
-                inject(copts, store)
-            clients[c_name] = provider.test(copts)
-
-    subject = getattr(utility, name, None)
-
-    def runset(testspec: Dict, testsubject=None, flags: Dict = None): # , makesubject=None):
-        nonlocal subject, clients
-
-        if flags is None:
-            flags = {}
-
-        flags["fixjson"] = flags.get("fixjson", True) 
-        
-        if testsubject is None:
-            testsubject = subject
-
-        # Each testspec should have a "set" array of test entries
-        for entry in testspec['set']:
-            try:
-                if not "out" in entry:
-                    entry["out"] = None
-
-                if flags["fixjson"]:
-                    entry = fixJSON(entry)
+                structUtils["inject"](client_opts, store)
                 
-                testclient = client
-                
-                # If a particular entry wants to use a different client:
-                if 'client' in entry:
-                    testclient = clients[entry['client']]
-                    testsubject = testclient.utility()[name]
+            # Create and store the client
+            clients[client_name] = provider.test(client_opts)
+            
+    return clients
 
-                # If there's a "makesubject" function, transform the subject
-                # if makesubject:
-                #     testsubject = makesubject(testsubject)
 
-                # Build up the call arguments:
-                if 'ctx' in entry:
-                    args = [entry['ctx']]
-                elif 'args' in entry:
-                    args = entry['args']
-                else:
-                    # Default to using entry.in if present
-                    args = [clone(entry['in'])] if 'in' in entry else []
+def resolve_subject(name: str, container: Any):
+    return getattr(container, name, None)
 
-                # If we have a context or arguments, we might need to patch them:
-                if 'ctx' in entry or 'args' in entry:
-                    first_arg = None if args is None or 0 == len(args) else args[0]
-                    if isinstance(first_arg, dict):
-                        # Deep clone first_arg
-                        first_arg = clone(first_arg)
-                        args[0] = first_arg
-                        entry['ctx'] = first_arg
 
-                        if isinstance(first_arg, dict):
-                            first_arg["client"] = testclient
-                            first_arg["utility"] = testclient.utility()
+def check_result(entry, res, structUtils):
+    # If we don't have a match pattern or have an expected output, compare directly
+    if 'match' not in entry or 'out' in entry:
+        # Strip functions by doing a JSON round trip, like TypeScript's JSON.parse(JSON.stringify())
+        try:
+            cleaned_res = json.loads(json.dumps(res, default=str))
+        except:
+            # If can't be serialized just use the original
+            cleaned_res = res
+            
+        # Compare result with expected output using deep equality
+        if cleaned_res != entry.get('out'):
+            raise AssertionError_(
+                f"Expected: {entry.get('out')}, got: {cleaned_res}\n"
+                f"Entry: {json.dumps(entry, indent=2)}"
+            )
+    
+    # If we have a match pattern, use it
+    if 'match' in entry:
+        match(
+            entry['match'],
+            {'in': entry.get('in'), 'out': entry.get('res'), 'ctx': entry.get('ctx')},
+            structUtils
+        )
 
-                # print("ARGS", args)
-                        
-                res = testsubject(*args)
-                res = fixJSON(res)
-                entry['res'] = res
-
-                # If we expect an output:
-                if ('match' not in entry) or ('out' in entry):
-                    # Remove functions/etc. by JSON round trip
-                    cleaned_res = json.loads(json.dumps(res, default=str))
-                    expected_out = entry.get('out')
-                    if cleaned_res != expected_out:
-                        raise AssertionError_(
-                            f"Expected {expected_out}, got {cleaned_res}\n"
-                            f"Entry: {json.dumps(entry, indent=2)}"
-                        )
-
-                # If we also need to do "match" checks
-                if 'match' in entry:
-                    match(entry['match'], {
+def handle_error(entry, err, structUtils):
+    # Record the error in the entry
+    entry['thrown'] = str(err)
+    entry_err = entry.get('err')
+    
+    # If the test expects an error
+    if entry_err is not None:
+        # If it's any error or matches expected pattern
+        if entry_err is True or matchval(entry_err, str(err), structUtils):
+            # If we also need to match error details
+            if 'match' in entry:
+                match(
+                    entry['match'],
+                    {
                         'in': entry.get('in'),
                         'out': entry.get('res'),
-                        'ctx': entry.get('ctx')
-                    })
-
-            except Exception as err:
-                # The TypeScript code tries to handle "err" or "err.message" matching.
-                entry['thrown'] = str(err)
-                entry_err = entry.get('err')
-
-                if entry_err is not None:
-                    # If "err" is True or a substring/regex match is required:
-                    if entry_err is True or matchval(entry_err, str(err)):
-                        # If we still have to do "match" checks with the error
-                        if 'match' in entry:
-                            match(entry['match'], {
-                                'in': entry.get('in'),
-                                'out': entry.get('res'),
-                                'ctx': entry.get('ctx'),
-                                'err': str(err)
-                            })
-                        # This means error was expected, so skip fail
-                        continue
-                    else:
-                        raise AssertionError_(
-                            f"ERROR MATCH: [{stringify(entry_err)}] <=> [{str(err)}]\n"
-                            f"Entry: {json.dumps(entry, indent=2)}"
-                        )
-                else:
-                    # Not an expected error, re-raise with more info
-                    raise AssertionError_(
-                        f"{str(err)}\n\nENTRY: {json.dumps(entry, indent=2)}"
-                    )
-
-    def match(check: Any, base: Dict[str, Any]):
-        """
-        Recursively walk the `check` structure, verifying `base` has the expected
-        values in the same paths.
-        """
-        def walker(obj, path=None):
-            if path is None:
-                path = []
-            if isinstance(obj, dict):
-                # It's a dict
-                for k, v in obj.items():
-                    new_path = path + [k]
-                    if not isinstance(v, (dict,list)):
-                        baseval = getpath(new_path, base)
-                        if not matchval(v, baseval):
-                            raise AssertionError_(
-                                f"MATCH: {'.'.join(map(str, new_path))}: "
-                                f"[{stringify(v)}] <=> [{stringify(baseval)}]"
-                            )
-                    walker(v, new_path)
-            elif isinstance(obj, list):
-                for i, v in enumerate(obj):
-                    new_path = path + [i]
-                    if not isinstance(v, (dict,list)):
-                        baseval = getpath(new_path, base)
-                        if not matchval(v, baseval):
-                            raise AssertionError_(
-                                f"MATCH: {'.'.join(map(str, new_path))}: "
-                                f"[{stringify(v)}] <=> [{stringify(baseval)}]"
-                            )
-                    walker(v, new_path)
-            else:
-                # If it's neither list nor dict, the check for "node" was above
-                pass
-
-        walker(check)
-
-    def matchval(check: Any, base: Any) -> bool:
-        """
-        Replicates the "matchval" logic:
-          - If check is the magic string '__UNDEF__', treat as None/undefined
-          - If check is a regex (like '/something/'), test it
-          - Otherwise, check for substring (case-insensitive)
-          - If check is a function/callable, consider it automatically passed
-        """
-        if check == '__UNDEF__':
-            check = None
-
-        # Direct equality
-        if check == base:
+                        'ctx': entry.get('ctx'),
+                        'err': err
+                    },
+                    structUtils
+                )
+            # Error was expected, continue
             return True
+        
+        # Expected error didn't match the actual error
+        raise AssertionError_(
+            f"ERROR MATCH: [{structUtils['stringify'](entry_err)}] <=> [{str(err)}]"
+        )
+    # If the test doesn't expect an error
+    elif isinstance(err, AssertionError):
+        # Propagate assertion errors with added context
+        raise AssertionError_(
+            f"{str(err)}\n\nENTRY: {json.dumps(entry, indent=2)}"
+        )
+    else:
+        # For other errors, include the full error stack
+        import traceback
+        raise AssertionError_(
+            f"{traceback.format_exc()}\nENTRY: {json.dumps(entry, indent=2)}"
+        )
 
-        # If not equal, see if we can do a regex or substring match
-        if isinstance(check, str):
-            base_str = stringify(base)
-            regex_match = re.match(r'^/(.+)/$', check)
-            if regex_match:
-                pattern = regex_match.group(1)
-                return re.search(pattern, base_str) is not None
-            else:
-                return check.lower() in base_str.lower()
-        elif callable(check):
-            # If it's a function, the TS code just allowed pass
-            return True
-
-        return False
-
-    # Return the same final structure that TS code returns
-    out = {
-        "spec": spec,
-        "runset": runset,
-        "subject": subject,
-    }
-
-    # print("RUNNER", out["spec"]["minor"]["islist"])
     
-    return out
+def resolve_testpack(
+        name,
+        entry,
+        subject,
+        client,
+        clients,
+):
+    testpack = {
+        "client": client,
+        "subject": subject,
+        "utility": client.utility(),
+    }
+    
+    if 'client' in entry:
+        test_client = clients[entry['client']]
+        testpack["client"] = test_client
+        testpack["utility"] = test_client.utility()
+        testpack["subject"] = resolve_subject(name, testpack["utility"])
+        
+    return testpack
 
 
-def fixJSON(obj):
+def resolve_args(entry, testpack, structUtils):
+    # Default to using the input as the only argument
+    args = [structUtils["clone"](entry['in'])] if 'in' in entry else []
+    
+    # If entry specifies context or arguments, use those instead
+    if 'ctx' in entry:
+        args = [entry['ctx']]
+    elif 'args' in entry:
+        args = entry['args']
+        
+    # If we have context or arguments, we might need to patch them
+    if ('ctx' in entry or 'args' in entry) and len(args) > 0:
+        first_arg = args[0]
+        if isinstance(first_arg, dict):
+            # Clone the argument
+            first_arg = structUtils["clone"](first_arg)
+            args[0] = first_arg
+            entry['ctx'] = first_arg
+            
+            # Add client and utility to the argument
+            first_arg["client"] = testpack["client"]
+            first_arg["utility"] = testpack["utility"]
+            
+    return args
+
+
+def resolve_flags(flags: Dict[str, Any] = None) -> Dict[str, bool]:
+    if flags is None:
+        flags = {}
+        
+    if "null" not in flags:
+        flags["null"] = True
+        
+    return flags
+
+
+def resolve_entry(entry: Dict[str, Any], flags: Dict[str, bool]) -> Dict[str, Any]:
+    # Set default output value for missing 'out' field
+    if flags.get("null", True) and "out" not in entry:
+        entry["out"] = NULLMARK
+        
+    return entry
+
+
+def fixJSON(obj, flags):
+        
+    # Handle nulls
     if obj is None:
-        return "__NULL__"
-    elif isinstance(obj, list):
-        return [fixJSON(item) for item in obj]
-    elif isinstance(obj, dict):
-        return {k: fixJSON(v) for k, v in obj.items()}
-    else:
-        return obj
-
-def unfixJSON(obj):
-    if "__NULL__" == obj:
+        if flags.get("null", True):
+            return NULLMARK
         return None
+        
+    # Handle collections recursively
     elif isinstance(obj, list):
-        return [unfixJSON(item) for item in obj]
+        return [fixJSON(item, flags) for item in obj]
     elif isinstance(obj, dict):
-        return {k: unfixJSON(v) for k, v in obj.items()}
-    else:
-        return obj
+        return {k: fixJSON(v, flags) for k, v in obj.items()}
+        
+    # Special case for numeric values to match JSON behavior across languages
+    elif isinstance(obj, float):
+        # Convert integers represented as floats to actual integers
+        if obj == int(obj):
+            return int(obj)
+            
+    # Return everything else unchanged
+    return obj
+
+
+# def unfixJSON(obj, flags=None):
+#     if flags is None:
+#         flags = {"json_null": True}
+        
+#     # Handle NULL marker
+#     if NULLMARK == obj and flags.get("json_null", True):
+#         return None
+        
+#     # Handle collections recursively
+#     elif isinstance(obj, list):
+#         return [unfixJSON(item, flags) for item in obj]
+#     elif isinstance(obj, dict):
+#         return {k: unfixJSON(v, flags) for k, v in obj.items()}
+        
+#     # Return everything else unchanged
+#     return obj
+
+
+def match(check, base, structUtils):
+    # Use walk function to iterate through the check structure
+    def walk_apply(key, val, parent, path):
+        # Process scalar values only (non-objects)
+        if not isinstance(val, (dict, list)):
+            # Get the corresponding value from base
+            baseval = structUtils["getpath"](path, base)
+            
+            # Check if values match
+            if not matchval(val, baseval, structUtils):
+                raise AssertionError_(
+                    f"MATCH: {'.'.join(map(str, path))}: "
+                    f"[{structUtils['stringify'](val)}] <=> [{structUtils['stringify'](baseval)}]"
+                )
+        return val
+        
+    # Use walk to apply the check function to each node
+    structUtils["walk"](check, walk_apply)
+
+    
+def matchval(check, base, structUtils):
+    """
+    Check if a value matches the expected pattern.
+    
+    Args:
+        check: Expected value or pattern
+        base: Actual value to check
+        structUtils: Struct utilities for data manipulation
+        
+    Returns:
+        True if the value matches, False otherwise
+    """
+    # Handle undefined special case
+    if check == '__UNDEF__':
+        check = None
+        
+    # Direct equality check
+    if check == base:
+        return True
+        
+    # String-based pattern matching
+    if isinstance(check, str):
+        # Convert base to string for comparison
+        base_str = structUtils['stringify'](base)
+        
+        # Check for regex pattern with /pattern/ syntax
+        regex_match = re.match(r'^/(.+)/$', check)
+        
+        if regex_match:
+            pattern = regex_match.group(1)
+            return re.search(pattern, base_str) is not None
+        else:
+            # Case-insensitive substring check
+            return structUtils['stringify'](check).lower() in base_str.lower()
+    
+    # Functions automatically pass
+    elif callable(check):
+        return True
+        
+    # No match
+    return False

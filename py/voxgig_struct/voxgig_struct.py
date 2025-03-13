@@ -26,36 +26,36 @@ import json
 import re
 
 
-S = {
+
   # Mode value for inject step.
-  'MKEYPRE': 'key:pre',
-  'MKEYPOST': 'key:post',
-  'MVAL': 'val',
-  'MKEY': 'key',
+S_MKEYPRE =  'key:pre'
+S_MKEYPOST =  'key:post'
+S_MVAL =  'val'
+S_MKEY =  'key',
 
   # Special keys.
-  'DKEY': '`$KEY`',
-  'DTOP': '$TOP',
-  'DERRS': '$ERRS',
-  'DMETA': '`$META`',
+S_DKEY =  '`$KEY`'
+S_DTOP =  '$TOP'
+S_DERRS =  '$ERRS'
+S_DMETA =  '`$META`',
 
   # General strings.
-  'array': 'array',
-  'base': 'base',
-  'boolean': 'boolean',
-  'empty': '',
-  'function': 'function',
-  'number': 'number',
-  'object': 'object',
-  'string': 'string',
-  'null': 'null',
-  'key': 'key',
-  'parent': 'parent',
-  'BT': '`',
-  'DS': '$',
-  'DT': '.',
-  'KEY': 'KEY',
-}
+S_array =  'array'
+S_base =  'base'
+S_boolean =  'boolean'
+S_function =  'function'
+S_number =  'number'
+S_object =  'object'
+S_string =  'string'
+S_null =  'null'
+S_key =  'key'
+S_parent =  'parent'
+S_MT =  ''
+S_BT =  '`'
+S_DS =  '$'
+S_DT =  '.'
+S_KEY =  'KEY'
+
 
 
 # The standard undefined value for this language.
@@ -131,7 +131,7 @@ def isempty(val: Any = UNDEF) -> bool:
     if UNDEF == val:
         return True
     
-    if val == S['empty']:
+    if val == S_MT:
         return True
     
     if islist(val) and len(val) == 0:
@@ -146,6 +146,22 @@ def isempty(val: Any = UNDEF) -> bool:
 def isfunc(val: Any = UNDEF) -> bool:
     "Value is a function."
     return callable(val)
+
+
+def typify(value: Any = UNDEF) -> str:
+    if value is UNDEF:
+        return S_null
+    if isinstance(value, bool):
+        return S_boolean
+    if isinstance(value, (int, float)):
+        return S_number
+    if isinstance(value, str):
+        return S_string
+    if callable(value):
+        return S_function
+    if isinstance(value, list):
+        return S_array
+    return S_object
 
 
 def getprop(val: Any = UNDEF, key: Any = UNDEF, alt: Any = UNDEF) -> Any:
@@ -181,14 +197,14 @@ def getprop(val: Any = UNDEF, key: Any = UNDEF, alt: Any = UNDEF) -> Any:
     return out
 
 
-def keysof(val: Any = UNDEF) -> list:
+def keysof(val: Any = UNDEF) -> list[str]:
     "Sorted keys of a map, or indexes of a list."
     if not isnode(val):
         return []
     elif ismap(val):
         return sorted(val.keys())
     else:
-        return list(range(len(val)))
+        return [str(x) for x in list(range(len(val)))]
 
 
 def haskey(val: Any = UNDEF, key: Any = UNDEF) -> bool:
@@ -199,12 +215,12 @@ def haskey(val: Any = UNDEF, key: Any = UNDEF) -> bool:
 def items(val: Any = UNDEF):
     "List the keys of a map or list as an array of [key, value] tuples."
     if ismap(val):
-        return list(val.items())
+        return [(k, val[k]) for k in keysof(val)]
     elif islist(val):
-        return list(enumerate(val))
+        return [(k, val[k]) for k in list(range(len(val)))]
     else:
         return []
-
+    
 
 def escre(s: Any):
     "Escape regular expression."
@@ -217,7 +233,7 @@ def escre(s: Any):
 def escurl(s: Any):
     "Escape URLs."
     if UNDEF == s:
-        s = S['empty']
+        s = S_MT
     return urllib.parse.quote(s, safe="")
 
 
@@ -244,7 +260,10 @@ def joinurl(sarr):
 
 def stringify(val: Any, maxlen: int = UNDEF):
     "Safely stringify a value for printing (NOT JSON!)."
-    json_str = S['empty']
+    if UNDEF == val:
+        return S_MT
+
+    json_str = S_MT
 
     try:
         json_str = json.dumps(val, separators=(',', ':'))
@@ -460,7 +479,7 @@ def getpath(path, store, current=UNDEF, state=UNDEF):
     """
 
     if isinstance(path, str):
-        parts = path.split(S['DT'])
+        parts = path.split(S_DT)
     elif islist(path):
         parts = path[:]
     else:
@@ -471,14 +490,14 @@ def getpath(path, store, current=UNDEF, state=UNDEF):
     base = UNDEF if UNDEF == state else state.base
     
     # If path or store is UNDEF or empty, return store or store[state.base].
-    if path is UNDEF or store is UNDEF or (1==len(parts) and parts[0] == S['empty']):
+    if path is UNDEF or store is UNDEF or (1==len(parts) and parts[0] == S_MT):
         val = getprop(store, base, store)
 
     elif len(parts) > 0:
         pI = 0
             
         # Relative path uses `current` argument
-        if parts[0] == S['empty']:
+        if parts[0] == S_MT:
             if len(parts) == 1:
                 return getprop(store, base, store)
             pI = 1
@@ -500,7 +519,7 @@ def getpath(path, store, current=UNDEF, state=UNDEF):
             
     # If a custom handler is specified, apply it.
     if UNDEF != state and isfunc(state.handler):
-        val = state.handler(state, val, current, _pathify(path), store)
+        val = state.handler(state, val, current, pathify(path), store)
 
     return val
 
@@ -512,7 +531,7 @@ def _injectstr(val, store, current=UNDEF, state=UNDEF):
     - Partial injection for occurrences of `path` inside the string.
     """
     if not isinstance(val, str):
-        return S['empty']
+        return S_MT
 
     if val == "":
         return ""
@@ -531,7 +550,7 @@ def _injectstr(val, store, current=UNDEF, state=UNDEF):
 
         # Handle special escapes
         if len(ref) > 3:
-            ref = ref.replace(r'$BT', S['BT']).replace(r'$DS', S['DS'])
+            ref = ref.replace(r'$BT', S_BT).replace(r'$DS', S_DS)
 
         out = getpath(ref, store, current, state)
         # print('INJECTSTR-P', val, out)
@@ -541,12 +560,12 @@ def _injectstr(val, store, current=UNDEF, state=UNDEF):
         def replace_injection(mobj):
             ref_local = mobj.group(1)
             if len(ref_local) > 3:
-                ref_local = ref_local.replace(r'$BT', S['BT']).replace(r'$DS', S['DS'])
+                ref_local = ref_local.replace(r'$BT', S_BT).replace(r'$DS', S_DS)
             if state is not UNDEF:
                 state.full = False
             found = getpath(ref_local, store, current, state)
             if found is UNDEF:
-                return S['empty']
+                return S_MT
             if isinstance(found, (dict, list)):
                 import json
                 return json.dumps(found, separators=(',', ':'))
@@ -575,27 +594,27 @@ def inject(val, store, modify=UNDEF, current=UNDEF, state=UNDEF):
     """
     if state is UNDEF:
         # Create a root-level state
-        parent = {S['DTOP']: val}
+        parent = {S_DTOP: val}
         state = InjectState(
-            mode = S['MVAL'],
+            mode = S_MVAL,
             full = False,
             keyI = 0,
-            keys = [S['DTOP']],
-            key = S['DTOP'],
+            keys = [S_DTOP],
+            key = S_DTOP,
             val = val,
             parent = parent,
-            path = [S['DTOP']],
+            path = [S_DTOP],
             nodes = [parent],
             handler = _injecthandler,
-            base = S['DTOP'],
+            base = S_DTOP,
             modify = modify,
             meta = {},
-            errs = getprop(store, S['DERRS'], [])
+            errs = getprop(store, S_DERRS, [])
         )
 
     # For local paths, we keep track of the current node in `current`.
     if current is UNDEF:
-        current = {S['DTOP']: store}
+        current = {S_DTOP: store}
     else:
         parentkey = state.path[-2] if len(state.path) > 1 else UNDEF
         if parentkey is not UNDEF:
@@ -605,8 +624,8 @@ def inject(val, store, modify=UNDEF, current=UNDEF, state=UNDEF):
     if isnode(val):
         # Sort keys (transforms with `$...` go last).
         if ismap(val):
-            normal_keys = [k for k in val.keys() if S['DS'] not in k]
-            transform_keys = [k for k in val.keys() if S['DS'] in k]
+            normal_keys = [k for k in val.keys() if S_DS not in k]
+            transform_keys = [k for k in val.keys() if S_DS in k]
             transform_keys.sort()
             origkeys = normal_keys + transform_keys
         else:
@@ -621,7 +640,7 @@ def inject(val, store, modify=UNDEF, current=UNDEF, state=UNDEF):
 
             # Phase 1: key-pre
             childstate = InjectState(
-                mode = S['MKEYPRE'],
+                mode = S_MKEYPRE,
                 full = False,
                 keyI = okI,
                 keys = origkeys,
@@ -644,7 +663,7 @@ def inject(val, store, modify=UNDEF, current=UNDEF, state=UNDEF):
             if prekey is not UNDEF:
                 # Phase 2: val
                 child_val = getprop(val, prekey)
-                childstate.mode = S['MVAL']
+                childstate.mode = S_MVAL
 
                 # Perform the val mode injection on the child value.
                 # NOTE: return value is not used.
@@ -654,7 +673,7 @@ def inject(val, store, modify=UNDEF, current=UNDEF, state=UNDEF):
                 okI = childstate.keyI
                 
                 # Phase 3: key-post
-                childstate.mode = S['MKEYPOST']
+                childstate.mode = S_MKEYPOST
                 _injectstr(str(origkey), store, current, childstate)
 
                 # The injection may modify child processing.
@@ -663,7 +682,7 @@ def inject(val, store, modify=UNDEF, current=UNDEF, state=UNDEF):
             okI = okI+1
             
     elif isinstance(val, str):
-        state.mode = S['MVAL']
+        state.mode = S_MVAL
         newval = _injectstr(val, store, current, state)
         setprop(state.parent, state.key, newval)
         val = newval
@@ -672,7 +691,7 @@ def inject(val, store, modify=UNDEF, current=UNDEF, state=UNDEF):
     if UNDEF != modify:
         modify(val, state.key, state.parent, state, current, store)
 
-    return getprop(state.parent, S['DTOP'])
+    return getprop(state.parent, S_DTOP)
 
 
 # Default injection handler (used by `inject`).
@@ -681,10 +700,10 @@ def _injecthandler(state, val, current, ref, store):
     Default injection handler. If val is a callable, call it.
     Otherwise, if this is a 'full' injection in 'val' mode, set val in parent.
     """
-    if isfunc(val) and (UNDEF == ref or (isinstance(ref, str) and ref.startswith(S["DS"]))):
+    if isfunc(val) and (UNDEF == ref or (isinstance(ref, str) and ref.startswith(S_DS))):
         return val(state, val, current, store)
     else:
-        if state.mode == S['MVAL'] and state.full:
+        if state.mode == S_MVAL and state.full:
             setprop(state.parent, state.key, val)
         return val
 
@@ -727,16 +746,16 @@ def transform_KEY(state, val, current, store):
     path = state.path
     parent = state.parent
 
-    if mode != S['MVAL']:
+    if mode != S_MVAL:
         return UNDEF
 
-    keyspec = getprop(parent, S['DKEY'])
+    keyspec = getprop(parent, S_DKEY)
     if keyspec is not UNDEF:
-        setprop(parent, S['DKEY'], UNDEF)
+        setprop(parent, S_DKEY, UNDEF)
         return getprop(current, keyspec)
 
-    meta = getprop(parent, S['DMETA'])
-    return getprop(meta, S['KEY'], getprop(path, len(path) - 2))
+    meta = getprop(parent, S_DMETA)
+    return getprop(meta, S_KEY, getprop(path, len(path) - 2))
 
 
 def transform_META(state, val, current, store):
@@ -744,7 +763,7 @@ def transform_META(state, val, current, store):
     Injection handler that removes the `'$META'` key (after capturing if needed).
     """
     parent = state.parent
-    setprop(parent, S['DMETA'], UNDEF)
+    setprop(parent, S_DMETA, UNDEF)
     return UNDEF
 
 
@@ -757,13 +776,13 @@ def transform_MERGE(state, val, current, store):
     key = state.key
     parent = state.parent
 
-    if mode == S['MKEYPRE']:
+    if mode == S_MKEYPRE:
         return key
 
-    if mode == S['MKEYPOST']:
+    if mode == S_MKEYPOST:
         args = getprop(parent, key)
-        if args == S['empty']:
-            args = [store[S['DTOP']]]
+        if args == S_MT:
+            args = [store[S_DTOP]]
         elif not islist(args):
             args = [args]
 
@@ -792,7 +811,7 @@ def transform_EACH(state, val, current, store):
         # Only keep the transform item (first). Avoid further spurious keys.
         keys_[:] = keys_[:1]
 
-    if mode != S['MVAL'] or path is UNDEF or nodes_ is UNDEF:
+    if mode != S_MVAL or path is UNDEF or nodes_ is UNDEF:
         return UNDEF
 
     # parent here is the array [ '$EACH', 'source-path', {... child ...} ]
@@ -819,12 +838,12 @@ def transform_EACH(state, val, current, store):
             for k, v in src.items():
                 # Keep key in meta for usage by `$KEY`
                 copy_child = clone(child_template)
-                copy_child[S['DMETA']] = {S['KEY']: k}
+                copy_child[S_DMETA] = {S_KEY: k}
                 tval.append(copy_child)
         tcurrent = list(src.values()) if ismap(src) else src
 
     # Build parallel "current"
-    tcurrent = {S['DTOP']: tcurrent}
+    tcurrent = {S_DTOP: tcurrent}
 
     # Inject to build substructure
     tval = inject(tval, store, state.modify, tcurrent)
@@ -844,7 +863,7 @@ def transform_PACK(state, val, current, store):
     parent = state.parent
     nodes_ = state.nodes
 
-    if (mode != S['MKEYPRE'] or not isinstance(key, str) or path is UNDEF or nodes_ is UNDEF):
+    if (mode != S_MKEYPRE or not isinstance(key, str) or path is UNDEF or nodes_ is UNDEF):
         return UNDEF
 
     args = parent[key]
@@ -869,7 +888,7 @@ def transform_PACK(state, val, current, store):
             if ismap(v):
                 # Keep KEY meta
                 v_copy = clone(v)
-                v_copy[S['DMETA']] = {S['KEY']: k}
+                v_copy[S_DMETA] = {S_KEY: k}
                 new_src.append(v_copy)
         src = new_src
     else:
@@ -879,9 +898,9 @@ def transform_PACK(state, val, current, store):
         return UNDEF
 
     # Child key from template
-    childkey = getprop(child_template, S['DKEY'])
+    childkey = getprop(child_template, S_DKEY)
     # Remove the transform key from template
-    setprop(child_template, S['DKEY'], UNDEF)
+    setprop(child_template, S_DKEY, UNDEF)
 
     # Build a new dict in parallel with the source
     tval = {}
@@ -890,18 +909,18 @@ def transform_PACK(state, val, current, store):
             kn = getprop(elem, childkey)
         else:
             # fallback
-            kn = getprop(elem, S['KEY'])
+            kn = getprop(elem, S_KEY)
         if kn is UNDEF:
             # Possibly from meta
-            meta = getprop(elem, S['DMETA'], {})
-            kn = getprop(meta, S['KEY'], UNDEF)
+            meta = getprop(elem, S_DMETA, {})
+            kn = getprop(meta, S_KEY, UNDEF)
 
         if kn is not UNDEF:
             tval[kn] = clone(child_template)
             # Transfer meta if present
-            tmeta = getprop(elem, S['DMETA'])
+            tmeta = getprop(elem, S_DMETA)
             if tmeta is not UNDEF:
-                tval[kn][S['DMETA']] = tmeta
+                tval[kn][S_DMETA] = tmeta
 
     # Build parallel "current"
     tcurrent = {}
@@ -909,14 +928,14 @@ def transform_PACK(state, val, current, store):
         if childkey is not UNDEF:
             kn = getprop(elem, childkey)
         else:
-            kn = getprop(elem, S['KEY'])
+            kn = getprop(elem, S_KEY)
         if kn is UNDEF:
-            meta = getprop(elem, S['DMETA'], {})
-            kn = getprop(meta, S['KEY'], UNDEF)
+            meta = getprop(elem, S_DMETA, {})
+            kn = getprop(meta, S_KEY, UNDEF)
         if kn is not UNDEF:
             tcurrent[kn] = elem
 
-    tcurrent = {S['DTOP']: tcurrent}
+    tcurrent = {S_DTOP: tcurrent}
 
     # Inject children
     tval = inject(tval, store, state.modify, tcurrent)
@@ -941,7 +960,7 @@ def transform(data, spec, extra=UNDEF, modify=UNDEF):
 
     if extra is not UNDEF:
         for k, v in items(extra):
-            if isinstance(k, str) and k.startswith(S['DS']):
+            if isinstance(k, str) and k.startswith(S_DS):
                 extra_transforms[k] = v
             else:
                 extra_data[k] = v
@@ -954,10 +973,10 @@ def transform(data, spec, extra=UNDEF, modify=UNDEF):
         # Custom transforms
         **extra_transforms,
         # Original data
-        S['DTOP']: data_clone,
+        S_DTOP: data_clone,
         # Escape helpers
-        '$BT': lambda state, val, current, store: S['BT'],
-        '$DS': lambda state, val, current, store: S['DS'],
+        '$BT': lambda state, val, current, store: S_BT,
+        '$DS': lambda state, val, current, store: S_DS,
         # Current date/time
         '$WHEN': lambda state, val, current, store: datetime.utcnow().isoformat(),
         # Built-in transform handlers
@@ -977,40 +996,82 @@ def transform(data, spec, extra=UNDEF, modify=UNDEF):
 def _invalidTypeMsg(path, expected_type, vt, v):
     vs = stringify(v)
     return (
-        f"Expected {expected_type} at {_pathify(path)}, "
+        f"Expected {expected_type} at {pathify(path)}, "
         f"found {(vt+': ' + vs) if UNDEF != v else ''}"
     )
 
 
-def _pathify(val, from_index=UNDEF):
-    if from_index is UNDEF:
-        from_index = 1
-    elif from_index < 0:
-        from_index = 1
-
-    if isinstance(val, list):
-        subpath = val[from_index:]
-        if len(subpath) == 0:
+def pathify(val: Any = UNDEF, from_index: int = UNDEF) -> str:
+    """
+    Build a human friendly path string from a value.
+    
+    Args:
+        val: Value to convert to a path. Can be a list, string, or number.
+        from_index: Optional starting index for list values (defaults to 0)
+        
+    Returns:
+        A string representing the path in dot notation
+    """
+    path = None
+    
+    # Convert input to a path array
+    if islist(val):
+        path = val
+    elif isinstance(val, str):
+        path = [val]
+    elif isinstance(val, (int, float)):
+        path = [str(int(val))]
+    
+    # Determine starting index
+    start = 0
+    if from_index is not UNDEF:
+        start = from_index if from_index >= 0 else 0
+    
+    # Process the path if we have one
+    if path is not None and start >= 0:
+        if len(path) <= start:
+            start = len(path)
+            
+        sliced = path[start:]
+        
+        if len(sliced) == 0:
             return "<root>"
-        return ".".join(str(x) for x in subpath)
+        else:
+            # Filter out non-string/non-number elements and special system paths
+            filtered = []
+            for p in sliced:
+                # Skip system paths like $TOP
+                if isinstance(p, str) and p.startswith("$"):
+                    continue
+                    
+                if isinstance(p, str) or isinstance(p, (int, float)):
+                    filtered.append(p)
+            
+            # Return root if all elements were filtered out
+            if len(filtered) == 0:
+                return "<root>"
+                
+            # Map each element to a string, removing dots
+            mapped = []
+            for p in filtered:
+                if isinstance(p, str):
+                    mapped.append(p.replace(S_DT, S_MT))
+                else:
+                    mapped.append(str(int(p)))
+            
+            return S_DT.join(mapped)
+    
+    # Handle the case where we couldn't create a path
+    if val is UNDEF:
+        return "<unknown-path>"
+    else:
+        return f"<unknown-path:{stringify(val, 33)}>"
 
-    return "<unknown-path>" if UNDEF == val else stringify(val)
+
+# _pathify function has been removed in favor of the public pathify function
 
 
-def _typify(value):
-    if value is UNDEF:
-        return S["null"]
-    if isinstance(value, bool):
-        return S["boolean"]
-    if isinstance(value, (int, float)):
-        return S["number"]
-    if isinstance(value, str):
-        return S["string"]
-    if callable(value):
-        return S["function"]
-    if isinstance(value, list):
-        return S["array"]
-    return S["object"]
+# Internal functions have been removed in favor of the public typify function
 
 
 def validate_STRING(state, _val, current, store):
@@ -1018,16 +1079,16 @@ def validate_STRING(state, _val, current, store):
     A required string value. Rejects empty strings.
     """
     out = getprop(current, state.key)
-    t = _typify(out)
+    t = typify(out)
 
-    if t == S["string"]:
-        if out == S["empty"]:
-            state.errs.append(f"Empty string at {_pathify(state.path)}")
+    if t == S_string:
+        if out == S_MT:
+            state.errs.append(f"Empty string at {pathify(state.path)}")
             return UNDEF
         else:
             return out
     else:
-        state.errs.append(_invalidTypeMsg(state.path, S["string"], t, out))
+        state.errs.append(_invalidTypeMsg(state.path, S_string, t, out))
         return UNDEF
 
 
@@ -1036,10 +1097,10 @@ def validate_NUMBER(state, _val, current, store):
     A required number value (int or float).
     """
     out = getprop(current, state.key)
-    t = _typify(out)
+    t = typify(out)
 
-    if t != S["number"]:
-        state.errs.append(_invalidTypeMsg(state.path, 'A'+S["number"], t, out))
+    if t != S_number:
+        state.errs.append(_invalidTypeMsg(state.path, S_number, t, out))
         return UNDEF
     return out
 
@@ -1049,10 +1110,10 @@ def validate_BOOLEAN(state, _val, current, store):
     A required boolean value.
     """
     out = getprop(current, state.key)
-    t = _typify(out)
+    t = typify(out)
 
-    if t != S["boolean"]:
-        state.errs.append(_invalidTypeMsg(state.path, S["boolean"], t, out))
+    if t != S_boolean:
+        state.errs.append(_invalidTypeMsg(state.path, S_boolean, t, out))
         return UNDEF
     return out
 
@@ -1062,10 +1123,10 @@ def validate_OBJECT(state, _val, current, store):
     A required object (dict), contents not further validated by this step.
     """
     out = getprop(current, state.key)
-    t = _typify(out)
+    t = typify(out)
 
-    if out is UNDEF or t != S["object"]:
-        state.errs.append(_invalidTypeMsg(state.path, S["object"], t, out))
+    if out is UNDEF or t != S_object:
+        state.errs.append(_invalidTypeMsg(state.path, S_object, t, out))
         return UNDEF
     return out
 
@@ -1075,10 +1136,10 @@ def validate_ARRAY(state, _val, current, store):
     A required list, contents not further validated by this step.
     """
     out = getprop(current, state.key)
-    t = _typify(out)
+    t = typify(out)
 
-    if t != S["array"]:
-        state.errs.append(_invalidTypeMsg(state.path, S["array"], t, out))
+    if t != S_array:
+        state.errs.append(_invalidTypeMsg(state.path, S_array, t, out))
         return UNDEF
     return out
 
@@ -1088,10 +1149,10 @@ def validate_FUNCTION(state, _val, current, store):
     A required function (callable in Python).
     """
     out = getprop(current, state.key)
-    t = _typify(out)
+    t = typify(out)
 
-    if t != S["function"]:
-        state.errs.append(_invalidTypeMsg(state.path, S["function"], t, out))
+    if t != S_function:
+        state.errs.append(_invalidTypeMsg(state.path, S_function, t, out))
         return UNDEF
     return out
 
@@ -1115,7 +1176,7 @@ def validate_CHILD(state, _val, current, store):
     path = state.path
     keys = state.keys
 
-    if mode == S["MKEYPRE"]:
+    if mode == S_MKEYPRE:
         # => Map syntax
         child_template = getprop(parent, key)
 
@@ -1127,7 +1188,7 @@ def validate_CHILD(state, _val, current, store):
             # Default to empty dict
             tval = {}
         elif not ismap(tval):
-            msg = _invalidTypeMsg(path[:-1], S["object"], _typify(tval), tval)
+            msg = _invalidTypeMsg(path[:-1], S_object, typify(tval), tval)
             state.errs.append(msg)
             return UNDEF
 
@@ -1142,7 +1203,7 @@ def validate_CHILD(state, _val, current, store):
         setprop(parent, key, UNDEF)
         return UNDEF
 
-    elif mode == S["MVAL"]:
+    elif mode == S_MVAL:
         # => List syntax
         if not islist(parent):
             state.errs.append("Invalid $CHILD as value")
@@ -1160,7 +1221,7 @@ def validate_CHILD(state, _val, current, store):
 
         if not islist(current):
             # Not a list => error
-            msg = _invalidTypeMsg(path[:-1], S["array"], _typify(current), current)
+            msg = _invalidTypeMsg(path[:-1], S_array, typify(current), current)
             state.errs.append(msg)
             state.keyI = len(parent)
             return current
@@ -1189,7 +1250,7 @@ def validate_ONE(state, _val, current, store):
     path = state.path
     nodes = state.nodes
 
-    if mode == S["MVAL"]:
+    if mode == S_MVAL:
         # Skip normal injection for all the alt shapes
         state.keyI = len(state.keys)
 
@@ -1223,10 +1284,10 @@ def validate_ONE(state, _val, current, store):
         valdesc = re.sub(r"`\$([A-Z]+)`", lambda m: m.group(1).lower(), valdesc)
 
         state.errs.append(
-            invalidTypeMsg(
+            _invalidTypeMsg(
                 state.path[:-1],
                 "one of " + valdesc,
-                typeof(current),
+                typify(current),
                 current
             )
         )
@@ -1246,11 +1307,11 @@ def _validation(val, key, parent, state, current, _store):
         return UNDEF
 
     pval = getprop(parent, key)
-    t = _typify(pval)
-    ct = _typify(cval)
+    t = typify(pval)
+    ct = typify(cval)
 
     # If pval is a leftover transform command (like '`$STRING`'), skip it.
-    if t == S["string"] and S["DS"] in str(pval):
+    if t == S_string and S_DS in str(pval):
         return UNDEF
 
     # Type mismatch
@@ -1263,7 +1324,7 @@ def _validation(val, key, parent, state, current, _store):
         if not ismap(val):
             # The spec is not a dict => mismatch
             # If val is a list => we say "expected array"
-            st = S["array"] if islist(val) else _typify(val)
+            st = S_array if islist(val) else typify(val)
             state.errs.append(_invalidTypeMsg(state.path, st, ct, cval))
             return UNDEF
 
@@ -1277,7 +1338,7 @@ def _validation(val, key, parent, state, current, _store):
                 if not haskey(val, ckey):
                     badkeys.append(ckey)
             if badkeys:
-                msg = f"Unexpected keys at {_pathify(state.path)}: {', '.join(badkeys)}"
+                msg = f"Unexpected keys at {pathify(state.path)}: {', '.join(badkeys)}"
                 state.errs.append(msg)
         else:
             # It's open => merge in extra keys from data

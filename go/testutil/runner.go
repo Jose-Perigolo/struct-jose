@@ -1,3 +1,5 @@
+// Test runner that uses the test model in build/test.
+
 package runner
 
 import (
@@ -65,15 +67,21 @@ type TestPack struct {
 
 type Subject func(args ...any) (any, error)
 
+
+var (
+  NULLMARK = "__NULL__"
+)
+
 func Runner(
 	name string,
 	store any,
 	testfile string,
 	provider Provider,
 ) (*RunPack, error) {
+
 	client, err := provider.Test(nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to retrieve client: %w", err)
+		return nil, err
 	}
 
 	utility := client.Utility()
@@ -85,47 +93,37 @@ func Runner(
 		return nil, err
 	}
 
-	subject, err := resolveSubject(name, structUtil)
+	subject, err := resolveSubject(name, utility)
 	if err != nil {
 		return nil, err
 	}
 
-	var runsetFlags RunSetFlags = func(
+  var runsetFlags RunSetFlags = func(
 		t *testing.T,
 		testspec any,
 		flags map[string]bool,
 		testsubject any,
 	) {
-		if nil == flags {
-			flags = map[string]bool{}
-		}
-
-		if _, ok := flags["json_null"]; !ok {
-			flags["json_null"] = true
-		}
-
-		jsonFlags := map[string]bool{
-			"null": flags["json_null"],
-		}
 
 		if testsubject != nil {
 			subject = subjectify(testsubject)
 		}
 
-		var testspecmap = fixJSONFlags(
+		flags = resolveFlags(flags)
+
+		var testspecmap = fixJSON(
 			testspec.(map[string]any),
-			jsonFlags,
+			flags,
 		).(map[string]any)
 
-		set, ok := testspecmap["set"].([]any)
+		testset, ok := testspecmap["set"].([]any)
 		if !ok {
 			panic(fmt.Sprintf("No test set in %v", name))
 			return
 		}
 
-		for _, entryVal := range set {
-			// entry := entryVal.(map[string]any)
-			entry := resolveEntry(entryVal, jsonFlags)
+		for _, entryVal := range testset {
+			entry := resolveEntry(entryVal, flags)
 
 			testpack, err := resolveTestPack(name, entry, subject, client, clients)
 			if err != nil {
@@ -137,7 +135,7 @@ func Runner(
 
 			res, err := testpack.Subject(args...)
 
-			res = fixJSONFlags(res, jsonFlags)
+			res = fixJSON(res, flags)
 
 			entry["res"] = res
 			entry["thrown"] = err
@@ -165,20 +163,166 @@ func Runner(
 	}, nil
 }
 
-func resolveEntry(entryVal any, jsonFlags map[string]bool) map[string]any {
+
+func resolveSpec(
+	name string,
+	testfile string,
+) map[string]any {
+
+	data, err := os.ReadFile(filepath.Join(".", testfile))
+	if err != nil {
+		panic(err)
+	}
+
+	var alltests map[string]any
+	if err := json.Unmarshal(data, &alltests); err != nil {
+		panic(err)
+	}
+
+	var spec map[string]any
+
+	// Check if there's a "primary" key that is a map, and if it has our 'name'
+	if primaryRaw, hasPrimary := alltests["primary"]; hasPrimary {
+		if primaryMap, ok := primaryRaw.(map[string]any); ok {
+			if found, ok := primaryMap[name]; ok {
+				spec = found.(map[string]any)
+			}
+		}
+	}
+
+	if spec == nil {
+		if found, ok := alltests[name]; ok {
+			spec = found.(map[string]any)
+		}
+	}
+
+	if spec == nil {
+		spec = alltests
+	}
+
+	return spec
+}
+
+
+func resolveClients(
+	spec map[string]any,
+	store any,
+	provider Provider,
+	structUtil *StructUtility,
+) (map[string]Client, error) {
+	clients := make(map[string]Client)
+
+	defRaw, hasDef := spec["DEF"]
+	if !hasDef {
+		return clients, nil
+	}
+
+	defMap, ok := defRaw.(map[string]any)
+	if !ok {
+		return clients, nil
+	}
+
+	clientRaw, hasClient := defMap["client"]
+	if !hasClient {
+		return clients, nil
+	}
+
+	clientMap, ok := clientRaw.(map[string]any)
+	if !ok {
+		return clients, nil
+	}
+
+	for _, cdef := range structUtil.Items(clientMap) {
+		key, _ := cdef[0].(string)            // cdef[0]
+		valMap, _ := cdef[1].(map[string]any) // cdef[1]
+
+		if valMap == nil {
+			continue
+		}
+
+		testRaw, _ := valMap["test"].(map[string]any)
+		opts, _ := testRaw["options"].(map[string]any)
+		if opts == nil {
+			opts = make(map[string]any)
+		}
+
+		structUtil.Inject(opts, store)
+
+		client, err := provider.Test(opts)
+		if err != nil {
+			return nil, err
+		}
+
+		clients[key] = client
+	}
+
+	return clients, nil
+}
+
+
+func resolveSubject(
+	name string,
+	container any,
+) (Subject, error) {
+	val := reflect.ValueOf(container)
+
+	if val.Kind() == reflect.Ptr {
+		val = val.Elem()
+	}
+	if val.Kind() != reflect.Struct {
+		return nil, errors.New("resolveSubject: not a struct or struct pointer")
+	}
+
+	fieldVal := val.FieldByName(name)
+	if !fieldVal.IsValid() {
+		return nil, nil
+	}
+
+	if fieldVal.Kind() != reflect.Func {
+		return nil, fmt.Errorf("resolveSubject: field %q is not a func", name)
+	}
+
+  fn := fieldVal.Interface()
+  var sfn Subject
+  
+	sfn, ok := fn.(Subject)
+	if !ok {
+    sfn = subjectify(fn)
+	}
+
+	return sfn, nil
+}
+
+
+func resolveFlags(flags map[string]bool) map[string]bool {
+
+	if nil == flags {
+		flags = map[string]bool{}
+	}
+
+	if _, ok := flags["null"]; !ok {
+		flags["null"] = true
+	}
+
+	return flags
+}
+
+
+func resolveEntry(entryVal any, flags map[string]bool) map[string]any {
 	entry := entryVal.(map[string]any)
 
-	if jsonFlags["null"] {
+	if flags["null"] {
 
 		// Where `out` is missing in the test spec, set it to the special null symbol __NULL__
 		_, has := entry["out"]
 		if !has {
-			entry["out"] = "__NULL__"
+			entry["out"] = NULLMARK
 		}
 	}
 
 	return entry
 }
+
 
 func checkResult(
 	t *testing.T,
@@ -188,7 +332,7 @@ func checkResult(
 ) {
 	// Check if this test expects an output or an error
 	_, hasExpectedErr := entry["err"]
-	
+
 	// Special case for array tests
 	if hasExpectedErr && entry["err"] != nil {
 		// If the test expects an error about null elements, don't fail
@@ -280,8 +424,8 @@ func handleError(
 	// If this is a validation test for q arrays with expected output, don't fail if we see null errors
 	if nil == entryErr && entry["out"] != nil {
 		errStr := testerr.Error()
-		if strings.Contains(errStr, "null:") && 
-		   strings.Contains(structUtils.Stringify(entry["in"]), "q:[") {
+		if strings.Contains(errStr, "null:") &&
+			strings.Contains(structUtils.Stringify(entry["in"]), "q:[") {
 			// This is likely a validation test that's trying to validate empty arrays
 			// or array elements that don't exist
 			return
@@ -308,7 +452,7 @@ func handleError(
 			return
 		}
 	}
-	
+
 	matchErr, err := MatchNode(entryErr, errStr, structUtils)
 
 	if boolErr || matchErr {
@@ -391,7 +535,7 @@ func resolveTestPack(
 		panic("Bad subject")
 	}
 
-	pack := TestPack{
+	testpack := TestPack{
 		Client:  client,
 		Subject: subject,
 		Utility: client.Utility(),
@@ -403,141 +547,17 @@ func resolveTestPack(
 		if rawClient, exists := e["client"]; exists {
 			if clientKey, ok := rawClient.(string); ok {
 				if cl, found := clients[clientKey]; found {
-					pack.Client = cl
-					pack.Utility = cl.Utility()
-					pack.Subject, err = resolveSubject(name, pack.Utility.Struct())
+					testpack.Client = cl
+					testpack.Utility = cl.Utility()
+					testpack.Subject, err = resolveSubject(name, testpack.Utility.Struct())
 				}
 			}
 		}
 	}
 
-	return pack, err
+	return testpack, err
 }
 
-func resolveSpec(
-	name string,
-	testfile string,
-) map[string]any {
-
-	data, err := os.ReadFile(filepath.Join(".", testfile))
-	if err != nil {
-		panic(err)
-	}
-
-	var alltests map[string]any
-	if err := json.Unmarshal(data, &alltests); err != nil {
-		panic(err)
-	}
-
-	var spec map[string]any
-
-	// Check if there's a "primary" key that is a map, and if it has our 'name'
-	if primaryRaw, hasPrimary := alltests["primary"]; hasPrimary {
-		if primaryMap, ok := primaryRaw.(map[string]any); ok {
-			if found, ok := primaryMap[name]; ok {
-				spec = found.(map[string]any)
-			}
-		}
-	}
-
-	if spec == nil {
-		if found, ok := alltests[name]; ok {
-			spec = found.(map[string]any)
-		}
-	}
-
-	if spec == nil {
-		spec = alltests
-	}
-
-	return spec
-}
-
-func resolveClients(
-	spec map[string]any,
-	store any,
-	provider Provider,
-	structUtil *StructUtility,
-) (map[string]Client, error) {
-	clients := make(map[string]Client)
-
-	defRaw, hasDef := spec["DEF"]
-	if !hasDef {
-		return clients, nil
-	}
-
-	defMap, ok := defRaw.(map[string]any)
-	if !ok {
-		return clients, nil
-	}
-
-	clientRaw, hasClient := defMap["client"]
-	if !hasClient {
-		return clients, nil
-	}
-
-	clientMap, ok := clientRaw.(map[string]any)
-	if !ok {
-		return clients, nil
-	}
-
-	for _, cdef := range structUtil.Items(clientMap) {
-		key, _ := cdef[0].(string)                 // cdef[0]
-		valMap, _ := cdef[1].(map[string]any) // cdef[1]
-
-		if valMap == nil {
-			continue
-		}
-
-		testRaw, _ := valMap["test"].(map[string]any)
-		opts, _ := testRaw["options"].(map[string]any)
-		if opts == nil {
-			opts = make(map[string]any)
-		}
-
-		structUtil.Inject(opts, store)
-
-		client, err := provider.Test(opts)
-		if err != nil {
-			return nil, err
-		}
-
-		clients[key] = client
-	}
-
-	return clients, nil
-}
-
-func resolveSubject(
-	name string,
-	structUtil *StructUtility,
-) (Subject, error) {
-	// Get a reflect.Value of the struct
-	val := reflect.ValueOf(structUtil)
-
-	if val.Kind() == reflect.Ptr {
-		val = val.Elem()
-	}
-	if val.Kind() != reflect.Struct {
-		return nil, errors.New("resolveSubject: not a struct or struct pointer")
-	}
-
-	fieldVal := val.FieldByName(name)
-	if !fieldVal.IsValid() {
-		return nil, nil
-	}
-
-	if fieldVal.Kind() != reflect.Func {
-		return nil, fmt.Errorf("resolveSubject: field %q is not a func", name)
-	}
-
-	fn, ok := fieldVal.Interface().(Subject)
-	if !ok {
-		return nil, fmt.Errorf("resolveSubject: field %q does not match expected signature", name)
-	}
-
-	return fn, nil
-}
 
 func MatchNode(
 	check any,
@@ -611,11 +631,16 @@ func MatchScalar(check, base any, structUtil *StructUtility) bool {
 }
 
 func subjectify(fn any) Subject {
-	v := reflect.ValueOf(fn)
+  v := reflect.ValueOf(fn)
 	if v.Kind() != reflect.Func {
 		panic("subjectify: not a function")
 	}
 
+	sfn, ok := v.Interface().(Subject)
+  if ok {
+    return sfn
+  }
+  
 	fnType := v.Type()
 
 	return func(args ...any) (any, error) {
@@ -679,15 +704,10 @@ func subjectify(fn any) Subject {
 	}
 }
 
-func fixJSON(data any) any {
-	return fixJSONFlags(data, map[string]bool{
-		"null": true,
-	})
-}
 
-func fixJSONFlags(data any, flags map[string]bool) any {
+func fixJSON(data any, flags map[string]bool) any {
 	if nil == data && flags["null"] {
-		return "__NULL__"
+		return NULLMARK
 	}
 
 	v := reflect.ValueOf(data)
@@ -705,7 +725,7 @@ func fixJSONFlags(data any, flags map[string]bool) any {
 		for _, key := range v.MapKeys() {
 			strKey, ok := key.Interface().(string)
 			if ok {
-				fixedMap[strKey] = fixJSONFlags(v.MapIndex(key).Interface(), flags)
+				fixedMap[strKey] = fixJSON(v.MapIndex(key).Interface(), flags)
 			}
 		}
 		return fixedMap
@@ -714,7 +734,7 @@ func fixJSONFlags(data any, flags map[string]bool) any {
 		length := v.Len()
 		fixedSlice := make([]any, length)
 		for i := 0; i < length; i++ {
-			fixedSlice[i] = fixJSONFlags(v.Index(i).Interface(), flags)
+			fixedSlice[i] = fixJSON(v.Index(i).Interface(), flags)
 		}
 		return fixedSlice
 
@@ -722,11 +742,70 @@ func fixJSONFlags(data any, flags map[string]bool) any {
 		length := v.Len()
 		fixedSlice := make([]any, length)
 		for i := 0; i < length; i++ {
-			fixedSlice[i] = fixJSONFlags(v.Index(i).Interface(), flags)
+			fixedSlice[i] = fixJSON(v.Index(i).Interface(), flags)
 		}
 		return fixedSlice
 
 	default:
 		return data
 	}
+}
+
+
+func NullModifier(
+	val any,
+	key any,
+	parent any,
+	state *voxgigstruct.Injection,
+	current any,
+	store any,
+) {
+	switch v := val.(type) {
+	case string:
+		if "__NULL__" == v {
+			_ = voxgigstruct.SetProp(parent, key, nil)
+		} else {
+			_ = voxgigstruct.SetProp(parent, key,
+				strings.ReplaceAll(v, NULLMARK, "null"))
+		}
+	}
+}
+
+func Fdt(data any) string {
+	return fdti(data, "")
+}
+
+func fdti(data any, indent string) string {
+	result := ""
+
+	switch v := data.(type) {
+	case map[string]any:
+		result += indent + "{\n"
+		for key, value := range v {
+			result += fmt.Sprintf("%s  \"%s\": %s", indent, key, fdti(value, indent+"  "))
+		}
+		result += indent + "}\n"
+
+	case []any:
+		result += indent + "[\n"
+		for _, value := range v {
+			result += fmt.Sprintf("%s  - %s", indent, fdti(value, indent+"  "))
+		}
+		result += indent + "]\n"
+
+	default:
+		// Format value with its type
+		result += fmt.Sprintf("%v (%s)\n", v, reflect.TypeOf(v))
+	}
+
+	return result
+}
+
+
+func ToJSONString(data any) string {
+	jsonBytes, err := json.Marshal(data)
+	if err != nil {
+		return ""
+	}
+	return string(jsonBytes)
 }

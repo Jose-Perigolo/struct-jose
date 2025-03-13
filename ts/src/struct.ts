@@ -248,6 +248,7 @@ function haskey(val: any, key: any) {
 
 
 // List the sorted keys of a map or list as an array of tuples of the form [key, value].
+// NOTE: Unlike keysof, list indexes are returned as numbers.
 function items(val: any): [number | string, any][] {
   return keysof(val).map((k: any) => [k, val[k]])
 }
