@@ -183,7 +183,7 @@ try_access:
     } else {
       json arr = json::array();
       for(int i = 0; i < val.size(); i++) {
-        arr.push_back(i);
+        arr.push_back(std::to_string(i));
       }
       return arr;
     }
@@ -319,6 +319,10 @@ try_access:
 
     json _json = S::empty;
 
+    if(args.size() == 0){
+      return S::empty;
+    }
+
     try {
       _json = val.dump();
     } catch(const json::exception&) {
@@ -453,7 +457,57 @@ try_access:
   }
 
   json walk(args_container&& args) {
-    return false;
+    // These arguments are the public interface.
+    json val = args.size() == 0 ? nullptr : std::move(args[0]);
+    json apply = args.size() < 2 ? nullptr : std::move(args[1]);
+
+    // These arguments are used for recursive state.
+    json key = args.size() < 3 ? nullptr : std::move(args[2]);
+    json parent = args.size() < 4 ? nullptr : std::move(args[3]);
+    json path = args.size() < 5 ? nullptr : std::move(args[4]);
+
+
+    // NOTE: CHEAT SINCE WE CAN'T PASS A DATA STRUCTURE LIKE THIS INTO JSON SAFELY
+    function_pointer _apply = reinterpret_cast<function_pointer>(apply.get<intptr_t>());
+
+    if(path == nullptr) {
+      path = json::array();
+    }
+
+    if(isnode({ val })) {
+      json _items = items({ val });
+
+      for(json::iterator item = _items.begin(); item != _items.end(); item++) {
+        json value = item.value();
+        json ckey = value[0];
+        json child = value[1];
+
+        json _path = json::array();
+        for(json::iterator p = path.begin(); p != path.end(); p++) {
+          _path.push_back(p.value());
+        }
+
+        /*
+        std::cout << "_path:: " << _path << std::endl;
+        std::cout << path << std::endl;
+        std::cout << "ckey:: " << ckey << std::endl;
+        std::cout << "child:: " << child << std::endl;
+        */
+
+        try {
+          _path.push_back(ckey.get<std::string>());
+        } catch(const json::exception&) {
+          _path.push_back(ckey.dump());
+        }
+
+        // NOTE: MUST DO "val = setprop(...)" since val as an argument is deep-copied. In other words, reference counting is not supported.
+        val = setprop({ val, ckey, walk({ child, apply, ckey, val, _path})});
+
+      }
+
+    }
+
+    return _apply({ key, val, parent, path });
   }
 
 
