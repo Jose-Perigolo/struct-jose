@@ -220,48 +220,44 @@ function typify(value)
   return "object"
 end
 
--- Safely get a property of a node. Undefined arguments return undefined.
--- If the key is not found, return the alternative value.
-local function getprop(val, key, alt)
-  if val == nil then
+-- Safely get a property of a node. Nil arguments return nil.
+-- If the key is not found, return the alternative value, if any.
+function getprop(val, key, alt)
+  -- Handle nil arguments
+  if val == UNDEF or key == UNDEF then
     return alt
   end
 
-  if key == nil then
-    return alt
-  end
+  local out = nil
 
-  local out = alt
-
-  if isnode(val) then
-    -- Check if we're dealing with an array-like table and a numeric index
-    local isArray = #val > 0
-    local isNumericKey = type(key) == "number" or (type(key) == "string" and tonumber(key) ~= nil)
-
-    if isArray and isNumericKey then
-      -- Convert from 0-based indexing to 1-based for arrays
-      local numKey = type(key) == "number" and key or tonumber(key)
-      if numKey >= 0 then     -- Only adjust non-negative indices
-        out = val[numKey + 1] -- +1 for Lua's 1-based arrays
+  -- Handle tables (maps and arrays in Lua)
+  if type(val) == "table" then
+    -- Convert key to string if it's a number
+    local lookup_key = key
+    if type(key) == "number" then
+      -- Lua arrays are 1-based
+      lookup_key = tostring(math.floor(key))
+    elseif type(key) ~= "string" then
+      -- Convert other types to string
+      lookup_key = tostring(key)
+    end
+    if islist(val) then
+      -- Lua arrays are 1-based, so we need to adjust the index
+      for i = 1, #val do
+        local zero_based_index = i - 1
+        if lookup_key == tostring(zero_based_index) then
+          out = val[i]
+          break
+        end
       end
     else
-      -- Try the key as is
-      out = val[key]
-
-      -- If not found and key is a number, try as string
-      if out == nil and type(key) == "number" then
-        out = val[tostring(key)]
-      end
-
-      -- If not found and key is a string that looks like a number, try as number
-      if out == nil and type(key) == "string" and tonumber(key) ~= nil then
-        out = val[tonumber(key)]
-      end
+      out = val[lookup_key]
     end
   end
 
+  -- Return alternative if out is nil
   if out == nil then
-    out = alt
+    return alt
   end
 
   return out
