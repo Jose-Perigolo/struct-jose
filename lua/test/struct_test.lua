@@ -292,10 +292,11 @@ test("merge-exists", function()
 end)
 
 
--- test("merge-basic", function()
---   local test = clone(spec.merge.basic)
---   assert.same(test.out, merge(test['in']))
--- end)
+test("merge-basic", function()
+  local test = clone(spec.merge.basic)
+  assert.same(test.out, merge(test['in']))
+end)
+
 
 
 -- test("merge-cases", function()
