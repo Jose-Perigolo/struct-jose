@@ -173,7 +173,7 @@ end
 -- Returns one of: 'null', 'string', 'number', 'boolean', 'function', 'array', 'object'
 -- Normalizes and simplifies Lua's type system for consistency.
 function typify(value)
-  if value == nil then
+  if value == nil or value == "null" then
     return "null"
   end
 

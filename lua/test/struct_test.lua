@@ -245,6 +245,10 @@ test("minor-joinurl", function()
   runset(spec.minor.joinurl, joinurl)
 end)
 
+test("minor-typify", function()
+  runset(spec.minor.typify, typify)
+end)
+
 -- -- -- walk tests
 -- -- -- ==========
 -- test("walk-exists", function()
