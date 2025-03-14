@@ -9,11 +9,11 @@ struct: validate: @"validate.jsonic"
 
 primary: check: {
   DEF: {
-    client:a:options:foo:1
+    client:a:test:options:foo:1
   }
   basic: set: [
-    { ctx:bar:BAR0, match:out:zed:ZED0 }
-    { ctx:bar:BAR1, client:a, match:out:zed:ZED1 }
+    { ctx:bar:BAR0, out:zed:ZED }
+    { ctx:bar:BAR1, client:a, out:zed:ZED1 }
   ]
 }
 

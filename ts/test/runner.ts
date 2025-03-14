@@ -13,7 +13,8 @@ type Client = {
 }
 
 type Utility = {
-  struct: StructUtility
+  struct?: StructUtility
+  check?: (arg: string) => string
 }
 
 type StructUtility = {
@@ -69,7 +70,7 @@ async function runner(
 
   const client = await provider.test()
   const utility = client.utility()
-  const structUtils = utility.struct
+  const structUtils = (utility.struct as StructUtility)
 
   let spec = resolveSpec(name, testfile)
   let clients = await resolveClients(spec, store, provider, structUtils)
@@ -128,6 +129,7 @@ function resolveSpec(name: string, testfile: string): Record<string, any> {
       __dirname, testfile), 'utf8'))
 
   let spec = alltests.primary?.[name] || alltests[name] || alltests
+
   return spec
 }
 
@@ -141,14 +143,15 @@ async function resolveClients(
   Promise<Record<string, Client>> {
 
   const clients: Record<string, Client> = {}
-  if (spec.DEF) {
-    for (let cdef of structUtils.items(spec.DEF.client)) {
-      const copts = cdef[1].test.options || {}
-      if ('object' === typeof store) {
+  if (spec.DEF && spec.DEF.client) {
+    for (let cn in spec.DEF.client) {
+      const cdef = spec.DEF.client[cn]
+      const copts = cdef.test.options || {}
+      if ('object' === typeof store && structUtils?.inject) {
         structUtils.inject(copts, store)
       }
 
-      clients[cdef[0]] = await provider.test(copts)
+      clients[cn] = await provider.test(copts)
     }
   }
   return clients
@@ -223,8 +226,8 @@ function handleError(entry: any, err: any, structUtils: StructUtility) {
 
 
 function resolveArgs(entry: any, testpack: TestPack): any[] {
-  const structUtils = testpack.utility.struct
-  let args = [structUtils.clone(entry.in)]
+  // let args = [structUtils.clone(entry.in)]
+  let args = [clone(entry.in)]
 
   if (entry.ctx) {
     args = [entry.ctx]
@@ -236,7 +239,7 @@ function resolveArgs(entry: any, testpack: TestPack): any[] {
   if (entry.ctx || entry.args) {
     let first = args[0]
     if ('object' === typeof first && null != first) {
-      entry.ctx = first = args[0] = structUtils.clone(args[0])
+      entry.ctx = first = args[0] = clone(args[0])
       first.client = testpack.client
       first.utility = testpack.utility
     }
@@ -258,6 +261,8 @@ function resolveTestPack(
     subject,
     utility: client.utility(),
   }
+
+  // console.log('CLIENTS', clients)
 
   if (entry.client) {
     testpack.client = clients[entry.client]
@@ -342,7 +347,9 @@ function nullModifier(
   }
 }
 
-
+function clone(arg: any) {
+  return null == arg ? arg : JSON.parse(JSON.stringify(arg))
+}
 
 
 export {

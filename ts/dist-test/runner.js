@@ -52,13 +52,14 @@ function resolveSpec(name, testfile) {
 }
 async function resolveClients(spec, store, provider, structUtils) {
     const clients = {};
-    if (spec.DEF) {
-        for (let cdef of structUtils.items(spec.DEF.client)) {
-            const copts = cdef[1].test.options || {};
-            if ('object' === typeof store) {
+    if (spec.DEF && spec.DEF.client) {
+        for (let cn in spec.DEF.client) {
+            const cdef = spec.DEF.client[cn];
+            const copts = cdef.test.options || {};
+            if ('object' === typeof store && structUtils?.inject) {
                 structUtils.inject(copts, store);
             }
-            clients[cdef[0]] = await provider.test(copts);
+            clients[cn] = await provider.test(copts);
         }
     }
     return clients;
@@ -109,8 +110,8 @@ function handleError(entry, err, structUtils) {
     }
 }
 function resolveArgs(entry, testpack) {
-    const structUtils = testpack.utility.struct;
-    let args = [structUtils.clone(entry.in)];
+    // let args = [structUtils.clone(entry.in)]
+    let args = [clone(entry.in)];
     if (entry.ctx) {
         args = [entry.ctx];
     }
@@ -120,7 +121,7 @@ function resolveArgs(entry, testpack) {
     if (entry.ctx || entry.args) {
         let first = args[0];
         if ('object' === typeof first && null != first) {
-            entry.ctx = first = args[0] = structUtils.clone(args[0]);
+            entry.ctx = first = args[0] = clone(args[0]);
             first.client = testpack.client;
             first.utility = testpack.utility;
         }
@@ -133,6 +134,7 @@ function resolveTestPack(name, entry, subject, client, clients) {
         subject,
         utility: client.utility(),
     };
+    // console.log('CLIENTS', clients)
     if (entry.client) {
         testpack.client = clients[entry.client];
         testpack.utility = testpack.client.utility();
@@ -186,5 +188,8 @@ function nullModifier(val, key, parent) {
     else if ('string' === typeof val) {
         parent[key] = val.replaceAll('__NULL__', 'null');
     }
+}
+function clone(arg) {
+    return null == arg ? arg : JSON.parse(JSON.stringify(arg));
 }
 //# sourceMappingURL=runner.js.map
