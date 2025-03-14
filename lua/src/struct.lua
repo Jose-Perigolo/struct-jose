@@ -270,6 +270,7 @@ local function keysof(val)
   end
 
   if ismap(val) then
+    -- For maps, collect all keys and sort them
     local keys = {}
     for k, _ in pairs(val) do
       table.insert(keys, k)
@@ -277,9 +278,11 @@ local function keysof(val)
     table.sort(keys)
     return keys
   else
+    -- For lists, create array of stringified indices (0-based to match JS/Go)
     local indexes = {}
     for i = 1, #val do
-      table.insert(indexes, i)
+      -- Subtract 1 to convert from Lua's 1-based to 0-based indexing
+      table.insert(indexes, tostring(i - 1))
     end
     return indexes
   end

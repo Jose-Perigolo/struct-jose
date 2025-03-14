@@ -237,9 +237,9 @@ test("minor-haskey", function()
   runset(spec.minor.haskey, haskey)
 end)
 
--- test("minor-keysof", function()
---   runset(spec.minor.keysof, keysof)
--- end)
+test("minor-keysof", function()
+  runset(spec.minor.keysof, keysof)
+end)
 
 
 -- -- -- walk tests
