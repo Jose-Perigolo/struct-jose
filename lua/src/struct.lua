@@ -619,33 +619,93 @@ local function setprop(parent, key, val)
   return parent
 end
 
--- Convert a path string or array to a printable string
-function _pathify(val, from)
-  from = from or 1
-  if type(val) == 'table' and islist(val) then
-    local path = {}
-    for i = from, #val do
-      table.insert(path, val[i])
-    end
-    if #path == 0 then
-      return '<root>'
-    end
-    return table.concat(path, '.')
+-- Build a human friendly path string.
+local function pathify(val, from)
+  local pathstr = UNDEF
+  local path = UNDEF
+
+  -- Convert input to path array
+  if islist(val) then
+    path = val
+  elseif type(val) == 'string' then
+    path = {val}
+  elseif type(val) == 'number' then
+    path = {val}
   end
-  return val == UNDEF and '<unknown-path>' or stringify(val)
+
+  -- Calculate start index
+  if from == nil then
+    start = 0
+  elseif from >= 0 then
+    start = from
+  else
+    start = 0
+  end
+
+  if path ~= UNDEF and start >= 0 then
+    -- Slice path array from start
+    local sliced = {}
+    for i = start + 1, #path do
+      table.insert(sliced, path[i])
+    end
+    path = sliced
+
+    if #path == 0 then
+      pathstr = '<root>'
+    else
+      -- Filter valid path elements (strings and numbers)
+      local filtered = {}
+      for _, p in ipairs(path) do
+        local t = type(p)
+        if t == S_string or t == S_number then
+          table.insert(filtered, p)
+        end
+      end
+
+      -- Map elements to strings with special handling
+      local mapped = {}
+      for _, p in ipairs(filtered) do
+        if type(p) == S_number then
+          -- Floor number and convert to string
+          table.insert(mapped, S_MT .. tostring(math.floor(p)))
+        else
+          -- Replace dots with empty string for strings
+          local replacedP = string.gsub(p, '%'.. S_DT, S_MT)
+          table.insert(mapped, replacedP)
+        end
+      end
+
+      -- Join with dots
+      pathstr = table.concat(mapped, S_DT)
+    end
+  end
+
+
+  -- Handle unknown paths
+  if pathstr == UNDEF then
+    pathstr = '<unknown-path'
+    if val == UNDEF then
+      pathstr = pathstr .. S_MT
+    else
+      pathstr = pathstr .. (S_CN .. stringify(val, 47))
+    end
+    pathstr = pathstr .. '>'
+  end
+
+  return pathstr
 end
 
 -- Walk a data structure depth first, applying a function to each value.
-function walk(
--- These arguments are the public interface.
-    val,
-    apply,
+function walk( 
+  -- These arguments are the public interface.
+  val, 
+  apply,
+  -- These arguments are used for recursive state.
+  key, 
+  parent, 
+  path
+  )
 
-    -- These arguments are used for recursive state.
-    key,
-    parent,
-    path
-)
   path = path or {}
 
   if isnode(val) then
@@ -2003,4 +2063,5 @@ return {
   transform = transform,
   validate = validate,
   walk = walk,
+  pathify = pathify,
 }

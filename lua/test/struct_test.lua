@@ -28,7 +28,7 @@ local transform = struct.transform
 local walk      = struct.walk
 local validate  = struct.validate
 local joinurl   = struct.joinurl
-
+local pathify   = struct.pathify
 
 -- Modifier function for walk (appends path to string values)
 local function walkpath(_key, val, _parent, path)
@@ -81,6 +81,7 @@ describe("struct", function()
               walk      = walk,
               validate  = validate,
               joinurl   = joinurl,
+              pathify   = pathify,
             }
           }
         end
@@ -101,17 +102,22 @@ describe("struct", function()
     assert.equal("function", type(escurl))
     assert.equal("function", type(getprop))
     assert.equal("function", type(haskey))
+
     assert.equal("function", type(isempty))
     assert.equal("function", type(isfunc))
     assert.equal("function", type(iskey))
     assert.equal("function", type(islist))
     assert.equal("function", type(ismap))
+
     assert.equal("function", type(isnode))
     assert.equal("function", type(items))
     assert.equal("function", type(joinurl))
     assert.equal("function", type(keysof))
     assert.equal("function", type(setprop))
+
     assert.equal("function", type(stringify))
+    assert.equal("function", type(typify))
+    assert.equal("function", type(pathify))
   end)
 
   test("minor-isnode", function()
@@ -251,10 +257,25 @@ end)
 
 -- -- -- walk tests
 -- -- -- ==========
--- test("walk-exists", function()
---   assert.equal("function", type(walk))
--- end)
 
+test("walk-exists", function()
+  assert.equal("function", type(walk))
+end)
+
+test("walk-log", function()
+  local test = clone(spec.walk.log)
+  local log = {}
+
+  local function walklog(key, val, parent, path)
+    table.insert(log,
+      "k=" .. stringify(key) .. ", v=" .. stringify(val) .. ", p=" ..
+        stringify(parent) .. ", t=" .. pathify(path))
+    return val
+  end
+
+  walk(test["in"], walklog)
+  assert.same(log, test.out)
+end)
 
 -- test("walk-basic", function()
 --   runset(spec.walk.basic, function(vin)
