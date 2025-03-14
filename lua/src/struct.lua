@@ -111,6 +111,7 @@ local function islist(val)
   -- Check if all keys are consecutive integers starting from 1
   return count > 0 and max == count
 end
+
 -- Value is a defined map (hash) with string keys.
 function ismap(val)
   -- Check if the value is a table
@@ -729,190 +730,82 @@ end
 -- precedence. Nodes override scalars. Node kinds (list or map)
 -- override each other, and do *not* merge. The first element is
 -- modified.
-local function merge(objs)
-  -- Handle cases of empty inputs
-  if objs == UNDEF then
+function merge(val)
+  -- Handle edge cases
+  if type(val) ~= "table" or val[1] == nil then
+    return val
+  end
+
+  local out = UNDEF
+
+  local list = val
+  local lenlist = #list
+
+  if lenlist == 0 then
     return UNDEF
+  elseif lenlist == 1 then
+    return list[1]
   end
 
-  -- Check if it's an empty table
-  if type(objs) == 'table' then
-    local isEmpty = true
-    for _ in pairs(objs) do
-      isEmpty = false
-      break
-    end
-    if isEmpty then
-      return UNDEF -- Empty table/array should return nil
-    end
-  end
+  -- -- getprop expects 0-indexed list, so we need to adjust
+  -- out = getprop(list, 0, {})
 
-  -- Handle basic edge cases
-  if not islist(objs) then
-    -- Special case for sparse arrays (tables with only numeric keys)
-    if type(objs) == 'table' then
-      local hasNumericKeys = false
-      local hasNonNumericKeys = false
+  -- Instead of using getprop, directly get the first element and clone it
+  out = clone(list[1]) -- This is the key change
 
-      for k, _ in pairs(objs) do
-        if type(k) == 'number' then
-          hasNumericKeys = true
-        else
-          hasNonNumericKeys = true
-        end
-      end
+  for oI = 2, lenlist do
+    local obj = list[oI]
 
-      -- If all keys are numeric, treat it as a sparse array
-      if hasNumericKeys and not hasNonNumericKeys then
-        local keys = {}
-        for k, _ in pairs(objs) do
-          table.insert(keys, k)
-        end
-        table.sort(keys)
-
-        -- Start with first value or empty table
-        local out = objs[keys[1]] or {}
-
-        -- Process remaining keys in order
-        for i = 2, #keys do
-          local key = keys[i]
-          local obj = objs[key]
-
-          if obj == nil then
-            -- Skip nil values
-          elseif not isnode(obj) then
-            -- Non-nodes win over anything
-            out = obj
-          else
-            -- Nodes win, also over nodes of a different kind
-            if not isnode(out) or
-                (ismap(obj) and islist(out)) or
-                (islist(obj) and ismap(out)) or
-                (isnode(out) and isempty(out) and not isempty(obj)) then
-              out = obj
-            else
-              -- Deep merge for nodes of same type
-              local cur = { out }
-              local cI = 0
-
-              local function merger(key, val, parent, path)
-                if key == nil then
-                  return val
-                end
-
-                -- Get the current value at the current path in obj.
-                local lenpath = #path
-                cI = lenpath
-                if cur[cI] == UNDEF then
-                  cur[cI] = getpath(
-                    table.pack(table.unpack(path, 1, lenpath - 1)),
-                    out
-                  )
-                end
-
-                -- Create node if needed.
-                if not isnode(cur[cI]) then
-                  cur[cI] = islist(parent) and {} or {}
-                end
-
-                -- Node child is just ahead of us on the stack, since
-                -- `walk` traverses leaves before nodes.
-                if isnode(val) and not isempty(val) then
-                  setprop(cur[cI], key, cur[cI + 1])
-                  cur[cI + 1] = UNDEF
-                else
-                  setprop(cur[cI], key, val)
-                end
-
-                return val
-              end
-
-              -- Walk overriding node, creating paths in output as needed.
-              walk(obj, merger)
-            end
-          end
-        end
-
-        return out
-      end
-    end
-
-    return objs
-  elseif #objs == 0 then
-    return UNDEF
-  elseif #objs == 1 then
-    -- If the only item is an empty table, return nil
-    if isnode(objs[1]) and isempty(objs[1]) then
-      return UNDEF
-    end
-    return objs[1]
-  end
-
-  -- Merge a list of values (normal case for regular arrays).
-  local out = getprop(objs, 0, {})
-
-  -- Start with first entry of the array
-  if islist(objs) and #objs > 0 then
-    out = objs[1]
-  end
-
-  for oI = 2, #objs do
-    local obj = objs[oI]
-
-    -- Skip nil values
-    if obj == UNDEF then
-      -- Skip but do nothing (retain existing values)
-      -- Handle empty arrays - don't override values with empty arrays
-    elseif islist(obj) and #obj == 0 then
-      -- Skip but do nothing (retain existing values)
-    elseif not isnode(obj) then
-      -- Non-nodes win.
+    if not isnode(obj) then
+      -- Nodes win
       out = obj
     else
-      -- Nodes win, also over nodes of a different kind.
-      if not isnode(out) or
-          (ismap(obj) and islist(out) and not isempty(obj)) or
-          (islist(obj) and ismap(out) and not isempty(obj)) or
-          (isnode(out) and isempty(out) and not isempty(obj)) then
+      -- Nodes win, also over nodes of a different kind
+      if (not isnode(out) or (ismap(obj) and islist(out)) or
+        (islist(obj) and ismap(out))) then
         out = obj
       else
-        -- Node stack. walking down the current obj.
-        local cur = { out }
-        local cI = 0
+        -- Node stack walking down the current obj
+        local cur = {out}
+        local cI = 1
 
         local function merger(key, val, parent, path)
           if key == nil then
             return val
           end
 
-          -- Get the current value at the current path in obj.
+          -- Get the current value at the current path in obj
           local lenpath = #path
-          cI = lenpath
+          cI = lenpath - 1
           if cur[cI] == UNDEF then
-            cur[cI] = getpath(
-              table.pack(table.unpack(path, 1, lenpath - 1)),
-              out
-            )
+            local pathSlice = {}
+            for i = 1, lenpath - 1 do
+              table.insert(pathSlice, path[i])
+            end
+            -- TODO: let's try to fix the getpath issue
+            -- cur[cI] = getpath(pathSlice, out)
+            cur[cI] = out
           end
 
-          -- Create node if needed.
+          -- Create node if needed
           if not isnode(cur[cI]) then
-            cur[cI] = islist(parent) and {} or {}
+            cur[cI] = {}
           end
 
           -- Node child is just ahead of us on the stack, since
-          -- `walk` traverses leaves before nodes.
-          if isnode(val) and not isempty(val) then
+          -- walk traverses leaves before nodes
+          if isnode(val) and (not isempty(val)) then
             setprop(cur[cI], key, cur[cI + 1])
             cur[cI + 1] = UNDEF
           else
+            -- Scalar child
             setprop(cur[cI], key, val)
           end
 
           return val
         end
 
-        -- Walk overriding node, creating paths in output as needed.
+        -- Walk overriding node, creating paths in output as needed
         walk(obj, merger)
       end
     end
