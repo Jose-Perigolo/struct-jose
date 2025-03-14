@@ -64,6 +64,7 @@ const runner_1 = require("./runner");
         (0, node_assert_1.equal)('function', typeof struct_1.keysof);
         (0, node_assert_1.equal)('function', typeof struct_1.pathify);
         (0, node_assert_1.equal)('function', typeof struct_1.setprop);
+        (0, node_assert_1.equal)('function', typeof struct_1.strkey);
         (0, node_assert_1.equal)('function', typeof struct_1.stringify);
         (0, node_assert_1.equal)('function', typeof struct_1.typify);
     });
@@ -78,6 +79,9 @@ const runner_1 = require("./runner");
     });
     (0, node_test_1.test)('minor-iskey', async () => {
         await runsetflags(minorSpec.iskey, { null: false }, struct_1.iskey);
+    });
+    (0, node_test_1.test)('minor-strkey', async () => {
+        await runsetflags(minorSpec.strkey, { null: false }, struct_1.strkey);
     });
     (0, node_test_1.test)('minor-isempty', async () => {
         await runsetflags(minorSpec.isempty, { null: false }, struct_1.isempty);

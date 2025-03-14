@@ -283,7 +283,7 @@ func GetProp(val any, key any, alts ...any) any {
 	if IsMap(val) {
 		ks, ok := key.(string)
 		if !ok {
-			ks = _strKey(key)
+			ks = StrKey(key)
 		}
 
 		v := val.(map[string]any)
@@ -331,7 +331,7 @@ func GetProp(val any, key any, alts ...any) any {
 		if valRef.Kind() == reflect.Struct {
 			ks, ok := key.(string)
 			if !ok {
-				ks = _strKey(key)
+				ks = StrKey(key)
 			}
 
 			field := valRef.FieldByName(ks)
@@ -366,7 +366,7 @@ func KeysOf(val any) []string {
 		arr := val.([]any)
 		keys := make([]string, len(arr))
 		for i := range arr {
-			keys[i] = _strKey(i)
+			keys[i] = StrKey(i)
 		}
 		return keys
 	}
@@ -649,7 +649,7 @@ func SetProp(parent any, key any, newval any) any {
 
 		// Convert key to string
 		ks := ""
-		ks = _strKey(key)
+		ks = StrKey(key)
 
 		if newval == nil {
 			delete(m, ks)
@@ -755,7 +755,7 @@ func WalkDescend(
 		for _, kv := range Items(val) {
 			ckey := kv[0]
 			child := kv[1]
-			ckeyStr := _strKey(ckey)
+			ckeyStr := StrKey(ckey)
 			newChild := WalkDescend(child, apply, &ckeyStr, val, append(path, ckeyStr))
 			val = SetProp(val, ckey, newChild)
 		}
@@ -2160,7 +2160,12 @@ func _getType(v any) string {
 	return reflect.TypeOf(v).String()
 }
 
-func _strKey(key any) string {
+// StrKey converts different types of keys to string representation.
+// String keys are returned as is.
+// Number keys are converted to strings.
+// Floats are truncated to integers.
+// Booleans, objects, arrays, null, undefined all return empty string.
+func StrKey(key any) string {
 	if nil == key {
 		return S_MT
 	}
@@ -2177,12 +2182,16 @@ func _strKey(key any) string {
 		return strconv.Itoa(v)
 	case int64:
 		return strconv.FormatInt(v, 10)
+	case int32:
+		return strconv.FormatInt(int64(v), 10)
 	case float64:
-		return strconv.FormatFloat(v, 'f', -1, 64)
+		return strconv.FormatInt(int64(v), 10)
 	case float32:
-		return strconv.FormatFloat(float64(v), 'f', -1, 32)
+		return strconv.FormatInt(int64(v), 10)
+	case bool:
+		return S_MT
 	default:
-		return fmt.Sprintf("%v", v)
+		return S_MT
 	}
 }
 
@@ -2193,7 +2202,7 @@ func _resolveStrings(input []any) []string {
 		if str, ok := v.(string); ok {
 			result = append(result, str)
 		} else {
-			result = append(result, _strKey(v))
+			result = append(result, StrKey(v))
 		}
 	}
 

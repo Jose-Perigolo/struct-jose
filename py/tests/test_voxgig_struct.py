@@ -28,6 +28,7 @@ from voxgig_struct import (
     pathify,
     setprop,
     stringify,
+    strkey,
     transform,
     typify,
     validate,
@@ -80,6 +81,7 @@ class Provider:
                 "pathify": pathify,
                 "setprop": setprop,
                 "stringify": stringify,
+                "strkey": strkey,
                 "transform": transform,
                 "typify": typify,
                 "validate": validate,
@@ -136,6 +138,7 @@ class TestStruct(unittest.TestCase):
 
         self.assertTrue(callable(setprop))
         self.assertTrue(callable(stringify))
+        self.assertTrue(callable(strkey))
         self.assertTrue(callable(typify))
 
 
@@ -153,6 +156,10 @@ class TestStruct(unittest.TestCase):
         
     def test_minor_iskey(self):
         runsetflags(minorSpec["iskey"], {"null": False}, iskey)
+
+        
+    def test_minor_strkey(self):
+        runsetflags(minorSpec["strkey"], {"null": False}, strkey)
 
         
     def test_minor_isempty(self):

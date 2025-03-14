@@ -26,6 +26,7 @@ import {
   merge,
   pathify,
   setprop,
+  strkey,
   stringify,
   transform,
   typify,
@@ -112,6 +113,7 @@ describe('struct', async () => {
     equal('function', typeof pathify)
 
     equal('function', typeof setprop)
+    equal('function', typeof strkey)
     equal('function', typeof stringify)
     equal('function', typeof typify)
   })
@@ -134,6 +136,11 @@ describe('struct', async () => {
 
   test('minor-iskey', async () => {
     await runsetflags(minorSpec.iskey, { null: false }, iskey)
+  })
+
+
+  test('minor-strkey', async () => {
+    await runsetflags(minorSpec.strkey, { null: false }, strkey)
   })
 
 

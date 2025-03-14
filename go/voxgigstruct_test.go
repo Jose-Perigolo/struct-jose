@@ -111,6 +111,7 @@ func TestStruct(t *testing.T) {
       "pathify":  voxgigstruct.Pathify,
 
 			"setprop": voxgigstruct.SetProp,
+			"strkey":    voxgigstruct.StrKey,
 			"stringify": voxgigstruct.Stringify,
 			"typify":    voxgigstruct.Typify,
 		}
@@ -139,6 +140,11 @@ func TestStruct(t *testing.T) {
   
 	t.Run("minor-iskey", func(t *testing.T) {
 		runsetFlags(t, minorSpec["iskey"], map[string]bool{"null": false}, voxgigstruct.IsKey)
+	})
+
+
+	t.Run("minor-strkey", func(t *testing.T) {
+		runsetFlags(t, minorSpec["strkey"], map[string]bool{"null": false}, voxgigstruct.StrKey)
 	})
 
   

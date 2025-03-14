@@ -177,6 +177,32 @@ function keysof(val) {
 }
 
 
+// Convert different types of keys to string representation.
+// String keys are returned as is.
+// Number keys are converted to strings.
+// Floats are truncated to integers.
+// Booleans, objects, arrays, null, undefined all return empty string.
+function strkey(key = UNDEF) {
+  if (UNDEF === key) {
+    return S_MT
+  }
+
+  if (typeof key === S_string) {
+    return key
+  }
+
+  if (typeof key === S_boolean) {
+    return S_MT
+  }
+
+  if (typeof key === S_number) {
+    return key % 1 === 0 ? String(key) : String(Math.floor(key))
+  }
+
+  return S_MT
+}
+
+
 // Value of property with name key in node val is defined.
 function haskey(val, key) {
   return UNDEF !== getprop(val, key)
@@ -1465,6 +1491,7 @@ module.exports = {
   merge,
   pathify,
   setprop,
+  strkey,
   stringify,
   transform,
   typify,

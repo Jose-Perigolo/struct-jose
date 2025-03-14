@@ -111,6 +111,7 @@ def check_result(entry, res, structUtils):
             
         # Compare result with expected output using deep equality
         if cleaned_res != entry.get('out'):
+            print('ENTRY', entry.get('out'), '|||', cleaned_res)
             raise AssertionError_(
                 f"Expected: {entry.get('out')}, got: {cleaned_res}\n"
                 f"Entry: {json.dumps(entry, indent=2)}"
