@@ -233,6 +233,13 @@ test("minor-edge-setprop", function()
   assert.same({2, 3, 555, 7, 11}, setprop(intarr1, "2", 555))
 end)
 
+test("minor-haskey", function()
+  runset(spec.minor.haskey, haskey)
+end)
+
+-- test("minor-keysof", function()
+--   runset(spec.minor.keysof, keysof)
+-- end)
 
 
 -- -- -- walk tests
