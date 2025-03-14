@@ -221,6 +221,18 @@ test("minor-setprop", function()
   end)
 end)
 
+test("minor-edge-setprop", function()
+  local strarr0 = {"a", "b", "c", "d", "e"}
+  local strarr1 = {"a", "b", "c", "d", "e"}
+  assert.same({"a", "b", "C", "d", "e"}, setprop(strarr0, 2, "C"))
+  assert.same({"a", "b", "CC", "d", "e"}, setprop(strarr1, "2", "CC"))
+
+  local intarr0 = {2, 3, 5, 7, 11}
+  local intarr1 = {2, 3, 5, 7, 11}
+  assert.same({2, 3, 55, 7, 11}, setprop(intarr0, 2, 55))
+  assert.same({2, 3, 555, 7, 11}, setprop(intarr1, "2", 555))
+end)
+
 
 
 -- -- -- walk tests
