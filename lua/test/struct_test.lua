@@ -286,9 +286,10 @@ end)
 
 -- -- -- merge tests
 -- -- -- ===========
--- test("merge-exists", function()
---   assert.equal("function", type(merge))
--- end)
+
+test("merge-exists", function()
+  assert.equal("function", type(merge))
+end)
 
 
 -- test("merge-basic", function()
