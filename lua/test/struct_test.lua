@@ -277,11 +277,11 @@ test("walk-log", function()
   assert.same(log, test.out)
 end)
 
--- test("walk-basic", function()
---   runset(spec.walk.basic, function(vin)
---     return walk(vin, walkpath)
---   end)
--- end)
+test("walk-basic", function()
+  runset(spec.walk.basic, function(vin)
+    return walk(vin, walkpath)
+  end)
+end)
 
 
 -- -- -- merge tests
