@@ -199,11 +199,28 @@ test("minor-getprop", function()
 end)
 
 
--- test("minor-setprop", function()
---   runset(spec.minor.setprop, function(vin)
---     return setprop(vin.parent, vin.key, vin.val)
---   end)
--- end)
+test("minor-setprop", function()
+  runset(spec.minor.setprop, function(vin)
+    return setprop(vin.parent, vin.key, vin.val)
+  end)
+end)
+
+test("minor-edge-getprop", function()
+  local strarr = {"a", "b", "c", "d", "e"}
+  assert.same(getprop(strarr, 2), "c")
+  assert.same(getprop(strarr, "2"), "c")
+
+  local intarr = {2, 3, 5, 7, 11}
+  assert.same(getprop(intarr, 2), 5)
+  assert.same(getprop(intarr, "2"), 5)
+end)
+
+test("minor-setprop", function()
+  runset(spec.minor.setprop, function(vin)
+    return setprop(vin.parent, vin.key, vin.val)
+  end)
+end)
+
 
 
 -- -- -- walk tests
