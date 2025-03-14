@@ -345,23 +345,54 @@ end
 
 -- Concatenate url part strings, merging forward slashes as needed.
 local function joinurl(sarr)
-  local result = {}
-
-  for i, s in ipairs(sarr) do
-    if s ~= UNDEF and s ~= '' then
-      local part = s
-      if i == 1 then
-        part = s:gsub("([^/])/+", "%1/"):gsub("/+$", "")
+  -- Filter out nil, empty strings, and "null" values and convert non-strings to strings
+  local filtered = {}
+  for _, p in ipairs(sarr) do
+    if p ~= nil and p ~= '' and p ~= 'null' then
+      if type(p) == 'string' then
+        -- Skip if the string is "null"
+        if p ~= "null" then
+          table.insert(filtered, p)
+        end
       else
-        part = s:gsub("([^/])/+", "%1/"):gsub("^/+", ""):gsub("/+$", "")
-      end
-      if part ~= '' then
-        table.insert(result, part)
+        -- Convert non-string values using stringify and skip if result is "null"
+        local str = stringify(p)
+        if str ~= "null" then
+          table.insert(filtered, str)
+        end
       end
     end
   end
 
-  return table.concat(result, "/")
+  -- Process each part to handle slashes correctly
+  for i = 1, #filtered do
+    local s = filtered[i]
+
+    -- Replace multiple slashes after non-slash with single slash
+    s = s:gsub("([^/])/+", "%1/")
+
+    if i == 1 then
+      -- For first element, only remove trailing slashes
+      s = s:gsub("/+$", "")
+    else
+      -- For other elements, remove both leading and trailing slashes
+      s = s:gsub("^/+", "")
+      s = s:gsub("/+$", "")
+    end
+
+    filtered[i] = s
+  end
+
+  -- Filter out empty strings after processing
+  local finalParts = {}
+  for _, s in ipairs(filtered) do
+    if s ~= '' then
+      table.insert(finalParts, s)
+    end
+  end
+
+  -- Join the parts with single slashes
+  return table.concat(finalParts, "/")
 end
 
 -- Safely stringify a value for humans (NOT JSON!)

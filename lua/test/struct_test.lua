@@ -241,6 +241,9 @@ test("minor-keysof", function()
   runset(spec.minor.keysof, keysof)
 end)
 
+test("minor-joinurl", function()
+  runset(spec.minor.joinurl, joinurl)
+end)
 
 -- -- -- walk tests
 -- -- -- ==========
