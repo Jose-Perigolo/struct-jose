@@ -624,8 +624,7 @@ local function pathify(val, from)
   local pathstr = UNDEF
   local path = UNDEF
 
-  -- Convert input to path array
-  if islist(val) then
+  if islist(val) or ismap(val) then
     path = val
   elseif type(val) == 'string' then
     path = {val}
