@@ -748,10 +748,7 @@ function merge(val)
   end
 
   -- -- getprop expects 0-indexed list, so we need to adjust
-  -- out = getprop(list, 0, {})
-
-  -- Instead of using getprop, directly get the first element and clone it
-  out = clone(list[1]) -- This is the key change
+  out = getprop(list, 0, {})
 
   for oI = 2, lenlist do
     local obj = list[oI]
@@ -782,9 +779,7 @@ function merge(val)
             for i = 1, lenpath - 1 do
               table.insert(pathSlice, path[i])
             end
-            -- TODO: let's try to fix the getpath issue
-            -- cur[cI] = getpath(pathSlice, out)
-            cur[cI] = out
+            cur[cI] = getpath(pathSlice, out)
           end
 
           -- Create node if needed
@@ -814,84 +809,72 @@ function merge(val)
   return out
 end
 
--- Get a value deep inside a node using a key path.
--- For example the path `a.b` gets the value 1 from {a:{b:1}}.
--- The path can specified as a dotted string, or a string array.
--- If the path starts with a dot (or the first element is ''), the path is considered local,
--- and resolved against the `current` argument, if defined.
--- Integer path parts are used as array indexes.
--- The state argument allows for custom handling when called from `inject` or `transform`.
-function getpath(path, store, current, state, skipHandler)
+-- Get a value deep inside a node using a key path.  For example the
+-- path `a.b` gets the value 1 from {a={b=1}}.  The path can specified
+-- as a dotted string, or a string array.  If the path starts with a
+-- dot (or the first element is ''), the path is considered local, and
+-- resolved against the `current` argument, if defined.  Integer path
+-- parts are used as array indexes.  The state argument allows for
+-- custom handling when called from `inject` or `transform`.
+function getpath(path, store, current, state)
   -- Operate on a string array
   local parts
-  if type(path) == 'table' and islist(path) then
+  if islist(path) then
     parts = path
-  elseif type(path) == 'string' then
+  elseif type(path) == S_string then
     parts = {}
-    for part in string.gmatch(path, '([^' .. S.DT .. ']+)') do
+    for part in string.gmatch(path, "[^%.]+") do
       table.insert(parts, part)
     end
-    if path:sub(1, 1) == S.DT then
-      table.insert(parts, 1, '')
-    end
   else
-    return UNDEF
+    parts = UNDEF
   end
 
   local root = store
   local val = store
+  local base = getprop(state, S_base)
 
   -- An empty path (incl empty string) just finds the store
-  if path == UNDEF or store == UNDEF or (#parts == 1 and parts[1] == '') then
+  if path == nil or store == nil or (parts ~= UNDEF and #parts == 1 and parts[1] == S_MT) then
     -- The actual store data may be in a store sub property, defined by state.base
-    val = getprop(store, getprop(state, S.base), store)
-  elseif #parts > 0 then
+    val = getprop(store, base, store)
+  elseif parts ~= UNDEF and #parts > 0 then
     local pI = 1
 
     -- Relative path uses `current` argument
-    if parts[1] == '' then
+    if parts[1] == S_MT then
       pI = 2
       root = current
     end
 
-    local part = pI <= #parts and parts[pI] or UNDEF
+    local part
+    if pI <= #parts then
+      part = parts[pI]
+    else
+      part = UNDEF
+    end
+
     local first = getprop(root, part)
 
-    -- At top level, check state.base, if provided
+      -- At top level, check state.base, if provided
     if first == UNDEF and pI == 1 then
-      val = getprop(getprop(root, getprop(state, S.base)), part)
+      val = getprop(getprop(root, base), part)
     else
       val = first
     end
 
     -- Move along the path, trying to descend into the store
-    for i = pI + 1, #parts do
-      if val == UNDEF then break end
-      val = getprop(val, parts[i])
+    pI = pI + 1
+    while val ~= UNDEF and pI <= #parts do
+      val = getprop(val, parts[pI])
+      pI = pI + 1
     end
   end
 
   -- State may provide a custom handler to modify found value
-  if not skipHandler and state ~= UNDEF and isfunc(state.handler) then
-    -- Create and prepare wrapper handler that protects against Lua concatenation errors
-    local safe_handler = function(...)
-      local args = { ... }
-      -- Convert the val argument (args[2]) to string if it's a table
-      if type(args[2]) == 'table' then
-        -- For a table with a single value (like {'$TOP':'12'}), extract that value
-        local key, value = next(args[2])
-        if key ~= nil and next(args[2], key) == nil then
-          -- Only one key/value pair exists
-          args[2] = value
-        else
-          -- Otherwise convert to string representation
-          args[2] = tostring(args[2])
-        end
-      end
-      return state.handler(table.unpack(args))
-    end
-
-    val = safe_handler(state, val, current, _pathify(path), store)
+  if state ~= nil and isfunc(state.handler) then
+    local ref = pathify(path)
+    val = state.handler(state, val, current, ref, store)
   end
 
   return val
