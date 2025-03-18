@@ -7,14 +7,16 @@ local NULL_STRING = "null"
 
 local function readFileSync(path)
   local file = io.open(path, "r")
-  if not file then error("Cannot open file: " .. path) end
+  if not file then
+    error("Cannot open file: " .. path)
+  end
   local content = file:read("*a")
   file:close()
   return content
 end
 
 local function join(...)
-  return table.concat({ ... }, "/")
+  return table.concat({...}, "/")
 end
 
 local function fail(msg)
@@ -32,12 +34,11 @@ local function matchval(check, base)
   if type(check) == "string" and type(base) == "string" then
     -- Clean up base error string by removing file location and "Invalid data:" prefix
     local base_clean = base:match("Invalid data:%s*(.+)") or
-        base:match("[^:]+:%d+:%s*(.+)") or
-        base
+                         base:match("[^:]+:%d+:%s*(.+)") or base
 
     -- Handle the path format differences
     base_clean = base_clean:gsub("at %$TOP%.([^,]+)", "at %1") -- Replace "$TOP.a" with just "a"
-    base_clean = base_clean:gsub("at %$TOP", "at <root>")      -- Replace remaining "$TOP" with "<root>"
+    base_clean = base_clean:gsub("at %$TOP", "at <root>") -- Replace remaining "$TOP" with "<root>"
 
     -- Direct comparison with cleaned error message
     if check == base_clean then
@@ -69,7 +70,8 @@ local function match(check, base, walk, getpath, stringify)
     if type(val) ~= "table" then
       local baseval = getpath(path, base)
       if not matchval(val, baseval) then
-        fail("MATCH: " .. table.concat(path, ".") .. ": [" .. stringify(val) .. "] <=> [" .. stringify(baseval) .. "]")
+        fail("MATCH: " .. table.concat(path, ".") .. ": [" .. stringify(val) ..
+               "] <=> [" .. stringify(baseval) .. "]")
       end
     end
   end)
@@ -78,16 +80,17 @@ end
 local function runner(name, store, testfile, provider)
   local client = provider.test()
   local utility = client.utility()
-  local clone, getpath, inject, items, stringify, walk =
-      utility.struct.clone, utility.struct.getpath, utility.struct.inject,
-      utility.struct.items, utility.struct.stringify, utility.struct.walk
+  local clone, getpath, inject, items, stringify, walk = utility.struct.clone,
+    utility.struct.getpath, utility.struct.inject, utility.struct.items,
+    utility.struct.stringify, utility.struct.walk
 
   -- Parse with custom null handler
   local content = readFileSync(join(lfs.currentdir(), testfile))
   local alltests = json.decode(content, 1, NULL_STRING) -- Using 1,NULL_STRING format
 
   -- TODO: a more coherent namespace perhaps?
-  local spec = (alltests.primary and alltests.primary[name]) or alltests[name] or alltests
+  local spec =
+    (alltests.primary and alltests.primary[name]) or alltests[name] or alltests
 
   local clients = {}
   if spec.DEF then
@@ -118,10 +121,10 @@ local function runner(name, store, testfile, provider)
           testsubject = makesubject(testsubject)
         end
 
-        local args = { clone(entry["in"]) }
+        local args = {clone(entry["in"])}
 
         if entry.ctx then
-          args = { entry.ctx }
+          args = {entry.ctx}
         elseif entry.args then
           args = entry.args
         end
@@ -151,7 +154,11 @@ local function runner(name, store, testfile, provider)
         end
 
         if entry.match then
-          match(entry.match, { ["in"] = entry["in"], out = entry.res, ctx = entry.ctx }, walk, getpath, stringify)
+          match(entry.match, {
+            ["in"] = entry["in"],
+            out = entry.res,
+            ctx = entry.ctx
+          }, walk, getpath, stringify)
         end
       end)
 
@@ -162,11 +169,16 @@ local function runner(name, store, testfile, provider)
         if entry_err ~= nil then
           if entry_err == true or matchval(entry_err, err) then
             if entry.match then
-              match(entry.match, { ["in"] = entry["in"], out = entry.res, ctx = entry.ctx, err = err }, walk, getpath,
-                stringify)
+              match(entry.match, {
+                ["in"] = entry["in"],
+                out = entry.res,
+                ctx = entry.ctx,
+                err = err
+              }, walk, getpath, stringify)
             end
           else
-            fail("ERROR MATCH: [" .. stringify(entry_err) .. "] <=> [" .. err .. "]")
+            fail("ERROR MATCH: [" .. stringify(entry_err) .. "] <=> [" .. err ..
+                   "]")
           end
         else
           fail(err)

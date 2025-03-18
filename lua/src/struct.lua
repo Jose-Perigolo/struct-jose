@@ -1,5 +1,4 @@
 -- Copyright (c) 2025 Voxgig Ltd. MIT LICENSE.
-
 -- Voxgig Struct
 -- =============
 --
@@ -8,7 +7,6 @@
 -- "nodes", where a node is a list or map, and has named or indexed
 -- fields.  The general design principle is "by-example". Transform
 -- specifications mirror the desired output. This implementation is
-
 -- designed for porting to multiple language, and to be tolerant of
 -- undefined values.
 --
@@ -19,7 +17,6 @@
 -- - inject: inject values from a data store into a new data structure.
 -- - transform: transform a data structure to an example structure.
 -- - validate: validate a data structure against a shape specification.
-
 --
 -- Minor utilities
 -- - isnode, islist, ismap, iskey, isfunc: identify value kinds.
@@ -49,14 +46,11 @@
 -- (thankfully in most APIs, JSON nulls are not used). For example,
 -- the unit tests use the string "__NULL__" where necessary.
 -- 
-
-
 -- String constants are explicitly defined.
 local S_MKEYPRE = 'key:pre'
 local S_MKEYPOST = 'key:post'
 local S_MVAL = 'val'
 local S_MKEY = 'key'
-
 
 -- Special keys.
 
@@ -64,7 +58,6 @@ local S_DKEY = '`$KEY`'
 local S_DMETA = '`$META`'
 local S_DTOP = '$TOP'
 local S_DERRS = '$ERRS'
-
 
 -- General strings.
 
@@ -86,10 +79,8 @@ local S_DT = '.'
 local S_CN = ':'
 local S_KEY = 'KEY'
 
-
 -- The standard undefined value for this language.
 local UNDEF = nil
-
 
 -- Value is a defined list (array) with integer keys (indexes).
 local function islist(val)
@@ -103,7 +94,9 @@ local function islist(val)
   local max = 0
   for k, _ in pairs(val) do
     if type(k) == S_number then
-      if k > max then max = k end
+      if k > max then
+        max = k
+      end
       count = count + 1
     end
   end
@@ -141,7 +134,8 @@ end
 -- Value is a defined string (non-empty) or integer key.
 local function iskey(key)
   local keytype = type(key)
-  return (keytype == S_string and key ~= S_MT and key ~= S_null) or keytype == S_number
+  return (keytype == S_string and key ~= S_MT and key ~= S_null) or keytype ==
+           S_number
 end
 
 -- Check for an "empty" value - nil, empty string, array, object.
@@ -316,7 +310,7 @@ function items(val)
     -- Handle array-like tables
     for i, v in ipairs(val) do
       -- Lua is 1-indexed, so we need to adjust the index
-      table.insert(result, {i-1, v})
+      table.insert(result, {i - 1, v})
     end
   else
     -- Handle map-like tables
@@ -490,7 +484,6 @@ function stringify(val, maxlen)
 
   return str
 end
-
 
 -- Clone a JSON-like data structure.
 -- NOTE: function value references are copied, *not* cloned.
@@ -670,7 +663,7 @@ local function pathify(val, from)
           table.insert(mapped, S_MT .. tostring(math.floor(p)))
         else
           -- Replace dots with empty string for strings
-          local replacedP = string.gsub(p, '%'.. S_DT, S_MT)
+          local replacedP = string.gsub(p, '%' .. S_DT, S_MT)
           table.insert(mapped, replacedP)
         end
       end
@@ -679,7 +672,6 @@ local function pathify(val, from)
       pathstr = table.concat(mapped, S_DT)
     end
   end
-
 
   -- Handle unknown paths
   if pathstr == UNDEF then
@@ -696,15 +688,9 @@ local function pathify(val, from)
 end
 
 -- Walk a data structure depth first, applying a function to each value.
-function walk( 
-  -- These arguments are the public interface.
-  val, 
-  apply,
-  -- These arguments are used for recursive state.
-  key, 
-  parent, 
-  path
-  )
+function walk( -- These arguments are the public interface.
+val, apply, -- These arguments are used for recursive state.
+key, parent, path)
 
   path = path or {}
 
@@ -835,7 +821,8 @@ function getpath(path, store, current, state)
   local base = getprop(state, S_base)
 
   -- An empty path (incl empty string) just finds the store
-  if path == nil or store == nil or (parts ~= UNDEF and #parts == 1 and parts[1] == S_MT) then
+  if path == nil or store == nil or
+    (parts ~= UNDEF and #parts == 1 and parts[1] == S_MT) then
     -- The actual store data may be in a store sub property, defined by state.base
     val = getprop(store, base, store)
   elseif parts ~= UNDEF and #parts > 0 then
@@ -856,7 +843,7 @@ function getpath(path, store, current, state)
 
     local first = getprop(root, part)
 
-      -- At top level, check state.base, if provided
+    -- At top level, check state.base, if provided
     if first == UNDEF and pI == 1 then
       val = getprop(getprop(root, base), part)
     else
@@ -1005,23 +992,25 @@ function inject(val, store, modify, current, state)
       mode = S.MVAL,
       full = false,
       keyI = 1,
-      keys = { S.DTOP },
+      keys = {S.DTOP},
       key = S.DTOP,
       val = val,
       parent = parent,
-      path = { S.DTOP },
-      nodes = { parent },
+      path = {S.DTOP},
+      nodes = {parent},
       handler = injecthandler,
       base = S.DTOP,
       modify = modify,
       errs = getprop(store, S.DERRS, {}),
-      meta = {},
+      meta = {}
     }
   end
 
   -- Resolve current node in store for local paths
   if current == nil then
-    current = { [S.DTOP] = store }
+    current = {
+      [S.DTOP] = store
+    }
   else
     local parentkey = state.path[#state.path - 1]
     current = parentkey == nil and current or getprop(current, parentkey)
@@ -1107,7 +1096,7 @@ function inject(val, store, modify, current, state)
         handler = injecthandler,
         base = state.base,
         errs = state.errs,
-        meta = state.meta,
+        meta = state.meta
       }
 
       -- Perform the key:pre mode injection on the child key
@@ -1149,14 +1138,8 @@ function inject(val, store, modify, current, state)
 
   -- Custom modification
   if modify then
-    modify(
-      val,
-      getprop(state, S.key),
-      getprop(state, S.parent),
-      state,
-      current,
-      store
-    )
+    modify(val, getprop(state, S.key), getprop(state, S.parent), state, current,
+      store)
   end
 
   -- Original val reference may no longer be correct
@@ -1294,7 +1277,7 @@ local function transform_MERGE(state, _val, store)
 
   -- For numeric merge keys, use the special handling with mergelist
   if key:match("^`?%$MERGE[0-9]+`?$") then
-    local mergelist = { parent }
+    local mergelist = {parent}
     for _, arg in ipairs(args) do
       if type(arg) == 'table' then
         table.insert(mergelist, arg)
@@ -1342,7 +1325,8 @@ end
 -- Convert a node to a list
 -- Format: ['`$EACH`', '`source-path-of-node`', child-template]
 local function transform_EACH(state, _val, current, store)
-  local mode, keys, path, parent, nodes = state.mode, state.keys, state.path, state.parent, state.nodes
+  local mode, keys, path, parent, nodes = state.mode, state.keys, state.path,
+    state.parent, state.nodes
 
   -- Remove arguments to avoid spurious processing
   if keys then
@@ -1357,7 +1341,7 @@ local function transform_EACH(state, _val, current, store)
   end
 
   -- Get arguments
-  local srcpath = parent[2]      -- Path to source data
+  local srcpath = parent[2] -- Path to source data
   local child = clone(parent[3]) -- Child template
 
   -- Source data
@@ -1381,7 +1365,9 @@ local function transform_EACH(state, _val, current, store)
       for k, _ in pairs(src) do
         local childClone = clone(child)
         -- Make a note of the key for $KEY transforms
-        childClone[S.DMETA] = { KEY = k }
+        childClone[S.DMETA] = {
+          KEY = k
+        }
         table.insert(tval, childClone)
       end
     end
@@ -1393,15 +1379,12 @@ local function transform_EACH(state, _val, current, store)
   end
 
   -- Parent structure
-  tcurrent = { [S.DTOP] = tcurrent }
+  tcurrent = {
+    [S.DTOP] = tcurrent
+  }
 
   -- Build the substructure
-  tval = inject(
-    tval,
-    store,
-    state.modify,
-    tcurrent
-  )
+  tval = inject(tval, store, state.modify, tcurrent)
 
   setprop(target, tkey, tval)
 
@@ -1412,16 +1395,18 @@ end
 -- Convert a node to a map
 -- Format: { '`$PACK`':['`source-path`', child-template]}
 local function transform_PACK(state, _val, current, store)
-  local mode, key, path, parent, nodes = state.mode, state.key, state.path, state.parent, state.nodes
+  local mode, key, path, parent, nodes = state.mode, state.key, state.path,
+    state.parent, state.nodes
 
   -- Defensive context checks
-  if mode ~= S.MKEYPRE or type(key) ~= 'string' or path == UNDEF or nodes == UNDEF then
+  if mode ~= S.MKEYPRE or type(key) ~= 'string' or path == UNDEF or nodes ==
+    UNDEF then
     return UNDEF
   end
 
   -- Get arguments
   local args = parent[key]
-  local srcpath = args[1]      -- Path to source data
+  local srcpath = args[1] -- Path to source data
   local child = clone(args[2]) -- Child template
 
   -- Find key and target node
@@ -1474,15 +1459,12 @@ local function transform_PACK(state, _val, current, store)
     setprop(tcurrent, kn, n)
   end
 
-  tcurrent = { [S.DTOP] = tcurrent }
+  tcurrent = {
+    [S.DTOP] = tcurrent
+  }
 
   -- Build substructure
-  tval = inject(
-    tval,
-    store,
-    state.modify,
-    tcurrent
-  )
+  tval = inject(tval, store, state.modify, tcurrent)
 
   setprop(target, tkey, tval)
 
@@ -1493,11 +1475,10 @@ end
 -- Transform data using spec.
 -- Only operates on static JSON-like data.
 -- Arrays are treated as if they are objects with indices as keys.
-local function transform(
-    data,  -- Source data to transform into new data (original not mutated)
-    spec,  -- Transform specification; output follows this shape
-    extra, -- Additional store of data and transforms
-    modify -- Optionally modify individual values
+local function transform(data, -- Source data to transform into new data (original not mutated)
+  spec, -- Transform specification; output follows this shape
+  extra, -- Additional store of data and transforms
+  modify -- Optionally modify individual values
 )
   -- Clone the spec so that the clone can be modified in place as the transform result
   spec = clone(spec)
@@ -1516,10 +1497,7 @@ local function transform(
     end
   end
 
-  local dataClone = merge({
-    clone(extraData or {}),
-    clone(data or {})
-  })
+  local dataClone = merge({clone(extraData or {}), clone(data or {})})
 
   -- Define a top level store that provides transform operations
   local store = {
@@ -1527,10 +1505,14 @@ local function transform(
     [S.DTOP] = dataClone,
 
     -- Escape backtick (this also works inside backticks)
-    [S.DS .. 'BT'] = function() return S.BT end,
+    [S.DS .. 'BT'] = function()
+      return S.BT
+    end,
 
     -- Escape dollar sign (this also works inside backticks)
-    [S.DS .. 'DS'] = function() return S.DS end,
+    [S.DS .. 'DS'] = function()
+      return S.DS
+    end,
 
     -- Insert current date and time as an ISO string
     [S.DS .. 'WHEN'] = function()
@@ -1543,7 +1525,7 @@ local function transform(
     [S.DS .. 'META'] = transform_META,
     [S.DS .. 'MERGE'] = transform_MERGE,
     [S.DS .. 'EACH'] = transform_EACH,
-    [S.DS .. 'PACK'] = transform_PACK,
+    [S.DS .. 'PACK'] = transform_PACK
   }
 
   -- Add custom extra transforms, if any
@@ -1561,8 +1543,8 @@ local function _invalidTypeMsg(path, type, vt, v)
   -- Deal with lua table type
   vt = islist(v) and vt == 'table' and S.array or vt
   v = stringify(v)
-  return 'Expected ' .. type .. ' at ' .. _pathify(path) ..
-      ', found ' .. (v ~= UNDEF and vt .. ': ' or '') .. v
+  return 'Expected ' .. type .. ' at ' .. _pathify(path) .. ', found ' ..
+           (v ~= UNDEF and vt .. ': ' or '') .. v
 end
 
 -- A required string value. NOTE: Rejects empty strings.
@@ -1659,7 +1641,8 @@ end
 -- Map syntax: {'`$CHILD`': child-template }
 -- List syntax: ['`$CHILD`', child-template ]
 local function validate_CHILD(state, _val, current)
-  local mode, key, parent, keys, path = state.mode, state.key, state.parent, state.keys, state.path
+  local mode, key, parent, keys, path = state.mode, state.key, state.parent,
+    state.keys, state.path
 
   -- Setup data structures for validation by cloning child template
 
@@ -1675,8 +1658,9 @@ local function validate_CHILD(state, _val, current)
       -- Create an empty object as default
       tval = {}
     elseif not ismap(tval) then
-      table.insert(state.errs, _invalidTypeMsg(
-        { unpack(state.path, 1, #state.path - 1) }, S.object, type(tval), tval))
+      table.insert(state.errs,
+        _invalidTypeMsg({unpack(state.path, 1, #state.path - 1)}, S.object,
+          type(tval), tval))
       return UNDEF
     end
 
@@ -1708,8 +1692,9 @@ local function validate_CHILD(state, _val, current)
       end
       return UNDEF
     elseif not islist(current) then
-      table.insert(state.errs, _invalidTypeMsg(
-        { unpack(state.path, 1, #state.path - 1) }, S.array, type(current), current))
+      table.insert(state.errs,
+        _invalidTypeMsg({unpack(state.path, 1, #state.path - 1)}, S.array,
+          type(current), current))
       state.keyI = #parent
       return current
       -- Clone children and reset state key index
@@ -1733,7 +1718,8 @@ end
 -- Match at least one of the specified shapes
 -- Syntax: ['`$ONE`', alt0, alt1, ...]
 local function validate_ONE(state, _val, current)
-  local mode, parent, path, nodes = state.mode, state.parent, state.path, state.nodes
+  local mode, parent, path, nodes = state.mode, state.parent, state.path,
+    state.nodes
 
   -- Only operate in val mode, since parent is a list
   if mode == S.MVAL then
@@ -1776,28 +1762,20 @@ local function validate_ONE(state, _val, current)
     end
 
     -- Replace `$NAME` with name
-    local valDescStr = table.concat(valdesc, ', '):gsub('`%$([A-Z]+)`', function(p1)
-      return string.lower(p1)
-    end)
+    local valDescStr = table.concat(valdesc, ', '):gsub('`%$([A-Z]+)`',
+      function(p1)
+        return string.lower(p1)
+      end)
 
-    table.insert(state.errs, _invalidTypeMsg(
-      { unpack(state.path, 1, #state.path - 1) },
-      'one of ' .. valDescStr,
-      type(current), current))
+    table.insert(state.errs,
+      _invalidTypeMsg({unpack(state.path, 1, #state.path - 1)},
+        'one of ' .. valDescStr, type(current), current))
   end
 end
 
-
 -- This is the "modify" argument to inject. Use this to perform
 -- generic validation. Runs *after* any special commands.
-local function validation(
-    val,
-    key,
-    parent,
-    state,
-    current,
-    _store
-)
+local function validation(val, key, parent, state, current, _store)
   -- Current val to verify
   local cval = getprop(current, key)
 
@@ -1821,7 +1799,8 @@ local function validation(
     return UNDEF
   elseif ismap(cval) then
     if not ismap(val) then
-      table.insert(state.errs, _invalidTypeMsg(state.path, islist(val) and S.array or t, ct, cval))
+      table.insert(state.errs, _invalidTypeMsg(state.path,
+        islist(val) and S.array or t, ct, cval))
       return UNDEF
     end
 
@@ -1839,12 +1818,13 @@ local function validation(
 
       -- Closed object, so reject extra keys not in shape
       if #badkeys > 0 then
-        table.insert(state.errs, 'Unexpected keys at ' .. _pathify(state.path) ..
-          ': ' .. table.concat(badkeys, ', '))
+        table.insert(state.errs,
+          'Unexpected keys at ' .. _pathify(state.path) .. ': ' ..
+            table.concat(badkeys, ', '))
       end
     else
       -- Object is open, so merge in extra keys
-      merge({ pval, cval })
+      merge({pval, cval})
       if isnode(pval) then
         pval['`$OPEN`'] = UNDEF
       end
@@ -1871,41 +1851,35 @@ end
 -- provided to specify required values. Thus shape {a='`$STRING`'}
 -- validates {a='A'} but not {a=1}. Empty map or list means the node
 -- is open, and if missing an empty default is inserted.
-local function validate(
-    data,       -- Source data to transform into new data (original not mutated)
-    spec,       -- Transform specification; output follows this shape
-    extra,      -- Additional custom checks
-    collecterrs -- Optionally collect errors
+local function validate(data, -- Source data to transform into new data (original not mutated)
+  spec, -- Transform specification; output follows this shape
+  extra, -- Additional custom checks
+  collecterrs -- Optionally collect errors
 )
   local errs = collecterrs or {}
-  local out = transform(
-    data,
-    spec,
-    {
-      -- A special top level value to collect errors
-      [S.DERRS] = errs,
+  local out = transform(data, spec, {
+    -- A special top level value to collect errors
+    [S.DERRS] = errs,
 
-      -- Remove the transform commands
-      [S.DS .. 'DELETE'] = UNDEF,
-      [S.DS .. 'COPY'] = UNDEF,
-      [S.DS .. 'KEY'] = UNDEF,
-      [S.DS .. 'META'] = UNDEF,
-      [S.DS .. 'MERGE'] = UNDEF,
-      [S.DS .. 'EACH'] = UNDEF,
-      [S.DS .. 'PACK'] = UNDEF,
+    -- Remove the transform commands
+    [S.DS .. 'DELETE'] = UNDEF,
+    [S.DS .. 'COPY'] = UNDEF,
+    [S.DS .. 'KEY'] = UNDEF,
+    [S.DS .. 'META'] = UNDEF,
+    [S.DS .. 'MERGE'] = UNDEF,
+    [S.DS .. 'EACH'] = UNDEF,
+    [S.DS .. 'PACK'] = UNDEF,
 
-      [S.DS .. 'STRING'] = validate_STRING,
-      [S.DS .. 'NUMBER'] = validate_NUMBER,
-      [S.DS .. 'BOOLEAN'] = validate_BOOLEAN,
-      [S.DS .. 'OBJECT'] = validate_OBJECT,
-      [S.DS .. 'ARRAY'] = validate_ARRAY,
-      [S.DS .. 'FUNCTION'] = validate_FUNCTION,
-      [S.DS .. 'ANY'] = validate_ANY,
-      [S.DS .. 'CHILD'] = validate_CHILD,
-      [S.DS .. 'ONE'] = validate_ONE,
-    },
-    validation
-  )
+    [S.DS .. 'STRING'] = validate_STRING,
+    [S.DS .. 'NUMBER'] = validate_NUMBER,
+    [S.DS .. 'BOOLEAN'] = validate_BOOLEAN,
+    [S.DS .. 'OBJECT'] = validate_OBJECT,
+    [S.DS .. 'ARRAY'] = validate_ARRAY,
+    [S.DS .. 'FUNCTION'] = validate_FUNCTION,
+    [S.DS .. 'ANY'] = validate_ANY,
+    [S.DS .. 'CHILD'] = validate_CHILD,
+    [S.DS .. 'ONE'] = validate_ONE
+  }, validation)
 
   if #errs > 0 and collecterrs == UNDEF then
     error('Invalid data: ' .. table.concat(errs, '\n'))
@@ -1938,5 +1912,5 @@ return {
   transform = transform,
   validate = validate,
   walk = walk,
-  pathify = pathify,
+  pathify = pathify
 }
