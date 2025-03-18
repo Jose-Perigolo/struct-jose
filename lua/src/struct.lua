@@ -141,7 +141,7 @@ end
 -- Check for an "empty" value - nil, empty string, array, object.
 function isempty(val)
   -- Check if the value is nil
-  if val == nil or val == "null" then
+  if val == nil or val == S_null then
     return true
   end
 
