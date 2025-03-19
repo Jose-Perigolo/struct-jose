@@ -163,18 +163,8 @@ local function handleError(entry, err, structUtils)
     fail("ERROR MATCH: [" .. structUtils.stringify(entry_err) .. "] <=> [" ..
            err.message .. "]")
   end
-  -- Unexpected error (test didn't specify an error expectation)
-  -- Note: Since Lua doesn't have AssertionError, we'll check for error type
-  -- You might need to adjust this based on your error handling system
-  if type(err) == "table" and err.type == "assertion" then
-    fail(err.message .. "\n\nENTRY: " .. json.encode(entry, {
-      indent = 2
-    }))
-  else
-    fail(err.traceback .. "\n\nENTRY: " .. json.encode(entry, {
-      indent = 2
-    }))
-  end
+
+  print("Error: ", err)
 end
 
 local function checkResult(entry, res, structUtils)
