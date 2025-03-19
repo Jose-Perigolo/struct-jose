@@ -85,7 +85,8 @@ local UNDEF = nil
 -- Value is a defined list (array) with integer keys (indexes).
 local function islist(val)
   -- Check if it's a table
-  if type(val) ~= "table" then
+  if type(val) ~= "table" or
+    (getmetatable(val) and getmetatable(val).__jsontype == "object") then
     return false
   end
 
@@ -108,7 +109,8 @@ end
 -- Value is a defined map (hash) with string keys.
 function ismap(val)
   -- Check if the value is a table
-  if type(val) ~= "table" then
+  if type(val) ~= "table" or
+    (getmetatable(val) and getmetatable(val).__jsontype == "array") then
     return false
   end
 
@@ -512,6 +514,9 @@ function clone(val, flags)
     local refs = {} -- To store function references
     local new_table = {}
 
+    -- Get the original metatable if any
+    local mt = getmetatable(val)
+
     -- Clone table contents
     for k, v in pairs(val) do
       -- Handle function values specially
@@ -536,6 +541,11 @@ function clone(val, flags)
           end
         end
       end
+    end
+
+    -- Restore the original metatable if it existed
+    if mt then
+      setmetatable(new_table, mt)
     end
 
     return new_table
@@ -567,6 +577,11 @@ local function setprop(parent, key, val)
   elseif islist(parent) then
     -- Ensure key is an integer
     local keyI = tonumber(key)
+    setmetatable(parent, {
+      __jsontype = {
+        type = 'array'
+      }
+    })
 
     if keyI == nil then
       return parent
@@ -688,9 +703,9 @@ local function pathify(val, from)
 end
 
 -- Walk a data structure depth first, applying a function to each value.
-function walk( -- These arguments are the public interface.
-val, apply, -- These arguments are used for recursive state.
-key, parent, path)
+function walk(val, apply, -- These arguments are the public interface.
+key, parent, path -- These arguments are used for recursive state.
+)
 
   path = path or {}
 
@@ -717,12 +732,12 @@ end
 -- override each other, and do *not* merge. The first element is
 -- modified.
 function merge(val)
+  local out = UNDEF
+
   -- Handle edge cases
-  if type(val) ~= "table" or val[1] == nil then
+  if not islist(val) then
     return val
   end
-
-  local out = UNDEF
 
   local list = val
   local lenlist = #list
@@ -749,7 +764,8 @@ function merge(val)
         out = obj
       else
         -- Node stack walking down the current obj
-        local cur = {out}
+        -- NOTE: clone is used to avoid reference cycles in the stack
+        local cur = clone(out)
         local cI = 1
 
         local function merger(key, val, parent, path)
@@ -770,18 +786,18 @@ function merge(val)
 
           -- Create node if needed
           if not isnode(cur[cI]) then
-            cur[cI] = {}
+            if islist(val) then
+              -- Fix: Use the incoming value's type for determining array vs object
+              cur[cI] = setmetatable({}, {
+                __jsontype = "array"
+              })
+            else
+              cur[cI] = {}
+            end
           end
 
-          -- Node child is just ahead of us on the stack, since
-          -- walk traverses leaves before nodes
-          if isnode(val) and (not isempty(val)) then
-            setprop(cur[cI], key, cur[cI + 1])
-            cur[cI + 1] = UNDEF
-          else
-            -- Scalar child
-            setprop(cur[cI], key, val)
-          end
+          -- Scalar child
+          setprop(cur[cI], key, val)
 
           return val
         end
