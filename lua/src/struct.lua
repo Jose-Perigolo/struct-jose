@@ -90,6 +90,10 @@ local function islist(val)
     return false
   end
 
+  if getmetatable(val) and getmetatable(val).__jsontype == "array" then
+    return true
+  end
+
   -- Count total elements and max integer key
   local count = 0
   local max = 0
@@ -112,6 +116,10 @@ function ismap(val)
   if type(val) ~= "table" or
     (getmetatable(val) and getmetatable(val).__jsontype == "array") then
     return false
+  end
+
+  if getmetatable(val) and getmetatable(val).__jsontype == "object" then
+    return true
   end
 
   -- Iterate over the table to check if it has string keys
