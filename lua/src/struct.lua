@@ -796,7 +796,12 @@ function merge(val)
             end
           end
 
-          -- Scalar child
+          -- To avoid reference cycles, we need to clone the current value
+          -- Thus making a simple stack handling to keep track of processed nodes
+          -- does not work. As the metatable data is lost. And will not distinguish
+          -- between an array and an object. Because setprop already handles
+          -- proper assignment based on the node types, we can just pass value without
+          -- changing the cI.
           setprop(cur[cI], key, val)
 
           return val
