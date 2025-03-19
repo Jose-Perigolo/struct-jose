@@ -837,27 +837,31 @@ end
 function getpath(path, store, current, state)
   -- Operate on a string array
   local parts
+
   if islist(path) then
     parts = path
   elseif type(path) == S_string then
     parts = {}
-    for part in string.gmatch(path, "[^%.]+") do
+    for part in string.gmatch(path .. S_DT,
+      "([^" .. S_DT .. "]*)(" .. S_DT .. ")") do
       table.insert(parts, part)
     end
+    if path == "" then
+      parts = {S_MT}
+    end
   else
-    parts = UNDEF
+    return nil
   end
 
   local root = store
   local val = store
-  local base = getprop(state, S_base)
+  local base = state and state.base or nil
 
   -- An empty path (incl empty string) just finds the store
-  if path == nil or store == nil or
-    (parts ~= UNDEF and #parts == 1 and parts[1] == S_MT) then
+  if path == nil or store == nil or (#parts == 1 and parts[1] == S_MT) then
     -- The actual store data may be in a store sub property, defined by state.base
     val = getprop(store, base, store)
-  elseif parts ~= UNDEF and #parts > 0 then
+  elseif #parts > 0 then
     local pI = 1
 
     -- Relative path uses `current` argument
@@ -866,17 +870,11 @@ function getpath(path, store, current, state)
       root = current
     end
 
-    local part
-    if pI <= #parts then
-      part = parts[pI]
-    else
-      part = UNDEF
-    end
-
+    local part = pI <= #parts and parts[pI] or nil
     local first = getprop(root, part)
 
     -- At top level, check state.base, if provided
-    if first == UNDEF and pI == 1 then
+    if first == nil and pI == 1 then
       val = getprop(getprop(root, base), part)
     else
       val = first
@@ -884,7 +882,7 @@ function getpath(path, store, current, state)
 
     -- Move along the path, trying to descend into the store
     pI = pI + 1
-    while val ~= UNDEF and pI <= #parts do
+    while val ~= nil and pI <= #parts do
       val = getprop(val, parts[pI])
       pI = pI + 1
     end
