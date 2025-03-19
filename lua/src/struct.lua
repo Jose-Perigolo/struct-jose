@@ -756,7 +756,7 @@ function merge(val)
     return list[1]
   end
 
-  -- -- getprop expects 0-indexed list, so we need to adjust
+  -- getprop expects 0-indexed list, so we need to adjust
   out = getprop(list, 0, {})
 
   for oI = 2, lenlist do
@@ -772,8 +772,8 @@ function merge(val)
         out = obj
       else
         -- Node stack walking down the current obj
-        -- NOTE: clone is used to avoid reference cycles in the stack
-        local cur = clone(out)
+        local cur = {}
+        cur[1] = out
         local cI = 1
 
         local function merger(key, val, parent, path)
@@ -783,7 +783,7 @@ function merge(val)
 
           -- Get the current value at the current path in obj
           local lenpath = #path
-          cI = lenpath - 1
+          cI = lenpath
           if cur[cI] == UNDEF then
             local pathSlice = {}
             for i = 1, lenpath - 1 do
@@ -794,9 +794,9 @@ function merge(val)
 
           -- Create node if needed
           if not isnode(cur[cI]) then
-            if islist(val) then
-              -- Fix: Use the incoming value's type for determining array vs object
-              cur[cI] = setmetatable({}, {
+            if islist(parent) then
+              cur[cI] = {}
+              setmetatable(cur[cI], {
                 __jsontype = "array"
               })
             else
@@ -804,19 +804,22 @@ function merge(val)
             end
           end
 
-          -- To avoid reference cycles, we need to clone the current value
-          -- Thus making a simple stack handling to keep track of processed nodes
-          -- does not work. As the metatable data is lost. And will not distinguish
-          -- between an array and an object. Because setprop already handles
-          -- proper assignment based on the node types, we can just pass value without
-          -- changing the cI.
-          setprop(cur[cI], key, val)
+          -- Node child is just ahead of us on the stack, since
+          -- `walk` traverses leaves before nodes.
+          if isnode(val) and not isempty(val) then
+            setprop(cur[cI], key, cur[cI + 1])
+            cur[cI + 1] = UNDEF
+          else
+            -- Scalar child
+            setprop(cur[cI], key, val)
+          end
 
           return val
         end
 
         -- Walk overriding node, creating paths in output as needed
         walk(obj, merger)
+        out = cur[1]
       end
     end
   end
