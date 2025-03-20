@@ -146,9 +146,11 @@ local function handleError(entry, err, structUtils)
   entry.thrown = err
 
   local entry_err = entry.err
+  local err_message = (type(err) == "table" and err.message) or tostring(err)
 
+  -- Handle expected errors
   if entry_err ~= nil then
-    if entry_err == true or matchval(entry_err, err.message, structUtils) then
+    if entry_err == true or matchval(entry_err, err_message, structUtils) then
       if entry.match then
         match(entry.match, {
           ["in"] = entry["in"],
@@ -160,11 +162,12 @@ local function handleError(entry, err, structUtils)
       return
     end
 
-    fail("ERROR MATCH: [" .. structUtils.stringify(entry_err) .. "] <=> [" ..
-           err.message .. "]")
+    error("ERROR MATCH: [" .. structUtils.stringify(entry_err) .. "] <=> [" ..
+            err_message .. "]")
+    return
   end
 
-  print("Error: ", err)
+  error(err_message .. "\n\nENTRY: " .. structUtils.stringify(entry))
 end
 
 local function checkResult(entry, res, structUtils)
