@@ -950,10 +950,34 @@ function _injectstr(val, store, current, state)
     -- Ensure inject value is a string.
     if found == UNDEF then
       return S_MT
-    elseif type(found) == S_object then
-      -- Use json library for JSON.stringify equivalent
-      local ok, result = pcall(require("dkjson").encode, found)
-      return ok and result or tostring(found)
+    elseif type(found) == "table" then
+      -- Handle maps and arrays (tables in Lua) by converting to JSON
+      local dkjson = require("dkjson")
+
+      -- Ensure proper encoding based on the table type
+      local mt = getmetatable(found)
+      if mt and mt.__jsontype then
+        -- Use the existing jsontype from metatable
+      elseif islist(found) then
+        -- Set array jsontype for list-like tables 
+        setmetatable(found, {
+          __jsontype = "array"
+        })
+      elseif ismap(found) then
+        -- Set object jsontype for map-like tables
+        setmetatable(found, {
+          __jsontype = "object"
+        })
+      end
+
+      -- Convert to JSON
+      local ok, result = pcall(dkjson.encode, found)
+      if ok and result then
+        return result
+      else
+        -- More graceful fallback
+        return (islist(found) and "[...]" or "{...}")
+      end
     else
       return tostring(found)
     end
