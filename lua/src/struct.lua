@@ -1165,31 +1165,21 @@ function inject(val, store, modify, current, state)
   return getprop(state.parent, S_DTOP)
 end
 
--- Delete a property from the parent node
--- Format: { key: '`$DELETE`' }
-local function transform_DELETE(state, _val, _current)
-  local mode, key, parent = state.mode, state.key, state.parent
+-- The transform_* functions are special command inject handlers (see Injector).
 
-  if mode == S.MKEYPRE then
-    return key
-  end
-
-  if mode == S.MKEYPOST then
-    -- Delete the property
-    setprop(parent, key, UNDEF)
-  end
-
+-- Delete a key from a map or list.
+local function transform_DELETE(state)
+  local key, parent = state.key, state.parent
+  setprop(parent, key, UNDEF)
   return UNDEF
 end
 
--- Copy value from source data
-local function transform_COPY(state, _val, current)
+-- Copy value from source data.
+function transform_COPY(state, _val, current)
   local mode, key, parent = state.mode, state.key, state.parent
 
-  local out
-  if mode:sub(1, 3) == S.MKEY:sub(1, 3) then
-    out = key
-  else
+  local out = key
+  if not string.sub(mode, 1, #S_MKEY) == S_MKEY then
     out = getprop(current, key)
     setprop(parent, key, out)
   end
@@ -1197,31 +1187,32 @@ local function transform_COPY(state, _val, current)
   return out
 end
 
--- As a value, inject the key of the parent node
--- As a key, define the name of the key property in the source object
+-- As a value, inject the key of the parent node.
+-- As a key, defined the name of the key property in the source object.
 local function transform_KEY(state, _val, current)
   local mode, path, parent = state.mode, state.path, state.parent
 
   -- Do nothing in val mode
-  if mode ~= S.MVAL then
+  if mode ~= S_MVAL then
     return UNDEF
   end
 
   -- Key is defined by $KEY meta property
-  local keyspec = getprop(parent, S.DKEY)
+  local keyspec = getprop(parent, S_DKEY)
   if keyspec ~= UNDEF then
-    setprop(parent, S.DKEY, UNDEF)
+    setprop(parent, S_DKEY, UNDEF)
     return getprop(current, keyspec)
   end
 
   -- Key is defined within general purpose $META object
-  return getprop(getprop(parent, S.DMETA), S.KEY, getprop(path, #path - 1))
+  return getprop(getprop(parent, S_DMETA), S_KEY, getprop(path, #path - 2))
 end
 
--- Store meta data about a node
+-- Store meta data about a node.  Does nothing itself, just used by
+-- other injectors, and is removed when called.
 local function transform_META(state)
   local parent = state.parent
-  setprop(parent, S.DMETA, UNDEF)
+  setprop(parent, S_DMETA, UNDEF)
   return UNDEF
 end
 
