@@ -8227,7 +8227,7 @@
               "bar": "BAR0"
             },
             "out": {
-              "zed": "ZED"
+              "zed": "ZED_BAR0"
             }
           },
           {
@@ -8236,7 +8236,7 @@
             },
             "client": "a",
             "out": {
-              "zed": "ZED1"
+              "zed": "ZED1_BAR1"
             }
           }
         ]

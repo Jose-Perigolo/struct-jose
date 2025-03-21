@@ -5,7 +5,12 @@
 
 import unittest
 
-from runner import runner, NULLMARK
+from runner import (
+    runner,
+    nullModifier,
+    NULLMARK,
+    Provider
+)
         
 from voxgig_struct import (
     clone,
@@ -35,59 +40,6 @@ from voxgig_struct import (
     walk,
     InjectState
 )
-
-
-def walkpath(_key, val, _parent, path):
-    if isinstance(val, str):
-        return val + '~' + '.'.join(str(p) for p in path)
-    return val
-
-
-def nullModifier(val, key, parent, _state=None, _current=None, _store=None):
-    if NULLMARK == val:
-        parent[key] = None
-    elif isinstance(val, str):
-        parent[key] = val.replace(NULLMARK, "null")
-        
-    
-class Provider:
-    def __init__(self, opts=None):
-        pass
-
-    @staticmethod
-    def test(opts=None):
-        return Provider(opts)
-
-    def utility(self):
-        return {
-            "struct": {
-                "clone": clone,
-                "escre": escre,
-                "escurl": escurl,
-                "getpath": getpath,
-                "getprop": getprop,
-                "haskey": haskey,
-                "inject": inject,
-                "isempty": isempty,
-                "isfunc": isfunc,
-                "iskey": iskey,
-                "islist": islist,
-                "ismap": ismap,
-                "isnode": isnode,
-                "items": items,
-                "joinurl": joinurl,
-                "keysof": keysof,
-                "merge": merge,
-                "pathify": pathify,
-                "setprop": setprop,
-                "stringify": stringify,
-                "strkey": strkey,
-                "transform": transform,
-                "typify": typify,
-                "validate": validate,
-                "walk": walk,
-            }
-        }
 
 
 provider = Provider.test()
@@ -246,8 +198,14 @@ class TestStruct(unittest.TestCase):
         self.assertTrue(callable(walk))
 
     def test_walk_basic(self):
+        def walkpath(_key, val, _parent, path):
+            if isinstance(val, str):
+                return val + '~' + '.'.join(str(p) for p in path)
+            return val
+
         def walk_wrapper(vin=None):
             return walk(vin, walkpath)
+
         runset(walkSpec["basic"], walk_wrapper)
 
         

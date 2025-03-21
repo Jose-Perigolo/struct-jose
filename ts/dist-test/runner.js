@@ -1,20 +1,65 @@
 "use strict";
+var __classPrivateFieldSet = (this && this.__classPrivateFieldSet) || function (receiver, state, value, kind, f) {
+    if (kind === "m") throw new TypeError("Private method is not writable");
+    if (kind === "a" && !f) throw new TypeError("Private accessor was defined without a setter");
+    if (typeof state === "function" ? receiver !== state || !f : !state.has(receiver)) throw new TypeError("Cannot write private member to an object whose class did not declare it");
+    return (kind === "a" ? f.call(receiver, value) : f ? f.value = value : state.set(receiver, value)), value;
+};
+var __classPrivateFieldGet = (this && this.__classPrivateFieldGet) || function (receiver, state, kind, f) {
+    if (kind === "a" && !f) throw new TypeError("Private accessor was defined without a getter");
+    if (typeof state === "function" ? receiver !== state || !f : !state.has(receiver)) throw new TypeError("Cannot read private member from an object whose class did not declare it");
+    return kind === "m" ? f : kind === "a" ? f.call(receiver) : f ? f.value : state.get(receiver);
+};
+var _Client_opts, _Client_utility;
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.NULLMARK = void 0;
+exports.Client = exports.NULLMARK = void 0;
 exports.nullModifier = nullModifier;
 exports.runner = runner;
 const node_fs_1 = require("node:fs");
 const node_path_1 = require("node:path");
 const node_assert_1 = require("node:assert");
+// Runner does make used of these struct utilities, and this usage is
+// circular. This is a trade-off tp make the runner code simpler.
+const struct_1 = require("../dist/struct");
+class Client {
+    constructor(opts) {
+        _Client_opts.set(this, void 0);
+        _Client_utility.set(this, void 0);
+        __classPrivateFieldSet(this, _Client_opts, opts, "f");
+        __classPrivateFieldSet(this, _Client_utility, {
+            struct: {
+                clone: struct_1.clone,
+                getpath: struct_1.getpath,
+                inject: struct_1.inject,
+                items: struct_1.items,
+                stringify: struct_1.stringify,
+                walk: struct_1.walk,
+            },
+            check: (ctx) => {
+                return {
+                    zed: 'ZED' +
+                        (null == __classPrivateFieldGet(this, _Client_opts, "f") ? '' : null == __classPrivateFieldGet(this, _Client_opts, "f").foo ? '0' : __classPrivateFieldGet(this, _Client_opts, "f").foo) +
+                        '_' +
+                        (null == ctx.bar ? '0' : ctx.bar)
+                };
+            }
+        }, "f");
+    }
+    static async test(opts) {
+        return new Client(opts || {});
+    }
+    utility() { return __classPrivateFieldGet(this, _Client_utility, "f"); }
+}
+exports.Client = Client;
+_Client_opts = new WeakMap(), _Client_utility = new WeakMap();
 const NULLMARK = '__NULL__';
 exports.NULLMARK = NULLMARK;
-async function runner(name, store, testfile, provider) {
-    const client = await provider.test();
+async function runner(name, store, testfile) {
+    const client = await Client.test();
     const utility = client.utility();
     const structUtils = utility.struct;
     let spec = resolveSpec(name, testfile);
-    let clients = await resolveClients(spec, store, provider, structUtils);
-    // let subject = (utility as any)[name]
+    let clients = await resolveClients(spec, store, structUtils);
     let subject = resolveSubject(name, utility);
     let runsetflags = async (testspec, flags, testsubject) => {
         subject = testsubject || subject;
@@ -50,7 +95,7 @@ function resolveSpec(name, testfile) {
     let spec = alltests.primary?.[name] || alltests[name] || alltests;
     return spec;
 }
-async function resolveClients(spec, store, provider, structUtils) {
+async function resolveClients(spec, store, structUtils) {
     const clients = {};
     if (spec.DEF && spec.DEF.client) {
         for (let cn in spec.DEF.client) {
@@ -59,7 +104,7 @@ async function resolveClients(spec, store, provider, structUtils) {
             if ('object' === typeof store && structUtils?.inject) {
                 structUtils.inject(copts, store);
             }
-            clients[cn] = await provider.test(copts);
+            clients[cn] = await Client.test(copts);
         }
     }
     return clients;
@@ -111,7 +156,7 @@ function handleError(entry, err, structUtils) {
 }
 function resolveArgs(entry, testpack) {
     // let args = [structUtils.clone(entry.in)]
-    let args = [clone(entry.in)];
+    let args = [(0, struct_1.clone)(entry.in)];
     if (entry.ctx) {
         args = [entry.ctx];
     }
@@ -121,7 +166,7 @@ function resolveArgs(entry, testpack) {
     if (entry.ctx || entry.args) {
         let first = args[0];
         if ('object' === typeof first && null != first) {
-            entry.ctx = first = args[0] = clone(args[0]);
+            entry.ctx = first = args[0] = (0, struct_1.clone)(args[0]);
             first.client = testpack.client;
             first.utility = testpack.utility;
         }
@@ -188,8 +233,5 @@ function nullModifier(val, key, parent) {
     else if ('string' === typeof val) {
         parent[key] = val.replaceAll('__NULL__', 'null');
     }
-}
-function clone(arg) {
-    return null == arg ? arg : JSON.parse(JSON.stringify(arg));
 }
 //# sourceMappingURL=runner.js.map

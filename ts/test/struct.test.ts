@@ -38,6 +38,7 @@ import type {
   Injection
 } from '../dist/struct'
 
+
 import {
   runner,
   nullModifier,
@@ -49,36 +50,7 @@ import {
 describe('struct', async () => {
 
   const { spec, runset, runsetflags } =
-    await runner('struct', {}, '../../build/test/test.json', {
-      test: async () => ({
-        utility: () => ({
-          struct: {
-            clone,
-            escre,
-            escurl,
-            getpath,
-            getprop,
-            inject,
-            isempty,
-            iskey,
-            islist,
-            ismap,
-            isnode,
-            items,
-            haskey,
-            keysof,
-            merge,
-            setprop,
-            stringify,
-            transform,
-            typify,
-            walk,
-            validate,
-            joinurl,
-          }
-        })
-      })
-    })
+    await runner('struct', {}, '../../build/test/test.json')
 
   const minorSpec = spec.minor
   const walkSpec = spec.walk

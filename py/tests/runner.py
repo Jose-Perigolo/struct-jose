@@ -5,12 +5,92 @@ import json
 import re
 from typing import Any, Dict, List, Callable
 
-
-class AssertionError_(AssertionError):
-    pass
+from voxgig_struct import (
+    clone,
+    escre,
+    escurl,
+    getpath,
+    getprop,
+    haskey,
+    inject,
+    isempty,
+    isfunc,
+    iskey,
+    islist,
+    ismap,
+    isnode,
+    items,
+    joinurl,
+    keysof,
+    merge,
+    pathify,
+    setprop,
+    stringify,
+    strkey,
+    transform,
+    typify,
+    validate,
+    walk,
+    InjectState
+)
 
 
 NULLMARK = '__NULL__'
+
+
+class StructUtils:
+    def __init__(self):
+        pass
+
+    def items(self, *args, **kwargs):
+        return items(*args, **kwargs)
+
+    def inject(self, *args, **kwargs):
+        return inject(*args, **kwargs)
+
+    def clone(self, *args, **kwargs):
+        return clone(*args, **kwargs)
+
+    def stringify(self, *args, **kwargs):
+        return stringify(*args, **kwargs)
+
+    
+
+class Utility:
+    def __init__(self, opts=None):
+        self._opts = opts
+        self._struct = StructUtils()
+
+    def struct(self):
+        return self._struct
+
+    def check(self, ctx):
+        zed = "ZED"
+    
+        if self._opts is None:
+            zed += ""
+        else:
+            foo = self._opts.get("foo")
+            zed += "0" if foo is None else str(foo)
+
+        zed += "_"
+        zed += str(ctx.get("bar"))
+
+        return {"zed": zed}
+        
+
+class Provider:
+    def __init__(self, opts=None):
+        self._utility = Utility(opts)
+
+    @staticmethod
+    def test(opts=None):
+        return Provider(opts)
+
+    def utility(self):
+        return self._utility
+
+
 
 
 def runner(
@@ -21,7 +101,7 @@ def runner(
 ):
     client = provider.test()
     utility = client.utility()
-    structUtils = utility["struct"] 
+    structUtils = utility.struct()
     
     spec = resolve_spec(name, testfile)
     clients = resolve_clients(spec, store, provider, structUtils)
@@ -81,13 +161,13 @@ def resolve_spec(name: str, testfile: str) -> Dict[str, Any]:
 def resolve_clients(spec: Dict[str, Any], store: Any, provider: Any, structUtils: Dict[str, Any]) -> Dict[str, Any]:
     clients = {}
     if 'DEF' in spec and 'client' in spec['DEF']:
-        for client_name, client_val in structUtils["items"](spec['DEF']['client']):
+        for client_name, client_val in structUtils.items(spec['DEF']['client']):
             # Get client options
             client_opts = client_val.get('test', {}).get('options', {})
             
             # Apply store injections if needed
             if isinstance(store, dict):
-                structUtils["inject"](client_opts, store)
+                structUtils.inject(client_opts, store)
                 
             # Create and store the client
             clients[client_name] = provider.test(client_opts)
@@ -100,9 +180,7 @@ def resolve_subject(name: str, container: Any):
 
 
 def check_result(entry, res, structUtils):
-    # If we don't have a match pattern or have an expected output, compare directly
     if 'match' not in entry or 'out' in entry:
-        # Strip functions by doing a JSON round trip, like TypeScript's JSON.parse(JSON.stringify())
         try:
             cleaned_res = json.loads(json.dumps(res, default=str))
         except:
@@ -112,9 +190,9 @@ def check_result(entry, res, structUtils):
         # Compare result with expected output using deep equality
         if cleaned_res != entry.get('out'):
             print('ENTRY', entry.get('out'), '|||', cleaned_res)
-            raise AssertionError_(
+            raise AssertionError(
                 f"Expected: {entry.get('out')}, got: {cleaned_res}\n"
-                f"Entry: {json.dumps(entry, indent=2)}"
+                f"Entry: {json.dumps(entry, indent=2, default=jsonfallback)}"
             )
     
     # If we have a match pattern, use it
@@ -151,19 +229,20 @@ def handle_error(entry, err, structUtils):
         
         # Expected error didn't match the actual error
         raise AssertionError_(
-            f"ERROR MATCH: [{structUtils['stringify'](entry_err)}] <=> [{str(err)}]"
+            f"ERROR MATCH: [{structUtils.stringify(entry_err)}] <=> [{str(err)}]"
         )
     # If the test doesn't expect an error
     elif isinstance(err, AssertionError):
         # Propagate assertion errors with added context
         raise AssertionError_(
-            f"{str(err)}\n\nENTRY: {json.dumps(entry, indent=2)}"
+            f"{str(err)}\n\nENTRY: {json.dumps(entry, indent=2, default=jsonfallback)}"
         )
     else:
         # For other errors, include the full error stack
         import traceback
         raise AssertionError_(
-            f"{traceback.format_exc()}\nENTRY: {json.dumps(entry, indent=2)}"
+            f"{traceback.format_exc()}\nENTRY: "+
+            f"{json.dumps(entry, indent=2, default=jsonfallback)}"
         )
 
     
@@ -191,7 +270,7 @@ def resolve_testpack(
 
 def resolve_args(entry, testpack, structUtils):
     # Default to using the input as the only argument
-    args = [structUtils["clone"](entry['in'])] if 'in' in entry else []
+    args = [structUtils.clone(entry['in'])] if 'in' in entry else []
     
     # If entry specifies context or arguments, use those instead
     if 'ctx' in entry:
@@ -204,7 +283,7 @@ def resolve_args(entry, testpack, structUtils):
         first_arg = args[0]
         if isinstance(first_arg, dict):
             # Clone the argument
-            first_arg = structUtils["clone"](first_arg)
+            first_arg = structUtils.clone(first_arg)
             args[0] = first_arg
             entry['ctx'] = first_arg
             
@@ -257,22 +336,8 @@ def fixJSON(obj, flags):
     return obj
 
 
-# def unfixJSON(obj, flags=None):
-#     if flags is None:
-#         flags = {"json_null": True}
-        
-#     # Handle NULL marker
-#     if NULLMARK == obj and flags.get("json_null", True):
-#         return None
-        
-#     # Handle collections recursively
-#     elif isinstance(obj, list):
-#         return [unfixJSON(item, flags) for item in obj]
-#     elif isinstance(obj, dict):
-#         return {k: unfixJSON(v, flags) for k, v in obj.items()}
-        
-#     # Return everything else unchanged
-#     return obj
+def jsonfallback(obj):
+    return f"<non-serializable: {type(obj).__name__}>"
 
 
 def match(check, base, structUtils):
@@ -287,7 +352,7 @@ def match(check, base, structUtils):
             if not matchval(val, baseval, structUtils):
                 raise AssertionError_(
                     f"MATCH: {'.'.join(map(str, path))}: "
-                    f"[{structUtils['stringify'](val)}] <=> [{structUtils['stringify'](baseval)}]"
+                    f"[{structUtils.stringify(val)}] <=> [{structUtils.stringify(baseval)}]"
                 )
         return val
         
@@ -318,7 +383,7 @@ def matchval(check, base, structUtils):
     # String-based pattern matching
     if isinstance(check, str):
         # Convert base to string for comparison
-        base_str = structUtils['stringify'](base)
+        base_str = structUtils.stringify(base)
         
         # Check for regex pattern with /pattern/ syntax
         regex_match = re.match(r'^/(.+)/$', check)
@@ -328,7 +393,7 @@ def matchval(check, base, structUtils):
             return re.search(pattern, base_str) is not None
         else:
             # Case-insensitive substring check
-            return structUtils['stringify'](check).lower() in base_str.lower()
+            return structUtils.stringify(check).lower() in base_str.lower()
     
     # Functions automatically pass
     elif callable(check):
@@ -336,3 +401,11 @@ def matchval(check, base, structUtils):
         
     # No match
     return False
+
+
+def nullModifier(val, key, parent, _state=None, _current=None, _store=None):
+    if NULLMARK == val:
+        parent[key] = None
+    elif isinstance(val, str):
+        parent[key] = val.replace(NULLMARK, "null")
+

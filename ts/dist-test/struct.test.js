@@ -8,36 +8,7 @@ const struct_1 = require("../dist/struct");
 const runner_1 = require("./runner");
 // NOTE: tests are in order of increasing dependence.
 (0, node_test_1.describe)('struct', async () => {
-    const { spec, runset, runsetflags } = await (0, runner_1.runner)('struct', {}, '../../build/test/test.json', {
-        test: async () => ({
-            utility: () => ({
-                struct: {
-                    clone: struct_1.clone,
-                    escre: struct_1.escre,
-                    escurl: struct_1.escurl,
-                    getpath: struct_1.getpath,
-                    getprop: struct_1.getprop,
-                    inject: struct_1.inject,
-                    isempty: struct_1.isempty,
-                    iskey: struct_1.iskey,
-                    islist: struct_1.islist,
-                    ismap: struct_1.ismap,
-                    isnode: struct_1.isnode,
-                    items: struct_1.items,
-                    haskey: struct_1.haskey,
-                    keysof: struct_1.keysof,
-                    merge: struct_1.merge,
-                    setprop: struct_1.setprop,
-                    stringify: struct_1.stringify,
-                    transform: struct_1.transform,
-                    typify: struct_1.typify,
-                    walk: struct_1.walk,
-                    validate: struct_1.validate,
-                    joinurl: struct_1.joinurl,
-                }
-            })
-        })
-    });
+    const { spec, runset, runsetflags } = await (0, runner_1.runner)('struct', {}, '../../build/test/test.json');
     const minorSpec = spec.minor;
     const walkSpec = spec.walk;
     const mergeSpec = spec.merge;
