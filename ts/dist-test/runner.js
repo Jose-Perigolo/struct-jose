@@ -38,7 +38,7 @@ class Client {
             check: (ctx) => {
                 return {
                     zed: 'ZED' +
-                        (null == __classPrivateFieldGet(this, _Client_opts, "f") ? '' : null == __classPrivateFieldGet(this, _Client_opts, "f").foo ? '0' : __classPrivateFieldGet(this, _Client_opts, "f").foo) +
+                        (null == __classPrivateFieldGet(this, _Client_opts, "f") ? '' : null == __classPrivateFieldGet(this, _Client_opts, "f").foo ? '' : __classPrivateFieldGet(this, _Client_opts, "f").foo) +
                         '_' +
                         (null == ctx.bar ? '0' : ctx.bar)
                 };

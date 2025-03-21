@@ -35,7 +35,7 @@ class Client {
       check: (ctx: any): any => {
         return {
           zed: 'ZED' +
-            (null == this.#opts ? '' : null == this.#opts.foo ? '0' : this.#opts.foo) +
+            (null == this.#opts ? '' : null == this.#opts.foo ? '' : this.#opts.foo) +
             '_' +
             (null == ctx.bar ? '0' : ctx.bar)
         }

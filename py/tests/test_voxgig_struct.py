@@ -9,7 +9,6 @@ from runner import (
     runner,
     nullModifier,
     NULLMARK,
-    Provider
 )
         
 from voxgig_struct import (
@@ -42,13 +41,10 @@ from voxgig_struct import (
 )
 
 
-provider = Provider.test()
-
 runparts = runner(
     name='struct',
     store={},
     testfile='../../build/test/test.json',  # adapt path as needed
-    provider=provider
 )
 
 spec = runparts["spec"]

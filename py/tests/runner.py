@@ -7,31 +7,11 @@ from typing import Any, Dict, List, Callable
 
 from voxgig_struct import (
     clone,
-    escre,
-    escurl,
     getpath,
-    getprop,
-    haskey,
     inject,
-    isempty,
-    isfunc,
-    iskey,
-    islist,
-    ismap,
-    isnode,
     items,
-    joinurl,
-    keysof,
-    merge,
-    pathify,
-    setprop,
     stringify,
-    strkey,
-    transform,
-    typify,
-    validate,
     walk,
-    InjectState
 )
 
 
@@ -42,18 +22,23 @@ class StructUtils:
     def __init__(self):
         pass
 
-    def items(self, *args, **kwargs):
-        return items(*args, **kwargs)
+    def clone(self, *args, **kwargs):
+        return clone(*args, **kwargs)
+
+    def getpath(self, *args, **kwargs):
+        return getpath(*args, **kwargs)
 
     def inject(self, *args, **kwargs):
         return inject(*args, **kwargs)
 
-    def clone(self, *args, **kwargs):
-        return clone(*args, **kwargs)
+    def items(self, *args, **kwargs):
+        return items(*args, **kwargs)
 
     def stringify(self, *args, **kwargs):
         return stringify(*args, **kwargs)
 
+    def walk(self, *args, **kwargs):
+        return walk(*args, **kwargs)
     
 
 class Utility:
@@ -79,13 +64,13 @@ class Utility:
         return {"zed": zed}
         
 
-class Provider:
+class Client:
     def __init__(self, opts=None):
         self._utility = Utility(opts)
 
     @staticmethod
     def test(opts=None):
-        return Provider(opts)
+        return Client(opts)
 
     def utility(self):
         return self._utility
@@ -97,14 +82,13 @@ def runner(
     name: str,
     store: Any,
     testfile: str,
-    provider: Any
 ):
-    client = provider.test()
+    client = Client.test()
     utility = client.utility()
     structUtils = utility.struct()
     
     spec = resolve_spec(name, testfile)
-    clients = resolve_clients(spec, store, provider, structUtils)
+    clients = resolve_clients(spec, store, structUtils)
     subject = resolve_subject(name, utility)
         
     def runsetflags(testspec, flags, testsubject):
@@ -158,7 +142,7 @@ def resolve_spec(name: str, testfile: str) -> Dict[str, Any]:
     return spec
 
 
-def resolve_clients(spec: Dict[str, Any], store: Any, provider: Any, structUtils: Dict[str, Any]) -> Dict[str, Any]:
+def resolve_clients(spec: Dict[str, Any], store: Any, structUtils: Dict[str, Any]) -> Dict[str, Any]:
     clients = {}
     if 'DEF' in spec and 'client' in spec['DEF']:
         for client_name, client_val in structUtils.items(spec['DEF']['client']):
@@ -170,7 +154,7 @@ def resolve_clients(spec: Dict[str, Any], store: Any, provider: Any, structUtils
                 structUtils.inject(client_opts, store)
                 
             # Create and store the client
-            clients[client_name] = provider.test(client_opts)
+            clients[client_name] = Client.test(client_opts)
             
     return clients
 
@@ -346,7 +330,7 @@ def match(check, base, structUtils):
         # Process scalar values only (non-objects)
         if not isinstance(val, (dict, list)):
             # Get the corresponding value from base
-            baseval = structUtils["getpath"](path, base)
+            baseval = structUtils.getpath(path, base)
             
             # Check if values match
             if not matchval(val, baseval, structUtils):
@@ -357,7 +341,7 @@ def match(check, base, structUtils):
         return val
         
     # Use walk to apply the check function to each node
-    structUtils["walk"](check, walk_apply)
+    structUtils.walk(check, walk_apply)
 
     
 def matchval(check, base, structUtils):
