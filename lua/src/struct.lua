@@ -998,11 +998,16 @@ local function injecthandler(state, val, current, ref, store)
 -- Check if it's a command by checking if it's a function and starts with $
   local iscmd = isfunc(val) and (UNDEF == ref or ref:sub(1, 1) == S_DS)
 
--- For $MERGE commands with numbers, look up the base transform
-if ref and ref:match("^%$MERGE%d+$") then
-  val = store["$MERGE"]
-  iscmd = true
-end
+  -- Handle commands with numeric suffixes (e.g., $COPY2, $MERGE3)
+  if ref and not iscmd then
+    -- Extract the base command name without numeric suffix
+    local base_command = ref:match("^(%$[A-Z]+)%d*$")
+
+    if base_command and store[base_command] then
+      val = store[base_command]
+      iscmd = true
+    end
+  end
 
   -- Only call val function if it is a special command ($NAME format).
   if iscmd then
@@ -1022,13 +1027,12 @@ end
 function inject(val, store, modify, current, state)
   local valtype = type(val)
 
-  -- Create state if at root of injection. The input value is placed
-  -- inside a virtual parent holder to simplify edge cases.
+  -- Create state if at root of injection
   if state == UNDEF then
     local parent = {}
     parent[S_DTOP] = val
 
-    -- Set up state assuming we are starting in the virtual parent.
+    -- Set up state starting in the virtual parent
     state = {
       mode = S_MVAL,
       full = false,
@@ -1047,7 +1051,7 @@ function inject(val, store, modify, current, state)
     }
   end
 
-  -- Resolve current node in store for local paths.
+  -- Resolve current node in store for local paths
   if current == UNDEF then
     current = {
       ["$TOP"] = store
@@ -1293,11 +1297,6 @@ local function transform_EACH(state, _val, current, _ref, store)
   local mode, keys, path, parent, nodes = state.mode, state.keys, state.path,
     state.parent, state.nodes
 
-  -- Remove arguments to avoid spurious processing
-  if keys then
-    keys.length = 1
-  end
-
   if S_MVAL ~= mode then
     return UNDEF
   end
@@ -1309,44 +1308,57 @@ local function transform_EACH(state, _val, current, _ref, store)
   -- Source data
   local src = getpath(srcpath, store, current, state)
 
-  -- Create parallel data structures:
-  -- source entries :: child templates
-  local tcur = {}
-  setmetatable(tcur, {
-    __jsontype = "array"
-  })
+  -- Create empty array with proper metatable
   local tval = {}
   setmetatable(tval, {
     __jsontype = "array"
   })
 
-  local tkey = path[#path - 2]
-  local target = nodes[#path - 2] or nodes[#path - 1]
+  -- Find the actual property name and parent object
+  local tkey = path[#path - 1]
+  local target = nodes[#nodes - 1]
 
-  -- Create clones of the child template for each value of the current source
+  -- If we're in a nested array and path[#path-1] is a numeric index
+  if tonumber(tkey) ~= nil then
+    -- Go back one more level to find the property name
+    if #path >= 3 then
+      tkey = path[#path - 2]
+      target = nodes[#nodes - 2]
+    end
+  end
+
+  -- Create parallel data structures:
+  -- source entries :: child templates
+  local tcur = {}
+
+  -- Process source items based on type
   if islist(src) then
+    -- For arrays, clone template for each entry
     for i = 1, #src do
       table.insert(tval, clone(child))
+      -- Add source item to current context
+      tcur[i - 1] = src[i] -- Using 0-based indexing
     end
-  else
-    for k, _ in pairs(src) do
+  elseif ismap(src) then
+    -- For maps, create template for each entry
+    local idx = 0
+    for k, v in pairs(src) do
+      -- Clone template and add metadata
       local childClone = clone(child)
-      -- Make a note of the key for $KEY transforms
       childClone[S_DMETA] = {
         KEY = k
       }
       table.insert(tval, childClone)
+
+      -- Add source item to current context, using its original key
+      tcur[k] = v
+      idx = idx + 1
     end
   end
 
-  if src == nil then
-    tcur = UNDEF
-  else
-    tcur = src
-  end
-
-  -- Parent structure
-  tcur = {
+  -- Set up parent structure with $TOP pointing to tcur
+  -- This makes source values directly accessible by their keys
+  local tcurrent = {
     ["$TOP"] = tcur
   }
 
