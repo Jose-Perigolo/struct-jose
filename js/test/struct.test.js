@@ -21,6 +21,7 @@ const {
   keysof,
   merge,
   setprop,
+  strkey,
   stringify,
   transform,
   validate,
@@ -103,6 +104,7 @@ describe('struct', async () => {
     equal('function', typeof joinurl)
     equal('function', typeof keysof)
     equal('function', typeof setprop)
+    equal('function', typeof strkey)
     equal('function', typeof stringify)
   })
 
@@ -120,6 +122,10 @@ describe('struct', async () => {
 
   test('minor-iskey', async () => {
     await runset(spec.minor.iskey, iskey)
+  })
+
+  test('minor-strkey', async () => {
+    await runset(spec.minor.strkey, strkey)
   })
 
   test('minor-isempty', async () => {

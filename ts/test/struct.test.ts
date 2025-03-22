@@ -1,4 +1,8 @@
 
+// RUN: npm test
+// RUN-SOME: npm run test-some --pattern=getpath
+
+
 import { test, describe } from 'node:test'
 import { equal, deepEqual } from 'node:assert'
 
@@ -22,6 +26,7 @@ import {
   merge,
   pathify,
   setprop,
+  strkey,
   stringify,
   transform,
   typify,
@@ -33,59 +38,28 @@ import type {
   Injection
 } from '../dist/struct'
 
-import { runner } from './runner'
 
-
-
-
-function nullModifier(
-  key: any,
-  val: any,
-  parent: any
-) {
-  if ("__NULL__" === val) {
-    setprop(parent, key, null)
-  }
-  else if ('string' === typeof val) {
-    setprop(parent, key, val.replaceAll('__NULL__', 'null'))
-  }
-}
+import {
+  runner,
+  nullModifier,
+  NULLMARK,
+} from './runner'
 
 
 // NOTE: tests are in order of increasing dependence.
 describe('struct', async () => {
 
-  const { spec, runset } =
-    await runner('struct', {}, '../../build/test/test.json', {
-      test: async () => ({
-        utility: () => ({
-          struct: {
-            clone,
-            escre,
-            escurl,
-            getpath,
-            getprop,
-            inject,
-            isempty,
-            iskey,
-            islist,
-            ismap,
-            isnode,
-            items,
-            haskey,
-            keysof,
-            merge,
-            setprop,
-            stringify,
-            transform,
-            typify,
-            walk,
-            validate,
-            joinurl,
-          }
-        })
-      })
-    })
+  const { spec, runset, runsetflags } =
+    await runner('struct', {}, '../../build/test/test.json')
+
+  const minorSpec = spec.minor
+  const walkSpec = spec.walk
+  const mergeSpec = spec.merge
+  const getpathSpec = spec.getpath
+  const injectSpec = spec.inject
+  const transformSpec = spec.transform
+  const validateSpec = spec.validate
+
 
 
   // minor tests
@@ -108,40 +82,47 @@ describe('struct', async () => {
     equal('function', typeof items)
     equal('function', typeof joinurl)
     equal('function', typeof keysof)
-    equal('function', typeof setprop)
+    equal('function', typeof pathify)
 
+    equal('function', typeof setprop)
+    equal('function', typeof strkey)
     equal('function', typeof stringify)
     equal('function', typeof typify)
   })
 
 
   test('minor-isnode', async () => {
-    await runset(spec.minor.isnode, isnode)
+    await runset(minorSpec.isnode, isnode)
   })
 
 
   test('minor-ismap', async () => {
-    await runset(spec.minor.ismap, ismap)
+    await runset(minorSpec.ismap, ismap)
   })
 
 
   test('minor-islist', async () => {
-    await runset(spec.minor.islist, islist)
+    await runset(minorSpec.islist, islist)
   })
 
 
   test('minor-iskey', async () => {
-    await runset(spec.minor.iskey, iskey)
+    await runsetflags(minorSpec.iskey, { null: false }, iskey)
+  })
+
+
+  test('minor-strkey', async () => {
+    await runsetflags(minorSpec.strkey, { null: false }, strkey)
   })
 
 
   test('minor-isempty', async () => {
-    await runset(spec.minor.isempty, isempty)
+    await runsetflags(minorSpec.isempty, { null: false }, isempty)
   })
 
 
   test('minor-isfunc', async () => {
-    await runset(spec.minor.isfunc, isfunc)
+    await runset(minorSpec.isfunc, isfunc)
     function f0() { return null }
     equal(isfunc(f0), true)
     equal(isfunc(() => null), true)
@@ -149,40 +130,47 @@ describe('struct', async () => {
 
 
   test('minor-clone', async () => {
-    await runset(spec.minor.clone, clone)
+    await runsetflags(minorSpec.clone, { null: false }, clone)
     const f0 = () => null
     deepEqual({ a: f0 }, clone({ a: f0 }))
   })
 
 
   test('minor-escre', async () => {
-    await runset(spec.minor.escre, escre)
+    await runset(minorSpec.escre, escre)
   })
 
 
   test('minor-escurl', async () => {
-    await runset(spec.minor.escurl, escurl)
+    await runset(minorSpec.escurl, escurl)
   })
 
 
   test('minor-stringify', async () => {
-    await runset(spec.minor.stringify, (vin: any) =>
-      null == vin.max ? stringify(vin.val) : stringify(vin.val, vin.max))
+    await runset(minorSpec.stringify, (vin: any) =>
+      stringify((NULLMARK === vin.val ? "null" : vin.val), vin.max))
   })
 
 
   test('minor-pathify', async () => {
-    await runset(spec.minor.pathify, (vin: any) => pathify(vin.path, vin.from))
+    await runsetflags(
+      minorSpec.pathify, { null: true },
+      (vin: any) => {
+        let path = NULLMARK == vin.path ? undefined : vin.path
+        let pathstr = pathify(path, vin.from).replace('__NULL__.', '')
+        pathstr = NULLMARK === vin.path ? pathstr.replace('>', ':null>') : pathstr
+        return pathstr
+      })
   })
 
 
   test('minor-items', async () => {
-    await runset(spec.minor.items, items)
+    await runset(minorSpec.items, items)
   })
 
 
   test('minor-getprop', async () => {
-    await runset(spec.minor.getprop, (vin: any) =>
+    await runsetflags(minorSpec.getprop, { null: false }, (vin: any) =>
       null == vin.alt ? getprop(vin.val, vin.key) : getprop(vin.val, vin.key, vin.alt))
   })
 
@@ -199,12 +187,12 @@ describe('struct', async () => {
 
 
   test('minor-setprop', async () => {
-    await runset(spec.minor.setprop, (vin: any) =>
+    await runsetflags(minorSpec.setprop, { null: false }, (vin: any) =>
       setprop(vin.parent, vin.key, vin.val))
   })
 
 
-  test('minor-edge-getprop', async () => {
+  test('minor-edge-setprop', async () => {
     let strarr0 = ['a', 'b', 'c', 'd', 'e']
     let strarr1 = ['a', 'b', 'c', 'd', 'e']
     deepEqual(setprop(strarr0, 2, 'C'), ['a', 'b', 'C', 'd', 'e'])
@@ -218,23 +206,23 @@ describe('struct', async () => {
 
 
   test('minor-haskey', async () => {
-    await runset(spec.minor.haskey, haskey)
+    await runset(minorSpec.haskey, haskey)
   })
 
 
   test('minor-keysof', async () => {
-    await runset(spec.minor.keysof, keysof)
+    await runset(minorSpec.keysof, keysof)
   })
 
 
   test('minor-joinurl', async () => {
-    await runset(spec.minor.joinurl, joinurl)
+    await runsetflags(minorSpec.joinurl, { null: false }, joinurl)
   })
+
 
   test('minor-typify', async () => {
-    await runset(spec.minor.typify, typify)
+    await runsetflags(minorSpec.typify, { null: false }, typify)
   })
-
 
 
   // walk tests
@@ -244,8 +232,9 @@ describe('struct', async () => {
     equal('function', typeof walk)
   })
 
+
   test('walk-log', async () => {
-    const test = clone(spec.walk.log)
+    const test = clone(walkSpec.log)
 
     const log: string[] = []
 
@@ -261,12 +250,13 @@ describe('struct', async () => {
     deepEqual(log, test.out)
   })
 
+
   test('walk-basic', async () => {
     function walkpath(_key: any, val: any, _parent: any, path: any) {
       return 'string' === typeof val ? val + '~' + path.join('.') : val
     }
 
-    await runset(spec.walk.basic, (vin: any) => walk(vin, walkpath))
+    await runset(walkSpec.basic, (vin: any) => walk(vin, walkpath))
   })
 
 
@@ -277,18 +267,22 @@ describe('struct', async () => {
     equal('function', typeof merge)
   })
 
+
   test('merge-basic', async () => {
-    const test = clone(spec.merge.basic)
+    const test = clone(mergeSpec.basic)
     deepEqual(merge(test.in), test.out)
   })
 
+
   test('merge-cases', async () => {
-    await runset(spec.merge.cases, merge)
+    await runset(mergeSpec.cases, merge)
   })
 
+
   test('merge-array', async () => {
-    await runset(spec.merge.array, merge)
+    await runset(mergeSpec.array, merge)
   })
+
 
   test('merge-special', async () => {
     const f0 = () => null
@@ -310,14 +304,17 @@ describe('struct', async () => {
     equal('function', typeof getpath)
   })
 
+
   test('getpath-basic', async () => {
-    await runset(spec.getpath.basic, (vin: any) => getpath(vin.path, vin.store))
+    await runset(getpathSpec.basic, (vin: any) => getpath(vin.path, vin.store))
   })
 
+
   test('getpath-current', async () => {
-    await runset(spec.getpath.current, (vin: any) =>
+    await runset(getpathSpec.current, (vin: any) =>
       getpath(vin.path, vin.store, vin.current))
   })
+
 
   test('getpath-state', async () => {
     const state: Injection = {
@@ -339,7 +336,7 @@ describe('struct', async () => {
       base: '$TOP',
       errs: [],
     }
-    await runset(spec.getpath.state, (vin: any) =>
+    await runset(getpathSpec.state, (vin: any) =>
       getpath(vin.path, vin.store, vin.current, state))
   })
 
@@ -351,18 +348,21 @@ describe('struct', async () => {
     equal('function', typeof inject)
   })
 
+
   test('inject-basic', async () => {
-    const test = clone(spec.inject.basic)
+    const test = clone(injectSpec.basic)
     deepEqual(inject(test.in.val, test.in.store), test.out)
   })
 
+
   test('inject-string', async () => {
-    await runset(spec.inject.string, (vin: any) =>
+    await runset(injectSpec.string, (vin: any) =>
       inject(vin.val, vin.store, nullModifier, vin.current))
   })
 
+
   test('inject-deep', async () => {
-    await runset(spec.inject.deep, (vin: any) => inject(vin.val, vin.store))
+    await runset(injectSpec.deep, (vin: any) => inject(vin.val, vin.store))
   })
 
 
@@ -373,33 +373,39 @@ describe('struct', async () => {
     equal('function', typeof transform)
   })
 
+
   test('transform-basic', async () => {
-    const test = clone(spec.transform.basic)
+    const test = clone(transformSpec.basic)
     deepEqual(transform(test.in.data, test.in.spec, test.in.store), test.out)
   })
 
+
   test('transform-paths', async () => {
-    await runset(spec.transform.paths, (vin: any) =>
+    await runset(transformSpec.paths, (vin: any) =>
       transform(vin.data, vin.spec, vin.store))
   })
+
 
   test('transform-cmds', async () => {
-    await runset(spec.transform.cmds, (vin: any) =>
+    await runset(transformSpec.cmds, (vin: any) =>
       transform(vin.data, vin.spec, vin.store))
   })
+
 
   test('transform-each', async () => {
-    await runset(spec.transform.each, (vin: any) =>
+    await runset(transformSpec.each, (vin: any) =>
       transform(vin.data, vin.spec, vin.store))
   })
+
 
   test('transform-pack', async () => {
-    await runset(spec.transform.pack, (vin: any) =>
+    await runset(transformSpec.pack, (vin: any) =>
       transform(vin.data, vin.spec, vin.store))
   })
 
+
   test('transform-modify', async () => {
-    await runset(spec.transform.modify, (vin: any) =>
+    await runset(transformSpec.modify, (vin: any) =>
       transform(vin.data, vin.spec, vin.store,
         (val, key, parent) => {
           if (null != key && null != parent && 'string' === typeof val) {
@@ -408,6 +414,7 @@ describe('struct', async () => {
         }
       ))
   })
+
 
   test('transform-extra', async () => {
     deepEqual(transform(
@@ -425,6 +432,7 @@ describe('struct', async () => {
       c: 'C'
     })
   })
+
 
   test('transform-funcval', async () => {
     const f0 = () => 99
@@ -444,12 +452,12 @@ describe('struct', async () => {
 
 
   test('validate-basic', async () => {
-    await runset(spec.validate.basic, (vin: any) => validate(vin.data, vin.spec))
+    await runset(validateSpec.basic, (vin: any) => validate(vin.data, vin.spec))
   })
 
 
   test('validate-node', async () => {
-    await runset(spec.validate.node, (vin: any) => validate(vin.data, vin.spec))
+    await runset(validateSpec.node, (vin: any) => validate(vin.data, vin.spec))
   })
 
 
@@ -483,3 +491,15 @@ describe('struct', async () => {
 
 })
 
+
+
+describe('client', async () => {
+
+  const { spec, runset, subject } =
+    await runner('check', {}, '../../build/test/test.json')
+
+  test('client-check-basic', async () => {
+    await runset(spec.basic, subject)
+  })
+
+})

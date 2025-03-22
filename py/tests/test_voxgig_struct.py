@@ -5,7 +5,11 @@
 
 import unittest
 
-from runner import runner
+from runner import (
+    runner,
+    nullModifier,
+    NULLMARK,
+)
         
 from voxgig_struct import (
     clone,
@@ -25,85 +29,41 @@ from voxgig_struct import (
     joinurl,
     keysof,
     merge,
+    pathify,
     setprop,
     stringify,
+    strkey,
     transform,
+    typify,
     validate,
     walk,
     InjectState
 )
 
 
-
-
-def walkpath(_key, val, _parent, path):
-    if isinstance(val, str):
-        return val + '~' + '.'.join(str(p) for p in path)
-    return val
-
-
-def nullModifier(val, key, parent, _state=None, _current=None, _store=None):
-    if "__NULL__" == val:
-        parent[key] = None
-    elif isinstance(val, str):
-        parent[key] = val.replace("__NULL__", "null")
-        
-    
-class Provider:
-    def __init__(self, opts=None):
-        pass
-
-    @staticmethod
-    def test(opts=None):
-        return Provider(opts)
-
-    def utility(self):
-        return {
-            "struct": {
-                "clone": clone,
-                "escre": escre,
-                "escurl": escurl,
-                "getpath": getpath,
-                "getprop": getprop,
-                "inject": inject,
-                "isempty": isempty,
-                "isfunc": isfunc,
-                "iskey": iskey,
-                "islist": islist,
-                "ismap": ismap,
-                "isnode": isnode,
-                "items": items,
-                "haskey": haskey,
-                "keysof": keysof,
-                "merge": merge,
-                "setprop": setprop,
-                "stringify": stringify,
-                "transform": transform,
-                "walk": walk,
-                "validate": validate,
-                "joinurl": joinurl,
-            }
-        }
-
-
-provider = Provider.test()
-
 runparts = runner(
     name='struct',
     store={},
     testfile='../../build/test/test.json',  # adapt path as needed
-    provider=provider
 )
 
 spec = runparts["spec"]
 runset = runparts["runset"]
+runsetflags = runparts["runsetflags"]
 
+minorSpec     = spec["minor"]
+walkSpec      = spec["walk"]
+mergeSpec     = spec["merge"]
+getpathSpec   = spec["getpath"]
+injectSpec    = spec["inject"]
+transformSpec = spec["transform"]
+validateSpec  = spec["validate"]
 
+        
 class TestStruct(unittest.TestCase):
 
-    # -------------------------------------------------
-    # minor-exists
-    # -------------------------------------------------
+    # minor tests
+    # ===========
 
     def test_minor_exists(self):
         self.assertTrue(callable(clone))
@@ -111,63 +71,90 @@ class TestStruct(unittest.TestCase):
         self.assertTrue(callable(escurl))
         self.assertTrue(callable(getprop))
         self.assertTrue(callable(haskey))
+        
         self.assertTrue(callable(isempty))
         self.assertTrue(callable(isfunc))
         self.assertTrue(callable(iskey))
         self.assertTrue(callable(islist))
         self.assertTrue(callable(ismap))
+        
         self.assertTrue(callable(isnode))
         self.assertTrue(callable(items))
         self.assertTrue(callable(joinurl))
         self.assertTrue(callable(keysof))
+        self.assertTrue(callable(pathify))
+
         self.assertTrue(callable(setprop))
         self.assertTrue(callable(stringify))
+        self.assertTrue(callable(strkey))
+        self.assertTrue(callable(typify))
+
+
+    def test_minor_isnode(self):
+        runset(minorSpec["isnode"], isnode)
 
         
-    def test_minor_isnode(self):
-        runset(spec["minor"]["isnode"], isnode, {"fixjson": False})
-
     def test_minor_ismap(self):
-        runset(spec["minor"]["ismap"], ismap, {"fixjson": False})
+        runset(minorSpec["ismap"], ismap)
 
+        
     def test_minor_islist(self):
-        runset(spec["minor"]["islist"], islist, {"fixjson": False})
+        runset(minorSpec["islist"], islist)
 
+        
     def test_minor_iskey(self):
-        runset(spec["minor"]["iskey"], iskey, {"fixjson": False})
+        runsetflags(minorSpec["iskey"], {"null": False}, iskey)
 
+        
+    def test_minor_strkey(self):
+        runsetflags(minorSpec["strkey"], {"null": False}, strkey)
+
+        
     def test_minor_isempty(self):
-        runset(spec["minor"]["isempty"], isempty, {"fixjson": False})
+        runsetflags(minorSpec["isempty"], {"null": False}, isempty)
 
+        
     def test_minor_isfunc(self):
-        runset(spec["minor"]["isfunc"], isfunc, {"fixjson": False})
+        runset(minorSpec["isfunc"], isfunc)
         def f0():
             return None
         self.assertTrue(isfunc(f0))
         self.assertTrue(isfunc(lambda: None))
 
+        
     def test_minor_clone(self):
-        runset(spec["minor"]["clone"], clone)
+        runsetflags(minorSpec["clone"], {"null": False}, clone)
         def f0():
             return None
         self.assertEqual({"a":f0}, clone({"a":f0}))
+
         
-    def test_minor_items(self):
-        runset(spec["minor"]["items"], items)
-
     def test_minor_escre(self):
-        runset(spec["minor"]["escre"], escre)
+        runset(minorSpec["escre"], escre)
 
+        
     def test_minor_escurl(self):
-        runset(spec["minor"]["escurl"], escurl)
+        runset(minorSpec["escurl"], escurl)
 
+        
     def test_minor_stringify(self):
-        def stringify_wrapper(vin):
-            if vin.get("max") is None:
-                return stringify(vin.get("val"))
-            else:
-                return stringify(vin.get("val"), vin.get("max"))
-        runset(spec["minor"]["stringify"], stringify_wrapper)
+        runset(minorSpec["stringify"],
+               lambda vin: stringify("null" if NULLMARK == vin.get('val') else
+                                     vin.get('val'), vin.get('max')))
+
+        
+    def test_minor_pathify(self):
+        def pathify_wrapper(vin=None):
+            path = vin.get("path")
+            path = None if NULLMARK == path else path 
+            pathstr = pathify(path, vin.get("from")).replace("__NULL__.","")
+            pathstr = pathstr.replace(">", ":null") if NULLMARK == vin.path else pathstr
+            return pathstr
+            
+
+    def test_minor_items(self):
+        runset(minorSpec["items"], items)
+
 
     def test_minor_getprop(self):
         def getprop_wrapper(vin):
@@ -175,38 +162,51 @@ class TestStruct(unittest.TestCase):
                 return getprop(vin.get("val"), vin.get("key"))
             else:
                 return getprop(vin.get("val"), vin.get("key"), vin.get("alt"))
-        runset(spec["minor"]["getprop"], getprop_wrapper)
+        runset(minorSpec["getprop"], getprop_wrapper)
 
+        
     def test_minor_setprop(self):
         def setprop_wrapper(vin):
             return setprop(vin.get("parent"), vin.get("key"), vin.get("val"))
-        runset(spec["minor"]["setprop"], setprop_wrapper)
+        runset(minorSpec["setprop"], setprop_wrapper)
 
+        
     def test_minor_haskey(self):
-        runset(spec["minor"]["haskey"], haskey)
+        runset(minorSpec["haskey"], haskey)
 
+        
     def test_minor_keysof(self):
-        runset(spec["minor"]["keysof"], keysof)
+        runset(minorSpec["keysof"], keysof)
 
+        
     def test_minor_joinurl(self):
-        runset(spec["minor"]["joinurl"], joinurl, {"fixjson": False})
+        runsetflags(minorSpec["joinurl"], {"null": False}, joinurl)
 
 
-    # -------------------------------------------------
+    def test_minor_typify(self):
+        runsetflags(minorSpec["typify"], {"null": False}, typify)
+        
+
     # walk tests
-    # -------------------------------------------------
+    # ==========
 
     def test_walk_exists(self):
         self.assertTrue(callable(walk))
 
     def test_walk_basic(self):
+        def walkpath(_key, val, _parent, path):
+            if isinstance(val, str):
+                return val + '~' + '.'.join(str(p) for p in path)
+            return val
+
         def walk_wrapper(vin=None):
             return walk(vin, walkpath)
-        runset(spec["walk"]["basic"], walk_wrapper)
 
-    # -------------------------------------------------
+        runset(walkSpec["basic"], walk_wrapper)
+
+        
     # merge tests
-    # -------------------------------------------------
+    # ===========
 
     def test_merge_exists(self):
         self.assertTrue(callable(merge))
@@ -410,6 +410,26 @@ class TestStruct(unittest.TestCase):
         validate({"a": "A"}, {"a": "`$INTEGER`"}, extra, errs)
         self.assertEqual(errs, ["Not an integer at a: A"])
 
+
+        
+runparts_client = runner(
+    name='check',
+    store={},
+    testfile='../../build/test/test.json',
+)
+
+spec_client = runparts_client["spec"]
+runset_client = runparts_client["runset"]
+subject_client = runparts_client["subject"]
+
+        
+class TestClient(unittest.TestCase):
+
+    def test_client_check_basic(self):
+        runset_client(spec_client["basic"], subject_client)
+
+
+        
 
 # If you want to run this file directly, add:
 if __name__ == "__main__":
