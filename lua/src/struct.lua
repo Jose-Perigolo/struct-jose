@@ -1046,7 +1046,7 @@ function inject(val, store, modify, current, state)
       ["$TOP"] = store
     }
   else
-    local parentkey = state.path[#state.path - 2]
+    local parentkey = #state.path > 1 and state.path[#state.path - 1] or nil
     current = parentkey == nil and current or getprop(current, parentkey)
   end
 
@@ -1179,7 +1179,7 @@ function transform_COPY(state, _val, current)
   local mode, key, parent = state.mode, state.key, state.parent
 
   local out = key
-  if not string.sub(mode, 1, #S_MKEY) == S_MKEY then
+  if mode ~= S_MKEYPRE and mode ~= S_MKEYPOST then
     out = getprop(current, key)
     setprop(parent, key, out)
   end
