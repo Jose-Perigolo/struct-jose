@@ -15,63 +15,16 @@ import (
 	"github.com/voxgig/struct/testutil"
 )
 
-// TestEntry represents a single test case
-// in/out values and potential error info
-// from the original TS code.
-type TestEntry struct {
-	In     any `json:"in,omitempty"`
-	Out    any `json:"out,omitempty"`
-	Err    any `json:"err,omitempty"`
-	Thrown any `json:"thrown,omitempty"`
-}
-
-type TestSet []TestEntry
-
-type SubTest struct {
-	TestEntry
-	Set TestSet `json:"set"`
-}
-
-type TestGroup map[string]SubTest
-
-type FullTest map[string]TestGroup
-
-type TestProvider struct{}
-
-func (p *TestProvider) Test(opts map[string]any) (runner.Client, error) {
-	return &testClient{}, nil
-}
-
-type testClient struct{}
-
-func (c *testClient) Utility() runner.Utility {
-	return &testUtility{}
-}
-
-type testUtility struct{}
-
-func (c *testUtility) Struct() *runner.StructUtility {
-	return &runner.StructUtility{
-		IsNode:     voxgigstruct.IsNode,
-		Clone:      voxgigstruct.Clone,
-		CloneFlags: voxgigstruct.CloneFlags,
-		GetPath:    voxgigstruct.GetPath,
-		Inject:     voxgigstruct.Inject,
-		Items:      voxgigstruct.Items,
-		Stringify:  voxgigstruct.Stringify,
-		Walk:       voxgigstruct.Walk,
-	}
-}
 
 // NOTE: tests are in order of increasing dependence.
 func TestStruct(t *testing.T) {
 
 	store := make(map[string]any)
-	provider := &TestProvider{}
+	// provider := &TestProvider{}
 
-	runnerMap, err := runner.Runner("struct", store, "../build/test/test.json", provider)
+	runnerMap, err := runner.Runner("struct", store, "../build/test/test.json")
 	if err != nil {
-		t.Fatalf("Failed to create runner: %v", err)
+		t.Fatalf("Failed to create runner struct: %v", err)
 	}
 
 	var spec map[string]any = runnerMap.Spec
@@ -811,8 +764,6 @@ func TestStruct(t *testing.T) {
 			errs,
 		)
 
-		// fmt.Println("QQQ", out, err)
-
 		expectedErr := "Invalid data: Not an integer at a: A"
 		if !reflect.DeepEqual(expectedErr, err.Error()) {
 			t.Errorf("Expected: %v, Got: %v", expectedErr, err.Error())
@@ -830,3 +781,21 @@ func TestStruct(t *testing.T) {
 	})
 }
 
+
+func TestClient(t *testing.T) {
+
+	store := make(map[string]any)
+
+	runnerMap, err := runner.Runner("check", store, "../build/test/test.json")
+	if err != nil {
+		t.Fatalf("Failed to create runner check: %v", err)
+	}
+
+	var spec map[string]any = runnerMap.Spec
+	var runset runner.RunSet = runnerMap.RunSet
+  var subject runner.Subject = runnerMap.Subject
+
+	t.Run("client-check-basic", func(t *testing.T) {
+		runset(t, spec["basic"], subject)
+	})
+}

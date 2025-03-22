@@ -491,3 +491,15 @@ describe('struct', async () => {
 
 })
 
+
+
+describe('client', async () => {
+
+  const { spec, runset, subject } =
+    await runner('check', {}, '../../build/test/test.json')
+
+  test('client-check-basic', async () => {
+    await runset(spec.basic, subject)
+  })
+
+})

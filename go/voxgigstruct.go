@@ -1182,8 +1182,6 @@ func InjectDescend(
 				val = childstate.Parent
 			}
 
-			// fmt.Println("INJECT-CHILD-END", nkI, val, childstate)
-
 			nkI = nkI + 1
 		}
 
@@ -1918,10 +1916,8 @@ func init_validate_ONE() {
 						if 0 == len(terrs.List) {
 							SetProp(grandparent, grandkey, current)
 							state.Parent = current
-							// fmt.Println("ONE-GP", grandparent, grandkey)
-							// fmt.Println("ONE-SC", current, state)
-
 							return nil
+
 						} else {
 							SetProp(grandparent, grandkey, nil)
 						}
@@ -1988,8 +1984,6 @@ func validation(
 	}
 
 	ctype := Typify(cval)
-
-	// fmt.Println("VALID", pval, ptype, cval, ctype)
 
 	// Type mismatch.
 	if ptype != ctype && pval != nil {

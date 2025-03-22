@@ -302,4 +302,10 @@ const runner_1 = require("./runner");
         (0, node_assert_1.deepEqual)(errs, ['Not an integer at a: A']);
     });
 });
+(0, node_test_1.describe)('client', async () => {
+    const { spec, runset, subject } = await (0, runner_1.runner)('check', {}, '../../build/test/test.json');
+    (0, node_test_1.test)('client-check-basic', async () => {
+        await runset(spec.basic, subject);
+    });
+});
 //# sourceMappingURL=struct.test.js.map

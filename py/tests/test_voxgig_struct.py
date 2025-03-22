@@ -411,6 +411,26 @@ class TestStruct(unittest.TestCase):
         self.assertEqual(errs, ["Not an integer at a: A"])
 
 
+        
+runparts_client = runner(
+    name='check',
+    store={},
+    testfile='../../build/test/test.json',
+)
+
+spec_client = runparts_client["spec"]
+runset_client = runparts_client["runset"]
+subject_client = runparts_client["subject"]
+
+        
+class TestClient(unittest.TestCase):
+
+    def test_client_check_basic(self):
+        runset_client(spec_client["basic"], subject_client)
+
+
+        
+
 # If you want to run this file directly, add:
 if __name__ == "__main__":
     unittest.main()

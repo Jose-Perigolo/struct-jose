@@ -15,11 +15,9 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+  "unicode"
 )
 
-type Provider interface {
-	Test(opts map[string]any) (Client, error)
-}
 
 type Client interface {
 	Utility() Utility
@@ -27,6 +25,7 @@ type Client interface {
 
 type Utility interface {
 	Struct() *StructUtility
+  Check(ctx map[string]any) map[string]any
 }
 
 type StructUtility struct {
@@ -39,6 +38,79 @@ type StructUtility struct {
 	Stringify  func(val any, maxlen ...int) string
 	Walk       func(val any, apply voxgigstruct.WalkApply) any
 }
+
+type ClientStruct struct {
+  opts map[string]any
+}
+
+
+func newClient(opts map[string]any) (Client, error) {
+  if nil == opts {
+    opts = map[string]any{}
+  }
+  client := ClientStruct{
+    opts: opts,
+  }
+  return client, nil
+}
+
+
+func testClient(opts map[string]any) (Client, error) {
+  testClient, error := newClient(nil)
+  return testClient, error
+}
+
+
+type utility struct {
+  opts map[string]any
+}
+
+func (u utility) Struct() *StructUtility {
+  return &StructUtility{
+		IsNode:     voxgigstruct.IsNode,
+		Clone:      voxgigstruct.Clone,
+		CloneFlags: voxgigstruct.CloneFlags,
+		GetPath:    voxgigstruct.GetPath,
+		Inject:     voxgigstruct.Inject,
+		Items:      voxgigstruct.Items,
+		Stringify:  voxgigstruct.Stringify,
+		Walk:       voxgigstruct.Walk,
+	}
+}
+
+func (u utility) Check(ctx map[string]any) map[string]any {
+  var zed string
+	zed = "ZED"
+
+	if nil != u.opts {
+    foo := u.opts["foo"]
+    if nil != foo {
+      zed += foo.(string)
+    }
+  }
+
+	zed += "_"
+
+	if nil == ctx {
+		zed += "0"
+	} else {
+		zed += ctx["bar"].(string)
+	}
+
+	return map[string]any{
+    "zed": zed,
+  }
+}
+
+
+func (c ClientStruct) Utility() Utility {
+  return utility{
+    opts: c.opts,
+  }
+}
+
+
+type Subject func(args ...any) (any, error)
 
 type RunSet func(
 	t *testing.T,
@@ -57,6 +129,7 @@ type RunPack struct {
 	Spec        map[string]any
 	RunSet      RunSet
 	RunSetFlags RunSetFlags
+  Subject     Subject
 }
 
 type TestPack struct {
@@ -65,7 +138,7 @@ type TestPack struct {
 	Utility Utility
 }
 
-type Subject func(args ...any) (any, error)
+
 
 
 var (
@@ -76,23 +149,24 @@ func Runner(
 	name string,
 	store any,
 	testfile string,
-	provider Provider,
 ) (*RunPack, error) {
 
-	client, err := provider.Test(nil)
+  client, err := testClient(nil)
 	if err != nil {
 		return nil, err
 	}
 
 	utility := client.Utility()
+  
 	structUtil := utility.Struct()
 
 	spec := resolveSpec(name, testfile)
-	clients, err := resolveClients(spec, store, provider, structUtil)
+
+  clients, err := resolveClients(spec, store, structUtil)
 	if err != nil {
 		return nil, err
 	}
-
+  
 	subject, err := resolveSubject(name, utility)
 	if err != nil {
 		return nil, err
@@ -108,7 +182,7 @@ func Runner(
 		if testsubject != nil {
 			subject = subjectify(testsubject)
 		}
-
+    
 		flags = resolveFlags(flags)
 
 		var testspecmap = fixJSON(
@@ -160,6 +234,7 @@ func Runner(
 		Spec:        spec,
 		RunSet:      runset,
 		RunSetFlags: runsetFlags,
+    Subject:     subject,
 	}, nil
 }
 
@@ -207,7 +282,7 @@ func resolveSpec(
 func resolveClients(
 	spec map[string]any,
 	store any,
-	provider Provider,
+	// provider Provider,
 	structUtil *StructUtility,
 ) (map[string]Client, error) {
 	clients := make(map[string]Client)
@@ -248,7 +323,8 @@ func resolveClients(
 
 		structUtil.Inject(opts, store)
 
-		client, err := provider.Test(opts)
+		// client, err := provider.Test(opts)
+    client, err := testClient(opts)
 		if err != nil {
 			return nil, err
 		}
@@ -262,10 +338,21 @@ func resolveClients(
 
 func resolveSubject(
 	name string,
-	container any,
+  container any,
+  // container Utility,
 ) (Subject, error) {
-	val := reflect.ValueOf(container)
+  name = uppercaseFirstLetter(name)
 
+	val := reflect.ValueOf(container)
+  
+  if _, ok := container.(Utility); ok {
+    subjectVal := val.MethodByName(name)
+    subjectIF := subjectVal.Interface()
+    subject := subjectify(subjectIF)
+    return subject, nil
+  }
+
+  
 	if val.Kind() == reflect.Ptr {
 		val = val.Elem()
 	}
@@ -274,8 +361,9 @@ func resolveSubject(
 	}
 
 	fieldVal := val.FieldByName(name)
-	if !fieldVal.IsValid() {
-		return nil, nil
+
+  if !fieldVal.IsValid() {
+		return nil, fmt.Errorf("resolveSubject: field %q is not a func", name)
 	}
 
 	if fieldVal.Kind() != reflect.Func {
@@ -808,4 +896,15 @@ func ToJSONString(data any) string {
 		return ""
 	}
 	return string(jsonBytes)
+}
+
+
+func uppercaseFirstLetter(s string) string {
+	if len(s) == 0 {
+		return s
+	}
+	
+	runes := []rune(s)
+	runes[0] = unicode.ToUpper(runes[0])
+	return string(runes)
 }
