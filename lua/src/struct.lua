@@ -1221,7 +1221,7 @@ end
 -- If the value is an array, the elements are first merged using `merge`. 
 -- If the value is the empty string, merge the top level store.
 -- Format: { '`$MERGE`': '`source-path`' | ['`source-paths`', ...] }
-local function transform_MERGE(state, _val, store)
+local function transform_MERGE(state, _val, current)
   local mode, key, parent = state.mode, state.key, state.parent
 
   if mode == S_MKEYPRE then
@@ -1231,35 +1231,52 @@ local function transform_MERGE(state, _val, store)
   -- Operate after child values have been transformed.
   if mode == S_MKEYPOST then
     local args = getprop(parent, key)
+
     if args == S_MT then
       args = {current["$TOP"]}
     else
       if islist(args) then
-        args = args
+        -- Keep args as a list
       else
         args = {args}
       end
     end
+
     -- Add metadata for array 
-    setmetatable(args, {
-      __jsontype = "array"
-    })
+    if islist(args) then
+      setmetatable(args, {
+        __jsontype = "array"
+      })
+    end
 
     -- Remove the $MERGE command from a parent map.
     setprop(parent, key, UNDEF)
 
-    -- Literals in the parent have precedence, but we still merge onto
-    -- the parent object, so that node tree references are not changed.
-    local mergelist = {parent, table.unpack(args), clone(parent)}
+    -- Build the mergelist explicitly
+    local mergelist = {parent} -- Start with parent
+
+    -- Add all items from args
+    if islist(args) then
+      for i = 1, #args do
+        table.insert(mergelist, args[i])
+      end
+    else
+      table.insert(mergelist, args)
+    end
+
+    table.insert(mergelist, clone(parent)) -- End with parent clone
+
+    -- Apply the metadata
     setmetatable(mergelist, {
       __jsontype = "array"
     })
 
+    -- Perform the merge
     merge(mergelist)
+
     return key
   end
 
-  -- Ensure $MERGE is removed from parent list.
   return UNDEF
 end
 
@@ -1444,8 +1461,6 @@ local function transform(data, -- Source data to transform into new data (origin
   -- Define a top level store that provides transform operations
   local store = {
     -- The inject function recognises this special location for the root of the source data.
-    -- NOTE: to escape data that contains "`$FOO`" keys at the top level,
-    -- place that data inside a holding map: { myholder: mydata }.
     ["$TOP"] = dataClone,
 
     -- Escape backtick (this also works inside backticks)
@@ -1471,6 +1486,11 @@ local function transform(data, -- Source data to transform into new data (origin
     [S_DS .. 'EACH'] = transform_EACH,
     [S_DS .. 'PACK'] = transform_PACK
   }
+
+  -- Add numeric variants of MERGE to handle prioritized merges
+  for i = 0, 9 do
+    store[S_DS .. 'MERGE' .. i] = transform_MERGE
+  end
 
   -- Add custom extra transforms, if any
   for k, v in pairs(extraTransforms) do
