@@ -995,7 +995,14 @@ end
 -- Default inject handler for transforms. If the path resolves to a function,
 -- call the function passing the injection state. This is how transforms operate.
 local function injecthandler(state, val, current, ref, store)
+-- Check if it's a command by checking if it's a function and starts with $
   local iscmd = isfunc(val) and (UNDEF == ref or ref:sub(1, 1) == S_DS)
+
+-- For $MERGE commands with numbers, look up the base transform
+if ref and ref:match("^%$MERGE%d+$") then
+  val = store["$MERGE"]
+  iscmd = true
+end
 
   -- Only call val function if it is a special command ($NAME format).
   if iscmd then
@@ -1487,10 +1494,6 @@ local function transform(data, -- Source data to transform into new data (origin
     [S_DS .. 'PACK'] = transform_PACK
   }
 
-  -- Add numeric variants of MERGE to handle prioritized merges
-  for i = 0, 9 do
-    store[S_DS .. 'MERGE' .. i] = transform_MERGE
-  end
 
   -- Add custom extra transforms, if any
   for k, v in pairs(extraTransforms) do
