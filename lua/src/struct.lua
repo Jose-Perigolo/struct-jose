@@ -1216,184 +1216,118 @@ local function transform_META(state)
   return UNDEF
 end
 
--- transform_MERGE merges data from different sources into the parent object
+-- Merge a list of objects into the current object. 
+-- Must be a key in an object. The value is merged over the current object.
+-- If the value is an array, the elements are first merged using `merge`. 
+-- If the value is the empty string, merge the top level store.
+-- Format: { '`$MERGE`': '`source-path`' | ['`source-paths`', ...] }
 local function transform_MERGE(state, _val, store)
   local mode, key, parent = state.mode, state.key, state.parent
 
-  -- Handle key:pre mode by returning the key unchanged
-  if mode == S.MKEYPRE then
+  if mode == S_MKEYPRE then
     return key
   end
 
-  -- Only process further in key:post mode
-  if mode ~= S.MKEYPOST then
-    return UNDEF
-  end
-
-  -- Get the argument value - could be string, list, or empty
-  local argval = getprop(parent, key)
-
-  -- Process the argument value into a list of data sources to merge
-  local args = {}
-
-  -- Empty string case - use top level data
-  if argval == S.empty or argval == "" or argval == nil then
-    table.insert(args, store[S.DTOP])
-    -- String path case - resolve the path
-  elseif type(argval) == 'string' and argval:match("^`([^`]+)`$") then
-    local pathref = argval:sub(2, -2)
-    local resolved = getpath(pathref, store, UNDEF, state)
-    if resolved ~= nil then
-      table.insert(args, resolved)
-    end
-    -- Array of paths case - resolve each path
-  elseif islist(argval) then
-    for i, arg in ipairs(argval) do
-      if type(arg) == 'string' and arg:match("^`([^`]+)`$") then
-        local pathref = arg:sub(2, -2)
-        local resolved = getpath(pathref, store, UNDEF, state)
-        if resolved ~= nil then
-          table.insert(args, resolved)
-        end
-      elseif arg ~= nil then
-        table.insert(args, arg)
+  -- Operate after child values have been transformed.
+  if mode == S_MKEYPOST then
+    local args = getprop(parent, key)
+    if args == S_MT then
+      args = {current["$TOP"]}
+    else
+      if islist(args) then
+        args = args
+      else
+        args = {args}
       end
     end
-    -- Other non-nil value
-  elseif argval ~= nil then
-    table.insert(args, argval)
-  end
+    -- Add metadata for array 
+    setmetatable(args, {
+      __jsontype = "array"
+    })
 
-  -- Remove this merge key from parent before merging
-  setprop(parent, key, UNDEF)
+    -- Remove the $MERGE command from a parent map.
+    setprop(parent, key, UNDEF)
 
-  -- Special case for top-level empty parent
-  local is_top_level = key == '`$MERGE`' or key == '$MERGE'
-  local is_empty_parent = true
-  for k, _ in pairs(parent) do
-    is_empty_parent = false
-    break
-  end
+    -- Literals in the parent have precedence, but we still merge onto
+    -- the parent object, so that node tree references are not changed.
+    local mergelist = {parent, table.unpack(args), clone(parent)}
+    setmetatable(mergelist, {
+      __jsontype = "array"
+    })
 
-  -- Handle special case where parent is completely empty
-  if is_top_level and is_empty_parent and #args > 0 then
-    -- Direct copy from first arg for empty top-level parent
-    for k, v in pairs(args[1]) do
-      parent[k] = v
-    end
-    return key
-  end
-
-  -- For numeric merge keys, use the special handling with mergelist
-  if key:match("^`?%$MERGE[0-9]+`?$") then
-    local mergelist = {parent}
-    for _, arg in ipairs(args) do
-      if type(arg) == 'table' then
-        table.insert(mergelist, arg)
-      end
-    end
-    -- Add parent clone at the end to ensure properties are preserved
-    table.insert(mergelist, clone(parent))
-    -- Perform the merge
     merge(mergelist)
     return key
   end
 
-  local explicit_props = {}
-
-  -- For array-based merges, we need to apply sources in order
-  if islist(argval) then
-    -- Process arguments in the correct order (for arrays, later overrides earlier)
-    for i = 1, #args do
-      local arg = args[i]
-      if type(arg) == 'table' then
-        for k, v in pairs(arg) do
-          parent[k] = v
-        end
-      end
-    end
-  else
-    -- For string-based merge with explicit props, collect original props first
-    for k, v in pairs(parent) do
-      explicit_props[k] = v
-    end
-
-    -- Then add all props from the source
-    if #args > 0 and type(args[1]) == 'table' then
-      for k, v in pairs(args[1]) do
-        if explicit_props[k] == nil then -- Don't override explicit props
-          parent[k] = v
-        end
-      end
-    end
-  end
-
-  return key
+  -- Ensure $MERGE is removed from parent list.
+  return UNDEF
 end
 
 -- Convert a node to a list
 -- Format: ['`$EACH`', '`source-path-of-node`', child-template]
-local function transform_EACH(state, _val, current, store)
+local function transform_EACH(state, _val, current, _ref, store)
   local mode, keys, path, parent, nodes = state.mode, state.keys, state.path,
     state.parent, state.nodes
 
   -- Remove arguments to avoid spurious processing
   if keys then
-    for i = 2, #keys do
-      keys[i] = UNDEF
-    end
+    keys.length = 1
   end
 
-  -- Defensive context checks
-  if mode ~= S.MVAL or path == UNDEF or nodes == UNDEF then
+  if S_MVAL ~= mode then
     return UNDEF
   end
 
-  -- Get arguments
-  local srcpath = parent[2] -- Path to source data
-  local child = clone(parent[3]) -- Child template
+  -- Get arguments: ['`$EACH`', 'source-path', child-template].
+  local srcpath = parent[2]
+  local child = clone(parent[3])
 
   -- Source data
   local src = getpath(srcpath, store, current, state)
 
   -- Create parallel data structures:
   -- source entries :: child templates
-  local tcurrent = {}
+  local tcur = {}
+  setmetatable(tcur, {
+    __jsontype = "array"
+  })
   local tval = {}
+  setmetatable(tval, {
+    __jsontype = "array"
+  })
 
-  local tkey = path[#path - 1]
-  local target = nodes[#path - 1] or nodes[#path]
+  local tkey = path[#path - 2]
+  local target = nodes[#path - 2] or nodes[#path - 1]
 
   -- Create clones of the child template for each value of the current source
-  if isnode(src) then
-    if islist(src) then
-      for i = 1, #src do
-        table.insert(tval, clone(child))
-      end
-    else
-      for k, _ in pairs(src) do
-        local childClone = clone(child)
-        -- Make a note of the key for $KEY transforms
-        childClone[S.DMETA] = {
-          KEY = k
-        }
-        table.insert(tval, childClone)
-      end
+  if islist(src) then
+    for i = 1, #src do
+      table.insert(tval, clone(child))
     end
-
-    -- Convert src to array of values
-    for _, v in pairs(src) do
-      table.insert(tcurrent, v)
+  else
+    for k, _ in pairs(src) do
+      local childClone = clone(child)
+      -- Make a note of the key for $KEY transforms
+      childClone[S_DMETA] = {
+        KEY = k
+      }
+      table.insert(tval, childClone)
     end
   end
 
+  if src == nil then
+    tcur = UNDEF
+  else
+    tcur = src
+  end
+
   -- Parent structure
-  tcurrent = {
-    [S.DTOP] = tcurrent
+  tcur = {
+    ["$TOP"] = tcur
   }
 
   -- Build the substructure
-  tval = inject(tval, store, state.modify, tcurrent)
+  tval = inject(tval, store, state.modify, tcur)
 
   setprop(target, tkey, tval)
 
@@ -1403,13 +1337,12 @@ end
 
 -- Convert a node to a map
 -- Format: { '`$PACK`':['`source-path`', child-template]}
-local function transform_PACK(state, _val, current, store)
+local function transform_PACK(state, _val, current, _ref, store)
   local mode, key, path, parent, nodes = state.mode, state.key, state.path,
     state.parent, state.nodes
 
   -- Defensive context checks
-  if mode ~= S.MKEYPRE or type(key) ~= 'string' or path == UNDEF or nodes ==
-    UNDEF then
+  if S_MKEYPRE ~= mode or type(key) ~= S_string or path == nil or nodes == nil then
     return UNDEF
   end
 
@@ -1419,9 +1352,9 @@ local function transform_PACK(state, _val, current, store)
   local child = clone(args[2]) -- Child template
 
   -- Find key and target node
-  local keyprop = child[S.DKEY]
-  local tkey = path[#path - 1]
-  local target = nodes[#path - 1] or nodes[#path]
+  local keyprop = child[S_DKEY]
+  local tkey = path[#path - 2]
+  local target = nodes[#path - 2] or nodes[#path - 1]
 
   -- Source data
   local src = getpath(srcpath, store, current, state)
@@ -1432,10 +1365,10 @@ local function transform_PACK(state, _val, current, store)
   elseif ismap(src) then
     local entries = {}
     for k, v in pairs(src) do
-      if v[S.DMETA] == UNDEF then
-        v[S.DMETA] = {}
+      if v[S_DMETA] == UNDEF then
+        v[S_DMETA] = {}
       end
-      v[S.DMETA].KEY = k
+      v[S_DMETA].KEY = k
       table.insert(entries, v)
     end
     src = entries
@@ -1443,14 +1376,14 @@ local function transform_PACK(state, _val, current, store)
     return UNDEF
   end
 
-  if src == UNDEF then
+  if src == nil then
     return UNDEF
   end
 
   -- Get key if specified
-  local childkey = getprop(child, S.DKEY)
+  local childkey = getprop(child, S_DKEY)
   local keyname = childkey == UNDEF and keyprop or childkey
-  setprop(child, S.DKEY, UNDEF)
+  setprop(child, S_DKEY, UNDEF)
 
   -- Build parallel target object
   local tval = {}
@@ -1458,7 +1391,7 @@ local function transform_PACK(state, _val, current, store)
     local kn = getprop(n, keyname)
     setprop(tval, kn, clone(child))
     local nchild = getprop(tval, kn)
-    setprop(nchild, S.DMETA, getprop(n, S.DMETA))
+    setprop(nchild, S_DMETA, getprop(n, S_DMETA))
   end
 
   -- Build parallel source object
@@ -1469,7 +1402,7 @@ local function transform_PACK(state, _val, current, store)
   end
 
   tcurrent = {
-    [S.DTOP] = tcurrent
+    ["$TOP"] = tcurrent
   }
 
   -- Build substructure
@@ -1495,10 +1428,10 @@ local function transform(data, -- Source data to transform into new data (origin
   local extraTransforms = {}
   local extraData = {}
 
-  if extra ~= UNDEF then
+  if extra ~= nil then
     for _, item in ipairs(items(extra)) do
       local k, v = item[1], item[2]
-      if type(k) == 'string' and k:sub(1, 1) == S.DS then
+      if type(k) == 'string' and k:sub(1, 1) == S_DS then
         extraTransforms[k] = v
       else
         extraData[k] = v
@@ -1510,31 +1443,33 @@ local function transform(data, -- Source data to transform into new data (origin
 
   -- Define a top level store that provides transform operations
   local store = {
-    -- The inject function recognizes this special location for the root of the source data
-    [S.DTOP] = dataClone,
+    -- The inject function recognises this special location for the root of the source data.
+    -- NOTE: to escape data that contains "`$FOO`" keys at the top level,
+    -- place that data inside a holding map: { myholder: mydata }.
+    ["$TOP"] = dataClone,
 
     -- Escape backtick (this also works inside backticks)
-    [S.DS .. 'BT'] = function()
-      return S.BT
+    [S_DS .. 'BT'] = function()
+      return S_BT
     end,
 
     -- Escape dollar sign (this also works inside backticks)
-    [S.DS .. 'DS'] = function()
-      return S.DS
+    [S_DS .. 'DS'] = function()
+      return S_DS
     end,
 
     -- Insert current date and time as an ISO string
-    [S.DS .. 'WHEN'] = function()
+    [S_DS .. 'WHEN'] = function()
       return os.date('!%Y-%m-%dT%H:%M:%S.000Z')
     end,
 
-    [S.DS .. 'DELETE'] = transform_DELETE,
-    [S.DS .. 'COPY'] = transform_COPY,
-    [S.DS .. 'KEY'] = transform_KEY,
-    [S.DS .. 'META'] = transform_META,
-    [S.DS .. 'MERGE'] = transform_MERGE,
-    [S.DS .. 'EACH'] = transform_EACH,
-    [S.DS .. 'PACK'] = transform_PACK
+    [S_DS .. 'DELETE'] = transform_DELETE,
+    [S_DS .. 'COPY'] = transform_COPY,
+    [S_DS .. 'KEY'] = transform_KEY,
+    [S_DS .. 'META'] = transform_META,
+    [S_DS .. 'MERGE'] = transform_MERGE,
+    [S_DS .. 'EACH'] = transform_EACH,
+    [S_DS .. 'PACK'] = transform_PACK
   }
 
   -- Add custom extra transforms, if any
