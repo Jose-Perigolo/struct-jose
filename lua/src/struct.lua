@@ -1358,7 +1358,7 @@ local function transform_EACH(state, _val, current, _ref, store)
 
   -- Set up parent structure with $TOP pointing to tcur
   -- This makes source values directly accessible by their keys
-  local tcurrent = {
+  tcur = {
     ["$TOP"] = tcur
   }
 
