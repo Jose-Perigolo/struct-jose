@@ -1299,7 +1299,6 @@ local function transform_EACH(state, _val, current, _ref, store)
 
   -- Remove arguments to avoid spurious processing
   if keys then
-    -- Keep only the first key ($EACH) to prevent processing the other args
     while #keys > 1 do
       table.remove(keys)
     end
@@ -1310,8 +1309,6 @@ local function transform_EACH(state, _val, current, _ref, store)
   end
 
   -- Get arguments: ['`$EACH`', 'source-path', child-template]
-  -- Note: JavaScript/TypeScript arrays are 0-indexed, but Lua arrays are 1-indexed
-  -- So parent[1] in TS == parent[2] in Lua, parent[2] in TS == parent[3] in Lua
   local srcpath = parent[2]
   local child = clone(parent[3])
 
@@ -1322,73 +1319,54 @@ local function transform_EACH(state, _val, current, _ref, store)
   local tkey = path[#path - 1]
   local target = nodes[#nodes - 1]
 
-  -- Create parallel data structures for source values and template values
-  -- tcur will hold source data values
-  -- tval will hold template values to be filled in
-  local tcur = {}
-  local tval = {}
+  -- Create parallel arrays for templates and source values
+  local tval = {} -- Templates 
+  local srcValues = {} -- Source values (equivalent to Object.values in JS)
 
-  -- Clone the child template for each source value
+  -- Extract values from source object/array with deterministic ordering
   if islist(src) then
-    -- For arrays, create a template clone for each item
+    -- For arrays, add each item directly (already ordered)
     for i = 1, #src do
-      -- Add template to output
-      table.insert(tval, clone(child))
-
-      -- Add source value to current using 0-based index (for JS compat)
-      tcur[i - 1] = src[i]
+      table.insert(srcValues, src[i])
     end
-
-    -- Ensure tval is treated as an array
-    setmetatable(tval, {
-      __jsontype = "array"
-    })
-
   elseif ismap(src) then
-    -- For maps, create a template for each entry
-    local items_array = items(src)
-
-    for _, item in ipairs(items_array) do
-      local k, v = item[1], item[2]
-
-      -- Clone template and add metadata
-      local cclone = clone(child)
-      cclone[S_DMETA] = {
-        KEY = k
-      }
-
-      -- Add template to output
-      table.insert(tval, cclone)
-
-      -- Add source value to current using original key
-      tcur[k] = v
+    -- For maps, extract values in key-sorted order for deterministic behavior
+    local sortedKeys = {}
+    for k in pairs(src) do
+      table.insert(sortedKeys, k)
     end
+    table.sort(sortedKeys) -- Sort keys alphabetically
 
-    -- Ensure tval is treated as an array
-    setmetatable(tval, {
-      __jsontype = "array"
-    })
+    for _, k in ipairs(sortedKeys) do
+      table.insert(srcValues, src[k])
+    end
   end
 
-  -- Wrap tcur in a $TOP structure - this is crucial
-  -- This matches both TypeScript and Go implementations
+  -- Create templates for each source value
+  for i = 1, #srcValues do
+    table.insert(tval, clone(child))
+  end
+
+  -- Ensure tval has array metadata
+  setmetatable(tval, {
+    __jsontype = "array"
+  })
+
+  -- Wrap source values exactly as TypeScript/Go do
   local tcurrent = {
-    [S_DTOP] = tcur
+    [S_DTOP] = srcValues
   }
 
-  -- Build the substructure through injection
-  -- This processes the templates with the source data
+  -- Process templates with source values
   tval = inject(tval, store, state.modify, tcurrent)
 
-  -- Update the parent with the resulting list
+  -- Update the parent with the result
   setprop(target, tkey, tval)
 
-  -- Prevent callee from damaging first list entry (since we are in `val` mode)
-  -- Return the first element (if any) or nil
+  -- Return first entry if available
   if #tval > 0 then
     return tval[1]
   end
-
   return UNDEF
 end
 
