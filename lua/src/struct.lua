@@ -995,7 +995,7 @@ end
 -- Default inject handler for transforms. If the path resolves to a function,
 -- call the function passing the injection state. This is how transforms operate.
 local function injecthandler(state, val, current, ref, store)
--- Check if it's a command by checking if it's a function and starts with $
+  -- Check if it's a command by checking if it's a function and starts with $
   local iscmd = isfunc(val) and (UNDEF == ref or ref:sub(1, 1) == S_DS)
 
   -- Handle commands with numeric suffixes (e.g., $COPY2, $MERGE3)
@@ -1297,78 +1297,99 @@ local function transform_EACH(state, _val, current, _ref, store)
   local mode, keys, path, parent, nodes = state.mode, state.keys, state.path,
     state.parent, state.nodes
 
+  -- Remove arguments to avoid spurious processing
+  if keys then
+    -- Keep only the first key ($EACH) to prevent processing the other args
+    while #keys > 1 do
+      table.remove(keys)
+    end
+  end
+
   if S_MVAL ~= mode then
     return UNDEF
   end
 
-  -- Get arguments: ['`$EACH`', 'source-path', child-template].
+  -- Get arguments: ['`$EACH`', 'source-path', child-template]
+  -- Note: JavaScript/TypeScript arrays are 0-indexed, but Lua arrays are 1-indexed
+  -- So parent[1] in TS == parent[2] in Lua, parent[2] in TS == parent[3] in Lua
   local srcpath = parent[2]
   local child = clone(parent[3])
 
   -- Source data
   local src = getpath(srcpath, store, current, state)
 
-  -- Create empty array with proper metatable
-  local tval = {}
-  setmetatable(tval, {
-    __jsontype = "array"
-  })
-
-  -- Find the actual property name and parent object
+  -- Find the target key and parent to update
   local tkey = path[#path - 1]
   local target = nodes[#nodes - 1]
 
-  -- If we're in a nested array and path[#path-1] is a numeric index
-  if tonumber(tkey) ~= nil then
-    -- Go back one more level to find the property name
-    if #path >= 3 then
-      tkey = path[#path - 2]
-      target = nodes[#nodes - 2]
-    end
-  end
-
-  -- Create parallel data structures:
-  -- source entries :: child templates
+  -- Create parallel data structures for source values and template values
+  -- tcur will hold source data values
+  -- tval will hold template values to be filled in
   local tcur = {}
+  local tval = {}
 
-  -- Process source items based on type
+  -- Clone the child template for each source value
   if islist(src) then
-    -- For arrays, clone template for each entry
+    -- For arrays, create a template clone for each item
     for i = 1, #src do
+      -- Add template to output
       table.insert(tval, clone(child))
-      -- Add source item to current context
-      tcur[i - 1] = src[i] -- Using 0-based indexing
+
+      -- Add source value to current using 0-based index (for JS compat)
+      tcur[i - 1] = src[i]
     end
+
+    -- Ensure tval is treated as an array
+    setmetatable(tval, {
+      __jsontype = "array"
+    })
+
   elseif ismap(src) then
-    -- For maps, create template for each entry
-    local idx = 0
-    for k, v in pairs(src) do
+    -- For maps, create a template for each entry
+    local items_array = items(src)
+
+    for _, item in ipairs(items_array) do
+      local k, v = item[1], item[2]
+
       -- Clone template and add metadata
-      local childClone = clone(child)
-      childClone[S_DMETA] = {
+      local cclone = clone(child)
+      cclone[S_DMETA] = {
         KEY = k
       }
-      table.insert(tval, childClone)
 
-      -- Add source item to current context, using its original key
+      -- Add template to output
+      table.insert(tval, cclone)
+
+      -- Add source value to current using original key
       tcur[k] = v
-      idx = idx + 1
     end
+
+    -- Ensure tval is treated as an array
+    setmetatable(tval, {
+      __jsontype = "array"
+    })
   end
 
-  -- Set up parent structure with $TOP pointing to tcur
-  -- This makes source values directly accessible by their keys
-  tcur = {
-    ["$TOP"] = tcur
+  -- Wrap tcur in a $TOP structure - this is crucial
+  -- This matches both TypeScript and Go implementations
+  local tcurrent = {
+    [S_DTOP] = tcur
   }
 
-  -- Build the substructure
-  tval = inject(tval, store, state.modify, tcur)
+  -- Build the substructure through injection
+  -- This processes the templates with the source data
+  tval = inject(tval, store, state.modify, tcurrent)
 
+  -- Update the parent with the resulting list
   setprop(target, tkey, tval)
 
   -- Prevent callee from damaging first list entry (since we are in `val` mode)
-  return tval[1]
+  -- Return the first element (if any) or nil
+  if #tval > 0 then
+    return tval[1]
+  end
+
+  return UNDEF
 end
 
 -- Convert a node to a map
@@ -1453,7 +1474,7 @@ end
 -- Transform data using spec.
 -- Only operates on static JSON-like data.
 -- Arrays are treated as if they are objects with indices as keys.
-local function transform(data, -- Source data to transform into new data (original not mutated)
+function transform(data, -- Source data to transform into new data (original not mutated)
   spec, -- Transform specification; output follows this shape
   extra, -- Additional store of data and transforms
   modify -- Optionally modify individual values
@@ -1461,6 +1482,7 @@ local function transform(data, -- Source data to transform into new data (origin
   -- Clone the spec so that the clone can be modified in place as the transform result
   spec = clone(spec)
 
+  -- Split extra transforms from extra data
   local extraTransforms = {}
   local extraData = {}
 
@@ -1475,19 +1497,25 @@ local function transform(data, -- Source data to transform into new data (origin
     end
   end
 
-  local dataClone = merge({clone(extraData or {}), clone(data or {})})
+  -- Clone both extraData and data, then merge them
+  -- The nil checks mirror the TypeScript UNDEF checks
+  -- This creates our data source for transforms
+  local extraDataClone = clone(extraData or {})
+  local dataClone = clone(data or {})
+  local mergedData = merge({extraDataClone, dataClone})
 
   -- Define a top level store that provides transform operations
   local store = {
     -- The inject function recognises this special location for the root of the source data.
-    ["$TOP"] = dataClone,
+    -- This exactly matches TypeScript and Go
+    [S_DTOP] = mergedData,
 
-    -- Escape backtick (this also works inside backticks)
+    -- Escape backtick (works inside backticks too)
     [S_DS .. 'BT'] = function()
       return S_BT
     end,
 
-    -- Escape dollar sign (this also works inside backticks)
+    -- Escape dollar sign (works inside backticks too)
     [S_DS .. 'DS'] = function()
       return S_DS
     end,
@@ -1497,6 +1525,7 @@ local function transform(data, -- Source data to transform into new data (origin
       return os.date('!%Y-%m-%dT%H:%M:%S.000Z')
     end,
 
+    -- Built-in transform functions
     [S_DS .. 'DELETE'] = transform_DELETE,
     [S_DS .. 'COPY'] = transform_COPY,
     [S_DS .. 'KEY'] = transform_KEY,
@@ -1506,12 +1535,14 @@ local function transform(data, -- Source data to transform into new data (origin
     [S_DS .. 'PACK'] = transform_PACK
   }
 
-
   -- Add custom extra transforms, if any
   for k, v in pairs(extraTransforms) do
     store[k] = v
   end
 
+  -- Build the transformed structure
+  -- In Go, this passes 'nil' for the state parameter explicitly
+  -- In Lua, we let inject handle creating the state
   local out = inject(spec, store, modify, store)
 
   return out
