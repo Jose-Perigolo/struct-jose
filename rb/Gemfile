@@ -1,8 +1,0 @@
-# Gemfile
-source 'https://rubygems.org'
-
-# Specify your Ruby version if needed
-ruby '>= 2.7.0'
-
-# Minitest is used for the tests
-gem 'minitest', '~> 5.14'
