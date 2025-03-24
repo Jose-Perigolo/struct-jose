@@ -8224,14 +8224,6 @@
         "set": [
           {
             "ctx": {
-              "bar": "BAR0"
-            },
-            "out": {
-              "zed": "ZED_BAR0"
-            }
-          },
-          {
-            "ctx": {
               "bar": "BAR1"
             },
             "client": "a",
