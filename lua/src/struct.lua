@@ -1469,8 +1469,8 @@ local function transform_PACK(state, _val, current, _ref, store)
 
   -- Find key and target node
   local keyprop = child[S_DKEY]
-  local tkey = path[#path - 2]
-  local target = nodes[#path - 2] or nodes[#path - 1]
+  local tkey = path[#path - 1]
+  local target = nodes[#path - 1] or nodes[#path]
 
   -- Source data
   local src = getpath(srcpath, store, current, state)
