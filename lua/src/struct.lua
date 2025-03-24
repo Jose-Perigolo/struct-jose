@@ -1216,8 +1216,7 @@ local function transform_KEY(state, _val, current)
   end
 
   -- Key is defined within general purpose $META object
-  return
-    getprop(getprop(parent, S_DMETA), S_KEY, getprop(path, path.length - 2))
+  return getprop(getprop(parent, S_DMETA), S_KEY, getprop(path, #path - 2))
 end
 
 -- Store meta data about a node.  Does nothing itself, just used by
@@ -1292,13 +1291,13 @@ local function transform_MERGE(state, _val, current)
   return UNDEF
 end
 
--- Convert a node to a list
+-- Convert a node to a list.
 -- Format: ['`$EACH`', '`source-path-of-node`', child-template]
 local function transform_EACH(state, _val, current, _ref, store)
   local mode, keys, path, parent, nodes = state.mode, state.keys, state.path,
     state.parent, state.nodes
 
-  -- Remove arguments to avoid spurious processing
+  -- Remove arguments to avoid spurious processing.
   if keys then
     while #keys > 1 do
       table.remove(keys)
@@ -1325,42 +1324,43 @@ local function transform_EACH(state, _val, current, _ref, store)
   setmetatable(tval, {
     __jsontype = "array"
   })
-  local tcur = {} -- Templates 
+  local tcur = {} -- Source values
   setmetatable(tcur, {
     __jsontype = "array"
   })
 
   -- Extract values from source object/array with deterministic ordering
-  if islist(src) then
-    -- For arrays, add each item directly (already ordered)
-    for i = 1, #src do
-      table.insert(src, clone(child))
-    end
-  elseif ismap(src) then
-    -- For maps, extract values in key-sorted order for deterministic behavior
-    local sortedKeys = {}
-    for k in pairs(src) do
-      table.insert(sortedKeys, k)
-    end
-    table.sort(sortedKeys) -- Sort keys alphabetically
+  if src ~= nil then
+    if islist(src) then
+      -- For arrays, create a template for each source item
+      for i = 1, #src do
+        local copy_child = clone(child)
+        -- Add metadata with KEY for each item
+        copy_child[S_DMETA] = {
+          [S_KEY] = tostring(i - 1) -- Use 0-based index to match JS/Go
+        }
+        table.insert(tval, copy_child)
+        -- Add the corresponding source value to tcur
+        table.insert(tcur, src[i])
+      end
+    elseif ismap(src) then
+      -- For maps, extract values in key-sorted order for deterministic behavior
+      local sortedKeys = {}
+      for k in pairs(src) do
+        table.insert(sortedKeys, k)
+      end
+      table.sort(sortedKeys) -- Sort keys alphabetically
 
-    for _, k in ipairs(sortedKeys) do
-      table.insert(src, src[k])
+      for _, k in ipairs(sortedKeys) do
+        local copy_child = clone(child)
+        copy_child[S_DMETA] = {
+          [S_KEY] = k -- Use the map key (e.g., "a")
+        }
+        table.insert(tval, copy_child)
+        table.insert(tcur, src[k])
+      end
     end
   end
-
-  -- Create templates for each source value
-  for i = 1, #src do
-    table.insert(tval, clone(child))
-    tval[i][S_DMETA] = {
-      KEY = src[i]
-    }
-  end
-
-  -- Ensure tval has array metadata
-  setmetatable(tval, {
-    __jsontype = "array"
-  })
 
   -- Wrap source values exactly as TypeScript/Go do
   tcur = {
@@ -1374,7 +1374,11 @@ local function transform_EACH(state, _val, current, _ref, store)
   setprop(target, tkey, tval)
 
   -- Return first entry if available
-  return tval[1]
+  if #tval > 0 then
+    return tval[1]
+  else
+    return nil
+  end
 end
 
 -- Convert a node to a map
