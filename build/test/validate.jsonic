@@ -88,6 +88,9 @@ node: {
     { in: { data: {q:[a24]}, spec: {q:['`$CHILD`','`$STRING`']} },
       out: {q:[a24]} }
 
+    { in: { data: {q:[true,false]}, spec: {q:['`$CHILD`','`$BOOLEAN`']} },
+      out: {q:[true,false]} }
+
     { in: { data: {q:[]}, spec: {q:['`$CHILD`','`$BOOLEAN`']} },
       out: {q:[]} }
 
