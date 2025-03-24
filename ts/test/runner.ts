@@ -1,10 +1,11 @@
+// This test utility runs the JSON-specified tests in build/test/test.json.
 
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { deepEqual, fail, AssertionError } from 'node:assert'
 
 
-// Runner does make used of these struct utilities, and this usage is
+// Runner does make use of these struct utilities, and this usage is
 // circular. This is a trade-off tp make the runner code simpler.
 import {
   clone,
@@ -16,13 +17,16 @@ import {
 } from '../dist/struct'
 
 
+const NULLMARK = '__NULL__'
+
+
 class Client {
 
   #opts: Record<string, any>
   #utility: Record<string, any>
 
-  constructor(opts: Record<string, any>) {
-    this.#opts = opts
+  constructor(opts?: Record<string, any>) {
+    this.#opts = opts || {}
     this.#utility = {
       struct: {
         clone,
@@ -44,16 +48,16 @@ class Client {
   }
 
   static async test(opts?: Record<string, any>): Promise<Client> {
-    return new Client(opts || {})
+    return new Client(opts)
   }
 
-  utility() { return this.#utility }
+  utility() {
+    return this.#utility
+  }
 }
 
 
 type Subject = (...args: any[]) => any
-
-
 type RunSet = (testspec: any, testsubject: Function) => Promise<any>
 type RunSetFlags = (testspec: any, flags: Record<string, boolean>, testsubject: Function)
   => Promise<any>
@@ -72,9 +76,6 @@ type TestPack = {
 }
 
 type Flags = Record<string, boolean>
-
-
-const NULLMARK = '__NULL__'
 
 
 async function runner(
@@ -125,7 +126,7 @@ async function runner(
     testsubject: Function
   ) => runsetflags(testspec, {}, testsubject)
 
-  let runpack: RunPack = {
+  const runpack: RunPack = {
     spec,
     runset,
     runsetflags,
@@ -142,7 +143,6 @@ function resolveSpec(name: string, testfile: string): Record<string, any> {
       __dirname, testfile), 'utf8'))
 
   let spec = alltests.primary?.[name] || alltests[name] || alltests
-
   return spec
 }
 
@@ -238,7 +238,6 @@ function handleError(entry: any, err: any, structUtils: Record<string, any>) {
 
 
 function resolveArgs(entry: any, testpack: TestPack): any[] {
-  // let args = [structUtils.clone(entry.in)]
   let args = [clone(entry.in)]
 
   if (entry.ctx) {
@@ -274,8 +273,6 @@ function resolveTestPack(
     utility: client.utility(),
   }
 
-  // console.log('CLIENTS', clients)
-
   if (entry.client) {
     testpack.client = clients[entry.client]
     testpack.utility = testpack.client.utility()
@@ -298,7 +295,8 @@ function match(
 
       if (!matchval(val, baseval, structUtils)) {
         fail('MATCH: ' + path.join('.') +
-          ': [' + structUtils.stringify(val) + '] <=> [' + structUtils.stringify(baseval) + ']')
+          ': [' + structUtils.stringify(val) +
+          '] <=> [' + structUtils.stringify(baseval) + ']')
       }
     }
   })
@@ -310,7 +308,7 @@ function matchval(
   base: any,
   structUtils: Record<string, any>
 ) {
-  check = '__UNDEF__' === check ? undefined : check
+  check = NULLMARK === check ? undefined : check
 
   let pass = check === base
 

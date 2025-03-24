@@ -16,14 +16,14 @@ const runner_1 = require("./runner");
     const injectSpec = spec.inject;
     const transformSpec = spec.transform;
     const validateSpec = spec.validate;
-    // minor tests
-    // ===========
-    (0, node_test_1.test)('minor-exists', () => {
+    (0, node_test_1.test)('exists', () => {
         (0, node_assert_1.equal)('function', typeof struct_1.clone);
         (0, node_assert_1.equal)('function', typeof struct_1.escre);
         (0, node_assert_1.equal)('function', typeof struct_1.escurl);
         (0, node_assert_1.equal)('function', typeof struct_1.getprop);
+        (0, node_assert_1.equal)('function', typeof struct_1.getpath);
         (0, node_assert_1.equal)('function', typeof struct_1.haskey);
+        (0, node_assert_1.equal)('function', typeof struct_1.inject);
         (0, node_assert_1.equal)('function', typeof struct_1.isempty);
         (0, node_assert_1.equal)('function', typeof struct_1.isfunc);
         (0, node_assert_1.equal)('function', typeof struct_1.iskey);
@@ -33,12 +33,18 @@ const runner_1 = require("./runner");
         (0, node_assert_1.equal)('function', typeof struct_1.items);
         (0, node_assert_1.equal)('function', typeof struct_1.joinurl);
         (0, node_assert_1.equal)('function', typeof struct_1.keysof);
+        (0, node_assert_1.equal)('function', typeof struct_1.merge);
         (0, node_assert_1.equal)('function', typeof struct_1.pathify);
         (0, node_assert_1.equal)('function', typeof struct_1.setprop);
         (0, node_assert_1.equal)('function', typeof struct_1.strkey);
         (0, node_assert_1.equal)('function', typeof struct_1.stringify);
+        (0, node_assert_1.equal)('function', typeof struct_1.transform);
         (0, node_assert_1.equal)('function', typeof struct_1.typify);
+        (0, node_assert_1.equal)('function', typeof struct_1.validate);
+        (0, node_assert_1.equal)('function', typeof struct_1.walk);
     });
+    // minor tests
+    // ===========
     (0, node_test_1.test)('minor-isnode', async () => {
         await runset(minorSpec.isnode, struct_1.isnode);
     });
@@ -126,9 +132,6 @@ const runner_1 = require("./runner");
     });
     // walk tests
     // ==========
-    (0, node_test_1.test)('walk-exists', async () => {
-        (0, node_assert_1.equal)('function', typeof struct_1.walk);
-    });
     (0, node_test_1.test)('walk-log', async () => {
         const test = (0, struct_1.clone)(walkSpec.log);
         const log = [];
@@ -150,9 +153,6 @@ const runner_1 = require("./runner");
     });
     // merge tests
     // ===========
-    (0, node_test_1.test)('merge-exists', async () => {
-        (0, node_assert_1.equal)('function', typeof struct_1.merge);
-    });
     (0, node_test_1.test)('merge-basic', async () => {
         const test = (0, struct_1.clone)(mergeSpec.basic);
         (0, node_assert_1.deepEqual)((0, struct_1.merge)(test.in), test.out);
@@ -175,9 +175,6 @@ const runner_1 = require("./runner");
     });
     // getpath tests
     // =============
-    (0, node_test_1.test)('getpath-exists', async () => {
-        (0, node_assert_1.equal)('function', typeof struct_1.getpath);
-    });
     (0, node_test_1.test)('getpath-basic', async () => {
         await runset(getpathSpec.basic, (vin) => (0, struct_1.getpath)(vin.path, vin.store));
     });
@@ -208,9 +205,6 @@ const runner_1 = require("./runner");
     });
     // inject tests
     // ============
-    (0, node_test_1.test)('inject-exists', async () => {
-        (0, node_assert_1.equal)('function', typeof struct_1.inject);
-    });
     (0, node_test_1.test)('inject-basic', async () => {
         const test = (0, struct_1.clone)(injectSpec.basic);
         (0, node_assert_1.deepEqual)((0, struct_1.inject)(test.in.val, test.in.store), test.out);
@@ -223,9 +217,6 @@ const runner_1 = require("./runner");
     });
     // transform tests
     // ===============
-    (0, node_test_1.test)('transform-exists', async () => {
-        (0, node_assert_1.equal)('function', typeof struct_1.transform);
-    });
     (0, node_test_1.test)('transform-basic', async () => {
         const test = (0, struct_1.clone)(transformSpec.basic);
         (0, node_assert_1.deepEqual)((0, struct_1.transform)(test.in.data, test.in.spec, test.in.store), test.out);
@@ -270,9 +261,6 @@ const runner_1 = require("./runner");
     });
     // validate tests
     // ===============
-    (0, node_test_1.test)('validate-exists', async () => {
-        (0, node_assert_1.equal)('function', typeof struct_1.validate);
-    });
     (0, node_test_1.test)('validate-basic', async () => {
         await runset(validateSpec.basic, (vin) => (0, struct_1.validate)(vin.data, vin.spec));
     });

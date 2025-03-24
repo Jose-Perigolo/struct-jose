@@ -2,7 +2,6 @@
 // RUN: npm test
 // RUN-SOME: npm run test-some --pattern=getpath
 
-
 import { test, describe } from 'node:test'
 import { equal, deepEqual } from 'node:assert'
 
@@ -12,26 +11,31 @@ import {
   escurl,
   getpath,
   getprop,
+
   haskey,
   inject,
   isempty,
   isfunc,
   iskey,
+
   islist,
   ismap,
   isnode,
   items,
   joinurl,
+
   keysof,
   merge,
   pathify,
   setprop,
   strkey,
+
   stringify,
   transform,
   typify,
   validate,
   walk,
+
 } from '../dist/struct'
 
 import type {
@@ -61,35 +65,41 @@ describe('struct', async () => {
   const validateSpec = spec.validate
 
 
-
-  // minor tests
-  // ===========
-
-  test('minor-exists', () => {
+  test('exists', () => {
     equal('function', typeof clone)
     equal('function', typeof escre)
     equal('function', typeof escurl)
     equal('function', typeof getprop)
-    equal('function', typeof haskey)
+    equal('function', typeof getpath)
 
+    equal('function', typeof haskey)
+    equal('function', typeof inject)
     equal('function', typeof isempty)
     equal('function', typeof isfunc)
     equal('function', typeof iskey)
+
     equal('function', typeof islist)
     equal('function', typeof ismap)
-
     equal('function', typeof isnode)
     equal('function', typeof items)
     equal('function', typeof joinurl)
-    equal('function', typeof keysof)
-    equal('function', typeof pathify)
 
+    equal('function', typeof keysof)
+    equal('function', typeof merge)
+    equal('function', typeof pathify)
     equal('function', typeof setprop)
     equal('function', typeof strkey)
+
     equal('function', typeof stringify)
+    equal('function', typeof transform)
     equal('function', typeof typify)
+    equal('function', typeof validate)
+    equal('function', typeof walk)
   })
 
+
+  // minor tests
+  // ===========
 
   test('minor-isnode', async () => {
     await runset(minorSpec.isnode, isnode)
@@ -228,11 +238,6 @@ describe('struct', async () => {
   // walk tests
   // ==========
 
-  test('walk-exists', async () => {
-    equal('function', typeof walk)
-  })
-
-
   test('walk-log', async () => {
     const test = clone(walkSpec.log)
 
@@ -262,11 +267,6 @@ describe('struct', async () => {
 
   // merge tests
   // ===========
-
-  test('merge-exists', async () => {
-    equal('function', typeof merge)
-  })
-
 
   test('merge-basic', async () => {
     const test = clone(mergeSpec.basic)
@@ -299,11 +299,6 @@ describe('struct', async () => {
 
   // getpath tests
   // =============
-
-  test('getpath-exists', async () => {
-    equal('function', typeof getpath)
-  })
-
 
   test('getpath-basic', async () => {
     await runset(getpathSpec.basic, (vin: any) => getpath(vin.path, vin.store))
@@ -344,11 +339,6 @@ describe('struct', async () => {
   // inject tests
   // ============
 
-  test('inject-exists', async () => {
-    equal('function', typeof inject)
-  })
-
-
   test('inject-basic', async () => {
     const test = clone(injectSpec.basic)
     deepEqual(inject(test.in.val, test.in.store), test.out)
@@ -368,11 +358,6 @@ describe('struct', async () => {
 
   // transform tests
   // ===============
-
-  test('transform-exists', async () => {
-    equal('function', typeof transform)
-  })
-
 
   test('transform-basic', async () => {
     const test = clone(transformSpec.basic)
@@ -445,11 +430,6 @@ describe('struct', async () => {
 
   // validate tests
   // ===============
-
-  test('validate-exists', async () => {
-    equal('function', typeof validate)
-  })
-
 
   test('validate-basic', async () => {
     await runset(validateSpec.basic, (vin: any) => validate(vin.data, vin.spec))

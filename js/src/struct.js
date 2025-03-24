@@ -170,13 +170,6 @@ function getprop(val, key, alt) {
 }
 
 
-// Sorted keys of a map, or indexes of a list.
-function keysof(val) {
-  return !isnode(val) ? [] :
-    ismap(val) ? Object.keys(val).sort() : val.map((_n, i) => '' + i)
-}
-
-
 // Convert different types of keys to string representation.
 // String keys are returned as is.
 // Number keys are converted to strings.
@@ -200,6 +193,13 @@ function strkey(key = UNDEF) {
   }
 
   return S_MT
+}
+
+
+// Sorted keys of a map, or indexes of a list.
+function keysof(val) {
+  return !isnode(val) ? [] :
+    ismap(val) ? Object.keys(val).sort() : val.map((_n, i) => '' + i)
 }
 
 
@@ -257,7 +257,8 @@ function pathify(val, from) {
     }
     else {
       pathstr = path
-        .filter((p, t) => (t = typeof p, S_string === t || S_number === t))
+        // .filter((p, t) => (t = typeof p, S_string === t || S_number === t))
+        .filter((p) => iskey(p))
         .map((p) =>
           'number' === typeof p ? S_MT + Math.floor(p) :
             p.replace(/\./g, S_MT))
@@ -553,7 +554,7 @@ function getpath(path, store, current, state) {
 }
 
 
-// Inject store values into a string. Not a public utility - used by
+// Inject values from a data store into a string. Not a public utility - used by
 // `inject`.  Inject are marked with `path` where path is resolved
 // with getpath against the store or current (if defined)
 // arguments. See `getpath`.  Custom injection handling can be
@@ -569,7 +570,7 @@ function _injectstr(
   state
 ) {
   // Can't inject into non-strings
-  if (S_string !== typeof val) {
+  if (S_string !== typeof val || S_MT === val) {
     return S_MT
   }
 
@@ -580,7 +581,7 @@ function _injectstr(
 
   // Full string of the val is an injection.
   if (m) {
-    if (state) {
+    if (null != state) {
       state.full = true
     }
     let pathref = m[1]
@@ -591,14 +592,11 @@ function _injectstr(
 
     // Get the extracted path reference.
     out = getpath(pathref, store, current, state)
-
-    return out
   }
 
-  // Check for injections within the string.
-  out = val.replace(/`([^`]+)`/g,
-    (_m, ref) => {
-
+  else {
+    // Check for injections within the string.
+    const partial = (_m, ref) => {
       // Special escapes inside injection.
       ref = 3 < ref.length ? ref.replace(/\$BT/g, S_BT).replace(/\$DS/g, S_DS) : ref
       if (state) {
@@ -607,16 +605,45 @@ function _injectstr(
       const found = getpath(ref, store, current, state)
 
       // Ensure inject value is a string.
-      return UNDEF === found ? S_MT :
-        S_object === typeof found ? JSON.stringify(found) :
-          found
-    })
+      return UNDEF === found ? S_MT : S_string === typeof found ? found : JSON.stringify(found)
+      // S_object === typeof found ? JSON.stringify(found) :
+      // found
+    }
 
-  // Also call the state handler on the entire string, providing the
-  // option for custom injection.
-  if (null != state && isfunc(state.handler)) {
-    state.full = true
-    out = state.handler(state, out, current, val, store)
+    out = val.replace(/`([^`]+)`/g, partial)
+
+    // Also call the state handler on the entire string, providing the
+    // option for custom injection.
+    if (null != state && isfunc(state.handler)) {
+      state.full = true
+      out = state.handler(state, out, current, val, store)
+    }
+  }
+
+  return out
+}
+
+
+// Default inject handler for transforms. If the path resolves to a function,
+// call the function passing the injection state. This is how transforms operate.
+const _injecthandler = (
+  state,
+  val,
+  current,
+  ref,
+  store
+) => {
+  let out = val
+  const iscmd = isfunc(val) && (UNDEF === ref || ref.startsWith(S_DS))
+
+  // Only call val function if it is a special command ($NAME format).
+  if (iscmd) {
+    out = val(state, val, current, ref, store)
+  }
+
+  // Update parent with value. Ensures references remain in node tree.
+  else if (S_MVAL === state.mode && state.full) {
+    setprop(state.parent, state.key, val)
   }
 
   return out
@@ -652,7 +679,7 @@ function inject(
       parent,
       path: [S_DTOP],
       nodes: [parent],
-      handler: injecthandler,
+      handler: _injecthandler,
       base: S_DTOP,
       modify,
       errs: getprop(store, S_DERRS, []),
@@ -665,7 +692,7 @@ function inject(
     current = { $TOP: store }
   }
   else {
-    const parentkey = state.path[state.path.length - 2]
+    const parentkey = getprop(state.path, state.path.length - 2)
     current = null == parentkey ? current : getprop(current, parentkey)
   }
 
@@ -676,7 +703,7 @@ function inject(
     // Injection transforms ($FOO) are processed *after* other keys.
     // NOTE: the optional digits suffix of the transform can thus be
     // used to order the transforms.
-    const origkeys = ismap(val) ? [
+    let nodekeys = ismap(val) ? [
       ...Object.keys(val).filter(k => !k.includes(S_DS)),
       ...Object.keys(val).filter(k => k.includes(S_DS)).sort(),
     ] : val.map((_n, i) => i)
@@ -686,55 +713,57 @@ function inject(
     // 1. state.mode='key:pre' - Key string is injected, returning a possibly altered key.
     // 2. state.mode='val' - The child value is injected.
     // 3. state.mode='key:post' - Key string is injected again, allowing child mutation.
-    for (let okI = 0; okI < origkeys.length; okI++) {
-      const origkey = S_MT + origkeys[okI]
+    for (let nkI = 0; nkI < nodekeys.length; nkI++) {
+      const nodekey = S_MT + nodekeys[nkI]
 
-      // let child = parent[origkey]
-      let childpath = [...(state.path || []), origkey]
+      // let child = parent[nodekey]
+      let childpath = [...(state.path || []), nodekey]
       let childnodes = [...(state.nodes || []), val]
-      let child = getprop(val, origkey)
+      let childval = getprop(val, nodekey)
 
       const childstate = {
         mode: S_MKEYPRE,
         full: false,
-        keyI: okI,
-        keys: origkeys,
-        key: origkey,
-        // val,
-        val: child,
+        keyI: nkI,
+        keys: nodekeys,
+        key: nodekey,
+        val: childval,
         parent: val,
         path: childpath,
         nodes: childnodes,
-        handler: injecthandler,
+        handler: _injecthandler,
         base: state.base,
         errs: state.errs,
         meta: state.meta,
       }
 
       // Peform the key:pre mode injection on the child key.
-      const prekey = _injectstr(origkey, store, current, childstate)
+      const prekey = _injectstr(nodekey, store, current, childstate)
 
       // The injection may modify child processing.
-      okI = childstate.keyI
+      nkI = childstate.keyI
+      nodekeys = childstate.keys
 
       // Prevent further processing by returning an undefined prekey
       if (UNDEF !== prekey) {
-        childstate.val = child = getprop(val, prekey)
+        childstate.val = childval = getprop(val, prekey)
         childstate.mode = S_MVAL
 
         // Perform the val mode injection on the child value.
         // NOTE: return value is not used.
-        inject(child, store, modify, current, childstate)
+        inject(childval, store, modify, current, childstate)
 
         // The injection may modify child processing.
-        okI = childstate.keyI
+        nkI = childstate.keyI
+        nodekeys = childstate.keys
 
         // Peform the key:post mode injection on the child key.
         childstate.mode = S_MKEYPOST
-        _injectstr(origkey, store, current, childstate)
+        _injectstr(nodekey, store, current, childstate)
 
         // The injection may modify child processing.
-        okI = childstate.keyI
+        nkI = childstate.keyI
+        nodekeys = childstate.keys
       }
     }
   }
@@ -748,10 +777,13 @@ function inject(
 
   // Custom modification.
   if (modify) {
+    let mkey = state.key
+    let mparent = state.parent
+    let mval = getprop(mparent, mkey)
     modify(
-      val,
-      getprop(state, S_key),
-      getprop(state, S_parent),
+      mval,
+      mkey,
+      mparent,
       state,
       current,
       store
@@ -761,32 +793,6 @@ function inject(
   // Original val reference may no longer be correct.
   // This return value is only used as the top level result.
   return getprop(state.parent, S_DTOP)
-}
-
-
-// Default inject handler for transforms. If the path resolves to a function,
-// call the function passing the injection state. This is how transforms operate.
-const injecthandler = (
-  state,
-  val,
-  current,
-  ref,
-  store
-) => {
-
-  const iscmd = isfunc(val) && (UNDEF === ref || ref.startsWith(S_DS))
-
-  // Only call val function if it is a special command ($NAME format).
-  if (iscmd) {
-    val = val(state, val, current, ref, store)
-  }
-
-  // Update parent with value. Ensures references remain in node tree.
-  else if (S_MVAL === state.mode && state.full) {
-    setprop(state.parent, state.key, val)
-  }
-
-  return val
 }
 
 
@@ -1081,7 +1087,6 @@ function transform(
   }
 
   const out = inject(spec, store, modify, store)
-
   return out
 }
 
@@ -1091,19 +1096,19 @@ const validate_STRING = (state, _val, current) => {
   let out = getprop(current, state.key)
 
   const t = typify(out)
-  if (S_string === t) {
-    if (S_MT === out) {
-      state.errs.push('Empty string at ' + pathify(state.path, 1))
-      return UNDEF
-    }
-    else {
-      return out
-    }
-  }
-  else {
-    state.errs.push(_invalidTypeMsg(state.path, S_string, t, out))
+  if (S_string !== t) {
+    let msg = _invalidTypeMsg(state.path, S_string, t, out)
+    state.errs.push(msg)
     return UNDEF
   }
+
+  if (S_MT === out) {
+    let msg = 'Empty string at ' + pathify(state.path, 1)
+    state.errs.push(msg)
+    return UNDEF
+  }
+
+  return out
 }
 
 
@@ -1140,7 +1145,7 @@ const validate_OBJECT = (state, _val, current) => {
   let out = getprop(current, state.key)
 
   const t = typify(out)
-  if (S_object !== t) {
+  if (t !== S_object) {
     state.errs.push(_invalidTypeMsg(state.path, S_object, t, out))
     return UNDEF
   }
@@ -1154,7 +1159,7 @@ const validate_ARRAY = (state, _val, current) => {
   let out = getprop(current, state.key)
 
   const t = typify(out)
-  if (S_array !== t) {
+  if (t !== S_array) {
     state.errs.push(_invalidTypeMsg(state.path, S_array, t, out))
     return UNDEF
   }
@@ -1179,8 +1184,7 @@ const validate_FUNCTION = (state, _val, current) => {
 
 // Allow any value.
 const validate_ANY = (state, _val, current) => {
-  let out = getprop(current, state.key)
-  return out
+  return getprop(current, state.key)
 }
 
 
@@ -1195,14 +1199,13 @@ const validate_CHILD = (state, _val, current) => {
 
   // Map syntax.
   if (S_MKEYPRE === mode) {
-    const child = getprop(parent, key)
+    const childtm = getprop(parent, key)
 
     // Get corresponding current object.
-    const pkey = path[path.length - 2]
+    const pkey = getprop(path, path.length - 2)
     let tval = getprop(current, pkey)
 
     if (UNDEF == tval) {
-      // Create an empty object as default.
       tval = {}
     }
     else if (!ismap(tval)) {
@@ -1213,7 +1216,7 @@ const validate_CHILD = (state, _val, current) => {
 
     const ckeys = keysof(tval)
     for (let ckey of ckeys) {
-      setprop(parent, ckey, clone(child))
+      setprop(parent, ckey, clone(childtm))
 
       // NOTE: modifying state! This extends the child value loop in inject.
       keys.push(ckey)
@@ -1225,23 +1228,26 @@ const validate_CHILD = (state, _val, current) => {
   }
 
   // List syntax.
-  else if (S_MVAL === mode) {
+  if (S_MVAL === mode) {
+
     if (!islist(parent)) {
       // $CHILD was not inside a list.
       state.errs.push('Invalid $CHILD as value')
       return UNDEF
     }
 
-    const child = parent[1]
+    const childtm = getprop(parent, 1)
 
     if (UNDEF === current) {
       // Empty list as default.
       parent.length = 0
       return UNDEF
     }
-    else if (!islist(current)) {
-      state.errs.push(_invalidTypeMsg(
-        state.path.slice(0, state.path.length - 1), S_array, typify(current), current))
+
+    if (!islist(current)) {
+      const msg = _invalidTypeMsg(
+        state.path.slice(0, state.path.length - 1), S_array, typify(current), current)
+      state.errs.push(msg)
       state.keyI = parent.length
       return current
     }
@@ -1249,12 +1255,11 @@ const validate_CHILD = (state, _val, current) => {
     // Clone children abd reset state key index.
     // The inject child loop will now iterate over the cloned children,
     // validating them againt the current list values.
-    else {
-      current.map((_n, i) => parent[i] = clone(child))
-      parent.length = current.length
-      state.keyI = 0
-      return current[0]
-    }
+    current.map((_n, i) => parent[i] = clone(childtm))
+    parent.length = current.length
+    state.keyI = 0
+    const out = getprop(current, 0)
+    return out
   }
 
   return UNDEF
@@ -1263,14 +1268,13 @@ const validate_CHILD = (state, _val, current) => {
 
 // Match at least one of the specified shapes.
 // Syntax: ['`$ONE`', alt0, alt1, ...]okI
-const validate_ONE = (state, _val, current) => {
+const validate_ONE = (state, _val, current, store) => {
   const { mode, parent, path, nodes } = state
 
   // Only operate in val mode, since parent is a list.
   if (S_MVAL === mode) {
     state.keyI = state.keys.length
 
-    // Shape alts.
     let tvals = parent.slice(1)
 
     // See if we can find a match.
@@ -1278,7 +1282,7 @@ const validate_ONE = (state, _val, current) => {
 
       // If match, then errs.length = 0
       let terrs = []
-      validate(current, tval, UNDEF, terrs)
+      validate(current, tval, store, terrs)
 
       // The parent is the list we are inside. Go up one level
       // to set the actual value.
@@ -1319,8 +1323,8 @@ const validate_ONE = (state, _val, current) => {
 
 // This is the "modify" argument to inject. Use this to perform
 // generic validation. Runs *after* any special commands.
-const validation = (
-  val,
+const _validation = (
+  pval,
   key,
   parent,
   state,
@@ -1328,32 +1332,37 @@ const validation = (
   _store
 ) => {
 
+  if (UNDEF === state) {
+    return
+  }
+
   // Current val to verify.
   const cval = getprop(current, key)
 
   if (UNDEF === cval || UNDEF === state) {
-    return UNDEF
+    return
   }
 
-  const pval = getprop(parent, key)
-  const t = typify(pval)
+  // const pval = getprop(parent, key)
+  const ptype = typify(pval)
 
   // Delete any special commands remaining.
-  if (S_string === t && pval.includes(S_DS)) {
-    return UNDEF
+  if (S_string === ptype && pval.includes(S_DS)) {
+    return
   }
 
-  const ct = typify(cval)
+  const ctype = typify(cval)
 
   // Type mismatch.
-  if (t !== ct && UNDEF !== pval) {
-    state.errs.push(_invalidTypeMsg(state.path, t, ct, cval))
-    return UNDEF
+  if (ptype !== ctype && UNDEF !== pval) {
+    state.errs.push(_invalidTypeMsg(state.path, ptype, ctype, cval))
+    return
   }
-  else if (ismap(cval)) {
-    if (!ismap(val)) {
-      state.errs.push(_invalidTypeMsg(state.path, islist(val) ? S_array : t, ct, cval))
-      return UNDEF
+
+  if (ismap(cval)) {
+    if (!ismap(pval)) {
+      state.errs.push(_invalidTypeMsg(state.path, ptype, ctype, cval))
+      return
     }
 
     const ckeys = keysof(cval)
@@ -1363,28 +1372,28 @@ const validation = (
     if (0 < pkeys.length && true !== getprop(pval, '`$OPEN`')) {
       const badkeys = []
       for (let ckey of ckeys) {
-        if (!haskey(val, ckey)) {
+        if (!haskey(pval, ckey)) {
           badkeys.push(ckey)
         }
       }
 
       // Closed object, so reject extra keys not in shape.
       if (0 < badkeys.length) {
-        state.errs.push('Unexpected keys at ' + pathify(state.path, 1) +
-          ': ' + badkeys.join(', '))
+        const msg = 'Unexpected keys at ' + pathify(state.path, 1) + ': ' + badkeys.join(', ')
+        state.errs.push(msg)
       }
     }
     else {
       // Object is open, so merge in extra keys.
       merge([pval, cval])
       if (isnode(pval)) {
-        delete pval['`$OPEN`']
+        setprop(pval, '`$OPEN`', UNDEF)
       }
     }
   }
   else if (islist(cval)) {
-    if (!islist(val)) {
-      state.errs.push(_invalidTypeMsg(state.path, t, ct, cval))
+    if (!islist(pval)) {
+      state.errs.push(_invalidTypeMsg(state.path, ptype, ctype, cval))
     }
   }
   else {
@@ -1392,7 +1401,7 @@ const validation = (
     setprop(parent, key, cval)
   }
 
-  return UNDEF
+  return
 }
 
 
@@ -1416,38 +1425,35 @@ function validate(
   // Optionally modify individual values.
   collecterrs,
 ) {
-  const errs = collecterrs || []
-  const out = transform(
-    data,
-    spec,
-    {
-      // A special top level value to collect errors.
-      $ERRS: errs,
+  const errs = null == collecterrs ? [] : collecterrs
 
-      // Remove the transform commands.
-      $DELETE: null,
-      $COPY: null,
-      $KEY: null,
-      $META: null,
-      $MERGE: null,
-      $EACH: null,
-      $PACK: null,
+  const store = {
+    // A special top level value to collect errors.
+    $ERRS: errs,
 
-      $STRING: validate_STRING,
-      $NUMBER: validate_NUMBER,
-      $BOOLEAN: validate_BOOLEAN,
-      $OBJECT: validate_OBJECT,
-      $ARRAY: validate_ARRAY,
-      $FUNCTION: validate_FUNCTION,
-      $ANY: validate_ANY,
-      $CHILD: validate_CHILD,
-      $ONE: validate_ONE,
+    // Remove the transform commands.
+    $DELETE: null,
+    $COPY: null,
+    $KEY: null,
+    $META: null,
+    $MERGE: null,
+    $EACH: null,
+    $PACK: null,
 
-      ...(extra || {})
-    },
+    $STRING: validate_STRING,
+    $NUMBER: validate_NUMBER,
+    $BOOLEAN: validate_BOOLEAN,
+    $OBJECT: validate_OBJECT,
+    $ARRAY: validate_ARRAY,
+    $FUNCTION: validate_FUNCTION,
+    $ANY: validate_ANY,
+    $CHILD: validate_CHILD,
+    $ONE: validate_ONE,
 
-    validation
-  )
+    ...(extra || {})
+  }
+
+  const out = transform(data, spec, store, _validation)
 
   if (0 < errs.length && null == collecterrs) {
     throw new Error('Invalid data: ' + errs.join(' | '))
@@ -1467,7 +1473,6 @@ function _invalidTypeMsg(path, type, vt, v) {
   return 'Expected ' + type + ' at ' + pathify(path, 1) +
     ', found ' + (null != v ? vt + ': ' : '') + vs
 }
-
 
 
 

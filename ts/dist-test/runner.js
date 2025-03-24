@@ -1,4 +1,5 @@
 "use strict";
+// This test utility runs the JSON-specified tests in build/test/test.json.
 var __classPrivateFieldSet = (this && this.__classPrivateFieldSet) || function (receiver, state, value, kind, f) {
     if (kind === "m") throw new TypeError("Private method is not writable");
     if (kind === "a" && !f) throw new TypeError("Private accessor was defined without a setter");
@@ -18,14 +19,16 @@ exports.runner = runner;
 const node_fs_1 = require("node:fs");
 const node_path_1 = require("node:path");
 const node_assert_1 = require("node:assert");
-// Runner does make used of these struct utilities, and this usage is
+// Runner does make use of these struct utilities, and this usage is
 // circular. This is a trade-off tp make the runner code simpler.
 const struct_1 = require("../dist/struct");
+const NULLMARK = '__NULL__';
+exports.NULLMARK = NULLMARK;
 class Client {
     constructor(opts) {
         _Client_opts.set(this, void 0);
         _Client_utility.set(this, void 0);
-        __classPrivateFieldSet(this, _Client_opts, opts, "f");
+        __classPrivateFieldSet(this, _Client_opts, opts || {}, "f");
         __classPrivateFieldSet(this, _Client_utility, {
             struct: {
                 clone: struct_1.clone,
@@ -46,14 +49,14 @@ class Client {
         }, "f");
     }
     static async test(opts) {
-        return new Client(opts || {});
+        return new Client(opts);
     }
-    utility() { return __classPrivateFieldGet(this, _Client_utility, "f"); }
+    utility() {
+        return __classPrivateFieldGet(this, _Client_utility, "f");
+    }
 }
 exports.Client = Client;
 _Client_opts = new WeakMap(), _Client_utility = new WeakMap();
-const NULLMARK = '__NULL__';
-exports.NULLMARK = NULLMARK;
 async function runner(name, store, testfile) {
     const client = await Client.test();
     const utility = client.utility();
@@ -82,7 +85,7 @@ async function runner(name, store, testfile) {
         }
     };
     let runset = async (testspec, testsubject) => runsetflags(testspec, {}, testsubject);
-    let runpack = {
+    const runpack = {
         spec,
         runset,
         runsetflags,
@@ -155,7 +158,6 @@ function handleError(entry, err, structUtils) {
     }
 }
 function resolveArgs(entry, testpack) {
-    // let args = [structUtils.clone(entry.in)]
     let args = [(0, struct_1.clone)(entry.in)];
     if (entry.ctx) {
         args = [entry.ctx];
@@ -179,7 +181,6 @@ function resolveTestPack(name, entry, subject, client, clients) {
         subject,
         utility: client.utility(),
     };
-    // console.log('CLIENTS', clients)
     if (entry.client) {
         testpack.client = clients[entry.client];
         testpack.utility = testpack.client.utility();
@@ -194,13 +195,14 @@ function match(check, base, structUtils) {
             let baseval = structUtils.getpath(path, base);
             if (!matchval(val, baseval, structUtils)) {
                 (0, node_assert_1.fail)('MATCH: ' + path.join('.') +
-                    ': [' + structUtils.stringify(val) + '] <=> [' + structUtils.stringify(baseval) + ']');
+                    ': [' + structUtils.stringify(val) +
+                    '] <=> [' + structUtils.stringify(baseval) + ']');
             }
         }
     });
 }
 function matchval(check, base, structUtils) {
-    check = '__UNDEF__' === check ? undefined : check;
+    check = NULLMARK === check ? undefined : check;
     let pass = check === base;
     if (!pass) {
         if ('string' === typeof check) {
