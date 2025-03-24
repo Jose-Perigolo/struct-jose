@@ -1475,24 +1475,38 @@ local function transform_PACK(state, _val, current, _ref, store)
   -- Source data
   local src = getpath(srcpath, store, current, state)
 
-  -- Prepare source as a list
+  -- Prepare source as a list with metadata
+  local srclist = {}
   if islist(src) then
-    -- Keep as is
+    -- For lists, keep as is
+    srclist = src
   elseif ismap(src) then
-    local entries = {}
+    -- For maps, create a list of entries with metadata
     for k, v in pairs(src) do
-      if v[S_DMETA] == UNDEF then
-        v[S_DMETA] = {}
+      -- Clone the value to avoid modifying the original
+      local entry = clone(v)
+
+      -- Set metadata on the entry
+      if entry[S_DMETA] == nil then
+        entry[S_DMETA] = {}
       end
-      v[S_DMETA].KEY = k
-      table.insert(entries, v)
+      entry[S_DMETA][S_KEY] = k
+
+      -- Also set metatable with metadata
+      setmetatable(entry, {
+        __jsontype = "object",
+        __metadata = {
+          [S_KEY] = k
+        }
+      })
+
+      table.insert(srclist, entry)
     end
-    src = entries
   else
     return UNDEF
   end
 
-  if src == nil then
+  if #srclist == 0 then
     return UNDEF
   end
 
@@ -1501,29 +1515,44 @@ local function transform_PACK(state, _val, current, _ref, store)
   local keyname = childkey == UNDEF and keyprop or childkey
   setprop(child, S_DKEY, UNDEF)
 
-  -- Build parallel target object
+  -- Build target object
   local tval = {}
-  for _, n in ipairs(src) do
+  for _, n in ipairs(srclist) do
     local kn = getprop(n, keyname)
-    setprop(tval, kn, clone(child))
-    local nchild = getprop(tval, kn)
-    setprop(nchild, S_DMETA, getprop(n, S_DMETA))
+    if kn ~= UNDEF then
+      -- Create template with cloned metadata
+      local template = clone(child)
+      template[S_DMETA] = clone(n[S_DMETA])
+
+      -- Also set metatable with same metadata
+      setmetatable(template, {
+        __jsontype = "object",
+        __metadata = clone(n[S_DMETA])
+      })
+
+      -- Add to target
+      setprop(tval, kn, template)
+    end
   end
 
-  -- Build parallel source object
-  local tcurrent = {}
-  for _, n in ipairs(src) do
+  -- Build parallel source object (exactly like TypeScript)
+  local innerCurrent = {}
+  for _, n in ipairs(srclist) do
     local kn = getprop(n, keyname)
-    setprop(tcurrent, kn, n)
+    if kn ~= UNDEF then
+      setprop(innerCurrent, kn, n)
+    end
   end
 
-  tcurrent = {
-    ["$TOP"] = tcurrent
+  -- Wrap in $TOP object
+  local tcurrent = {
+    [S_DTOP] = innerCurrent
   }
 
-  -- Build substructure
+  -- Process the structure
   tval = inject(tval, store, state.modify, tcurrent)
 
+  -- Update target
   setprop(target, tkey, tval)
 
   -- Drop transform key
