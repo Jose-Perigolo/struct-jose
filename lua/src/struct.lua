@@ -553,7 +553,23 @@ function clone(val, flags)
 
     -- Restore the original metatable if it existed
     if mt then
-      setmetatable(new_table, mt)
+      -- CHANGE: Make sure to deep copy the __metadata field to keep it intact
+      if mt.__metadata then
+        local new_mt = {}
+        for k, v in pairs(mt) do
+          if k == "__metadata" then
+            new_mt[k] = {}
+            for mk, mv in pairs(v) do
+              new_mt[k][mk] = mv
+            end
+          else
+            new_mt[k] = v
+          end
+        end
+        setmetatable(new_table, new_mt)
+      else
+        setmetatable(new_table, mt)
+      end
     end
 
     return new_table
@@ -1215,7 +1231,40 @@ local function transform_KEY(state, _val, current)
     return getprop(current, keyspec)
   end
 
-  -- Key is defined within general purpose $META object
+  -- CHANGE: Check for metadata in metatables
+  -- Try to get metadata from the parent metatable
+  local mt = getmetatable(parent)
+  if mt and mt.__metadata and mt.__metadata[S_KEY] then
+    return mt.__metadata[S_KEY]
+  end
+
+  -- If not in parent, try to find it in the current object
+  if current and type(current) == "table" then
+    -- First try current itself
+    mt = getmetatable(current)
+    if mt and mt.__metadata and mt.__metadata[S_KEY] then
+      return mt.__metadata[S_KEY]
+    end
+
+    -- Then try current[$TOP] if it exists
+    local current_array = getprop(current, S_DTOP)
+    if current_array and islist(current_array) and #current_array > 0 then
+      -- Get the index from the path
+      local idx_str = path[#path - 2]
+      local idx = tonumber(idx_str)
+      if idx and idx >= 0 and idx < #current_array then
+        local item = current_array[idx + 1] -- Convert to 1-based index
+        if item then
+          mt = getmetatable(item)
+          if mt and mt.__metadata and mt.__metadata[S_KEY] then
+            return mt.__metadata[S_KEY]
+          end
+        end
+      end
+    end
+  end
+
+  -- Fallback to the original approach as a last resort
   return getprop(getprop(parent, S_DMETA), S_KEY, getprop(path, #path - 2))
 end
 
@@ -1339,6 +1388,16 @@ local function transform_EACH(state, _val, current, _ref, store)
         copy_child[S_DMETA] = {
           [S_KEY] = tostring(i - 1) -- Use 0-based index to match JS/Go
         }
+
+        -- CHANGE: Use metatables to store metadata
+        local mt = {
+          __jsontype = "object",
+          __metadata = {
+            [S_KEY] = tostring(i - 1)
+          }
+        }
+        setmetatable(copy_child, mt)
+
         table.insert(tval, copy_child)
         -- Add the corresponding source value to tcur
         table.insert(tcur, src[i])
@@ -1353,9 +1412,20 @@ local function transform_EACH(state, _val, current, _ref, store)
 
       for _, k in ipairs(sortedKeys) do
         local copy_child = clone(child)
+        -- Keep regular metadata for backward compatibility
         copy_child[S_DMETA] = {
           [S_KEY] = k -- Use the map key (e.g., "a")
         }
+
+        -- CHANGE: Use metatables to store metadata
+        local mt = {
+          __jsontype = "object",
+          __metadata = {
+            [S_KEY] = k
+          }
+        }
+        setmetatable(copy_child, mt)
+
         table.insert(tval, copy_child)
         table.insert(tcur, src[k])
       end
