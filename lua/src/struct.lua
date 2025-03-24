@@ -1203,7 +1203,7 @@ end
 local function transform_KEY(state, _val, current)
   local mode, path, parent = state.mode, state.path, state.parent
 
-  -- Do nothing in val mode
+  -- Do nothing unless in val mode
   if mode ~= S_MVAL then
     return UNDEF
   end
@@ -1216,7 +1216,8 @@ local function transform_KEY(state, _val, current)
   end
 
   -- Key is defined within general purpose $META object
-  return getprop(getprop(parent, S_DMETA), S_KEY, getprop(path, #path - 2))
+  return
+    getprop(getprop(parent, S_DMETA), S_KEY, getprop(path, path.length - 2))
 end
 
 -- Store meta data about a node.  Does nothing itself, just used by
@@ -1321,13 +1322,19 @@ local function transform_EACH(state, _val, current, _ref, store)
 
   -- Create parallel arrays for templates and source values
   local tval = {} -- Templates 
-  local srcValues = {} -- Source values (equivalent to Object.values in JS)
+  setmetatable(tval, {
+    __jsontype = "array"
+  })
+  local tcur = {} -- Templates 
+  setmetatable(tcur, {
+    __jsontype = "array"
+  })
 
   -- Extract values from source object/array with deterministic ordering
   if islist(src) then
     -- For arrays, add each item directly (already ordered)
     for i = 1, #src do
-      table.insert(srcValues, src[i])
+      table.insert(src, clone(child))
     end
   elseif ismap(src) then
     -- For maps, extract values in key-sorted order for deterministic behavior
@@ -1338,13 +1345,16 @@ local function transform_EACH(state, _val, current, _ref, store)
     table.sort(sortedKeys) -- Sort keys alphabetically
 
     for _, k in ipairs(sortedKeys) do
-      table.insert(srcValues, src[k])
+      table.insert(src, src[k])
     end
   end
 
   -- Create templates for each source value
-  for i = 1, #srcValues do
+  for i = 1, #src do
     table.insert(tval, clone(child))
+    tval[i][S_DMETA] = {
+      KEY = src[i]
+    }
   end
 
   -- Ensure tval has array metadata
@@ -1353,21 +1363,18 @@ local function transform_EACH(state, _val, current, _ref, store)
   })
 
   -- Wrap source values exactly as TypeScript/Go do
-  local tcurrent = {
-    [S_DTOP] = srcValues
+  tcur = {
+    [S_DTOP] = tcur
   }
 
   -- Process templates with source values
-  tval = inject(tval, store, state.modify, tcurrent)
+  tval = inject(tval, store, state.modify, tcur)
 
   -- Update the parent with the result
   setprop(target, tkey, tval)
 
   -- Return first entry if available
-  if #tval > 0 then
-    return tval[1]
-  end
-  return UNDEF
+  return tval[1]
 end
 
 -- Convert a node to a map
