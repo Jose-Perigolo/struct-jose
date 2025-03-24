@@ -1,12 +1,12 @@
-// go test
-// go test -v -run=TestStruct/foo
+
+// RUN: go test
+// RUN-SOME: go test -v -run=TestStruct/getpath
+
 
 package voxgigstruct_test
 
 import (
-	"encoding/json"
 	"fmt"
-	"os"
 	"reflect"
 	"strings"
 	"testing"
@@ -15,228 +15,31 @@ import (
 	"github.com/voxgig/struct/testutil"
 )
 
-// TestEntry represents a single test case
-// in/out values and potential error info
-// from the original TS code.
-type TestEntry struct {
-	In     any `json:"in,omitempty"`
-	Out    any `json:"out,omitempty"`
-	Err    any `json:"err,omitempty"`
-	Thrown any `json:"thrown,omitempty"`
-}
-
-type TestSet []TestEntry
-
-type SubTest struct {
-	TestEntry
-	Set TestSet `json:"set"`
-}
-
-type TestGroup map[string]SubTest
-
-type FullTest map[string]TestGroup
-
-// Since json.Unmarshal uses nil for null, assume
-// user will represent null in another way with a defined value.
-func fixJSON(data any) any {
-	return fixJSONFlags(data, map[string]bool{
-		"null": true,
-	})
-}
-
-func fixJSONFlags(data any, flags map[string]bool) any {
-	if nil == data && flags["null"] {
-		return "__NULL__"
-	}
-
-	v := reflect.ValueOf(data)
-
-	switch v.Kind() {
-
-	case reflect.Float64:
-		if v.Float() == float64(int(v.Float())) {
-			return int(v.Float())
-		}
-		return data
-
-	case reflect.Map:
-		fixedMap := make(map[string]any)
-		for _, key := range v.MapKeys() {
-			strKey, ok := key.Interface().(string)
-			if ok {
-				fixedMap[strKey] = fixJSONFlags(v.MapIndex(key).Interface(), flags)
-			}
-		}
-		return fixedMap
-
-	case reflect.Slice:
-		length := v.Len()
-		fixedSlice := make([]any, length)
-		for i := 0; i < length; i++ {
-			fixedSlice[i] = fixJSONFlags(v.Index(i).Interface(), flags)
-		}
-		return fixedSlice
-
-	case reflect.Array:
-		length := v.Len()
-		fixedSlice := make([]any, length)
-		for i := 0; i < length; i++ {
-			fixedSlice[i] = fixJSONFlags(v.Index(i).Interface(), flags)
-		}
-		return fixedSlice
-
-	default:
-		return data
-	}
-}
-
-func nullModifier(
-	val any,
-	key any,
-	parent any,
-	state *voxgigstruct.Injection,
-	current any,
-	store any,
-) {
-	switch v := val.(type) {
-	case string:
-		if "__NULL__" == v {
-			_ = voxgigstruct.SetProp(parent, key, nil)
-		} else {
-			_ = voxgigstruct.SetProp(parent, key,
-				strings.ReplaceAll(v, "__NULL__", "null"))
-		}
-	}
-}
-
-func fdt(data any) string {
-	return fdti(data, "")
-}
-
-func fdti(data any, indent string) string {
-	result := ""
-
-	switch v := data.(type) {
-	case map[string]any:
-		result += indent + "{\n"
-		for key, value := range v {
-			result += fmt.Sprintf("%s  \"%s\": %s", indent, key, fdti(value, indent+"  "))
-		}
-		result += indent + "}\n"
-
-	case []any:
-		result += indent + "[\n"
-		for _, value := range v {
-			result += fmt.Sprintf("%s  - %s", indent, fdti(value, indent+"  "))
-		}
-		result += indent + "]\n"
-
-	default:
-		// Format value with its type
-		result += fmt.Sprintf("%v (%s)\n", v, reflect.TypeOf(v))
-	}
-
-	return result
-}
-
-func toJSONString(data any) string {
-	jsonBytes, err := json.Marshal(data)
-	if err != nil {
-		return "" // Return empty string if marshalling fails
-	}
-	return string(jsonBytes)
-}
-
-// RunTestSet executes a set of test entries by calling 'apply'
-// on each "in" value and comparing to "out".
-// If a mismatch occurs, the test fails.
-
-func runTestSet(t *testing.T, tests SubTest, apply func(any) any) {
-	runTestSetFlags(t, tests, apply, map[string]bool{
-		"null": true,
-	})
-}
-
-func runTestSetFlags(t *testing.T, tests SubTest, apply func(any) any, flags map[string]bool) {
-	for _, entry := range tests.Set {
-		input := fixJSONFlags(entry.In, flags)
-		output := fixJSONFlags(entry.Out, flags)
-		result := fixJSONFlags(apply(input), flags)
-
-		// fmt.Println("RUNTESTSET", "\nINPUT", fdt(input), "\nRESULT", fdt(result), "\nOUTPUT", fdt(output))
-
-		if !reflect.DeepEqual(result, output) {
-			t.Errorf("Expected: %s, \nGot: %s \nExpected JSON: %s \nGot JSON: %s",
-				fdt(output), fdt(result), toJSONString(output), toJSONString(result))
-		}
-	}
-}
-
-// LoadTestSpec reads and unmarshals the JSON file into FullTest.
-func LoadTestSpec(filename string) (FullTest, error) {
-	data, err := os.ReadFile(filename)
-	if err != nil {
-		return nil, err
-	}
-
-	var testSpec FullTest
-	if err := json.Unmarshal(data, &testSpec); err != nil {
-		return nil, err
-	}
-
-	return testSpec, nil
-}
-
-type TestProvider struct{}
-
-func (p *TestProvider) Test(opts map[string]any) (runner.Client, error) {
-	return &testClient{}, nil
-}
-
-type testClient struct{}
-
-func (c *testClient) Utility() runner.Utility {
-	return &testUtility{}
-}
-
-type testUtility struct{}
-
-func (c *testUtility) Struct() *runner.StructUtility {
-	return &runner.StructUtility{
-		IsNode:     voxgigstruct.IsNode,
-		Clone:      voxgigstruct.Clone,
-		CloneFlags: voxgigstruct.CloneFlags,
-		GetPath:    voxgigstruct.GetPath,
-		Inject:     voxgigstruct.Inject,
-		Items:      voxgigstruct.Items,
-		Stringify:  voxgigstruct.Stringify,
-		Walk:       voxgigstruct.Walk,
-	}
-}
 
 // NOTE: tests are in order of increasing dependence.
 func TestStruct(t *testing.T) {
 
 	store := make(map[string]any)
-	provider := &TestProvider{}
+	// provider := &TestProvider{}
 
-	runnerMap, err := runner.Runner("struct", store, "../build/test/test.json", provider)
+	runnerMap, err := runner.Runner("struct", store, "../build/test/test.json")
 	if err != nil {
-		t.Fatalf("Failed to create runner: %v", err)
+		t.Fatalf("Failed to create runner struct: %v", err)
 	}
 
 	var spec map[string]any = runnerMap.Spec
 	var runset runner.RunSet = runnerMap.RunSet
 	var runsetFlags runner.RunSetFlags = runnerMap.RunSetFlags
 
-	var minor = spec["minor"].(map[string]any)
-	var walk = spec["walk"].(map[string]any)
-	var merge = spec["merge"].(map[string]any)
-	var getpath = spec["getpath"].(map[string]any)
-	var inject = spec["inject"].(map[string]any)
-	var transform = spec["transform"].(map[string]any)
-	var validate = spec["validate"].(map[string]any)
+	var minorSpec     = spec["minor"].(map[string]any)
+	var walkSpec      = spec["walk"].(map[string]any)
+	var mergeSpec     = spec["merge"].(map[string]any)
+	var getpathSpec   = spec["getpath"].(map[string]any)
+	var injectSpec    = spec["inject"].(map[string]any)
+	var transformSpec = spec["transform"].(map[string]any)
+	var validateSpec  = spec["validate"].(map[string]any)
 
+  
 	// minor tests
 	// ===========
 
@@ -258,8 +61,10 @@ func TestStruct(t *testing.T) {
 			"items":   voxgigstruct.Items,
 			"joinurl": voxgigstruct.JoinUrl,
 			"keysof":  voxgigstruct.KeysOf,
-			"setprop": voxgigstruct.SetProp,
+      "pathify":  voxgigstruct.Pathify,
 
+			"setprop": voxgigstruct.SetProp,
+			"strkey":    voxgigstruct.StrKey,
 			"stringify": voxgigstruct.Stringify,
 			"typify":    voxgigstruct.Typify,
 		}
@@ -270,28 +75,39 @@ func TestStruct(t *testing.T) {
 		}
 	})
 
+  
 	t.Run("minor-isnode", func(t *testing.T) {
-		runset(t, minor["isnode"], voxgigstruct.IsNode)
+		runset(t, minorSpec["isnode"], voxgigstruct.IsNode)
 	})
 
-	t.Run("minor-ismap", func(t *testing.T) {
-		runset(t, minor["ismap"], voxgigstruct.IsMap)
+
+  t.Run("minor-ismap", func(t *testing.T) {
+		runset(t, minorSpec["ismap"], voxgigstruct.IsMap)
 	})
 
+  
 	t.Run("minor-islist", func(t *testing.T) {
-		runset(t, minor["islist"], voxgigstruct.IsList)
+		runset(t, minorSpec["islist"], voxgigstruct.IsList)
 	})
 
+  
 	t.Run("minor-iskey", func(t *testing.T) {
-		runsetFlags(t, minor["iskey"], map[string]bool{"json_null": false}, voxgigstruct.IsKey)
+		runsetFlags(t, minorSpec["iskey"], map[string]bool{"null": false}, voxgigstruct.IsKey)
 	})
 
+
+	t.Run("minor-strkey", func(t *testing.T) {
+		runsetFlags(t, minorSpec["strkey"], map[string]bool{"null": false}, voxgigstruct.StrKey)
+	})
+
+  
 	t.Run("minor-isempty", func(t *testing.T) {
-		runsetFlags(t, minor["isempty"], map[string]bool{"json_null": false}, voxgigstruct.IsEmpty)
+		runsetFlags(t, minorSpec["isempty"], map[string]bool{"null": false}, voxgigstruct.IsEmpty)
 	})
 
+  
 	t.Run("minor-isfunc", func(t *testing.T) {
-		runset(t, minor["isfunc"], voxgigstruct.IsFunc)
+		runset(t, minorSpec["isfunc"], voxgigstruct.IsFunc)
 
 		f0 := func() any {
 			return nil
@@ -306,27 +122,38 @@ func TestStruct(t *testing.T) {
 		}
 	})
 
+  
 	t.Run("minor-clone", func(t *testing.T) {
 		runsetFlags(
 			t,
-			minor["clone"],
-			map[string]bool{"json_null": false},
+			minorSpec["clone"],
+			map[string]bool{"null": false},
 			voxgigstruct.Clone,
 		)
+
+    f0 := func() any { return nil }
+		expected0 := map[string]any{"a":f0}
+		result0 := voxgigstruct.Clone(map[string]any{"a":f0})
+		if !reflect.DeepEqual(runner.Fdt(expected0), runner.Fdt(result0)) {
+			t.Errorf("Expected: %v, Got: %v", expected0, result0)
+		}
 	})
 
+  
 	t.Run("minor-escre", func(t *testing.T) {
-		runset(t, minor["escre"], voxgigstruct.EscRe)
+		runset(t, minorSpec["escre"], voxgigstruct.EscRe)
 	})
 
+  
 	t.Run("minor-escurl", func(t *testing.T) {
-		runset(t, minor["escurl"], func(in string) string {
+		runset(t, minorSpec["escurl"], func(in string) string {
 			return strings.ReplaceAll(voxgigstruct.EscUrl(fmt.Sprint(in)), "+", "%20")
 		})
 	})
 
+  
 	t.Run("minor-stringify", func(t *testing.T) {
-		runset(t, minor["stringify"], func(v any) any {
+		runset(t, minorSpec["stringify"], func(v any) any {
 			m := v.(map[string]any)
 			val := m["val"]
 
@@ -343,11 +170,12 @@ func TestStruct(t *testing.T) {
 		})
 	})
 
+  
 	t.Run("minor-pathify", func(t *testing.T) {
 		runsetFlags(
 			t,
-			minor["pathify"],
-			map[string]bool{"json_null": true},
+			minorSpec["pathify"],
+			map[string]bool{"null": true},
 			func(v any) any {
 				m := v.(map[string]any)
 				path := m["path"]
@@ -355,7 +183,7 @@ func TestStruct(t *testing.T) {
 
 				// NOTE: JSON null is not really nil, so special handling needed since
 				// the JSON parser does give us nil for null!
-				if "__NULL__" == m["path"] {
+				if "__NULL__" == path {
 					path = nil
 				}
 
@@ -378,15 +206,17 @@ func TestStruct(t *testing.T) {
 		)
 	})
 
+  
 	t.Run("minor-items", func(t *testing.T) {
-		runset(t, minor["items"], voxgigstruct.Items)
+		runset(t, minorSpec["items"], voxgigstruct.Items)
 	})
 
+  
 	t.Run("minor-getprop", func(t *testing.T) {
 		runsetFlags(
 			t,
-			minor["getprop"],
-			map[string]bool{"json_null": false},
+			minorSpec["getprop"],
+			map[string]bool{"null": false},
 			func(v any) any {
 				m := v.(map[string]any)
 				store := m["val"]
@@ -400,6 +230,7 @@ func TestStruct(t *testing.T) {
 		)
 	})
 
+  
 	t.Run("minor-edge-getprop", func(t *testing.T) {
 		strarr := []string{"a", "b", "c", "d", "e"}
 		expectedA := "c"
@@ -428,11 +259,12 @@ func TestStruct(t *testing.T) {
 		}
 	})
 
+  
 	t.Run("minor-setprop", func(t *testing.T) {
 		runsetFlags(
 			t,
-			minor["setprop"],
-			map[string]bool{"json_null": true},
+			minorSpec["setprop"],
+			map[string]bool{"null": true},
 			func(v any) any {
 				m := v.(map[string]any)
 				parent := m["parent"]
@@ -443,6 +275,7 @@ func TestStruct(t *testing.T) {
 			})
 	})
 
+  
 	t.Run("minor-edge-setprop", func(t *testing.T) {
 		strarr0 := []string{"a", "b", "c", "d", "e"}
 		strarr1 := []string{"a", "b", "c", "d", "e"}
@@ -475,22 +308,27 @@ func TestStruct(t *testing.T) {
 		}
 	})
 
+  
 	t.Run("minor-haskey", func(t *testing.T) {
-		runset(t, minor["haskey"], voxgigstruct.HasKey)
+		runset(t, minorSpec["haskey"], voxgigstruct.HasKey)
 	})
 
+  
 	t.Run("minor-keysof", func(t *testing.T) {
-		runset(t, minor["keysof"], voxgigstruct.KeysOf)
+		runset(t, minorSpec["keysof"], voxgigstruct.KeysOf)
 	})
 
+  
 	t.Run("minor-joinurl", func(t *testing.T) {
-		runsetFlags(t, minor["joinurl"], map[string]bool{"json_null": false}, voxgigstruct.JoinUrl)
+		runsetFlags(t, minorSpec["joinurl"], map[string]bool{"null": false}, voxgigstruct.JoinUrl)
 	})
 
+  
 	t.Run("minor-typify", func(t *testing.T) {
-		runset(t, minor["typify"], voxgigstruct.Typify)
+		runsetFlags(t, minorSpec["typify"], map[string]bool{"null": false}, voxgigstruct.Typify)
 	})
 
+  
 	// walk tests
 	// ==========
 
@@ -501,8 +339,9 @@ func TestStruct(t *testing.T) {
 		}
 	})
 
+  
 	t.Run("walk-log", func(t *testing.T) {
-		test := voxgigstruct.Clone(walk["log"]).(map[string]any)
+		test := voxgigstruct.Clone(walkSpec["log"]).(map[string]any)
 
 		var log []any
 
@@ -528,6 +367,7 @@ func TestStruct(t *testing.T) {
 		}
 	})
 
+  
 	t.Run("walk-basic", func(t *testing.T) {
 		walkpath := func(k *string, val any, parent any, path []string) any {
 			if str, ok := val.(string); ok {
@@ -536,7 +376,7 @@ func TestStruct(t *testing.T) {
 			return val
 		}
 
-		runset(t, walk["basic"], func(v any) any {
+		runset(t, walkSpec["basic"], func(v any) any {
 			if "__NULL__" == v {
 				v = nil
 			}
@@ -544,6 +384,7 @@ func TestStruct(t *testing.T) {
 		})
 	})
 
+  
 	// merge tests
 	// ===========
 
@@ -554,8 +395,9 @@ func TestStruct(t *testing.T) {
 		}
 	})
 
+  
 	t.Run("merge-basic", func(t *testing.T) {
-		test := merge["basic"].(map[string]any)
+		test := mergeSpec["basic"].(map[string]any)
 		inVal := test["in"]
 		outVal := test["out"]
 		result := voxgigstruct.Merge(inVal)
@@ -564,14 +406,17 @@ func TestStruct(t *testing.T) {
 		}
 	})
 
+  
 	t.Run("merge-cases", func(t *testing.T) {
-		runset(t, merge["cases"], voxgigstruct.Merge)
+		runset(t, mergeSpec["cases"], voxgigstruct.Merge)
 	})
 
+  
 	t.Run("merge-array", func(t *testing.T) {
-		runset(t, merge["array"], voxgigstruct.Merge)
+		runset(t, mergeSpec["array"], voxgigstruct.Merge)
 	})
 
+  
 	// getpath tests
 	// =============
 
@@ -582,8 +427,9 @@ func TestStruct(t *testing.T) {
 		}
 	})
 
+  
 	t.Run("getpath-basic", func(t *testing.T) {
-		runset(t, getpath["basic"], func(v any) any {
+		runset(t, getpathSpec["basic"], func(v any) any {
 			m := v.(map[string]any)
 			path := m["path"]
 			store := m["store"]
@@ -592,8 +438,9 @@ func TestStruct(t *testing.T) {
 		})
 	})
 
+  
 	t.Run("getpath-current", func(t *testing.T) {
-		runset(t, getpath["current"], func(v any) any {
+		runset(t, getpathSpec["current"], func(v any) any {
 			m := v.(map[string]any)
 			path := m["path"]
 			store := m["store"]
@@ -602,6 +449,7 @@ func TestStruct(t *testing.T) {
 		})
 	})
 
+  
 	t.Run("getpath-state", func(t *testing.T) {
 		state := &voxgigstruct.Injection{
 			Handler: func(
@@ -629,7 +477,7 @@ func TestStruct(t *testing.T) {
 			Meta:   map[string]any{"step": 0},
 		}
 
-		runset(t, getpath["state"], func(v any) any {
+		runset(t, getpathSpec["state"], func(v any) any {
 			m := v.(map[string]any)
 			path := m["path"]
 			store := m["store"]
@@ -639,10 +487,10 @@ func TestStruct(t *testing.T) {
 		})
 	})
 
+  
 	// inject tests
 	// ============
 
-	// inject-exists
 	t.Run("inject-exists", func(t *testing.T) {
 		fnVal := reflect.ValueOf(voxgigstruct.Inject)
 		if fnVal.Kind() != reflect.Func {
@@ -650,8 +498,9 @@ func TestStruct(t *testing.T) {
 		}
 	})
 
+  
 	t.Run("inject-basic", func(t *testing.T) {
-		subtest := inject["basic"].(map[string]any)
+		subtest := injectSpec["basic"].(map[string]any)
 		inVal := subtest["in"].(map[string]any)
 		val, store := inVal["val"], inVal["store"]
 		outVal := subtest["out"]
@@ -661,20 +510,21 @@ func TestStruct(t *testing.T) {
 		}
 	})
 
-	// inject-string
+
 	t.Run("inject-string", func(t *testing.T) {
-		runset(t, inject["string"], func(v any) any {
+		runset(t, injectSpec["string"], func(v any) any {
 			m := v.(map[string]any)
 			val := m["val"]
 			store := m["store"]
 			current := m["current"]
 
-			return voxgigstruct.InjectDescend(val, store, nullModifier, current, nil)
+			return voxgigstruct.InjectDescend(val, store, runner.NullModifier, current, nil)
 		})
 	})
 
+  
 	t.Run("inject-deep", func(t *testing.T) {
-		runset(t, inject["deep"], func(v any) any {
+		runset(t, injectSpec["deep"], func(v any) any {
 			m := v.(map[string]any)
 			val := m["val"]
 			store := m["store"]
@@ -682,6 +532,7 @@ func TestStruct(t *testing.T) {
 		})
 	})
 
+  
 	// transform tests
 	// ===============
 
@@ -692,8 +543,9 @@ func TestStruct(t *testing.T) {
 		}
 	})
 
+  
 	t.Run("transform-basic", func(t *testing.T) {
-		subtest := transform["basic"].(map[string]any)
+		subtest := transformSpec["basic"].(map[string]any)
 		inVal := subtest["in"].(map[string]any)
 		data := inVal["data"]
 		spec := inVal["spec"]
@@ -704,8 +556,9 @@ func TestStruct(t *testing.T) {
 		}
 	})
 
+  
 	t.Run("transform-paths", func(t *testing.T) {
-		runset(t, transform["paths"], func(v any) any {
+		runset(t, transformSpec["paths"], func(v any) any {
 			m := v.(map[string]any)
 			data := m["data"]
 			spec := m["spec"]
@@ -713,8 +566,9 @@ func TestStruct(t *testing.T) {
 		})
 	})
 
+  
 	t.Run("transform-cmds", func(t *testing.T) {
-		runset(t, transform["cmds"], func(v any) any {
+		runset(t, transformSpec["cmds"], func(v any) any {
 			m := v.(map[string]any)
 			data := m["data"]
 			spec := m["spec"]
@@ -722,8 +576,9 @@ func TestStruct(t *testing.T) {
 		})
 	})
 
+  
 	t.Run("transform-each", func(t *testing.T) {
-		runset(t, transform["each"], func(v any) any {
+		runset(t, transformSpec["each"], func(v any) any {
 			m := v.(map[string]any)
 			data := m["data"]
 			spec := m["spec"]
@@ -731,8 +586,9 @@ func TestStruct(t *testing.T) {
 		})
 	})
 
+  
 	t.Run("transform-pack", func(t *testing.T) {
-		runset(t, transform["pack"], func(v any) any {
+		runset(t, transformSpec["pack"], func(v any) any {
 			m := v.(map[string]any)
 			data := m["data"]
 			spec := m["spec"]
@@ -740,8 +596,9 @@ func TestStruct(t *testing.T) {
 		})
 	})
 
+  
 	t.Run("transform-modify", func(t *testing.T) {
-		runset(t, transform["modify"], func(v any) any {
+		runset(t, transformSpec["modify"], func(v any) any {
 			m := v.(map[string]any)
 			data := m["data"]
 			spec := m["spec"]
@@ -765,6 +622,7 @@ func TestStruct(t *testing.T) {
 		})
 	})
 
+  
 	t.Run("transform-extra", func(t *testing.T) {
 		data := map[string]any{"a": 1}
 		spec := map[string]any{
@@ -807,10 +665,15 @@ func TestStruct(t *testing.T) {
 		result := voxgigstruct.TransformModify(data, spec, extra, nil)
 		if !reflect.DeepEqual(result, output) {
 			t.Errorf("Expected: %s, \nGot: %s \nExpected JSON: %s \nGot JSON: %s",
-				fdt(output), fdt(result), toJSONString(output), toJSONString(result))
+				runner.Fdt(output),
+        runner.Fdt(result),
+        runner.ToJSONString(output),
+        runner.ToJSONString(result),
+      )
 		}
 	})
 
+  
 	// validate tests
 	// ===============
 
@@ -821,32 +684,30 @@ func TestStruct(t *testing.T) {
 		}
 	})
 
+  
 	t.Run("validate-basic", func(t *testing.T) {
-		runset(t, validate["basic"], func(v any) (any, error) {
+		runset(t, validateSpec["basic"], func(v any) (any, error) {
 			m := v.(map[string]any)
 			data := m["data"]
 			spec := m["spec"]
 			return voxgigstruct.Validate(data, spec)
-			// out, err := voxgigstruct.Validate(data, spec)
-			// if nil != err {
-			//   t.Error(err)
-			// }
-			// return out
 		})
 	})
 
+  
 	t.Run("validate-node", func(t *testing.T) {
-		runset(t, validate["node"], func(v any) (any, error) {
+		runset(t, validateSpec["node"], func(v any) (any, error) {
 			m := v.(map[string]any)
 			data := m["data"]
 			spec := m["spec"]
 			out, err := voxgigstruct.Validate(data, spec)
-			
+
 			// Return both the output and error so the test framework can handle error checking
 			return out, err
 		})
 	})
 
+  
 	t.Run("validate-custom", func(t *testing.T) {
 		errs := voxgigstruct.ListRefCreate[any]() // make([]any,0)
 
@@ -863,8 +724,8 @@ func TestStruct(t *testing.T) {
 				return x
 			default:
 				msg := fmt.Sprintf("Not an integer at %s: %v",
-					voxgigstruct.Pathify(state.Path,1), out)
-        state.Errs.Append(msg)
+					voxgigstruct.Pathify(state.Path, 1), out)
+				state.Errs.Append(msg)
 				return out
 			}
 		})
@@ -902,14 +763,12 @@ func TestStruct(t *testing.T) {
 			extra,
 			errs,
 		)
-    
-    // fmt.Println("QQQ", out, err)
 
-    expectedErr := "Invalid data: Not an integer at a: A"
+		expectedErr := "Invalid data: Not an integer at a: A"
 		if !reflect.DeepEqual(expectedErr, err.Error()) {
-      t.Errorf("Expected: %v, Got: %v", expectedErr, err.Error())
+			t.Errorf("Expected: %v, Got: %v", expectedErr, err.Error())
 		}
-    
+
 		expected1 := map[string]any{"a": "A"}
 		if !reflect.DeepEqual(out, expected1) {
 			t.Errorf("Expected: %v, Got: %v", expected1, out)
@@ -920,5 +779,23 @@ func TestStruct(t *testing.T) {
 		}
 
 	})
+}
 
+
+func TestClient(t *testing.T) {
+
+	store := make(map[string]any)
+
+	runnerMap, err := runner.Runner("check", store, "../build/test/test.json")
+	if err != nil {
+		t.Fatalf("Failed to create runner check: %v", err)
+	}
+
+	var spec map[string]any = runnerMap.Spec
+	var runset runner.RunSet = runnerMap.RunSet
+  var subject runner.Subject = runnerMap.Subject
+
+	t.Run("client-check-basic", func(t *testing.T) {
+		runset(t, spec["basic"], subject)
+	})
 }

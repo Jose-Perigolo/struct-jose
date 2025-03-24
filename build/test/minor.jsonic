@@ -11,6 +11,7 @@ isnode: {
   ]
 }
 
+
 ismap: {
   set: [
     { in: {a:1}, out: true }
@@ -23,6 +24,7 @@ ismap: {
   ]
 }
 
+
 islist: {
   set: [
     { in: {a:1}, out: false }
@@ -34,6 +36,7 @@ islist: {
     { out: false }
   ]
 }
+
 
 iskey: {
   set: [
@@ -49,6 +52,26 @@ iskey: {
     { in: ['a'], out: false }
     { in: null, out: false }
     { out: false }
+  ]
+}
+
+
+strkey: {
+  set: [
+    { in: 'a', out: 'a' }
+    { in: 1, out: '1' }
+    { in: 2.2, out: '2' }
+    { in: 'b.c', out: 'b.c' }
+    { in: '', out: '' }
+    { in: true, out: '' }
+    { in: false, out: '' }
+    { in: {}, out: '' }
+    { in: {x:1}, out: '' }
+    { in: [], out: '' }
+    { in: [1], out: '' }
+    { in: ['a'], out: '' }
+    { in: null, out: '' }
+    { out: '' }
   ]
 }
 

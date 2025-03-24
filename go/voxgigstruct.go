@@ -96,11 +96,6 @@ const (
 	S_DT       = "."
 	S_CN       = ":"
 	S_KEY      = "KEY"
-	
-	// Types for validation
-	S_STRING   = "`$STRING`"
-	S_NUMBER   = "`$NUMBER`"
-	S_BOOLEAN  = "`$BOOLEAN`"
 )
 
 // The standard undefined value for this language.
@@ -133,20 +128,20 @@ type Injector func(
 
 // Injection state used for recursive injection into JSON-like data structures.
 type Injection struct {
-	Mode    InjectMode       // Injection mode: key:pre, val, key:post.
-	Full    bool             // Transform escape was full key name.
-	KeyI    int              // Index of parent key in list of parent keys.
-	Keys    []string         // List of parent keys.
-	Key     string           // Current parent key.
-	Val     any              // Current child value.
-	Parent  any              // Current parent (in transform specification).
-	Path    []string         // Path to current node.
-	Nodes   []any            // Stack of ancestor nodes.
-	Handler Injector         // Custom handler for injections.
-	Errs    *ListRef[any]    // Error collector.
-	Meta    map[string]any   // Custom meta data.
-	Base    string           // Base key for data in store, if any.
-	Modify  Modify           // Modify injection output.
+	Mode    InjectMode     // Injection mode: key:pre, val, key:post.
+	Full    bool           // Transform escape was full key name.
+	KeyI    int            // Index of parent key in list of parent keys.
+	Keys    []string       // List of parent keys.
+	Key     string         // Current parent key.
+	Val     any            // Current child value.
+	Parent  any            // Current parent (in transform specification).
+	Path    []string       // Path to current node.
+	Nodes   []any          // Stack of ancestor nodes.
+	Handler Injector       // Custom handler for injections.
+	Errs    *ListRef[any]  // Error collector.
+	Meta    map[string]any // Custom meta data.
+	Base    string         // Base key for data in store, if any.
+	Modify  Modify         // Modify injection output.
 }
 
 // Apply a custom modification to injections.
@@ -288,7 +283,7 @@ func GetProp(val any, key any, alts ...any) any {
 	if IsMap(val) {
 		ks, ok := key.(string)
 		if !ok {
-			ks = _strKey(key)
+			ks = StrKey(key)
 		}
 
 		v := val.(map[string]any)
@@ -336,7 +331,7 @@ func GetProp(val any, key any, alts ...any) any {
 		if valRef.Kind() == reflect.Struct {
 			ks, ok := key.(string)
 			if !ok {
-				ks = _strKey(key)
+				ks = StrKey(key)
 			}
 
 			field := valRef.FieldByName(ks)
@@ -371,7 +366,7 @@ func KeysOf(val any) []string {
 		arr := val.([]any)
 		keys := make([]string, len(arr))
 		for i := range arr {
-			keys[i] = _strKey(i)
+			keys[i] = StrKey(i)
 		}
 		return keys
 	}
@@ -379,10 +374,12 @@ func KeysOf(val any) []string {
 	return make([]string, 0)
 }
 
+
 // Value of property with name key in node val is defined.
 func HasKey(val any, key any) bool {
 	return nil != GetProp(val, key)
 }
+
 
 // List the sorted keys of a map or list as an array of tuples of the form [key, value].
 func Items(val any) [][2]any {
@@ -390,11 +387,12 @@ func Items(val any) [][2]any {
 		m := val.(map[string]any)
 		out := make([][2]any, 0, len(m))
 
-		keys := make([]string, 0, len(m))
-		for k := range m {
-			keys = append(keys, k)
-		}
-		sort.Strings(keys)
+    keys := KeysOf(val)
+		// keys := make([]string, 0, len(m))
+		// for k := range m {
+		// 	keys = append(keys, k)
+		// }
+		// sort.Strings(keys)
 
 		for _, k := range keys {
 			out = append(out, [2]any{k, m[k]})
@@ -651,7 +649,7 @@ func SetProp(parent any, key any, newval any) any {
 
 		// Convert key to string
 		ks := ""
-		ks = _strKey(key)
+		ks = StrKey(key)
 
 		if newval == nil {
 			delete(m, ks)
@@ -757,7 +755,7 @@ func WalkDescend(
 		for _, kv := range Items(val) {
 			ckey := kv[0]
 			child := kv[1]
-			ckeyStr := _strKey(ckey)
+			ckeyStr := StrKey(ckey)
 			newChild := WalkDescend(child, apply, &ckeyStr, val, append(path, ckeyStr))
 			val = SetProp(val, ckey, newChild)
 		}
@@ -1157,9 +1155,9 @@ func InjectDescend(
 
 			// The injection may modify child processing.
 			nkI = childstate.KeyI
-      nodekeys = childstate.Keys
-      val = childstate.Parent
-      
+			nodekeys = childstate.Keys
+			val = childstate.Parent
+
 			if preKey != nil {
 				childval = GetProp(val, preKey)
 				childstate.Val = childval
@@ -1171,21 +1169,19 @@ func InjectDescend(
 
 				// The injection may modify child processing.
 				nkI = childstate.KeyI
-        nodekeys = childstate.Keys
-        val = childstate.Parent
-        
+				nodekeys = childstate.Keys
+				val = childstate.Parent
+
 				// Peform the key:post mode injection on the child key.
 				childstate.Mode = InjectModeKeyPost
 				_injectStr(nodekey, store, current, childstate)
 
 				// The injection may modify child processing.
 				nkI = childstate.KeyI
-        nodekeys = childstate.Keys
-        val = childstate.Parent
+				nodekeys = childstate.Keys
+				val = childstate.Parent
 			}
 
-      // fmt.Println("INJECT-CHILD-END", nkI, val, childstate)
-      
 			nkI = nkI + 1
 		}
 
@@ -1202,9 +1198,9 @@ func InjectDescend(
 
 	// Custom modification
 	if nil != modify {
-    mkey := state.Key
-    mparent := state.Parent
-    mval := GetProp(mparent, mkey)
+		mkey := state.Key
+		mparent := state.Parent
+		mval := GetProp(mparent, mkey)
 		modify(
 			mval,
 			mkey,
@@ -1653,7 +1649,6 @@ func TransformModify(
 	return out
 }
 
-
 var validate_STRING Injector = func(
 	state *Injection,
 	_val any,
@@ -1662,7 +1657,7 @@ var validate_STRING Injector = func(
 	store any,
 ) any {
 	out := GetProp(current, state.Key)
-	
+
 	t := Typify(out)
 	if S_string != t {
 		msg := _invalidTypeMsg(state.Path, S_string, t, out)
@@ -1679,7 +1674,6 @@ var validate_STRING Injector = func(
 	return out
 }
 
-
 var validate_NUMBER Injector = func(
 	state *Injection,
 	_val any,
@@ -1688,17 +1682,16 @@ var validate_NUMBER Injector = func(
 	store any,
 ) any {
 	out := GetProp(current, state.Key)
-	
+
 	t := Typify(out)
-  if S_number != t {
+	if S_number != t {
 		msg := _invalidTypeMsg(state.Path, S_number, t, out)
 		state.Errs.Append(msg)
 		return nil
 	}
 
-  return out
+	return out
 }
-
 
 var validate_BOOLEAN Injector = func(
 	state *Injection,
@@ -1708,7 +1701,7 @@ var validate_BOOLEAN Injector = func(
 	store any,
 ) any {
 	out := GetProp(current, state.Key)
-	
+
 	t := Typify(out)
 	if S_boolean != t {
 		msg := _invalidTypeMsg(state.Path, S_boolean, t, out)
@@ -1719,7 +1712,6 @@ var validate_BOOLEAN Injector = func(
 	return out
 }
 
-
 var validate_OBJECT Injector = func(
 	state *Injection,
 	_val any,
@@ -1728,17 +1720,16 @@ var validate_OBJECT Injector = func(
 	store any,
 ) any {
 	out := GetProp(current, state.Key)
-	
+
 	t := Typify(out)
 	if S_object != t {
 		msg := _invalidTypeMsg(state.Path, S_object, t, out)
 		state.Errs.Append(msg)
 		return nil
 	}
-	
+
 	return out
 }
-
 
 var validate_ARRAY Injector = func(
 	state *Injection,
@@ -1748,17 +1739,16 @@ var validate_ARRAY Injector = func(
 	store any,
 ) any {
 	out := GetProp(current, state.Key)
-	
+
 	t := Typify(out)
 	if S_array != t {
 		msg := _invalidTypeMsg(state.Path, S_array, t, out)
 		state.Errs.Append(msg)
 		return nil
 	}
-	
+
 	return out
 }
-
 
 var validate_FUNCTION Injector = func(
 	state *Injection,
@@ -1768,17 +1758,16 @@ var validate_FUNCTION Injector = func(
 	store any,
 ) any {
 	out := GetProp(current, state.Key)
-	
+
 	t := Typify(out)
 	if S_function != t {
 		msg := _invalidTypeMsg(state.Path, S_function, t, out)
 		state.Errs.Append(msg)
 		return nil
 	}
-	
+
 	return out
 }
-
 
 var validate_ANY Injector = func(
 	state *Injection,
@@ -1789,7 +1778,6 @@ var validate_ANY Injector = func(
 ) any {
 	return GetProp(current, state.Key)
 }
-
 
 var validate_CHILD Injector = func(
 	state *Injection,
@@ -1802,7 +1790,7 @@ var validate_CHILD Injector = func(
 	if state.Mode == S_MKEYPRE {
 		child := GetProp(state.Parent, state.Key)
 
-    pkey := GetProp(state.Path, len(state.Path)-2)
+		pkey := GetProp(state.Path, len(state.Path)-2)
 		tval := GetProp(current, pkey)
 
 		if nil == tval {
@@ -1832,20 +1820,20 @@ var validate_CHILD Injector = func(
 	}
 
 	// List syntax
-  if state.Mode == S_MVAL {
-    
+	if state.Mode == S_MVAL {
+
 		// We expect 'parent' to be a slice of any, like ["`$CHILD`", childTemplate].
 		if !IsList(state.Parent) {
 			state.Errs.Append("Invalid $CHILD as value")
 			return nil
 		}
 
-    child := GetProp(state.Parent, 1)
-    
+		child := GetProp(state.Parent, 1)
+
 		// If current is nil => empty list default
 		if nil == current {
 			state.Parent = []any{}
-      _updateStateNodeAncestors(state, state.Parent)
+			_updateStateNodeAncestors(state, state.Parent)
 			return nil
 		}
 
@@ -1872,18 +1860,17 @@ var validate_CHILD Injector = func(
 		for i := 0; i < length; i++ {
 			newParent[i] = Clone(child)
 		}
-		
+
 		// Replace parent with the new slice
 		state.Parent = newParent
 		_updateStateNodeAncestors(state, state.Parent)
 
-    out := GetProp(current, 0)
-    return out
+		out := GetProp(current, 0)
+		return out
 	}
 
 	return nil
 }
-
 
 // Forward declaration for validate_ONE
 var validate_ONE Injector
@@ -1901,61 +1888,59 @@ func init_validate_ONE() {
 		if state.Mode == S_MVAL {
 			// Once we handle `$ONE`, we skip further iteration by setting KeyI to keys.length
 			state.KeyI = len(state.Keys)
-	
+
 			// The parent is assumed to be a slice: ["`$ONE`", alt0, alt1, ...].
 			parentSlice, ok := state.Parent.([]any)
 			if !ok || len(parentSlice) < 2 {
 				return nil
 			}
-	
+
 			// The shape alternatives are everything after the first element.
 			tvals := parentSlice[1:] // alt0, alt1, ...
-	
+
 			// Try each alternative shape
 			for _, tval := range tvals {
 				// Collect errors in a temporary slice
 				var terrs = ListRefCreate[any]()
-	
+
 				// Attempt validation of `current` with shape `tval`
 				_, err := ValidateCollect(current, tval, nil, terrs)
 				if err == nil && len(terrs.List) == 0 {
 					// The parent is the list we are inside.
 					// We look up one level: that is `nodes[nodes.length - 2]`.
 					grandparent := GetProp(state.Nodes, len(state.Nodes)-2)
-          grandkey := GetProp(state.Path, len(state.Path)-2)
-	
+					grandkey := GetProp(state.Path, len(state.Path)-2)
+
 					if IsNode(grandparent) {
 
-            if 0 == len(terrs.List) {
-              SetProp(grandparent, grandkey, current)
-              state.Parent = current
-              // fmt.Println("ONE-GP", grandparent, grandkey)
-              // fmt.Println("ONE-SC", current, state)
+						if 0 == len(terrs.List) {
+							SetProp(grandparent, grandkey, current)
+							state.Parent = current
+							return nil
 
-              return nil
-            } else {
-              SetProp(grandparent, grandkey, nil)
-            }
+						} else {
+							SetProp(grandparent, grandkey, nil)
+						}
 					}
 				}
 			}
 
-      mapped := make([]string, len(tvals))
-      for i, v := range tvals {
-        mapped[i] = Stringify(v)
-      }
+			mapped := make([]string, len(tvals))
+			for i, v := range tvals {
+				mapped[i] = Stringify(v)
+			}
 
-      joined := strings.Join(mapped, ", ")
+			joined := strings.Join(mapped, ", ")
 
-      re := regexp.MustCompile("`\\$([A-Z]+)`")
-      valdesc := re.ReplaceAllStringFunc(joined, func(match string) string {
-        submatches := re.FindStringSubmatch(match)
-        if len(submatches) == 2 {
-          return strings.ToLower(submatches[1])
-        }
-        return match
-      })
-	
+			re := regexp.MustCompile("`\\$([A-Z]+)`")
+			valdesc := re.ReplaceAllStringFunc(joined, func(match string) string {
+				submatches := re.FindStringSubmatch(match)
+				if len(submatches) == 2 {
+					return strings.ToLower(submatches[1])
+				}
+				return match
+			})
+
 			actualType := Typify(current)
 			msg := _invalidTypeMsg(
 				state.Path[:len(state.Path)-1],
@@ -1969,7 +1954,6 @@ func init_validate_ONE() {
 		return nil
 	}
 }
-
 
 func validation(
 	val any,
@@ -2001,9 +1985,6 @@ func validation(
 
 	ctype := Typify(cval)
 
-
-  // fmt.Println("VALID", pval, ptype, cval, ctype)
-  
 	// Type mismatch.
 	if ptype != ctype && pval != nil {
 		state.Errs.Append(_invalidTypeMsg(state.Path, ptype, ctype, cval))
@@ -2058,7 +2039,6 @@ func validation(
 	return
 }
 
-
 func Validate(
 	data any, // The input data
 	spec any, // The shape specification
@@ -2076,9 +2056,9 @@ func ValidateCollect(
 	if nil == collecterrs {
 		collecterrs = ListRefCreate[any]()
 	}
-	
+
 	// Initialize validate_ONE if not already initialized.
-  // This avoids a circular reference error, validate_ONE calls ValidateCollect. 
+	// This avoids a circular reference error, validate_ONE calls ValidateCollect.
 	if validate_ONE == nil {
 		init_validate_ONE()
 	}
@@ -2123,7 +2103,6 @@ func ValidateCollect(
 	return out, err
 }
 
-
 // Internal utilities
 // ==================
 
@@ -2145,7 +2124,6 @@ func (l *ListRef[T]) Prepend(elem T) {
 	l.List = append([]T{elem}, l.List...)
 }
 
-
 func _join(vals []any, sep string) string {
 	strVals := make([]string, len(vals))
 	for i, v := range vals {
@@ -2154,14 +2132,13 @@ func _join(vals []any, sep string) string {
 	return strings.Join(strVals, sep)
 }
 
-
 func _invalidTypeMsg(path []string, expected string, actual string, val any) string {
 	vs := Stringify(val)
 	valueStr := vs
 	if val != nil {
 		valueStr = actual + ": " + vs
 	}
-	
+
 	return fmt.Sprintf(
 		"Expected %s at %s, found %s",
 		expected,
@@ -2170,7 +2147,6 @@ func _invalidTypeMsg(path []string, expected string, actual string, val any) str
 	)
 }
 
-
 func _getType(v any) string {
 	if nil == v {
 		return "nil"
@@ -2178,7 +2154,12 @@ func _getType(v any) string {
 	return reflect.TypeOf(v).String()
 }
 
-func _strKey(key any) string {
+// StrKey converts different types of keys to string representation.
+// String keys are returned as is.
+// Number keys are converted to strings.
+// Floats are truncated to integers.
+// Booleans, objects, arrays, null, undefined all return empty string.
+func StrKey(key any) string {
 	if nil == key {
 		return S_MT
 	}
@@ -2195,12 +2176,16 @@ func _strKey(key any) string {
 		return strconv.Itoa(v)
 	case int64:
 		return strconv.FormatInt(v, 10)
+	case int32:
+		return strconv.FormatInt(int64(v), 10)
 	case float64:
-		return strconv.FormatFloat(v, 'f', -1, 64)
+		return strconv.FormatInt(int64(v), 10)
 	case float32:
-		return strconv.FormatFloat(float64(v), 'f', -1, 32)
+		return strconv.FormatInt(int64(v), 10)
+	case bool:
+		return S_MT
 	default:
-		return fmt.Sprintf("%v", v)
+		return S_MT
 	}
 }
 
@@ -2211,7 +2196,7 @@ func _resolveStrings(input []any) []string {
 		if str, ok := v.(string); ok {
 			result = append(result, str)
 		} else {
-			result = append(result, _strKey(v))
+			result = append(result, StrKey(v))
 		}
 	}
 
@@ -2367,7 +2352,7 @@ func fdti(data any, indent string) string {
 	// Get a pointer for memory address
 	memoryAddr := "0x???"
 	val := reflect.ValueOf(data)
-	
+
 	// For non-pointer types that are addressable, get their pointer
 	if val.Kind() != reflect.Ptr && val.CanAddr() {
 		ptr := val.Addr()
@@ -2416,20 +2401,20 @@ func fdti(data any, indent string) string {
 				structName = "*" + structName
 			}
 			result += indent + fmt.Sprintf("struct %s @%s {\n", structName, memoryAddr)
-			
+
 			// Iterate over all fields of the struct
 			for i := 0; i < val.NumField(); i++ {
 				field := val.Field(i)
 				fieldType := typ.Field(i)
-				
+
 				// Skip unexported fields (lowercase field names)
 				if !fieldType.IsExported() {
 					continue
 				}
-				
+
 				fieldName := fieldType.Name
 				fieldValue := field.Interface()
-				
+
 				result += fmt.Sprintf("%s  %s: %s", indent, fieldName, fdti(fieldValue, indent+"  "))
 			}
 			result += indent + "}\n"
