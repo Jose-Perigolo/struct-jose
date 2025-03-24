@@ -1475,32 +1475,28 @@ local function transform_PACK(state, _val, current, _ref, store)
   -- Source data
   local src = getpath(srcpath, store, current, state)
 
-  -- Prepare source as a list with metadata
+  -- Prepare source as a list
   local srclist = {}
   if islist(src) then
-    -- For lists, keep as is
     srclist = src
   elseif ismap(src) then
-    -- For maps, create a list of entries with metadata
+    -- Transform map to array with metadata, similar to TypeScript's reduce
     for k, v in pairs(src) do
-      -- Clone the value to avoid modifying the original
-      local entry = clone(v)
-
-      -- Set metadata on the entry
-      if entry[S_DMETA] == nil then
-        entry[S_DMETA] = {}
+      -- Add metadata directly on the original value
+      if v[S_DMETA] == nil then
+        v[S_DMETA] = {}
       end
-      entry[S_DMETA][S_KEY] = k
+      v[S_DMETA][S_KEY] = k
 
-      -- Also set metatable with metadata
-      setmetatable(entry, {
+      -- Lua specific: Also add to metatable to ensure KEY retrieval works
+      setmetatable(v, {
         __jsontype = "object",
         __metadata = {
           [S_KEY] = k
         }
       })
 
-      table.insert(srclist, entry)
+      table.insert(srclist, v)
     end
   else
     return UNDEF
@@ -1515,38 +1511,35 @@ local function transform_PACK(state, _val, current, _ref, store)
   local keyname = childkey == UNDEF and keyprop or childkey
   setprop(child, S_DKEY, UNDEF)
 
-  -- Build target object
+  -- Build target object using same pattern as TypeScript
   local tval = {}
   for _, n in ipairs(srclist) do
     local kn = getprop(n, keyname)
     if kn ~= UNDEF then
-      -- Create template with cloned metadata
-      local template = clone(child)
-      template[S_DMETA] = clone(n[S_DMETA])
+      setprop(tval, kn, clone(child))
+      local nchild = getprop(tval, kn)
+      setprop(nchild, S_DMETA, getprop(n, S_DMETA))
 
-      -- Also set metatable with same metadata
-      setmetatable(template, {
+      -- Lua specific: Set metatable to ensure KEY retrieval works
+      setmetatable(nchild, {
         __jsontype = "object",
-        __metadata = clone(n[S_DMETA])
+        __metadata = getprop(n, S_DMETA)
       })
-
-      -- Add to target
-      setprop(tval, kn, template)
     end
   end
 
-  -- Build parallel source object (exactly like TypeScript)
-  local innerCurrent = {}
+  -- Build parallel source object exactly like TypeScript
+  local tcurrent = {}
   for _, n in ipairs(srclist) do
     local kn = getprop(n, keyname)
     if kn ~= UNDEF then
-      setprop(innerCurrent, kn, n)
+      setprop(tcurrent, kn, n)
     end
   end
 
-  -- Wrap in $TOP object
-  local tcurrent = {
-    [S_DTOP] = innerCurrent
+  -- Wrap in $TOP exactly like TypeScript
+  tcurrent = {
+    [S_DTOP] = tcurrent
   }
 
   -- Process the structure
