@@ -7409,6 +7409,19 @@
           {
             "in": {
               "data": {
+                "a": 11,
+                "b": "B"
+              },
+              "spec": {
+                "a": "`$STRING`",
+                "b": "`$NUMBER`"
+              }
+            },
+            "err": "Expected string at a, found number: 11 | Expected number at b, found string: B"
+          },
+          {
+            "in": {
+              "data": {
                 "a": 2,
                 "b": "B",
                 "c": true
@@ -8222,6 +8235,14 @@
       },
       "basic": {
         "set": [
+          {
+            "ctx": {
+              "bar": "BAR0"
+            },
+            "out": {
+              "zed": "ZED_BAR0"
+            }
+          },
           {
             "ctx": {
               "bar": "BAR1"

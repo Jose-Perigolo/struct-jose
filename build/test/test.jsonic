@@ -12,7 +12,7 @@ primary: check: {
     client:a:test:options:foo:1
   }
   basic: set: [
-    # { ctx:bar:BAR0, out:zed:ZED_BAR0 }
+    { ctx:bar:BAR0, out:zed:ZED_BAR0 }
     { ctx:bar:BAR1, client:a, out:zed:ZED1_BAR1 }
   ]
 }
