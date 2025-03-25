@@ -1629,351 +1629,379 @@ function transform(data, -- Source data to transform into new data (original not
   return out
 end
 
--- Build a type validation error message
+-- Build a type validation error message.
 local function _invalidTypeMsg(path, type, vt, v)
-  -- Deal with lua table type
-  vt = islist(v) and vt == 'table' and S.array or vt
-  v = stringify(v)
-  return 'Expected ' .. type .. ' at ' .. _pathify(path) .. ', found ' ..
-           (v ~= UNDEF and vt .. ': ' or '') .. v
+  local vs = stringify(v)
+  return 'Expected ' .. type .. ' at ' .. pathify(path, 1) .. ', found ' ..
+           (v ~= nil and (vt .. ': ') or '') .. vs
 end
 
 -- A required string value. NOTE: Rejects empty strings.
-local function validate_STRING(state, _val, current)
+local validate_STRING = function(state, _val, current)
   local out = getprop(current, state.key)
 
-  local t = type(out)
-  if t == 'string' then
-    if out == '' then
-      table.insert(state.errs, 'Empty string at ' .. _pathify(state.path))
-      return UNDEF
-    else
-      return out
-    end
-  else
-    table.insert(state.errs, _invalidTypeMsg(state.path, S.string, t, out))
+  local t = typify(out)
+  if S_string ~= t then
+    local msg = _invalidTypeMsg(state.path, S_string, t, out)
+    table.insert(state.errs, msg)
     return UNDEF
   end
-end
 
--- A required number value (int or float)
-local function validate_NUMBER(state, _val, current)
-  local out = getprop(current, state.key)
-
-  local t = type(out)
-  if t ~= 'number' then
-    table.insert(state.errs, _invalidTypeMsg(state.path, S.number, t, out))
+  if S_MT == out then
+    local msg = 'Empty string at ' .. pathify(state.path, 1)
+    table.insert(state.errs, msg)
     return UNDEF
   end
 
   return out
 end
 
--- A required boolean value
-local function validate_BOOLEAN(state, _val, current)
+-- A required number value (int or float).
+local validate_NUMBER = function(state, _val, current)
   local out = getprop(current, state.key)
 
-  local t = type(out)
-  if t ~= 'boolean' then
-    table.insert(state.errs, _invalidTypeMsg(state.path, S.boolean, t, out))
+  local t = typify(out)
+  if S_number ~= t then
+    table.insert(state.errs, _invalidTypeMsg(state.path, S_number, t, out))
     return UNDEF
   end
 
   return out
 end
 
--- A required object (map) value (contents not validated)
-local function validate_OBJECT(state, _val, current)
+-- A required boolean value.
+local validate_BOOLEAN = function(state, _val, current)
   local out = getprop(current, state.key)
 
-  local t = type(out)
-
-  if out == UNDEF or t ~= 'table' then
-    table.insert(state.errs, _invalidTypeMsg(state.path, S.object, t, out))
+  local t = typify(out)
+  if S_boolean ~= t then
+    table.insert(state.errs, _invalidTypeMsg(state.path, S_boolean, t, out))
     return UNDEF
   end
 
   return out
 end
 
--- A required array (list) value (contents not validated)
-local function validate_ARRAY(state, _val, current)
+-- A required object (map) value (contents not validated).
+local validate_OBJECT = function(state, _val, current)
   local out = getprop(current, state.key)
 
-  local t = type(out)
-  if not islist(out) then
-    table.insert(state.errs, _invalidTypeMsg(state.path, S.array, t, out))
+  local t = typify(out)
+  if t ~= S_object then
+    table.insert(state.errs, _invalidTypeMsg(state.path, S_object, t, out))
     return UNDEF
   end
 
   return out
 end
 
--- A required function value
-local function validate_FUNCTION(state, _val, current)
+-- A required array (list) value (contents not validated).
+local validate_ARRAY = function(state, _val, current)
   local out = getprop(current, state.key)
 
-  local t = type(out)
-  if t ~= 'function' then
-    table.insert(state.errs, _invalidTypeMsg(state.path, S.func, t, out))
+  local t = typify(out)
+  if t ~= S_array then
+    table.insert(state.errs, _invalidTypeMsg(state.path, S_array, t, out))
     return UNDEF
   end
 
   return out
 end
 
--- Allow any value
-local function validate_ANY(state, _val, current)
+-- A required function value.
+local validate_FUNCTION = function(state, _val, current)
   local out = getprop(current, state.key)
+
+  local t = typify(out)
+  if S_function ~= t then
+    table.insert(state.errs, _invalidTypeMsg(state.path, S_function, t, out))
+    return UNDEF
+  end
+
   return out
 end
 
--- Specify child values for map or list
+-- Allow any value.
+local validate_ANY = function(state, _val, current)
+  return getprop(current, state.key)
+end
+
+-- Specify child values for map or list.
 -- Map syntax: {'`$CHILD`': child-template }
 -- List syntax: ['`$CHILD`', child-template ]
-local function validate_CHILD(state, _val, current)
-  local mode, key, parent, keys, path = state.mode, state.key, state.parent,
-    state.keys, state.path
+local validate_CHILD = function(state, _val, current)
+  local mode = state.mode
+  local key = state.key
+  local parent = state.parent
+  local keys = state.keys
+  local path = state.path
 
-  -- Setup data structures for validation by cloning child template
+  -- Map syntax.
+  if S_MKEYPRE == mode then
+    local childtm = getprop(parent, key)
 
-  -- Map syntax
-  if mode == S.MKEYPRE then
-    local child = getprop(parent, key)
-
-    -- Get corresponding current object
-    local pkey = path[#path - 1]
+    -- Get corresponding current object.
+    local pkey = getprop(path, #path - 1)
     local tval = getprop(current, pkey)
 
-    if tval == UNDEF then
-      -- Create an empty object as default
+    if UNDEF == tval then
       tval = {}
     elseif not ismap(tval) then
-      table.insert(state.errs,
-        _invalidTypeMsg({unpack(state.path, 1, #state.path - 1)}, S.object,
-          type(tval), tval))
+      local msg = _invalidTypeMsg(table.move(state.path, 1, #state.path - 1, 1,
+        {}), S_object, typify(tval), tval)
+      table.insert(state.errs, msg)
       return UNDEF
     end
 
     local ckeys = keysof(tval)
     for _, ckey in ipairs(ckeys) do
-      setprop(parent, ckey, clone(child))
+      setprop(parent, ckey, clone(childtm))
 
-      -- NOTE: modifying state! This extends the child value loop in inject
+      -- NOTE: modifying state! This extends the child value loop in inject.
       table.insert(keys, ckey)
     end
 
-    -- Remove $CHILD to cleanup output
+    -- Remove $CHILD to cleanup output.
     setprop(parent, key, UNDEF)
     return UNDEF
-    -- List syntax
-  elseif mode == S.MVAL then
+  end
+
+  -- List syntax.
+  if S_MVAL == mode then
     if not islist(parent) then
-      -- $CHILD was not inside a list
+      -- $CHILD was not inside a list.
       table.insert(state.errs, 'Invalid $CHILD as value')
       return UNDEF
     end
 
-    local child = parent[2]
+    local childtm = getprop(parent, 1)
 
-    if current == UNDEF then
-      -- Empty list as default
+    if UNDEF == current then
+      -- Empty list as default.
       for i = 1, #parent do
-        parent[i] = UNDEF
+        parent[i] = nil
       end
       return UNDEF
-    elseif not islist(current) then
-      table.insert(state.errs,
-        _invalidTypeMsg({unpack(state.path, 1, #state.path - 1)}, S.array,
-          type(current), current))
+    end
+
+    if not islist(current) then
+      local msg = _invalidTypeMsg(table.move(state.path, 1, #state.path - 1, 1,
+        {}), S_array, typify(current), current)
+      table.insert(state.errs, msg)
       state.keyI = #parent
       return current
-      -- Clone children and reset state key index
-      -- The inject child loop will now iterate over the cloned children,
-      -- validating them against the current list values
-    else
-      for i = 1, #current do
-        parent[i] = clone(child)
-      end
-      for i = #current + 1, #parent do
-        parent[i] = UNDEF
-      end
-      state.keyI = 1
-      return current[1]
     end
+
+    -- Clone children and reset state key index.
+    -- The inject child loop will now iterate over the cloned children,
+    -- validating them against the current list values.
+    for i = 1, #current do
+      parent[i] = clone(childtm)
+    end
+    for i = #current + 1, #parent do
+      parent[i] = nil
+    end
+    state.keyI = 0
+    local out = getprop(current, 0)
+    return out
   end
 
   return UNDEF
 end
 
--- Match at least one of the specified shapes
+-- Match at least one of the specified shapes.
 -- Syntax: ['`$ONE`', alt0, alt1, ...]
-local function validate_ONE(state, _val, current)
-  local mode, parent, path, nodes = state.mode, state.parent, state.path,
-    state.nodes
+local validate_ONE = function(state, _val, current, store)
+  local mode = state.mode
+  local parent = state.parent
+  local path = state.path
+  local nodes = state.nodes
 
-  -- Only operate in val mode, since parent is a list
-  if mode == S.MVAL then
+  -- Only operate in val mode, since parent is a list.
+  if S_MVAL == mode then
     state.keyI = #state.keys
 
-    -- Shape alts
+    -- Create tvals array from parent elements starting at index 2
     local tvals = {}
     for i = 2, #parent do
       table.insert(tvals, parent[i])
     end
 
-    -- See if we can find a match
+    -- See if we can find a match.
     for _, tval in ipairs(tvals) do
-      -- If match, then errs length = 0
+      -- If match, then errs.length = 0
       local terrs = {}
-      validate(current, tval, UNDEF, terrs)
+      validate(current, tval, store, terrs)
 
       -- The parent is the list we are inside. Go up one level
-      -- to set the actual value
+      -- to set the actual value.
       local grandparent = nodes[#nodes - 1]
       local grandkey = path[#path - 1]
 
       if isnode(grandparent) then
         -- Accept current value if there was a match
         if #terrs == 0 then
-          -- Ensure generic type validation (in validate "modify") passes
+          -- Ensure generic type validation (in validate "modify") passes.
           setprop(grandparent, grandkey, current)
           return
-          -- Ensure generic validation does not generate a spurious error
+
+          -- Ensure generic validation does not generate a spurious error.
         else
           setprop(grandparent, grandkey, UNDEF)
         end
       end
     end
 
-    -- There was no match
+    -- There was no match.
+    -- Build validation description
     local valdesc = {}
     for _, v in ipairs(tvals) do
       table.insert(valdesc, stringify(v))
     end
+    local valdesc_str = table.concat(valdesc, ', ')
+    -- Replace `$WORD` with word in lowercase
+    valdesc_str = valdesc_str:gsub('`%$([A-Z]+)`', function(p1)
+      return string.lower(p1)
+    end)
 
-    -- Replace `$NAME` with name
-    local valDescStr = table.concat(valdesc, ', '):gsub('`%$([A-Z]+)`',
-      function(p1)
-        return string.lower(p1)
-      end)
+    -- Create path slice
+    local path_slice = {}
+    for i = 1, #state.path - 1 do
+      table.insert(path_slice, state.path[i])
+    end
 
-    table.insert(state.errs,
-      _invalidTypeMsg({unpack(state.path, 1, #state.path - 1)},
-        'one of ' .. valDescStr, type(current), current))
+    table.insert(state.errs, _invalidTypeMsg(path_slice,
+      'one of ' .. valdesc_str, typify(current), current))
   end
 end
 
 -- This is the "modify" argument to inject. Use this to perform
 -- generic validation. Runs *after* any special commands.
-local function validation(val, key, parent, state, current, _store)
-  -- Current val to verify
+local _validation = function(pval, key, parent, state, current, _store)
+  if UNDEF == state then
+    return
+  end
+
+  -- Current val to verify.
   local cval = getprop(current, key)
 
-  if cval == UNDEF or state == UNDEF then
-    return UNDEF
+  if UNDEF == cval or UNDEF == state then
+    return
   end
 
-  local pval = getprop(parent, key)
-  local t = type(pval)
+  local ptype = typify(pval)
 
-  -- Delete any special commands remaining
-  if t == 'string' and pval:find(S.DS) then
-    return UNDEF
+  -- Delete any special commands remaining.
+  if S_string == ptype and string.find(pval, S_DS, 1, true) then
+    return
   end
 
-  local ct = type(cval)
+  local ctype = typify(cval)
 
-  -- Type mismatch
-  if t ~= ct and pval ~= UNDEF then
-    table.insert(state.errs, _invalidTypeMsg(state.path, t, ct, cval))
-    return UNDEF
-  elseif ismap(cval) then
-    if not ismap(val) then
-      table.insert(state.errs, _invalidTypeMsg(state.path,
-        islist(val) and S.array or t, ct, cval))
-      return UNDEF
+  -- Type mismatch.
+  if ptype ~= ctype and UNDEF ~= pval then
+    table.insert(state.errs, _invalidTypeMsg(state.path, ptype, ctype, cval))
+    return
+  end
+
+  if ismap(cval) then
+    if not ismap(pval) then
+      table.insert(state.errs, _invalidTypeMsg(state.path, ptype, ctype, cval))
+      return
     end
 
     local ckeys = keysof(cval)
     local pkeys = keysof(pval)
 
-    -- Empty spec object {} means object can be open (any keys)
+    -- Empty spec object {} means object can be open (any keys).
     if #pkeys > 0 and getprop(pval, '`$OPEN`') ~= true then
       local badkeys = {}
       for _, ckey in ipairs(ckeys) do
-        if not haskey(val, ckey) then
+        if not haskey(pval, ckey) then
           table.insert(badkeys, ckey)
         end
       end
 
-      -- Closed object, so reject extra keys not in shape
+      -- Closed object, so reject extra keys not in shape.
       if #badkeys > 0 then
-        table.insert(state.errs,
-          'Unexpected keys at ' .. _pathify(state.path) .. ': ' ..
-            table.concat(badkeys, ', '))
+        local msg = 'Unexpected keys at ' .. pathify(state.path, 1) .. ': ' ..
+                      table.concat(badkeys, ', ')
+        table.insert(state.errs, msg)
       end
     else
-      -- Object is open, so merge in extra keys
+      -- Object is open, so merge in extra keys.
       merge({pval, cval})
       if isnode(pval) then
-        pval['`$OPEN`'] = UNDEF
+        setprop(pval, '`$OPEN`', UNDEF)
       end
     end
   elseif islist(cval) then
-    if not islist(val) then
-      table.insert(state.errs, _invalidTypeMsg(state.path, t, ct, cval))
+    if not islist(pval) then
+      table.insert(state.errs, _invalidTypeMsg(state.path, ptype, ctype, cval))
     end
   else
     -- Spec value was a default, copy over data
     setprop(parent, key, cval)
   end
 
-  return UNDEF
+  return
 end
 
--- Validate a data structure against a shape specification. The shape
--- specification follows the "by example" principle. Plain data in
+-- Validate a data structure against a shape specification.  The shape
+-- specification follows the "by example" principle.  Plain data in
 -- the shape is treated as default values that also specify the
--- required type. Thus shape {a=1} validates {a=2}, since the types
--- (number) match, but not {a='A'}. Shape {a=1} against data {}
--- returns {a=1} as a=1 is the default value of the a key. Special
+-- required type.  Thus shape {a=1} validates {a=2}, since the types
+-- (number) match, but not {a='A'}.  Shape {a=1} against data {}
+-- returns {a=1} as a=1 is the default value of the a key.  Special
 -- validation commands (in the same syntax as transform) are also
--- provided to specify required values. Thus shape {a='`$STRING`'}
+-- provided to specify required values.  Thus shape {a='`$STRING`'}
 -- validates {a='A'} but not {a=1}. Empty map or list means the node
 -- is open, and if missing an empty default is inserted.
 local function validate(data, -- Source data to transform into new data (original not mutated)
   spec, -- Transform specification; output follows this shape
   extra, -- Additional custom checks
-  collecterrs -- Optionally collect errors
+  collecterrs -- Optionally modify individual values.
 )
   local errs = collecterrs or {}
-  local out = transform(data, spec, {
-    -- A special top level value to collect errors
-    [S.DERRS] = errs,
 
-    -- Remove the transform commands
-    [S.DS .. 'DELETE'] = UNDEF,
-    [S.DS .. 'COPY'] = UNDEF,
-    [S.DS .. 'KEY'] = UNDEF,
-    [S.DS .. 'META'] = UNDEF,
-    [S.DS .. 'MERGE'] = UNDEF,
-    [S.DS .. 'EACH'] = UNDEF,
-    [S.DS .. 'PACK'] = UNDEF,
+  -- Create the store with validation functions and commands
+  local store = {
+    -- A special top level value to collect errors.
+    ["$ERRS"] = errs,
 
-    [S.DS .. 'STRING'] = validate_STRING,
-    [S.DS .. 'NUMBER'] = validate_NUMBER,
-    [S.DS .. 'BOOLEAN'] = validate_BOOLEAN,
-    [S.DS .. 'OBJECT'] = validate_OBJECT,
-    [S.DS .. 'ARRAY'] = validate_ARRAY,
-    [S.DS .. 'FUNCTION'] = validate_FUNCTION,
-    [S.DS .. 'ANY'] = validate_ANY,
-    [S.DS .. 'CHILD'] = validate_CHILD,
-    [S.DS .. 'ONE'] = validate_ONE
-  }, validation)
+    -- Remove the transform commands.
+    ["$DELETE"] = nil,
+    ["$COPY"] = nil,
+    ["$KEY"] = nil,
+    ["$META"] = nil,
+    ["$MERGE"] = nil,
+    ["$EACH"] = nil,
+    ["$PACK"] = nil,
 
-  if #errs > 0 and collecterrs == UNDEF then
-    error('Invalid data: ' .. table.concat(errs, '\n'))
+    -- Validation functions
+    ["$STRING"] = validate_STRING,
+    ["$NUMBER"] = validate_NUMBER,
+    ["$BOOLEAN"] = validate_BOOLEAN,
+    ["$OBJECT"] = validate_OBJECT,
+    ["$ARRAY"] = validate_ARRAY,
+    ["$FUNCTION"] = validate_FUNCTION,
+    ["$ANY"] = validate_ANY,
+    ["$CHILD"] = validate_CHILD,
+    ["$ONE"] = validate_ONE
+  }
+
+  -- Merge in any extra validators/commands
+  if extra then
+    for k, v in pairs(extra) do
+      store[k] = v
+    end
+  end
+
+  local out = transform(data, spec, store, _validation)
+
+  -- If there are errors and we're not collecting them externally, throw
+  if #errs > 0 and not collecterrs then
+    error('Invalid data: ' .. table.concat(errs, ' | '))
   end
 
   return out
