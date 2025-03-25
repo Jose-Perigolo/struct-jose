@@ -98,7 +98,6 @@ local function resolveClients(spec, store, provider, structUtils)
 end
 
 local function matchval(check, base, structUtils)
-  local check
   if check == '__UNDEF__' then
     check = nil
   end
