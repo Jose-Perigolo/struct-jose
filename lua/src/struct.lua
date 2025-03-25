@@ -2086,31 +2086,13 @@ local function validate(data, -- Source data to transform into new data (origina
     end
   end
 
-  -- For primitive value at root level, we need special handling
-  if not isnode(data) and typify(spec) == "string" and
-    spec:match("^`%$[A-Z]+`$") then
-    -- Put the data in the store directly to validate primitive
-    store["$TOP"] = data
-    local out = inject(spec, store, _validation, store)
+  local out = transform(data, spec, store, _validation)
 
-    -- If there are errors and we're not collecting them externally, throw
-    if #errs > 0 and not collecterrs then
-      return data, 'Invalid data: ' .. table.concat(errs, ' | ')
-    end
-
-    -- Return the original value for primitive root validation
-    return data
-  else
-    -- Normal case for objects/arrays
-    local out = transform(data, spec, store, _validation)
-
-    -- If there are errors and we're not collecting them externally, throw
-    if #errs > 0 and not collecterrs then
-      return out, 'Invalid data: ' .. table.concat(errs, ' | ')
-    end
-
-    return out
+  if #errs > 0 and not collecterrs then
+    return out, 'Invalid data: ' .. table.concat(errs, ' | ')
   end
+
+  return out
 end
 
 -- Define the module exports
