@@ -1627,30 +1627,21 @@ end
 
 -- A required string value. NOTE: Rejects empty strings.
 local validate_STRING = function(state, val, current)
-  -- For root-level primitive validation (direct value)
-  local out
-  if state.path and #state.path == 1 and state.path[1] == S_DTOP then
-    -- Special case for root-level primitive
-    out = current -- For root primitive, the current is the actual value
-    if ismap(current) and current[S_DTOP] ~= nil then
-      out = current[S_DTOP]
-    end
-  else
-    -- Normal case for nested properties
-    out = getprop(current, state.key)
-  end
+  local out = getprop(current, state.key)
 
   local t = typify(out)
   if S_string ~= t then
     local msg = _invalidTypeMsg(state.path, S_string, t, out)
     table.insert(state.errs, msg)
-    return out -- IMPORTANT: Return the original value, even if invalid
+    return UNDEF
+
   end
 
   if S_MT == out then
     local msg = 'Empty string at ' .. pathify(state.path, 1)
     table.insert(state.errs, msg)
-    return out -- Return the original value
+    return UNDEF
+
   end
 
   return out
@@ -1658,23 +1649,12 @@ end
 
 -- A required number value (int or float).
 local validate_NUMBER = function(state, _val, current)
-  -- For root-level primitive validation (direct value)
-  local out
-  if state.path and #state.path == 1 and state.path[1] == S_DTOP then
-    -- Special case for root-level primitive
-    out = current -- For root primitive, the current is the actual value
-    if ismap(current) and current[S_DTOP] ~= nil then
-      out = current[S_DTOP]
-    end
-  else
-    -- Normal case for nested properties
-    out = getprop(current, state.key)
-  end
+  local out = getprop(current, state.key)
 
   local t = typify(out)
   if S_number ~= t then
     table.insert(state.errs, _invalidTypeMsg(state.path, S_number, t, out))
-    return out -- IMPORTANT: Return the original value, even if invalid
+    return UNDEF
   end
 
   return out
@@ -1682,24 +1662,12 @@ end
 
 -- A required boolean value.
 local validate_BOOLEAN = function(state, _val, current)
-  -- For root-level primitive validation (direct value)
-  local out
-
-  if state.path and #state.path == 1 and state.path[1] == S_DTOP then
-    -- Special case for root-level primitive
-    out = current -- For root primitive, the current is the actual value
-    if ismap(current) and current[S_DTOP] ~= nil then
-      out = current[S_DTOP]
-    end
-  else
-    -- Normal case for nested properties
-    out = getprop(current, state.key)
-  end
+  local out = getprop(current, state.key)
 
   local t = typify(out)
   if S_boolean ~= t then
     table.insert(state.errs, _invalidTypeMsg(state.path, S_boolean, t, out))
-    return out -- Return the original value
+    return UNDEF
   end
 
   return out
@@ -1733,23 +1701,12 @@ end
 
 -- A required function value.
 local validate_FUNCTION = function(state, _val, current)
-  -- For root-level primitive validation (direct value)
-  local out
-  if state.path and #state.path == 1 and state.path[1] == S_DTOP then
-    -- Special case for root-level primitive
-    out = current -- For root primitive, the current is the actual value
-    if ismap(current) and current[S_DTOP] ~= nil then
-      out = current[S_DTOP]
-    end
-  else
-    -- Normal case for nested properties
-    out = getprop(current, state.key)
-  end
+  local out = getprop(current, state.key)
 
   local t = typify(out)
   if S_function ~= t then
     table.insert(state.errs, _invalidTypeMsg(state.path, S_function, t, out))
-    return out -- Return the original value
+    return UNDEF
   end
 
   return out
@@ -1757,18 +1714,7 @@ end
 
 -- Allow any value.
 local validate_ANY = function(state, _val, current)
-  -- For root-level primitive validation (direct value)
-  if state.path and #state.path == 1 and state.path[1] == S_DTOP then
-    -- Special case for root-level primitive
-    local out = current -- For root primitive, the current is the actual value
-    if ismap(current) and current[S_DTOP] ~= nil then
-      out = current[S_DTOP]
-    end
-    return out
-  else
-    -- Normal case for nested properties
-    return getprop(current, state.key)
-  end
+  return getprop(current, state.key)
 end
 
 -- Specify child values for map or list.
