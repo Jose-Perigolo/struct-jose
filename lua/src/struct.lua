@@ -337,16 +337,18 @@ end
 -- Escape regular expression.
 local function escre(s)
   s = s or S_MT
-  return s:gsub("([.*+?^${}%(%)%[%]\\|])", "\\%1")
+  local result, _ = s:gsub("([.*+?^${}%(%)%[%]\\|])", "\\%1")
+  return result
 end
 
 -- Escape URLs.
 local function escurl(s)
   s = s or S_MT
   -- Exact match for encodeURIComponent behavior
-  return s:gsub("([^%w-_%.~])", function(c)
+  local result, _ = s:gsub("([^%w-_%.~])", function(c)
     return string.format("%%%02X", string.byte(c))
   end)
+  return result
 end
 
 -- Concatenate url part strings, merging forward slashes as needed.
@@ -2093,7 +2095,7 @@ local function validate(data, -- Source data to transform into new data (origina
 
     -- If there are errors and we're not collecting them externally, throw
     if #errs > 0 and not collecterrs then
-      error('Invalid data: ' .. table.concat(errs, ' | '))
+      return data, 'Invalid data: ' .. table.concat(errs, ' | ')
     end
 
     -- Return the original value for primitive root validation
@@ -2104,7 +2106,7 @@ local function validate(data, -- Source data to transform into new data (origina
 
     -- If there are errors and we're not collecting them externally, throw
     if #errs > 0 and not collecterrs then
-      error('Invalid data: ' .. table.concat(errs, ' | '))
+      return out, 'Invalid data: ' .. table.concat(errs, ' | ')
     end
 
     return out

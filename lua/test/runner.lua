@@ -159,15 +159,23 @@ local function handleError(entry, err, structUtils)
           err = err
         }, structUtils)
       end
-      return
+      return true
     end
 
-    error("ERROR MATCH: [" .. structUtils.stringify(entry_err) .. "] <=> [" ..
-            err_message .. "]")
-    return
+    -- DO NOT USE fail() here - it throws an error
+    print("ERROR MATCH FAILED: [" .. structUtils.stringify(entry_err) ..
+            "] <=> [" .. err_message .. "]")
+
+    -- Return false to indicate failure, but don't throw
+    return false
   end
 
-  error(err_message .. "\n\nENTRY: " .. structUtils.stringify(entry))
+  -- DO NOT USE fail() here - it throws an error
+  print("UNEXPECTED ERROR: " .. err_message .. "\n\nENTRY: " ..
+          structUtils.stringify(entry))
+
+  -- Return false to indicate failure, but don't throw
+  return false
 end
 
 local function checkResult(entry, res, structUtils)
@@ -210,14 +218,28 @@ local function runner(name, store, testfile, provider)
         local testpack = resolveTestPack(name, entry, subject, client, clients)
         local args = resolveArgs(entry, testpack)
 
-        local res = testpack.subject(table.unpack(args))
-        entry.res = res
+        local res, validation_error = testpack.subject(table.unpack(args))
 
+        if validation_error then
+          -- Return here to prevent further execution if validation error is handled
+          local handled = handleError(entry, validation_error, structUtils)
+          if not handled then
+            -- Only use luassert here, at the top level
+            luassert(false, "Test failed: " .. tostring(validation_error))
+          end
+          return
+        end
+
+        entry.res = res
         checkResult(entry, res, structUtils)
       end)
 
       if not success then
-        handleError(entry, err, structUtils)
+        local handled = handleError(entry, err, structUtils)
+        if not handled then
+          -- Only use luassert here, at the top level
+          luassert(false, "Test failed: " .. tostring(err))
+        end
       end
     end
   end
