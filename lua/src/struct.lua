@@ -194,35 +194,13 @@ function typify(value)
   elseif basicType == "function" then
     return "function"
   elseif basicType == "table" then
-    -- In Lua, we need to distinguish between arrays and objects
-    -- Check if the table has sequential numeric keys starting from 1
-    local isArray = true
-    local count = 0
-
-    for k, _ in pairs(value) do
-      if type(k) == "number" and k == math.floor(k) and k > 0 then
-        count = count + 1
-      else
-        isArray = false
-        break
-      end
-    end
-
-    -- Check if all numeric keys are sequential
-    if isArray and count > 0 then
-      for i = 1, count do
-        if value[i] == nil then
-          isArray = false
-          break
-        end
-      end
+    if islist(value) then
       return "array"
     else
-      return "object" -- Return "object" for empty tables
+      return "object"
     end
   end
 
-  -- For any other types (thread, userdata), return "object"
   return "object"
 end
 
@@ -1729,23 +1707,12 @@ end
 
 -- A required object (map) value (contents not validated).
 local validate_OBJECT = function(state, _val, current)
-  -- For root-level primitive validation (direct value)
-  local out
-  if state.path and #state.path == 1 and state.path[1] == S_DTOP then
-    -- Special case for root-level primitive
-    out = current -- For root primitive, the current is the actual value
-    if ismap(current) and current[S_DTOP] ~= nil then
-      out = current[S_DTOP]
-    end
-  else
-    -- Normal case for nested properties
-    out = getprop(current, state.key)
-  end
+  local out = getprop(current, state.key)
 
   local t = typify(out)
   if t ~= S_object then
     table.insert(state.errs, _invalidTypeMsg(state.path, S_object, t, out))
-    return out -- Return the original value
+    return UNDEF
   end
 
   return out
@@ -1753,23 +1720,12 @@ end
 
 -- A required array (list) value (contents not validated).
 local validate_ARRAY = function(state, _val, current)
-  -- For root-level primitive validation (direct value)
-  local out
-  if state.path and #state.path == 1 and state.path[1] == S_DTOP then
-    -- Special case for root-level primitive
-    out = current -- For root primitive, the current is the actual value
-    if ismap(current) and current[S_DTOP] ~= nil then
-      out = current[S_DTOP]
-    end
-  else
-    -- Normal case for nested properties
-    out = getprop(current, state.key)
-  end
+  local out = getprop(current, state.key)
 
   local t = typify(out)
   if t ~= S_array then
     table.insert(state.errs, _invalidTypeMsg(state.path, S_array, t, out))
-    return out -- Return the original value
+    return UNDEF
   end
 
   return out
