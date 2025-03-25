@@ -216,9 +216,10 @@ function typify(value)
           break
         end
       end
+      return "array"
+    else
+      return "object" -- Return "object" for empty tables
     end
-
-    return isArray and "array" or "object"
   end
 
   -- For any other types (thread, userdata), return "object"
@@ -1010,7 +1011,7 @@ end
 
 -- Default inject handler for transforms. If the path resolves to a function,
 -- call the function passing the injection state. This is how transforms operate.
-local function injecthandler(state, val, current, ref, store)
+local function _injecthandler(state, val, current, ref, store)
   -- Check if it's a command by checking if it's a function and starts with $
   local iscmd = isfunc(val) and (UNDEF == ref or ref:sub(1, 1) == S_DS)
 
@@ -1027,7 +1028,15 @@ local function injecthandler(state, val, current, ref, store)
 
   -- Only call val function if it is a special command ($NAME format).
   if iscmd then
-    val = val(state, val, current, ref, store)
+    -- Call the validator function, passing the value directly for root-level primitives
+    if state.path and #state.path == 1 and state.path[1] == S_DTOP then
+      -- Special handling for root validation - directly pass the data value
+      local result = val(state, val, current, ref, store)
+      return result
+    else
+      -- Normal case for nested objects/properties
+      val = val(state, val, current, ref, store)
+    end
     -- Update parent with value. Ensures references remain in node tree.
   elseif S_MVAL == state.mode and state.full then
     setprop(state.parent, state.key, val)
@@ -1059,7 +1068,7 @@ function inject(val, store, modify, current, state)
       parent = parent,
       path = {S_DTOP},
       nodes = {parent},
-      handler = injecthandler,
+      handler = _injecthandler,
       base = S_DTOP,
       modify = modify,
       errs = getprop(store, S_DERRS, {}),
@@ -1136,7 +1145,7 @@ function inject(val, store, modify, current, state)
         parent = val,
         path = childpath,
         nodes = childnodes,
-        handler = injecthandler,
+        handler = _injecthandler,
         base = state.base,
         errs = state.errs,
         meta = state.meta
@@ -1637,20 +1646,31 @@ local function _invalidTypeMsg(path, type, vt, v)
 end
 
 -- A required string value. NOTE: Rejects empty strings.
-local validate_STRING = function(state, _val, current)
-  local out = getprop(current, state.key)
+local validate_STRING = function(state, val, current)
+  -- For root-level primitive validation (direct value)
+  local out
+  if state.path and #state.path == 1 and state.path[1] == S_DTOP then
+    -- Special case for root-level primitive
+    out = current -- For root primitive, the current is the actual value
+    if ismap(current) and current[S_DTOP] ~= nil then
+      out = current[S_DTOP]
+    end
+  else
+    -- Normal case for nested properties
+    out = getprop(current, state.key)
+  end
 
   local t = typify(out)
   if S_string ~= t then
     local msg = _invalidTypeMsg(state.path, S_string, t, out)
     table.insert(state.errs, msg)
-    return UNDEF
+    return out -- IMPORTANT: Return the original value, even if invalid
   end
 
   if S_MT == out then
     local msg = 'Empty string at ' .. pathify(state.path, 1)
     table.insert(state.errs, msg)
-    return UNDEF
+    return out -- Return the original value
   end
 
   return out
@@ -1658,12 +1678,23 @@ end
 
 -- A required number value (int or float).
 local validate_NUMBER = function(state, _val, current)
-  local out = getprop(current, state.key)
+  -- For root-level primitive validation (direct value)
+  local out
+  if state.path and #state.path == 1 and state.path[1] == S_DTOP then
+    -- Special case for root-level primitive
+    out = current -- For root primitive, the current is the actual value
+    if ismap(current) and current[S_DTOP] ~= nil then
+      out = current[S_DTOP]
+    end
+  else
+    -- Normal case for nested properties
+    out = getprop(current, state.key)
+  end
 
   local t = typify(out)
   if S_number ~= t then
     table.insert(state.errs, _invalidTypeMsg(state.path, S_number, t, out))
-    return UNDEF
+    return out -- IMPORTANT: Return the original value, even if invalid
   end
 
   return out
@@ -1671,12 +1702,24 @@ end
 
 -- A required boolean value.
 local validate_BOOLEAN = function(state, _val, current)
-  local out = getprop(current, state.key)
+  -- For root-level primitive validation (direct value)
+  local out
+
+  if state.path and #state.path == 1 and state.path[1] == S_DTOP then
+    -- Special case for root-level primitive
+    out = current -- For root primitive, the current is the actual value
+    if ismap(current) and current[S_DTOP] ~= nil then
+      out = current[S_DTOP]
+    end
+  else
+    -- Normal case for nested properties
+    out = getprop(current, state.key)
+  end
 
   local t = typify(out)
   if S_boolean ~= t then
     table.insert(state.errs, _invalidTypeMsg(state.path, S_boolean, t, out))
-    return UNDEF
+    return out -- Return the original value
   end
 
   return out
@@ -1684,12 +1727,23 @@ end
 
 -- A required object (map) value (contents not validated).
 local validate_OBJECT = function(state, _val, current)
-  local out = getprop(current, state.key)
+  -- For root-level primitive validation (direct value)
+  local out
+  if state.path and #state.path == 1 and state.path[1] == S_DTOP then
+    -- Special case for root-level primitive
+    out = current -- For root primitive, the current is the actual value
+    if ismap(current) and current[S_DTOP] ~= nil then
+      out = current[S_DTOP]
+    end
+  else
+    -- Normal case for nested properties
+    out = getprop(current, state.key)
+  end
 
   local t = typify(out)
   if t ~= S_object then
     table.insert(state.errs, _invalidTypeMsg(state.path, S_object, t, out))
-    return UNDEF
+    return out -- Return the original value
   end
 
   return out
@@ -1697,12 +1751,23 @@ end
 
 -- A required array (list) value (contents not validated).
 local validate_ARRAY = function(state, _val, current)
-  local out = getprop(current, state.key)
+  -- For root-level primitive validation (direct value)
+  local out
+  if state.path and #state.path == 1 and state.path[1] == S_DTOP then
+    -- Special case for root-level primitive
+    out = current -- For root primitive, the current is the actual value
+    if ismap(current) and current[S_DTOP] ~= nil then
+      out = current[S_DTOP]
+    end
+  else
+    -- Normal case for nested properties
+    out = getprop(current, state.key)
+  end
 
   local t = typify(out)
   if t ~= S_array then
     table.insert(state.errs, _invalidTypeMsg(state.path, S_array, t, out))
-    return UNDEF
+    return out -- Return the original value
   end
 
   return out
@@ -1710,12 +1775,23 @@ end
 
 -- A required function value.
 local validate_FUNCTION = function(state, _val, current)
-  local out = getprop(current, state.key)
+  -- For root-level primitive validation (direct value)
+  local out
+  if state.path and #state.path == 1 and state.path[1] == S_DTOP then
+    -- Special case for root-level primitive
+    out = current -- For root primitive, the current is the actual value
+    if ismap(current) and current[S_DTOP] ~= nil then
+      out = current[S_DTOP]
+    end
+  else
+    -- Normal case for nested properties
+    out = getprop(current, state.key)
+  end
 
   local t = typify(out)
   if S_function ~= t then
     table.insert(state.errs, _invalidTypeMsg(state.path, S_function, t, out))
-    return UNDEF
+    return out -- Return the original value
   end
 
   return out
@@ -1723,7 +1799,18 @@ end
 
 -- Allow any value.
 local validate_ANY = function(state, _val, current)
-  return getprop(current, state.key)
+  -- For root-level primitive validation (direct value)
+  if state.path and #state.path == 1 and state.path[1] == S_DTOP then
+    -- Special case for root-level primitive
+    local out = current -- For root primitive, the current is the actual value
+    if ismap(current) and current[S_DTOP] ~= nil then
+      out = current[S_DTOP]
+    end
+    return out
+  else
+    -- Normal case for nested properties
+    return getprop(current, state.key)
+  end
 end
 
 -- Specify child values for map or list.
@@ -1997,14 +2084,31 @@ local function validate(data, -- Source data to transform into new data (origina
     end
   end
 
-  local out = transform(data, spec, store, _validation)
+  -- For primitive value at root level, we need special handling
+  if not isnode(data) and typify(spec) == "string" and
+    spec:match("^`%$[A-Z]+`$") then
+    -- Put the data in the store directly to validate primitive
+    store["$TOP"] = data
+    local out = inject(spec, store, _validation, store)
 
-  -- If there are errors and we're not collecting them externally, throw
-  if #errs > 0 and not collecterrs then
-    error('Invalid data: ' .. table.concat(errs, ' | '))
+    -- If there are errors and we're not collecting them externally, throw
+    if #errs > 0 and not collecterrs then
+      error('Invalid data: ' .. table.concat(errs, ' | '))
+    end
+
+    -- Return the original value for primitive root validation
+    return data
+  else
+    -- Normal case for objects/arrays
+    local out = transform(data, spec, store, _validation)
+
+    -- If there are errors and we're not collecting them externally, throw
+    if #errs > 0 and not collecterrs then
+      error('Invalid data: ' .. table.concat(errs, ' | '))
+    end
+
+    return out
   end
-
-  return out
 end
 
 -- Define the module exports
