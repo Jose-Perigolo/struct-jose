@@ -1727,18 +1727,15 @@ end
 -- Map syntax: {'`$CHILD`': child-template }
 -- List syntax: ['`$CHILD`', child-template ]
 local validate_CHILD = function(state, _val, current)
-  local mode = state.mode
-  local key = state.key
-  local parent = state.parent
-  local keys = state.keys
-  local path = state.path
+  local mode, key, parent, keys, path = state.mode, state.key, state.parent,
+    state.keys, state.path
 
   -- Map syntax.
   if S_MKEYPRE == mode then
     local childtm = getprop(parent, key)
 
     -- Get corresponding current object.
-    local pkey = getprop(path, #path - 1)
+    local pkey = getprop(path, #path - 2)
     local tval = getprop(current, pkey)
 
     if UNDEF == tval then
