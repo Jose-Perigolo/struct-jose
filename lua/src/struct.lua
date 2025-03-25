@@ -84,15 +84,18 @@ local UNDEF = nil
 
 -- Value is a defined list (array) with integer keys (indexes).
 local function islist(val)
+if (getmetatable(val) and getmetatable(val).__jsontype == "array") or
+  (getmetatable(val) and getmetatable(val).__jsontype and
+    getmetatable(val).__jsontype.type == "array") then
+  return true
+end
+
   -- Check if it's a table
   if type(val) ~= "table" or
     (getmetatable(val) and getmetatable(val).__jsontype == "object") then
     return false
   end
 
-  if getmetatable(val) and getmetatable(val).__jsontype == "array" then
-    return true
-  end
 
   -- Count total elements and max integer key
   local count = 0
