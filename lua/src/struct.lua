@@ -1621,8 +1621,14 @@ end
 -- Build a type validation error message.
 local function _invalidTypeMsg(path, type, vt, v)
   local vs = stringify(v)
-  return 'Expected ' .. type .. ' at ' .. pathify(path, 1) .. ', found ' ..
-           (v ~= nil and (vt .. ': ') or '') .. vs
+  local msg = 'Expected ' .. type .. ' at ' .. pathify(path, 1) .. ', found ' ..
+                (v ~= nil and (vt .. ': ') or '') .. vs
+
+  -- Replace "found array: {}" with "found array: []"
+  -- Because {} is used both for arrays and objects
+  msg, _ = string.gsub(msg, "found array: {}", "found array: []")
+  return msg
+
 end
 
 -- A required string value. NOTE: Rejects empty strings.
