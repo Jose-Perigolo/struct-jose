@@ -295,18 +295,18 @@ describe("struct", function()
   --   -- -- -- merge tests
   --   -- -- -- ===========
 
-  --   test("merge-basic", function()
-  --     local test = clone(spec.merge.basic)
-  --     assert.same(test.out, merge(test['in']))
-  --   end)
+  test("merge-basic", function()
+    local test = clone(mergeSpec.basic)
+    assert.same(test.out, merge(test['in']))
+  end)
 
-  --   test("merge-cases", function()
-  --     runset(spec.merge.cases, merge)
-  --   end)
+  -- test("merge-cases", function()
+  --   runset(mergeSpec.cases, merge)
+  -- end)
 
-  --   test("merge-array", function()
-  --     runset(spec.merge.array, merge)
-  --   end)
+  -- test("merge-array", function()
+  --   runset(mergeSpec.array, merge)
+  -- end)
 
   --   test("merge-special", function()
   --     local f0 = function()
