@@ -300,9 +300,9 @@ describe("struct", function()
     assert.same(test.out, merge(test['in']))
   end)
 
-  -- test("merge-cases", function()
-  --   runset(mergeSpec.cases, merge)
-  -- end)
+  test("merge-cases", function()
+    runset(mergeSpec.cases, merge)
+  end)
 
   -- test("merge-array", function()
   --   runset(mergeSpec.array, merge)
