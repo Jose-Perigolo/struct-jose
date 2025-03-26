@@ -308,28 +308,28 @@ describe("struct", function()
     runset(mergeSpec.array, merge)
   end)
 
-  --   test("merge-special", function()
-  --     local f0 = function()
-  --       return nil
-  --     end
+  test("merge-special", function()
+    local f0 = function()
+      return nil
+    end
 
-  --     assert.same(f0, merge(array(f0)))
-  --     assert.same(f0, merge(array(nil, f0)))
-  --     assert.same(object({
-  --       a = f0
-  --     }), merge(array(object({
-  --       a = f0
-  --     }))))
-  --     assert.same(object({
-  --       a = object({
-  --         b = f0
-  --       })
-  --     }), merge(array(object({
-  --       a = object({
-  --         b = f0
-  --       })
-  --     }))))
-  --   end)
+    assert.same(f0, merge(array(f0)))
+    assert.same(f0, merge(array(nil, f0)))
+    assert.same(object({
+      a = f0
+    }), merge(array(object({
+      a = f0
+    }))))
+    assert.same(object({
+      a = object({
+        b = f0
+      })
+    }), merge(array(object({
+      a = object({
+        b = f0
+      })
+    }))))
+  end)
 
   --   -- -- -- getpath tests
   --   -- -- -- =============
