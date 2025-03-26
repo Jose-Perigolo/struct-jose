@@ -397,97 +397,97 @@ describe("struct", function()
   --   -- -- -- transform tests
   --   -- -- -- ===============
 
-  --   test("transform-basic", function()
-  --     local test = clone(spec.transform.basic)
-  --     assert.same(transform(test['in'].data, test['in'].spec, test['in'].store),
-  --       test.out)
-  --   end)
+  test("transform-basic", function()
+    local test = clone(transformSpec.basic)
+    assert.same(transform(test['in'].data, test['in'].spec, test['in'].store),
+      test.out)
+  end)
 
-  --   test("transform-paths", function()
-  --     runset(spec.transform.paths, function(vin)
-  --       return transform(vin.data, vin.spec, vin.store)
-  --     end)
-  --   end)
+  test("transform-paths", function()
+    runset(transformSpec.paths, function(vin)
+      return transform(vin.data, vin.spec, vin.store)
+    end)
+  end)
 
-  --   test("transform-cmds", function()
-  --     runset(spec.transform.cmds, function(vin)
-  --       return transform(vin.data, vin.spec, vin.store)
-  --     end)
-  --   end)
+  test("transform-cmds", function()
+    runset(transformSpec.cmds, function(vin)
+      return transform(vin.data, vin.spec, vin.store)
+    end)
+  end)
 
-  --   test("transform-each", function()
-  --     runset(spec.transform.each, function(vin)
-  --       return transform(vin.data, vin.spec, vin.store)
-  --     end)
-  --   end)
+  test("transform-each", function()
+    runset(transformSpec.each, function(vin)
+      return transform(vin.data, vin.spec, vin.store)
+    end)
+  end)
 
-  --   test("transform-pack", function()
-  --     runset(spec.transform.pack, function(vin)
-  --       return transform(vin.data, vin.spec, vin.store)
-  --     end)
-  --   end)
+  test("transform-pack", function()
+    runset(transformSpec.pack, function(vin)
+      return transform(vin.data, vin.spec, vin.store)
+    end)
+  end)
 
-  --   test("transform-modify", function()
-  --     runset(spec.transform.modify, function(vin)
-  --       return transform(vin.data, vin.spec, vin.store, function(val, key, parent)
-  --         if key ~= nil and parent ~= nil and type(val) == "string" then
-  --           parent[key] = "@" .. val
-  --           val = parent[key]
-  --         end
-  --       end)
-  --     end)
-  --   end)
+  test("transform-modify", function()
+    runset(transformSpec.modify, function(vin)
+      return transform(vin.data, vin.spec, vin.store, function(val, key, parent)
+        if key ~= nil and parent ~= nil and type(val) == "string" then
+          parent[key] = "@" .. val
+          val = parent[key]
+        end
+      end)
+    end)
+  end)
 
-  --   test("transform-extra", function()
-  --     assert.same(transform({
-  --       a = 1
-  --     }, {
-  --       x = '`a`',
-  --       b = '`$COPY`',
-  --       c = '`$UPPER`'
-  --     }, {
-  --       b = 2,
-  --       ["$UPPER"] = function(state)
-  --         local path = state.path
-  --         return ('' .. tostring(getprop(path, #path - 1))):upper()
-  --       end
-  --     }), {
-  --       x = 1,
-  --       b = 2,
-  --       c = 'C'
-  --     })
-  --   end)
+  test("transform-extra", function()
+    assert.same(transform({
+      a = 1
+    }, {
+      x = '`a`',
+      b = '`$COPY`',
+      c = '`$UPPER`'
+    }, {
+      b = 2,
+      ["$UPPER"] = function(state)
+        local path = state.path
+        return ('' .. tostring(getprop(path, #path - 1))):upper()
+      end
+    }), {
+      x = 1,
+      b = 2,
+      c = 'C'
+    })
+  end)
 
-  --   test("transform-funcval", function()
-  --     local f0 = function()
-  --       return 99
-  --     end
+  test("transform-funcval", function()
+    local f0 = function()
+      return 99
+    end
 
-  --     assert.same(transform({}, {
-  --       x = 1
-  --     }), {
-  --       x = 1
-  --     })
-  --     assert.same(transform({}, {
-  --       x = f0
-  --     }), {
-  --       x = f0
-  --     })
-  --     assert.same(transform({
-  --       a = 1
-  --     }, {
-  --       x = '`a`'
-  --     }), {
-  --       x = 1
-  --     })
-  --     assert.same(transform({
-  --       f0 = f0
-  --     }, {
-  --       x = '`f0`'
-  --     }), {
-  --       x = f0
-  --     })
-  --   end)
+    assert.same(transform({}, {
+      x = 1
+    }), {
+      x = 1
+    })
+    assert.same(transform({}, {
+      x = f0
+    }), {
+      x = f0
+    })
+    assert.same(transform({
+      a = 1
+    }, {
+      x = '`a`'
+    }), {
+      x = 1
+    })
+    assert.same(transform({
+      f0 = f0
+    }, {
+      x = '`f0`'
+    }), {
+      x = f0
+    })
+  end)
 
   --   -- validate tests
   --   -- ===============
