@@ -304,9 +304,9 @@ describe("struct", function()
     runset(mergeSpec.cases, merge)
   end)
 
-  -- test("merge-array", function()
-  --   runset(mergeSpec.array, merge)
-  -- end)
+  test("merge-array", function()
+    runset(mergeSpec.array, merge)
+  end)
 
   --   test("merge-special", function()
   --     local f0 = function()
