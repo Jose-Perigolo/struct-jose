@@ -376,27 +376,23 @@ describe("struct", function()
   --   -- -- inject tests
   --   -- -- ============
 
-  --   test("inject-exists", function()
-  --     assert.equal("function", type(inject))
-  --   end)
+  test("inject-basic", function()
+    local test = clone(injectSpec.basic)
+    assert.same(test.out, inject(test['in'].val, test['in'].store))
+  end)
 
-  --   test("inject-basic", function()
-  --     local test = clone(spec.inject.basic)
-  --     assert.same(test.out, inject(test['in'].val, test['in'].store))
-  --   end)
+  test("inject-string", function()
+    runset(injectSpec.string, function(vin)
+      local result = inject(vin.val, vin.store, nullModifier, vin.current)
+      return result
+    end)
+  end)
 
-  --   test("inject-string", function()
-  --     runset(spec.inject.string, function(vin)
-  --       local result = inject(vin.val, vin.store, nullModifier, vin.current)
-  --       return result
-  --     end)
-  --   end)
-
-  --   test("inject-deep", function()
-  --     runset(spec.inject.deep, function(vin)
-  --       return inject(vin.val, vin.store)
-  --     end)
-  --   end)
+  test("inject-deep", function()
+    runset(injectSpec.deep, function(vin)
+      return inject(vin.val, vin.store)
+    end)
+  end)
 
   --   -- -- -- transform tests
   --   -- -- -- ===============
