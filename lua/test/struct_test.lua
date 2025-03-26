@@ -163,6 +163,10 @@ describe("struct", function()
     runset(spec.minor.iskey, iskey)
   end)
 
+test("minor-iskey", function()
+  runset(spec.minor.iskey, iskey)
+end)
+
   test("minor-isempty", function()
     runset(spec.minor.isempty, isempty)
   end)
