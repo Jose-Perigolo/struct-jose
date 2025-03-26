@@ -334,44 +334,44 @@ describe("struct", function()
   --   -- -- -- getpath tests
   --   -- -- -- =============
 
-  --   test("getpath-basic", function()
-  --     runset(spec.getpath.basic, function(vin)
-  --       return getpath(vin.path, vin.store)
-  --     end)
-  --   end)
+  test("getpath-basic", function()
+    runset(getpathSpec.basic, function(vin)
+      return getpath(vin.path, vin.store)
+    end)
+  end)
 
-  --   test("getpath-current", function()
-  --     runset(spec.getpath.current, function(vin)
-  --       return getpath(vin.path, vin.store, vin.current)
-  --     end)
-  --   end)
+  test("getpath-current", function()
+    runset(getpathSpec.current, function(vin)
+      return getpath(vin.path, vin.store, vin.current)
+    end)
+  end)
 
-  --   test("getpath-state", function()
-  --     local state = {
-  --       handler = function(state, val, _current, _ref, _store)
-  --         local out = state.meta.step .. ':' .. val
-  --         state.meta.step = state.meta.step + 1
-  --         return out
-  --       end,
-  --       meta = {
-  --         step = 0
-  --       },
-  --       mode = 'val',
-  --       full = false,
-  --       keyI = 0,
-  --       keys = {'$TOP'},
-  --       key = '$TOP',
-  --       val = '',
-  --       parent = {},
-  --       path = {'$TOP'},
-  --       nodes = {{}},
-  --       base = '$TOP',
-  --       errs = {}
-  --     }
-  --     runset(spec.getpath.state, function(vin)
-  --       return getpath(vin.path, vin.store, vin.current, state)
-  --     end)
-  --   end)
+  test("getpath-state", function()
+    local state = {
+      handler = function(state, val, _current, _ref, _store)
+        local out = state.meta.step .. ':' .. val
+        state.meta.step = state.meta.step + 1
+        return out
+      end,
+      meta = {
+        step = 0
+      },
+      mode = 'val',
+      full = false,
+      keyI = 0,
+      keys = {'$TOP'},
+      key = '$TOP',
+      val = '',
+      parent = {},
+      path = {'$TOP'},
+      nodes = {{}},
+      base = '$TOP',
+      errs = {}
+    }
+    runset(spec.getpath.state, function(vin)
+      return getpath(vin.path, vin.store, vin.current, state)
+    end)
+  end)
 
   --   -- -- inject tests
   --   -- -- ============
