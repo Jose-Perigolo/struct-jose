@@ -105,9 +105,7 @@ describe("struct", function()
   }
 
   -- Change this line to point to the correct location of your test.json
-  local result = runner("struct", {}, "build/test/test.json", provider)
-
-  -- local result = runner("struct", {}, "../build/test/test.json", provider)
+  local result = runner("struct", {}, "../build/test/test.json", provider)
 
   local spec = result.spec
   local runset = result.runset

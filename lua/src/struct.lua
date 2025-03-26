@@ -1103,10 +1103,12 @@ function inject(val, store, modify, current, state)
     while nkI < #nodekeys do
       local nodekey = nodekeys[nkI + 1]
 
-      local childpath = {unpack(state.path)}
+      local childpath = {table.unpack(state.path)}
+
       table.insert(childpath, nodekey)
 
-      local childnodes = {unpack(state.nodes)}
+      local childnodes = {table.unpack(state.nodes)}
+
       table.insert(childnodes, val)
 
       local childval = getprop(val, nodekey)
@@ -1928,7 +1930,7 @@ local validate_ONE = function(state, _val, current, store)
     -- Create path slice
     local path_slice = {}
     for i = 1, #state.path do
-table.insert(path_slice, state.path[i - 1])
+      table.insert(path_slice, state.path[i - 1])
 
     end
 
