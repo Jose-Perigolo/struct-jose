@@ -3,7 +3,7 @@ package.path = package.path .. ";./test/?.lua"
 local assert = require("luassert")
 
 local runnerModule = require("runner")
--- local inspect = require 'inspect' -- TEMPORARILY ADDED TO DEBUG
+local inspect = require 'inspect' -- TEMPORARILY ADDED TO DEBUG
 local struct = require("struct")
 
 local NULLMARK, nullModifier, runner = runnerModule.NULLMARK,
@@ -271,20 +271,20 @@ describe("struct", function()
   --   -- -- -- -- walk tests
   --   -- -- -- -- ==========
 
-  --   test("walk-log", function()
-  --     local test = clone(spec.walk.log)
-  --     local log = {}
+  test("walk-log", function()
+    local test = clone(walkSpec.log)
+    local log = array()
 
-  --     local function walklog(key, val, parent, path)
-  --       table.insert(log,
-  --         "k=" .. stringify(key) .. ", v=" .. stringify(val) .. ", p=" ..
-  --           stringify(parent) .. ", t=" .. pathify(path))
-  --       return val
-  --     end
+    local function walklog(key, val, parent, path)
+      table.insert(log,
+        "k=" .. stringify(key) .. ", v=" .. stringify(val) .. ", p=" ..
+          stringify(parent) .. ", t=" .. pathify(path))
+      return val
+    end
 
-  --     walk(test["in"], walklog)
-  --     assert.same(log, test.out)
-  --   end)
+    walk(test["in"], walklog)
+    assert.same(log, test.out)
+  end)
 
   --   test("walk-basic", function()
   --     runset(spec.walk.basic, function(vin)

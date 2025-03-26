@@ -1,4 +1,4 @@
--- local inspect = require 'inspect' -- TEMPORARILY ADDED TO DEBUG
+local inspect = require 'inspect' -- TEMPORARILY ADDED TO DEBUG
 
 -- Copyright (c) 2025 Voxgig Ltd. MIT LICENSE.
 -- Voxgig Struct
@@ -744,25 +744,32 @@ end
 function walk(val, apply, -- These arguments are the public interface.
 key, parent, path -- These arguments are used for recursive state.
 )
-
-  path = path or {}
+  path = path or {} -- Initialize path as empty table for root level
+  setmetatable(path, {
+    __jsontype = "array"
+  })
 
   if isnode(val) then
+    -- items(val) returns an array of {key, value} pairs
     for _, item in ipairs(items(val)) do
       local ckey, child = item[1], item[2]
+
+      -- Create a new path array
       local childPath = {}
+      setmetatable(childPath, {
+        __jsontype = "array"
+      })
       for _, p in ipairs(path) do
         table.insert(childPath, p)
       end
-      table.insert(childPath, tostring(ckey))
+      table.insert(childPath, S_MT .. tostring(ckey))
 
       setprop(val, ckey, walk(child, apply, ckey, val, childPath))
     end
   end
 
   -- Nodes are applied *after* their children.
-  -- For the root node, key and parent will be undefined.
-  return apply(key, val, parent, path or {})
+  return apply(key, val, parent, path)
 end
 
 -- Merge a list of values into each other. Later values have
