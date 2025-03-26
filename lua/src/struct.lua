@@ -1,3 +1,5 @@
+-- local inspect = require 'inspect' -- TEMPORARILY ADDED TO DEBUG
+
 -- Copyright (c) 2025 Voxgig Ltd. MIT LICENSE.
 -- Voxgig Struct
 -- =============
@@ -255,14 +257,11 @@ end
 -- Floats are truncated to integers.
 -- Booleans, objects, arrays, null, undefined all return empty string.
 function strkey(key)
-  if key == UNDEF then
+  if key == UNDEF or key == S_null then
     return S_MT
   end
 
   if type(key) == S_string then
-    if key == "null" then
-      return S_MT
-    end
     return key
   end
 
@@ -672,7 +671,7 @@ local function pathify(val, from)
   local pathstr = UNDEF
   local path = UNDEF
 
-  if islist(val) or ismap(val) then
+  if islist(val) then
     path = val
   elseif type(val) == 'string' then
     path = {val}
@@ -681,6 +680,7 @@ local function pathify(val, from)
   end
 
   -- Calculate start index
+  local start
   if from == nil then
     start = 0
   elseif from >= 0 then
@@ -700,11 +700,10 @@ local function pathify(val, from)
     if #path == 0 then
       pathstr = '<root>'
     else
-      -- Filter valid path elements (strings and numbers)
+      -- Filter valid path elements using iskey
       local filtered = {}
       for _, p in ipairs(path) do
-        local t = type(p)
-        if t == S_string or t == S_number then
+        if iskey(p) then
           table.insert(filtered, p)
         end
       end
@@ -716,8 +715,8 @@ local function pathify(val, from)
           -- Floor number and convert to string
           table.insert(mapped, S_MT .. tostring(math.floor(p)))
         else
-          -- Replace dots with empty string for strings
-          local replacedP = string.gsub(p, '%' .. S_DT, S_MT)
+          -- Replace dots with S_MT for strings
+          local replacedP = string.gsub(p, "%.", S_MT)
           table.insert(mapped, replacedP)
         end
       end

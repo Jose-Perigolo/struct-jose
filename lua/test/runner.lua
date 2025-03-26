@@ -1,9 +1,9 @@
 local json = require("dkjson")
+-- local inspect = require 'inspect' -- TEMPORARILY ADDED TO DEBUG
 local lfs = require("lfs")
 local luassert = require("luassert")
 
--- Custom null value as a string
-local NULL_STRING = "null"
+local NULLMARK = "__NULL__"
 
 local function readFileSync(path)
   local file = io.open(path, "r")
@@ -19,12 +19,99 @@ local function join(...)
   return table.concat({...}, "/")
 end
 
+local Client = {}
+Client.__index = Client
+
+-- Constructor equivalent
+function Client.new(opts)
+  local instance = setmetatable({}, Client)
+
+  -- Private fields (using closure instead of # private fields)
+  local _opts = opts or {}
+  local _utility = {
+    struct = {
+      clone = clone, -- Assuming these functions are defined elsewhere
+      getpath = getpath,
+      inject = inject,
+      items = items,
+      stringify = stringify,
+      walk = walk
+    },
+    check = function(ctx)
+      return {
+        zed = "ZED" ..
+          ((_opts == nil) and "" or (_opts.foo == nil and "" or _opts.foo)) ..
+          "_" .. ((ctx.bar == nil) and "0" or ctx.bar)
+      }
+    end
+  }
+
+  -- Method to access private utility
+  instance.utility = function()
+    return _utility
+  end
+
+  return instance
+end
+
+-- Static method equivalent (matching TypeScript implementation)
+function Client.test(opts)
+  return Client.new(opts)
+end
+
 local function fail(msg)
   luassert(false, msg)
 end
 
 local function deepEqual(actual, expected)
   luassert.same(expected, actual)
+end
+
+local function fixJSON(val, flags)
+  if val == "null" then
+    return flags.null and NULLMARK or val
+  end
+
+  -- Deep clone and preserve metatables
+  local function deepClone(v)
+    if v == "null" and flags.null then
+      return NULLMARK
+    elseif type(v) == "table" then
+      local result = {}
+      for k, value in pairs(v) do
+        result[k] = deepClone(value)
+      end
+
+      -- Preserve the metatable if it exists
+      local mt = getmetatable(v)
+      if mt then
+        setmetatable(result, mt)
+      end
+
+      return result
+    else
+      return v
+    end
+  end
+
+  return deepClone(val)
+end
+
+local function resolveFlags(flags)
+  if flags == nil then
+    flags = {}
+  end
+  flags.null = flags.null == nil and true or not not flags.null
+  return flags
+end
+
+local function resolveEntry(entry, flags)
+  entry.out = entry.out == nil and flags.null and NULLMARK or entry.out
+  return entry
+end
+
+local function resolveSubject(name, container)
+  return container and container[name]
 end
 
 local function resolveArgs(entry, testpack)
@@ -65,7 +152,7 @@ local function resolveTestPack(name, entry, subject, client, clients)
   if entry.client then
     pack.client = clients[entry.client]
     pack.utility = pack.client.utility()
-    pack.subject = pack.utility[name]
+    pack.subject = resolveSubject(name, pack.utility)
   end
 
   return pack
@@ -73,32 +160,31 @@ end
 
 local function resolveSpec(name, testfile)
   local alltests = json.decode(readFileSync(join(lfs.currentdir(), testfile)),
-    1, NULL_STRING)
+    1, "null")
   local spec =
     (alltests.primary and alltests.primary[name]) or (alltests[name]) or
       alltests
   return spec
 end
 
-local function resolveClients(spec, store, provider, structUtils)
+local function resolveClients(spec, store, structUtils)
   local clients = {}
 
-  if spec.DEF then
-    for _, cdef in ipairs(structUtils.items(spec.DEF.client)) do
-      local copts = cdef[2].test.options or {}
-      if type(store) == "table" then
+  if spec.DEF and spec.DEF.client then
+    for clientName, clientDef in pairs(spec.DEF.client) do
+      local copts = clientDef.test.options or {}
+      if type(store) == "table" and structUtils.inject then
         structUtils.inject(copts, store)
       end
 
-      clients[cdef[1]] = provider.test(copts)
+      clients[clientName] = Client.test(copts)
     end
   end
-
   return clients
 end
 
 local function matchval(check, base, structUtils)
-  if check == '__UNDEF__' then
+  if check == NULLMARK then
     check = nil
   end
 
@@ -158,23 +244,23 @@ local function handleError(entry, err, structUtils)
           err = err
         }, structUtils)
       end
-      return true
+      return
     end
 
-    -- DO NOT USE fail() here - it throws an error
-    print("ERROR MATCH FAILED: [" .. structUtils.stringify(entry_err) ..
-            "] <=> [" .. err_message .. "]")
-
-    -- Return false to indicate failure, but don't throw
-    return false
+    fail("ERROR MATCH: [" .. structUtils.stringify(entry_err) .. "] <=> [" ..
+           err_message .. "]")
+  else
+    -- Unexpected error (test didn't specify an error expectation)
+    if type(err) == "table" and err.name == "AssertionError" then
+      fail(err_message .. "\n\nENTRY: " .. json.encode(entry, {
+        indent = true
+      }))
+    else
+      fail((err.stack or err_message) .. "\n\nENTRY: " .. json.encode(entry, {
+        indent = true
+      }))
+    end
   end
-
-  -- DO NOT USE fail() here - it throws an error
-  print("UNEXPECTED ERROR: " .. err_message .. "\n\nENTRY: " ..
-          structUtils.stringify(entry))
-
-  -- Return false to indicate failure, but don't throw
-  return false
 end
 
 local function checkResult(entry, res, structUtils)
@@ -182,7 +268,7 @@ local function checkResult(entry, res, structUtils)
     -- NOTE: don't use clone as we want to strip functions
     if res ~= nil then
       local json_str = json.encode(res)
-      local decoded = json.decode(json_str, 1, NULL_STRING) -- Use NULL_STRING for null values
+      local decoded = json.decode(json_str, 1, "null")
       deepEqual(decoded, entry.out)
     else
       deepEqual(res, entry.out)
@@ -198,56 +284,68 @@ local function checkResult(entry, res, structUtils)
   end
 end
 
-local function runner(name, store, testfile, provider)
-  local client = provider.test()
+-- Added to match TypeScript version
+local function nullModifier(val, key, parent)
+  if val == "__NULL__" then
+    parent[key] = nil -- In Lua, nil represents null
+  elseif type(val) == "string" then
+    parent[key] = val:gsub("__NULL__", "null")
+  end
+end
+
+local function runner(name, store, testfile)
+  local client = Client.test()
   local utility = client.utility()
   local structUtils = utility.struct
 
   local spec = resolveSpec(name, testfile)
+  local clients = resolveClients(spec, store, structUtils)
+  local subject = resolveSubject(name, utility)
 
-  local clients = resolveClients(spec, store, provider, structUtils)
-
-  local subject = utility[name]
-
-  local function runset(testspec, testsubject)
+  -- Updated to match TypeScript version
+  local function runsetflags(testspec, flags, testsubject)
     subject = testsubject or subject
+    flags = resolveFlags(flags)
+    local testspecmap = fixJSON(testspec, flags)
 
-    for _, entry in ipairs(testspec.set) do
+    for _, entry in ipairs(testspecmap.set) do
       local success, err = pcall(function()
+        entry = resolveEntry(entry, flags)
+
         local testpack = resolveTestPack(name, entry, subject, client, clients)
         local args = resolveArgs(entry, testpack)
 
-        local res, validation_error = testpack.subject(table.unpack(args))
-
-        if validation_error then
-          -- Return here to prevent further execution if validation error is handled
-          local handled = handleError(entry, validation_error, structUtils)
-          if not handled then
-            -- Only use luassert here, at the top level
-            luassert(false, "Test failed: " .. tostring(validation_error))
-          end
-          return
-        end
-
+        local res = testpack.subject(table.unpack(args))
+        res = fixJSON(res, flags)
         entry.res = res
+
         checkResult(entry, res, structUtils)
       end)
 
       if not success then
-        local handled = handleError(entry, err, structUtils)
-        if not handled then
-          -- Only use luassert here, at the top level
-          luassert(false, "Test failed: " .. tostring(err))
-        end
+        handleError(entry, err, structUtils)
       end
     end
   end
 
-  return {
+  local function runset(testspec, testsubject)
+    return runsetflags(testspec, {}, testsubject)
+  end
+
+  local runpack = {
     spec = spec,
     runset = runset,
+    runsetflags = runsetflags,
     subject = subject
   }
+
+  return runpack
 end
 
-return runner
+return {
+  NULLMARK = NULLMARK,
+  nullModifier = nullModifier,
+  runner = runner,
+  Client = Client
+}
+
