@@ -281,10 +281,6 @@ describe("struct", function()
   -- -- -- -- walk tests
   -- -- -- -- ==========
 
-  test("walk-exists", function()
-    assert.equal("function", type(walk))
-  end)
-
   test("walk-log", function()
     local test = clone(spec.walk.log)
     local log = {}
@@ -308,10 +304,6 @@ describe("struct", function()
 
   -- -- -- merge tests
   -- -- -- ===========
-
-  test("merge-exists", function()
-    assert.equal("function", type(merge))
-  end)
 
   test("merge-basic", function()
     local test = clone(spec.merge.basic)
@@ -351,10 +343,6 @@ describe("struct", function()
 
   -- -- -- getpath tests
   -- -- -- =============
-
-  test("getpath-exists", function()
-    assert.equal("function", type(getpath))
-  end)
 
   test("getpath-basic", function()
     runset(spec.getpath.basic, function(vin)
@@ -422,10 +410,6 @@ describe("struct", function()
 
   -- -- -- transform tests
   -- -- -- ===============
-
-  test("transform-exists", function()
-    assert.equal("function", type(transform))
-  end)
 
   test("transform-basic", function()
     local test = clone(spec.transform.basic)
