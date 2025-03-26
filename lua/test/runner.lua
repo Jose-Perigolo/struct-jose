@@ -1,5 +1,6 @@
 local json = require("dkjson")
--- local inspect = require 'inspect' -- TEMPORARILY ADDED TO DEBUG
+local inspect = require 'inspect' -- TEMPORARILY ADDED TO DEBUG
+
 local lfs = require("lfs")
 local luassert = require("luassert")
 
@@ -68,13 +69,13 @@ local function deepEqual(actual, expected)
 end
 
 local function fixJSON(val, flags)
-  if val == "null" then
+  if val == "null" or val == nil then
     return flags.null and NULLMARK or val
   end
 
   -- Deep clone and preserve metatables
   local function deepClone(v)
-    if v == "null" and flags.null then
+    if (v == "null" or v == nil) and flags.null then
       return NULLMARK
     elseif type(v) == "table" then
       local result = {}
@@ -101,7 +102,11 @@ local function resolveFlags(flags)
   if flags == nil then
     flags = {}
   end
-  flags.null = flags.null == nil and true or not not flags.null
+  if flags.null == nil then
+    flags.null = true
+  else
+    flags.null = not not flags.null
+  end
   return flags
 end
 
