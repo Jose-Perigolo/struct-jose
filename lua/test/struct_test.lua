@@ -202,63 +202,71 @@ describe("struct", function()
     end)
   end)
 
-  -- test("minor-items", function()
-  --   runset(minorSpec.items, items)
-  -- end)
+  test("minor-items", function()
+    runset(minorSpec.items, items)
+  end)
 
-  -- test("minor-getprop", function()
-  --   runset(minorSpec.getprop, function(vin)
-  --     if vin.alt == nil then
-  --       return getprop(vin.val, vin.key)
-  --     else
-  --       return getprop(vin.val, vin.key, vin.alt)
-  --     end
-  --   end)
-  -- end)
+  test("minor-getprop", function()
+    runsetflags(minorSpec.getprop, {
+      null = false
+    }, function(vin)
+      if vin.alt == nil then
+        return getprop(vin.val, vin.key)
+      else
+        return getprop(vin.val, vin.key, vin.alt)
+      end
+    end)
+  end)
 
-  -- test("minor-edge-getprop", function()
-  --   local strarr = {"a", "b", "c", "d", "e"}
-  --   assert.same(getprop(strarr, 2), "c")
-  --   assert.same(getprop(strarr, "2"), "c")
+  test("minor-edge-getprop", function()
+    local strarr = {"a", "b", "c", "d", "e"}
+    assert.same(getprop(strarr, 2), "c")
+    assert.same(getprop(strarr, "2"), "c")
 
-  --   local intarr = {2, 3, 5, 7, 11}
-  --   assert.same(getprop(intarr, 2), 5)
-  --   assert.same(getprop(intarr, "2"), 5)
-  -- end)
+    local intarr = {2, 3, 5, 7, 11}
+    assert.same(getprop(intarr, 2), 5)
+    assert.same(getprop(intarr, "2"), 5)
+  end)
 
-  -- test("minor-setprop", function()
-  --   runset(minorSpec.setprop, function(vin)
-  --     return setprop(vin.parent, vin.key, vin.val)
-  --   end)
-  -- end)
+  test("minor-setprop", function()
+    runsetflags(minorSpec.setprop, {
+      null = false
+    }, function(vin)
+      return setprop(vin.parent, vin.key, vin.val)
+    end)
+  end)
 
-  -- test("minor-edge-setprop", function()
-  --   local strarr0 = {"a", "b", "c", "d", "e"}
-  --   local strarr1 = {"a", "b", "c", "d", "e"}
-  --   assert.same({"a", "b", "C", "d", "e"}, setprop(strarr0, 2, "C"))
-  --   assert.same({"a", "b", "CC", "d", "e"}, setprop(strarr1, "2", "CC"))
+  test("minor-edge-setprop", function()
+    local strarr0 = {"a", "b", "c", "d", "e"}
+    local strarr1 = {"a", "b", "c", "d", "e"}
+    assert.same({"a", "b", "C", "d", "e"}, setprop(strarr0, 2, "C"))
+    assert.same({"a", "b", "CC", "d", "e"}, setprop(strarr1, "2", "CC"))
 
-  --   local intarr0 = {2, 3, 5, 7, 11}
-  --   local intarr1 = {2, 3, 5, 7, 11}
-  --   assert.same({2, 3, 55, 7, 11}, setprop(intarr0, 2, 55))
-  --   assert.same({2, 3, 555, 7, 11}, setprop(intarr1, "2", 555))
-  -- end)
+    local intarr0 = {2, 3, 5, 7, 11}
+    local intarr1 = {2, 3, 5, 7, 11}
+    assert.same({2, 3, 55, 7, 11}, setprop(intarr0, 2, 55))
+    assert.same({2, 3, 555, 7, 11}, setprop(intarr1, "2", 555))
+  end)
 
-  -- test("minor-haskey", function()
-  --   runset(minorSpec.haskey, haskey)
-  -- end)
+  test("minor-haskey", function()
+    runset(minorSpec.haskey, haskey)
+  end)
 
-  -- test("minor-keysof", function()
-  --   runset(minorSpec.keysof, keysof)
-  -- end)
+  test("minor-keysof", function()
+    runset(minorSpec.keysof, keysof)
+  end)
 
-  -- test("minor-joinurl", function()
-  --   runset(minorSpec.joinurl, joinurl)
-  -- end)
+  test("minor-joinurl", function()
+    runsetflags(minorSpec.joinurl, {
+      null = false
+    }, joinurl)
+  end)
 
-  -- test("minor-typify", function()
-  --   runset(minorSpec.typify, typify)
-  -- end)
+  test("minor-typify", function()
+    runsetflags(minorSpec.typify, {
+      null = false
+    }, typify)
+  end)
 
   --   -- -- -- -- walk tests
   --   -- -- -- -- ==========
