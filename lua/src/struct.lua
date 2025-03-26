@@ -1928,7 +1928,8 @@ local validate_ONE = function(state, _val, current, store)
     -- Create path slice
     local path_slice = {}
     for i = 1, #state.path do
-      table.insert(path_slice, state.path[i])
+table.insert(path_slice, state.path[i - 1])
+
     end
 
     table.insert(state.errs, _invalidTypeMsg(path_slice,
