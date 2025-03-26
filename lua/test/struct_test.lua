@@ -517,11 +517,12 @@ describe("struct", function()
     end)
   end)
 
-  -- test("validate-node", function()
-  --   runset(spec.validate.node, function(vin)
-  --     return validate(vin.data, vin.spec)
-  --   end)
-  -- end)
+  test("validate-node", function()
+    runset(spec.validate.node, function(vin)
+      return validate(vin.data, vin.spec)
+    end)
+  end)
+
   --
   -- test("validate-custom", function()
   --   local errs = {}
