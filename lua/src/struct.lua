@@ -249,6 +249,35 @@ function getprop(val, key, alt)
   return out
 end
 
+-- Convert different types of keys to string representation.
+-- String keys are returned as is.
+-- Number keys are converted to strings.
+-- Floats are truncated to integers.
+-- Booleans, objects, arrays, null, undefined all return empty string.
+function strkey(key)
+  if key == UNDEF then
+    return S_MT
+  end
+
+  if type(key) == S_string then
+    return key
+  end
+
+  if type(key) == S_boolean then
+    return S_MT
+  end
+
+  if type(key) == S_number then
+    if key % 1 == 0 then
+      return tostring(key)
+    else
+      return tostring(math.floor(key))
+    end
+  end
+
+  return S_MT
+end
+
 -- Sorted keys of a map, or indexes of a list.
 local function keysof(val)
   if not isnode(val) then
@@ -2013,6 +2042,7 @@ return {
   escurl = escurl,
   getpath = getpath,
   getprop = getprop,
+  strkey = strkey,
   haskey = haskey,
   inject = inject,
   isempty = isempty,
@@ -2029,6 +2059,7 @@ return {
   stringify = stringify,
   transform = transform,
   validate = validate,
+  typify = typify,
   walk = walk,
   pathify = pathify
 }

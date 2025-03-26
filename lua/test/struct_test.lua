@@ -11,6 +11,7 @@ local escre = struct.escre
 local escurl = struct.escurl
 local getpath = struct.getpath
 local getprop = struct.getprop
+local strkey = struct.strkey
 local inject = struct.inject
 local isempty = struct.isempty
 local isfunc = struct.isfunc
@@ -25,6 +26,7 @@ local merge = struct.merge
 local setprop = struct.setprop
 local stringify = struct.stringify
 local transform = struct.transform
+local typify = struct.typify
 local walk = struct.walk
 local validate = struct.validate
 local joinurl = struct.joinurl
@@ -93,6 +95,7 @@ describe("struct", function()
               setprop = setprop,
               stringify = stringify,
               transform = transform,
+              typify = typify,
               walk = walk,
               validate = validate,
               joinurl = joinurl,
@@ -117,23 +120,31 @@ describe("struct", function()
     assert.equal("function", type(escre))
     assert.equal("function", type(escurl))
     assert.equal("function", type(getprop))
-    assert.equal("function", type(haskey))
+    assert.equal("function", type(getpath))
 
+    assert.equal("function", type(haskey))
+    assert.equal("function", type(inject))
     assert.equal("function", type(isempty))
     assert.equal("function", type(isfunc))
     assert.equal("function", type(iskey))
+
     assert.equal("function", type(islist))
     assert.equal("function", type(ismap))
-
     assert.equal("function", type(isnode))
     assert.equal("function", type(items))
     assert.equal("function", type(joinurl))
+
     assert.equal("function", type(keysof))
+    assert.equal("function", type(merge))
+    assert.equal("function", type(pathify))
     assert.equal("function", type(setprop))
+    assert.equal("function", type(strkey))
 
     assert.equal("function", type(stringify))
+    assert.equal("function", type(transform))
     assert.equal("function", type(typify))
-    assert.equal("function", type(pathify))
+    assert.equal("function", type(validate))
+    assert.equal("function", type(walk))
   end)
 
   test("minor-isnode", function()
