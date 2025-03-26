@@ -260,6 +260,9 @@ function strkey(key)
   end
 
   if type(key) == S_string then
+    if key == "null" then
+      return S_MT
+    end
     return key
   end
 
