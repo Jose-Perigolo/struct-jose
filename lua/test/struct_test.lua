@@ -523,35 +523,48 @@ describe("struct", function()
     end)
   end)
 
-  --
-  -- test("validate-custom", function()
-  --   local errs = {}
-  --   local extra = {
-  --     ["$INTEGER"] = function(state, _val, current)
-  --       local key = state.key
-  --       local out = getprop(current, key)
-  --
-  --       local t = type(out)
-  --       if t ~= "number" or out ~= math.floor(out) then
-  --         -- Build path string from state.path elements, starting at index 2
-  --         local path_parts = {}
-  --         for i = 2, #state.path do
-  --           table.insert(path_parts, tostring(state.path[i]))
-  --         end
-  --         local path_str = table.concat(path_parts, ".")
-  --
-  --         table.insert(state.errs, "Not an integer at " .. path_str .. ": " .. tostring(out))
-  --         return nil
-  --       end
-  --
-  --       return out
-  --     end
-  --   }
-  --
-  --   validate({ a = 1 }, { a = "`$INTEGER`" }, extra, errs)
-  --   assert.equal(0, #errs)
-  --
-  --   validate({ a = "A" }, { a = "`$INTEGER`" }, extra, errs)
-  --   assert.same({ "Not an integer at a: A" }, errs)
-  -- end)
+  test("validate-custom", function()
+    local errs = {}
+    local extra = {
+      ["$INTEGER"] = function(state, _val, current)
+        local key = state.key
+        local out = getprop(current, key)
+        local t = type(out)
+        if t ~= "number" or out ~= math.floor(out) then
+          -- Build path string from state.path elements, starting at index 2
+          local path_parts = {}
+          for i = 2, #state.path do
+            table.insert(path_parts, tostring(state.path[i]))
+          end
+          local path_str = table.concat(path_parts, ".")
+          table.insert(state.errs, "Not an integer at " .. path_str .. ": " ..
+            tostring(out))
+          return nil
+        end
+        return out
+      end
+    }
+
+    local shape = {
+      a = "`$INTEGER`"
+    }
+    local out = validate({
+      a = 1
+    }, shape, extra, errs)
+    assert.same({
+      a = 1
+    }, out)
+    assert.equal(0, #errs)
+
+    -- Reset errors array for the second test
+    errs = {}
+    out = validate({
+      a = "A"
+    }, shape, extra, errs)
+    assert.same({
+      a = "A"
+    }, out)
+    assert.same({"Not an integer at a: A"}, errs)
+  end)
+
 end)
