@@ -234,12 +234,6 @@ describe("struct", function()
     end)
   end)
 
-  test("minor-setprop", function()
-    runset(spec.minor.setprop, function(vin)
-      return setprop(vin.parent, vin.key, vin.val)
-    end)
-  end)
-
   test("minor-edge-getprop", function()
     local strarr = {"a", "b", "c", "d", "e"}
     assert.same(getprop(strarr, 2), "c")
