@@ -551,8 +551,7 @@ end)
 
 describe('client', function()
   local runpack = runner('check', {}, '../build/test/test.json')
-  local spec, runset, runsetflags, subject = runpack.spec, runpack.runset,
-    runpack.runsetflags, runpack.subject
+  local spec, runset, subject = runpack.spec, runpack.runset, runpack.subject
 
   test('client-check-basic', function()
     runset(spec.basic, subject)
