@@ -1,10 +1,25 @@
-local json = require("dkjson")
-
+--[[
+  Runner utility module for executing JSON-specified tests.
+  This is a Lua implementation matching the TypeScript version in runner.ts.
+]] local json = require("dkjson")
 local lfs = require("lfs")
 local luassert = require("luassert")
 
+-- Constants
 local NULLMARK = "__NULL__"
 
+-- Forward declarations to avoid interdependencies
+local fixJSON, resolveFlags, resolveEntry, resolveSpec, resolveClients
+local resolveSubject, resolveTestPack, resolveArgs, match, matchval
+local checkResult, handleError, nullModifier
+
+----------------------------------------------------------
+-- Utility Functions
+----------------------------------------------------------
+
+-- Read file contents synchronously
+-- @param path (string) The path to the file
+-- @return (string) The contents of the file
 local function readFileSync(path)
   local file = io.open(path, "r")
   if not file then
@@ -15,14 +30,36 @@ local function readFileSync(path)
   return content
 end
 
+-- Join path segments with forward slashes
+-- @param ... (string) Path segments to join
+-- @return (string) Joined path
 local function join(...)
   return table.concat({...}, "/")
 end
 
+-- Assert failure with message
+-- @param msg (string) Failure message
+local function fail(msg)
+  luassert(false, msg)
+end
+
+-- Deep equality check between two values
+-- @param actual (any) The actual value
+-- @param expected (any) The expected value
+local function deepEqual(actual, expected)
+  luassert.same(expected, actual)
+end
+
+----------------------------------------------------------
+-- Client Class Implementation
+----------------------------------------------------------
+
 local Client = {}
 Client.__index = Client
 
--- Constructor equivalent
+-- Create a new client instance
+-- @param opts (table) Optional configuration table
+-- @return (table) New Client instance
 function Client.new(opts)
   local instance = setmetatable({}, Client)
 
@@ -55,26 +92,86 @@ function Client.new(opts)
 end
 
 -- Static method equivalent (matching TypeScript implementation)
+-- @param opts (table) Optional configuration table
+-- @return (table) New Client instance
 function Client.test(opts)
   return Client.new(opts)
 end
 
-local function fail(msg)
-  luassert(false, msg)
+----------------------------------------------------------
+-- Core Helper Functions
+----------------------------------------------------------
+
+-- Check if a test value matches a base value according to defined rules
+-- @param check (any) The test pattern or value to check
+-- @param base (any) The base value to check against
+-- @param structUtils (table) Structure utility functions
+-- @return (boolean) Whether the value matches
+function matchval(check, base, structUtils)
+  if check == NULLMARK then
+    check = nil
+  end
+
+  local pass = check == base
+
+  if not pass then
+    if type(check) == "string" then
+      local basestr = structUtils.stringify(base)
+
+      -- Check if string starts and ends with '/' (RegExp in TypeScript)
+      local rem = check:match("^/(.+)/$")
+      if rem then
+        -- Convert JS RegExp to Lua pattern when possible
+        -- This is a simplification and might need adjustments for complex patterns
+        local lua_pattern = rem:gsub("%%", "%%%%"):gsub("%.", "%%."):gsub("%+",
+          "%%+"):gsub("%-", "%%-"):gsub("%*", "%%*"):gsub("%?", "%%?"):gsub(
+          "%[", "%%["):gsub("%]", "%%]"):gsub("%^", "%%^"):gsub("%$", "%%$")
+          :gsub("%(", "%%("):gsub("%)", "%%)")
+        pass = basestr:match(lua_pattern) ~= nil
+      else
+        -- Convert both strings to lowercase and check if one contains the other
+        pass = basestr:lower():find(structUtils.stringify(check):lower(), 1,
+          true) ~= nil
+      end
+    elseif type(check) == "function" then
+      pass = true
+    end
+  end
+
+  return pass
 end
 
-local function deepEqual(actual, expected)
-  luassert.same(expected, actual)
+-- Match a check structure against a base structure
+-- @param check (table) The check structure with patterns
+-- @param base (table) The base structure to validate against
+-- @param structUtils (table) Structure utility functions
+function match(check, base, structUtils)
+  structUtils.walk(check, function(_key, val, _parent, path)
+    local scalar = type(val) ~= "table"
+    if scalar then
+      local baseval = structUtils.getpath(path, base)
+
+      if not matchval(val, baseval, structUtils) then
+        fail("MATCH: " .. table.concat(path, ".") .. ": [" ..
+               structUtils.stringify(val) .. "] <=> [" ..
+               structUtils.stringify(baseval) .. "]")
+      end
+    end
+  end)
 end
 
-local function fixJSON(val, flags)
-  if val == "null" or val == nil then
+-- Transform null values in JSON data according to flags
+-- @param val (any) The value to process
+-- @param flags (table) Processing flags including null handling
+-- @return (any) The processed value
+function fixJSON(val, flags)
+  if val == nil or val == "null" then
     return flags.null and NULLMARK or val
   end
 
   -- Deep clone and preserve metatables
   local function deepClone(v)
-    if (v == "null" or v == nil) and flags.null then
+    if (v == nil or v == "null") and flags.null then
       return NULLMARK
     elseif type(v) == "table" then
       local result = {}
@@ -97,72 +194,55 @@ local function fixJSON(val, flags)
   return deepClone(val)
 end
 
-local function resolveFlags(flags)
+-- Process null marker values
+-- @param val (any) The value to check
+-- @param key (any) The key in the parent
+-- @param parent (table) The parent table
+function nullModifier(val, key, parent)
+  if val == "__NULL__" then
+    parent[key] = nil -- In Lua, nil represents null
+  elseif type(val) == "string" then
+    parent[key] = val:gsub("__NULL__", "null")
+  end
+end
+
+-- Resolve test flags with defaults
+-- @param flags (table) Input flags
+-- @return (table) Resolved flags with defaults applied
+function resolveFlags(flags)
   if flags == nil then
     flags = {}
   end
   if flags.null == nil then
     flags.null = true
   else
-    flags.null = not not flags.null
+    flags.null = not not flags.null -- Convert to boolean
   end
   return flags
 end
 
-local function resolveEntry(entry, flags)
+-- Prepare a test entry with the given flags
+-- @param entry (table) The test entry
+-- @param flags (table) Processing flags
+-- @return (table) The processed entry
+function resolveEntry(entry, flags)
   entry.out = entry.out == nil and flags.null and NULLMARK or entry.out
   return entry
 end
 
-local function resolveSubject(name, container)
+-- Resolve the test subject function
+-- @param name (string) The name of the subject to resolve
+-- @param container (table) The container object
+-- @return (function) The resolved subject function
+function resolveSubject(name, container)
   return container and container[name]
 end
 
-local function resolveArgs(entry, testpack)
-  local structUtils = testpack.utility.struct
-  local args = {structUtils.clone(entry["in"])}
-
-  if entry.ctx then
-    args = {entry.ctx}
-  end
-
-  if entry.args then
-    args = entry.args
-  end
-
-  if entry.ctx or entry.args then
-    local first = args[1]
-    if type(first) == "table" and first ~= nil then
-      local cloned_value = structUtils.clone(args[1]) -- Note: Lua arrays are 1-indexed
-      args[1] = cloned_value
-      first = cloned_value
-      entry.ctx = cloned_value
-
-      first.client = testpack.client
-      first.utility = testpack.utility
-    end
-  end
-
-  return args
-end
-
-local function resolveTestPack(name, entry, subject, client, clients)
-  local pack = {
-    client = client,
-    subject = subject,
-    utility = client.utility()
-  }
-
-  if entry.client then
-    pack.client = clients[entry.client]
-    pack.utility = pack.client.utility()
-    pack.subject = resolveSubject(name, pack.utility)
-  end
-
-  return pack
-end
-
-local function resolveSpec(name, testfile)
+-- Resolve the test specification from a file
+-- @param name (string) The name of the test specification
+-- @param testfile (string) The path to the test file
+-- @return (table) The resolved test specification
+function resolveSpec(name, testfile)
   local alltests = json.decode(readFileSync(join(lfs.currentdir(), testfile)),
     1, "null")
   local spec =
@@ -171,7 +251,12 @@ local function resolveSpec(name, testfile)
   return spec
 end
 
-local function resolveClients(spec, store, structUtils)
+-- Resolve client instances based on specification
+-- @param spec (table) The test specification
+-- @param store (table) Store with configuration values
+-- @param structUtils (table) Structure utility functions
+-- @return (table) Table of resolved client instances
+function resolveClients(spec, store, structUtils)
   local clients = {}
 
   if spec.DEF and spec.DEF.client then
@@ -187,51 +272,64 @@ local function resolveClients(spec, store, structUtils)
   return clients
 end
 
-local function matchval(check, base, structUtils)
-  if check == NULLMARK then
-    check = nil
+-- Prepare test arguments
+-- @param entry (table) The test entry
+-- @param testpack (table) The test pack with client and utility
+-- @return (table) Array of arguments for the test
+function resolveArgs(entry, testpack)
+  local structUtils = testpack.utility.struct
+  local args = {structUtils.clone(entry["in"])}
+
+  if entry.ctx then
+    args = {entry.ctx}
+  elseif entry.args then
+    args = entry.args
   end
 
-  local pass = check == base
+  if entry.ctx or entry.args then
+    local first = args[1]
+    if type(first) == "table" and first ~= nil then
+      local cloned_value = structUtils.clone(args[1])
+      args[1] = cloned_value
+      first = cloned_value
+      entry.ctx = cloned_value
 
-  if not pass then
-    if type(check) == "string" then
-      local basestr = structUtils.stringify(base)
-
-      -- Check if string starts and ends with '/'
-      local rem = check:match("^/(.+)/$")
-      if rem then
-        -- Lua pattern matching instead of RegExp
-        pass = basestr:match(rem) ~= nil
-      else
-        -- Convert both strings to lowercase and check if one contains the other
-        pass = basestr:lower():find(structUtils.stringify(check):lower(), 1,
-          true) ~= nil
-      end
-    elseif type(check) == "function" then
-      pass = true
+      first.client = testpack.client
+      first.utility = testpack.utility
     end
   end
 
-  return pass
+  return args
 end
 
-local function match(check, base, structUtils)
-  structUtils.walk(check, function(_key, val, _parent, path)
-    local scalar = type(val) ~= "table"
-    if scalar then
-      local baseval = structUtils.getpath(path, base)
+-- Resolve the test pack with client and subject
+-- @param name (string) The name of the test
+-- @param entry (table) The test entry
+-- @param subject (function) The test subject function
+-- @param client (table) The default client
+-- @param clients (table) Table of available clients
+-- @return (table) The resolved test pack
+function resolveTestPack(name, entry, subject, client, clients)
+  local pack = {
+    client = client,
+    subject = subject,
+    utility = client.utility()
+  }
 
-      if not matchval(val, baseval, structUtils) then
-        fail("MATCH: " .. table.concat(path, ".") .. ": [" ..
-               structUtils.stringify(val) .. "] <=> [" ..
-               structUtils.stringify(baseval) .. "]")
-      end
-    end
-  end)
+  if entry.client then
+    pack.client = clients[entry.client]
+    pack.utility = pack.client.utility()
+    pack.subject = resolveSubject(name, pack.utility)
+  end
+
+  return pack
 end
 
-local function handleError(entry, err, structUtils)
+-- Handle errors during test execution
+-- @param entry (table) The test entry
+-- @param err (any) The error that occurred
+-- @param structUtils (table) Structure utility functions
+function handleError(entry, err, structUtils)
   entry.thrown = err
 
   local entry_err = entry.err
@@ -267,7 +365,11 @@ local function handleError(entry, err, structUtils)
   end
 end
 
-local function checkResult(entry, res, structUtils)
+-- Check the result of a test against expectations
+-- @param entry (table) The test entry
+-- @param res (any) The test result
+-- @param structUtils (table) Structure utility functions
+function checkResult(entry, res, structUtils)
   if entry.match == nil or entry.out ~= nil then
     -- NOTE: don't use clone as we want to strip functions
     if res ~= nil then
@@ -288,15 +390,15 @@ local function checkResult(entry, res, structUtils)
   end
 end
 
--- Added to match TypeScript version
-local function nullModifier(val, key, parent)
-  if val == "__NULL__" then
-    parent[key] = nil -- In Lua, nil represents null
-  elseif type(val) == "string" then
-    parent[key] = val:gsub("__NULL__", "null")
-  end
-end
+----------------------------------------------------------
+-- Main Runner Function
+----------------------------------------------------------
 
+-- Main test runner function
+-- @param name (string) The name of the test
+-- @param store (table) Store with configuration values
+-- @param testfile (string) The path to the test file
+-- @return (table) The runner pack with test functions
 local function runner(name, store, testfile)
   local client = Client.test()
   local utility = client.utility()
@@ -306,7 +408,10 @@ local function runner(name, store, testfile)
   local clients = resolveClients(spec, store, structUtils)
   local subject = resolveSubject(name, utility)
 
-  -- Updated to match TypeScript version
+  -- Run test set with flags
+  -- @param testspec (table) The test specification
+  -- @param flags (table) Processing flags
+  -- @param testsubject (function) Optional test subject override
   local function runsetflags(testspec, flags, testsubject)
     subject = testsubject or subject
     flags = resolveFlags(flags)
@@ -332,6 +437,9 @@ local function runner(name, store, testfile)
     end
   end
 
+  -- Run test set with default flags
+  -- @param testspec (table) The test specification
+  -- @param testsubject (function) Optional test subject override
   local function runset(testspec, testsubject)
     return runsetflags(testspec, {}, testsubject)
   end
@@ -346,10 +454,10 @@ local function runner(name, store, testfile)
   return runpack
 end
 
+-- Module exports
 return {
   NULLMARK = NULLMARK,
   nullModifier = nullModifier,
   runner = runner,
   Client = Client
 }
-
