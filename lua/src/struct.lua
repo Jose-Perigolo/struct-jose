@@ -2009,7 +2009,9 @@ local function validate_CHILD(state, _val, current)
   return UNDEF
 end
 
+----------------------------------------------------------
 -- Forward declaration for validate to resolve circular dependency
+----------------------------------------------------------
 local validate
 
 -- Match at least one of the specified shapes.
