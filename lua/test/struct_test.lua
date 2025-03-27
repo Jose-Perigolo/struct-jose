@@ -1,14 +1,20 @@
-package.path = package.path .. ";./test/?.lua"
+--[[
+  Test suite for the struct module.
+  This matches the structure and tests found in struct.test.ts.
+  Run with: busted struct_test.lua
+]] package.path = package.path .. ";./test/?.lua"
 
 local assert = require("luassert")
 
+-- Import the runner module
 local runnerModule = require("runner")
-local struct = require("struct")
-
 local NULLMARK, nullModifier, runner = runnerModule.NULLMARK,
   runnerModule.nullModifier, runnerModule.runner
 
--- Extract functions from the struct module
+-- Import the struct module functions
+local struct = require("struct")
+
+-- Extract functions from the struct module for testing
 local clone = struct.clone
 local escre = struct.escre
 local escurl = struct.escurl
@@ -35,7 +41,16 @@ local validate = struct.validate
 local joinurl = struct.joinurl
 local pathify = struct.pathify
 
--- Modifier function for walk (appends path to string values)
+----------------------------------------------------------
+-- Helper Functions
+----------------------------------------------------------
+
+-- Modifier function for walk tests (appends path to string values)
+-- @param _key (any) The current key (unused)
+-- @param val (any) The current value
+-- @param _parent (any) The parent object (unused)
+-- @param path (table) The current path
+-- @return (any) Modified value or original value
 local function walkpath(_key, val, _parent, path)
   if type(val) == "string" then
     return val .. "~" .. table.concat(path, ".")
@@ -45,6 +60,8 @@ local function walkpath(_key, val, _parent, path)
 end
 
 -- Helper function to create an array-like table with metatable
+-- @param ... (any) Variable arguments to include in array
+-- @return (table) Table with array metatable
 local function array(...)
   local t = {...}
   return setmetatable(t, {
@@ -53,18 +70,25 @@ local function array(...)
 end
 
 -- Helper function to create an object-like table with metatable
+-- @param t (table) The table to convert to an object (optional)
+-- @return (table) Table with object metatable
 local function object(t)
   return setmetatable(t or {}, {
     __jsontype = "object"
   })
 end
 
--- Test suite using Busted
+----------------------------------------------------------
+-- Test Suite
+----------------------------------------------------------
+
 describe("struct", function()
+  -- Initialize test runner with the struct specs
   local runpack = runner("struct", {}, "../build/test/test.json")
   local spec, runset, runsetflags = runpack.spec, runpack.runset,
     runpack.runsetflags
 
+  -- Extract test specifications for different function groups
   local minorSpec = spec.minor
   local walkSpec = spec.walk
   local mergeSpec = spec.merge
@@ -73,6 +97,7 @@ describe("struct", function()
   local transformSpec = spec.transform
   local validateSpec = spec.validate
 
+  -- Basic existence tests
   test("exists", function()
     assert.equal("function", type(clone))
     assert.equal("function", type(escre))
@@ -105,8 +130,9 @@ describe("struct", function()
     assert.equal("function", type(walk))
   end)
 
-  -- minor tests
-  -- ===========
+  ----------------------------------------------------------
+  -- Minor Function Tests
+  ----------------------------------------------------------
 
   test("minor-isnode", function()
     runset(minorSpec.isnode, isnode)
@@ -141,6 +167,7 @@ describe("struct", function()
   test("minor-isfunc", function()
     runset(minorSpec.isfunc, isfunc)
 
+    -- Additional explicit function tests
     local f0 = function()
       return nil
     end
@@ -156,6 +183,7 @@ describe("struct", function()
       null = false
     }, clone)
 
+    -- Additional function cloning test
     local f0 = function()
       return nil
     end
@@ -189,6 +217,7 @@ describe("struct", function()
     runsetflags(minorSpec.pathify, {
       null = true
     }, function(vin)
+      local path
       if NULLMARK == vin.path then
         path = nil
       else
@@ -267,13 +296,15 @@ describe("struct", function()
     }, typify)
   end)
 
-  --   -- -- -- -- walk tests
-  --   -- -- -- -- ==========
+  ----------------------------------------------------------
+  -- Walk Tests
+  ----------------------------------------------------------
 
   test("walk-log", function()
     local test = clone(walkSpec.log)
     local log = array()
 
+    -- Log handler function for walk test
     local function walklog(key, val, parent, path)
       table.insert(log,
         "k=" .. stringify(key) .. ", v=" .. stringify(val) .. ", p=" ..
@@ -291,8 +322,9 @@ describe("struct", function()
     end)
   end)
 
-  --   -- -- -- merge tests
-  --   -- -- -- ===========
+  ----------------------------------------------------------
+  -- Merge Tests
+  ----------------------------------------------------------
 
   test("merge-basic", function()
     local test = clone(mergeSpec.basic)
@@ -330,8 +362,9 @@ describe("struct", function()
     }))))
   end)
 
-  --   -- -- -- getpath tests
-  --   -- -- -- =============
+  ----------------------------------------------------------
+  -- GetPath Tests
+  ----------------------------------------------------------
 
   test("getpath-basic", function()
     runset(getpathSpec.basic, function(vin)
@@ -346,6 +379,7 @@ describe("struct", function()
   end)
 
   test("getpath-state", function()
+    -- Create state object for getpath testing
     local state = {
       handler = function(state, val, _current, _ref, _store)
         local out = state.meta.step .. ':' .. val
@@ -372,8 +406,9 @@ describe("struct", function()
     end)
   end)
 
-  --   -- -- inject tests
-  --   -- -- ============
+  ----------------------------------------------------------
+  -- Inject Tests
+  ----------------------------------------------------------
 
   test("inject-basic", function()
     local test = clone(injectSpec.basic)
@@ -393,8 +428,9 @@ describe("struct", function()
     end)
   end)
 
-  --   -- -- -- transform tests
-  --   -- -- -- ===============
+  ----------------------------------------------------------
+  -- Transform Tests
+  ----------------------------------------------------------
 
   test("transform-basic", function()
     local test = clone(transformSpec.basic)
@@ -429,6 +465,7 @@ describe("struct", function()
   test("transform-modify", function()
     runset(transformSpec.modify, function(vin)
       return transform(vin.data, vin.spec, vin.store, function(val, key, parent)
+        -- Modify string values by adding '@' prefix
         if key ~= nil and parent ~= nil and type(val) == "string" then
           parent[key] = "@" .. val
           val = parent[key]
@@ -438,6 +475,7 @@ describe("struct", function()
   end)
 
   test("transform-extra", function()
+    -- Test advanced transform functionality
     assert.same(transform({
       a = 1
     }, {
@@ -458,6 +496,7 @@ describe("struct", function()
   end)
 
   test("transform-funcval", function()
+    -- Test function handling in transform
     local f0 = function()
       return 99
     end
@@ -488,8 +527,9 @@ describe("struct", function()
     })
   end)
 
-  --   -- validate tests
-  --   -- ===============
+  ----------------------------------------------------------
+  -- Validate Tests
+  ----------------------------------------------------------
 
   test("validate-basic", function()
     runset(validateSpec.basic, function(vin)
@@ -504,12 +544,15 @@ describe("struct", function()
   end)
 
   test("validate-custom", function()
+    -- Test custom validation functions
     local errs = {}
     local extra = {
       ["$INTEGER"] = function(state, _val, current)
         local key = state.key
         local out = getprop(current, key)
         local t = type(out)
+
+        -- Verify the value is an integer
         if t ~= "number" or out ~= math.floor(out) then
           -- Build path string from state.path elements, starting at index 2
           local path_parts = {}
@@ -547,6 +590,10 @@ describe("struct", function()
     assert.same({"Not an integer at a: A"}, errs)
   end)
 end)
+
+----------------------------------------------------------
+-- Client Tests
+----------------------------------------------------------
 
 describe('client', function()
   local runpack = runner('check', {}, '../build/test/test.json')
