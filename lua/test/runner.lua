@@ -4,6 +4,7 @@
 ]] local json = require("dkjson")
 local lfs = require("lfs")
 local luassert = require("luassert")
+local struct = require("struct")
 
 -- Constants
 local NULLMARK = "__NULL__"
@@ -67,12 +68,12 @@ function Client.new(opts)
   local _opts = opts or {}
   local _utility = {
     struct = {
-      clone = clone, -- Assuming these functions are defined elsewhere
-      getpath = getpath,
-      inject = inject,
-      items = items,
-      stringify = stringify,
-      walk = walk
+      clone = struct.clone,
+      getpath = struct.getpath,
+      inject = struct.inject,
+      items = struct.items,
+      stringify = struct.stringify,
+      walk = struct.walk
     },
     check = function(ctx)
       return {
