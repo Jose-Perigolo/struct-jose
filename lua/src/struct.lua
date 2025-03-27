@@ -100,9 +100,9 @@ local _validation
 -- @return (boolean) True if value is a list
 local function islist(val)
   -- First check metatable indicators (preferred approach)
-  if (getmetatable(val) and getmetatable(val).__jsontype == "array") or
-    (getmetatable(val) and getmetatable(val).__jsontype and
-      getmetatable(val).__jsontype.type == "array") then
+  if getmetatable(val) and ((getmetatable(val).__jsontype == "array") or
+    (getmetatable(val).__jsontype and getmetatable(val).__jsontype.type ==
+      "array")) then
     return true
   end
 
