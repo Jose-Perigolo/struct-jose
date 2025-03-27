@@ -66,7 +66,7 @@ const S_DERRS = '$ERRS'
 
 // General strings.
 const S_array = 'array'
-const S_base = 'base'
+// const S_base = 'base'
 const S_boolean = 'boolean'
 
 const S_function = 'function'
@@ -74,8 +74,6 @@ const S_number = 'number'
 const S_object = 'object'
 const S_string = 'string'
 const S_null = 'null'
-const S_key = 'key'
-const S_parent = 'parent'
 const S_MT = ''
 const S_BT = '`'
 const S_DS = '$'
@@ -196,20 +194,20 @@ function isfunc(val: any) {
 // Normalizes and simplifies JavaScript's type system for consistency.
 function typify(value: any): string {
   if (value === null || value === undefined) {
-    return 'null'
+    return S_null
   }
 
   const type = typeof value
 
   if (Array.isArray(value)) {
-    return 'array'
+    return S_array
   }
 
   if (type === 'object') {
-    return 'object'
+    return S_object
   }
 
-  return type // 'string', 'number', 'boolean', 'function'
+  return type
 }
 
 
@@ -578,7 +576,8 @@ function getpath(path: string | string[], store: any, current?: any, state?: Inj
 
   let root = store
   let val = store
-  const base = getprop(state, S_base)
+  // const base = getprop(state, S_base)
+  const base = state?.base
 
   // An empty path (incl empty string) just finds the store.
   if (null == path || null == store || (1 === parts.length && S_MT === parts[0])) {
@@ -606,7 +605,6 @@ function getpath(path: string | string[], store: any, current?: any, state?: Inj
     for (pI++; UNDEF !== val && pI < parts.length; pI++) {
       val = getprop(val, parts[pI])
     }
-
   }
 
   // State may provide a custom handler to modify found value.
@@ -741,6 +739,7 @@ function inject(
   else if (S_string === valtype) {
     state.mode = S_MVAL as InjectMode
     val = _injectstr(val, store, current, state)
+
     setprop(state.parent, state.key, val)
   }
 
@@ -784,7 +783,8 @@ const _injecthandler: Injector = (
 
   // Update parent with value. Ensures references remain in node tree.
   else if (S_MVAL === state.mode && state.full) {
-    setprop(state.parent, state.key, val)
+    // setprop(state.parent, state.key, val)
+    _setparentprop(state, val)
   }
 
   return out
@@ -795,20 +795,19 @@ const _injecthandler: Injector = (
 
 // Delete a key from a map or list.
 const transform_DELETE: Injector = (state: Injection) => {
-  const { key, parent } = state
-  setprop(parent, key, UNDEF)
+  _setparentprop(state, UNDEF)
   return UNDEF
 }
 
 
 // Copy value from source data.
 const transform_COPY: Injector = (state: Injection, _val: any, current: any) => {
-  const { mode, key, parent } = state
+  const { mode, key } = state
 
   let out = key
   if (!mode.startsWith(S_MKEY)) {
     out = getprop(current, key)
-    setprop(parent, key, out)
+    _setparentprop(state, out)
   }
 
   return out
@@ -865,7 +864,7 @@ const transform_MERGE: Injector = (
     args = S_MT === args ? [current.$TOP] : Array.isArray(args) ? args : [args]
 
     // Remove the $MERGE command from a parent map.
-    setprop(parent, key, UNDEF)
+    _setparentprop(state, UNDEF)
 
     // Literals in the parent have precedence, but we still merge onto
     // the parent object, so that node tree references are not changed.
@@ -890,31 +889,31 @@ const transform_EACH: Injector = (
   _ref: string,
   store: any
 ) => {
-  const { mode, keys, path, parent, nodes } = state
-
   // Remove arguments to avoid spurious processing.
-  if (keys) {
-    keys.length = 1
+  if (null != state.keys) {
+    state.keys.length = 1
   }
 
-  if (S_MVAL !== mode) {
+  if (S_MVAL !== state.mode) {
     return UNDEF
   }
 
   // Get arguments: ['`$EACH`', 'source-path', child-template].
-  const srcpath = parent[1]
-  const child = clone(parent[2])
+  const srcpath = getprop(state.parent, 1)
+  const child = clone(getprop(state.parent, 2))
 
   // Source data.
-  const src = getpath(srcpath, store, current, state)
+  // const src = getpath(srcpath, store, current, state)
+  const srcstore = getprop(store, state.base, store)
+  const src = getpath(srcpath, srcstore, current)
 
   // Create parallel data structures:
   // source entries :: child templates
   let tcur: any = []
   let tval: any = []
 
-  const tkey = path[path.length - 2]
-  const target = nodes[path.length - 2] || nodes[path.length - 1]
+  const tkey = state.path[state.path.length - 2]
+  const target = state.nodes[state.path.length - 2] || state.nodes[state.path.length - 1]
 
   // Create clones of the child template for each value of the current soruce.
   if (islist(src)) {
@@ -935,14 +934,9 @@ const transform_EACH: Injector = (
   tcur = { $TOP: tcur }
 
   // Build the substructure.
-  tval = inject(
-    tval,
-    store,
-    state.modify,
-    tcur,
-  )
+  tval = inject(tval, store, state.modify, tcur)
 
-  setprop(target, tkey, tval)
+  _updateAncestors(state, target, tkey, tval)
 
   // Prevent callee from damaging first list entry (since we are in `val` mode).
   return tval[0]
@@ -956,7 +950,7 @@ const transform_PACK: Injector = (
   state: Injection,
   _val: any,
   current: any,
-  ref: string,
+  _ref: string,
   store: any
 ) => {
   const { mode, key, path, parent, nodes } = state
@@ -977,7 +971,10 @@ const transform_PACK: Injector = (
   const target = nodes[path.length - 2] || nodes[path.length - 1]
 
   // Source data
-  let src = getpath(srcpath, store, current, state)
+  // const srcstore = getprop(store, getprop(state, S_base), store)
+  const srcstore = getprop(store, state.base, store)
+  let src = getpath(srcpath, srcstore, current)
+  // let src = getpath(srcpath, store, current, state)
 
   // Prepare source as a list.
   src = islist(src) ? src :
@@ -1218,7 +1215,7 @@ const validate_CHILD: Injector = (state: Injection, _val: any, current: any) => 
     }
 
     // Remove $CHILD to cleanup ouput.
-    setprop(parent, key, UNDEF)
+    _setparentprop(state, UNDEF)
     return UNDEF
   }
 
@@ -1530,6 +1527,20 @@ function _injectstr(
   }
 
   return out
+}
+
+
+// Set state.key property of state.parent node, ensuring reference consistency
+// when needed by implementation language.
+function _setparentprop(state: Injection, val: any) {
+  setprop(state.parent, state.key, val)
+}
+
+
+// Update all references to target in state.nodes.
+function _updateAncestors(_state: Injection, target: any, tkey: any, tval: any) {
+  // SetProp is sufficient in TypeScript as target reference remains consistent even for lists.
+  setprop(target, tkey, tval)
 }
 
 

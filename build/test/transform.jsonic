@@ -93,6 +93,7 @@ cmds: {
     { in: { data: {a:{b:8}}, spec: {a:{'`$MERGE`':['`a`',{b:81}]}} }, out: {a:{b:81}} }
 
     { in: { data: {a:{b:81}}, spec: {a:['`$MERGE`']}}, out: {a:[]} }
+
     { in: { data: {a:{b:72}}, spec: {a:['`$MERGE`',77]}}, out: {a:[77]} }
 
     { in: { data: {a:{b:73}}, spec: {x:{'`$MERGE`':'`a`',b:74,c:75}} },
@@ -137,6 +138,15 @@ each: {
       out: ['A',true] }
 
       
+    { in: { data: {}, spec: {z:['`$EACH`','x',{q:'Q01'}]} },
+      out: {z:[]} }
+
+    { in: { data: {}, spec: {z:[['`$EACH`','x',{q:'Q02'}]]} },
+      out: {z:[[]]} }
+
+    { in: { data: {}, spec: {z:[[['`$EACH`','x',{q:'Q02'}]]]} },
+      out: {z:[[[]]]} }
+      
     { in: { data: {}, spec: {z:['`$EACH`','x',{y:'`$COPY`',q:'Q0'}]} },
       out: {z:[]} }
 
@@ -161,18 +171,20 @@ each: {
             spec: {z:['`$EACH`','x',{y:'`$COPY`',q:'Q6'}]} },
       out: {z:[{y:10,q:'Q6'},{y:11,q:'Q6'},{y:12,q:'Q6'},{y:13,q:'Q6'},{y:14,q:'Q6'}]} }
 
-
     { in: { data: {}, spec: ['`$EACH`','x',{y:'`$COPY`',p:'P0'}] },
-      out: [] }
+     out: [] }
 
     { in: { data: {x:{}}, spec: ['`$EACH`','x',{y:'`$COPY`',p:'P1'}] },
       out: [] }
       
+    { in: { data: {x:{a:{y:101}}}, spec: ['`$EACH`','x',{p:'P102'}] },
+      out: [{p:'P102'}] }
+
     { in: { data: {x:{a:{y:10}}}, spec: ['`$EACH`','x',{y:'`$COPY`',p:'P2'}] },
       out: [{y:10,p:'P2'}] }
     
     { in: { data: {x:{a:{y:10},b:{y:11}}}, spec: ['`$EACH`','x',{y:'`$COPY`',p:'P3'}] },
-     out: [{y:10,p:'P3'},{y:11,p:'P3'}] }
+      out: [{y:10,p:'P3'},{y:11,p:'P3'}] }
 
     { in: { data: {x:{a:{y:10},b:{y:11},c:{y:12}}},
             spec: ['`$EACH`','x',{y:'`$COPY`',p:'P4'}] },
@@ -197,10 +209,10 @@ each: {
 
 
     { in: { data: {x:{a0:{y:0}}}, spec: {r0:[['`$EACH`','x',{y:'`$COPY`',q:'T0'}]]} },
-      out: {r0:[[{y:0,q:T0}]]} }
+     out: {r0:[[{y:0,q:T0}]]} }
 
     { in: { data: {x:{a1:{y:0}}}, spec: {r1:[[['`$EACH`','x',{y:'`$COPY`',q:'T1'}]]]} },
-      out: {r1:[[[{y:0,q:T1}]]]} }
+     out: {r1:[[[{y:0,q:T1}]]]} }
 
     { in: { data: {x:{a2:{y:0}}}, spec: {r2:[[[['`$EACH`','x',{y:'`$COPY`',q:'T2'}]]]]} },
       out: {r2:[[[[{y:0,q:T2}]]]]} }
