@@ -2038,7 +2038,7 @@ validate =
     local out = transform(data, spec, store, _validation)
 
     if #errs > 0 and not collecterrs then
-      return out, 'Invalid data: ' .. table.concat(errs, ' | ')
+      error('Invalid data: ' .. table.concat(errs, ' | '))
     end
 
     return out
