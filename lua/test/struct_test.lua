@@ -3,7 +3,6 @@ package.path = package.path .. ";./test/?.lua"
 local assert = require("luassert")
 
 local runnerModule = require("runner")
-local inspect = require 'inspect' -- TEMPORARILY ADDED TO DEBUG
 local struct = require("struct")
 
 local NULLMARK, nullModifier, runner = runnerModule.NULLMARK,

@@ -1,5 +1,4 @@
 local json = require("dkjson")
-local inspect = require 'inspect' -- TEMPORARILY ADDED TO DEBUG
 
 local lfs = require("lfs")
 local luassert = require("luassert")

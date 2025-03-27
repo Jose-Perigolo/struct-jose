@@ -1,5 +1,3 @@
-local inspect = require 'inspect' -- TEMPORARILY ADDED TO DEBUG
-
 -- Copyright (c) 2025 Voxgig Ltd. MIT LICENSE.
 -- Voxgig Struct
 -- =============
