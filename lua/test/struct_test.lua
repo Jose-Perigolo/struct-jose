@@ -548,3 +548,13 @@ describe("struct", function()
     assert.same({"Not an integer at a: A"}, errs)
   end)
 end)
+
+describe('client', function()
+  local runpack = runner('check', {}, '../build/test/test.json')
+  local spec, runset, runsetflags, subject = runpack.spec, runpack.runset,
+    runpack.runsetflags, runpack.subject
+
+  test('client-check-basic', function()
+    runset(spec.basic, subject)
+  end)
+end)
