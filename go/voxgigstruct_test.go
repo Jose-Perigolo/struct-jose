@@ -22,7 +22,8 @@ func TestStruct(t *testing.T) {
 	store := make(map[string]any)
 	// provider := &TestProvider{}
 
-	runnerMap, err := runner.Runner("struct", store, "../build/test/test.json")
+	runnerFunc := runner.MakeRunner("../build/test/test.json")
+	runnerMap, err := runnerFunc("struct", store)
 	if err != nil {
 		t.Fatalf("Failed to create runner struct: %v", err)
 	}
@@ -786,7 +787,8 @@ func TestClient(t *testing.T) {
 
 	store := make(map[string]any)
 
-	runnerMap, err := runner.Runner("check", store, "../build/test/test.json")
+	runnerFunc := runner.MakeRunner("../build/test/test.json")
+	runnerMap, err := runnerFunc("check", store)
 	if err != nil {
 		t.Fatalf("Failed to create runner check: %v", err)
 	}

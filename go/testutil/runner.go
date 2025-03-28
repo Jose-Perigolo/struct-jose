@@ -15,7 +15,7 @@ import (
 	"regexp"
 	"strings"
 	"testing"
-  "unicode"
+	"unicode"
 )
 
 
@@ -25,7 +25,7 @@ type Client interface {
 
 type Utility interface {
 	Struct() *StructUtility
-  Check(ctx map[string]any) map[string]any
+	Check(ctx map[string]any) map[string]any
 }
 
 type StructUtility struct {
@@ -40,33 +40,33 @@ type StructUtility struct {
 }
 
 type ClientStruct struct {
-  opts map[string]any
+	opts map[string]any
 }
 
 
 func newClient(opts map[string]any) (Client, error) {
-  if nil == opts {
-    opts = map[string]any{}
-  }
-  client := ClientStruct{
-    opts: opts,
-  }
-  return client, nil
+	if nil == opts {
+		opts = map[string]any{}
+	}
+	client := ClientStruct{
+		opts: opts,
+	}
+	return client, nil
 }
 
 
 func testClient(opts map[string]any) (Client, error) {
-  testClient, error := newClient(nil)
-  return testClient, error
+	testClient, error := newClient(nil)
+	return testClient, error
 }
 
 
 type utility struct {
-  opts map[string]any
+	opts map[string]any
 }
 
 func (u utility) Struct() *StructUtility {
-  return &StructUtility{
+	return &StructUtility{
 		IsNode:     voxgigstruct.IsNode,
 		Clone:      voxgigstruct.Clone,
 		CloneFlags: voxgigstruct.CloneFlags,
@@ -79,15 +79,15 @@ func (u utility) Struct() *StructUtility {
 }
 
 func (u utility) Check(ctx map[string]any) map[string]any {
-  var zed string
+	var zed string
 	zed = "ZED"
 
 	if nil != u.opts {
-    foo := u.opts["foo"]
-    if nil != foo {
-      zed += foo.(string)
-    }
-  }
+		foo := u.opts["foo"]
+		if nil != foo {
+			zed += foo.(string)
+		}
+	}
 
 	zed += "_"
 
@@ -98,15 +98,15 @@ func (u utility) Check(ctx map[string]any) map[string]any {
 	}
 
 	return map[string]any{
-    "zed": zed,
-  }
+		"zed": zed,
+	}
 }
 
 
 func (c ClientStruct) Utility() Utility {
-  return utility{
-    opts: c.opts,
-  }
+	return utility{
+		opts: c.opts,
+	}
 }
 
 
@@ -129,7 +129,8 @@ type RunPack struct {
 	Spec        map[string]any
 	RunSet      RunSet
 	RunSetFlags RunSetFlags
-  Subject     Subject
+	Subject     Subject
+	Client      Client
 }
 
 type TestPack struct {
@@ -140,103 +141,114 @@ type TestPack struct {
 
 
 
-
 var (
-  NULLMARK = "__NULL__"
+	NULLMARK = "__NULL__"
 )
 
-func Runner(
-	name string,
-	store any,
-	testfile string,
-) (*RunPack, error) {
 
-  client, err := testClient(nil)
-	if err != nil {
-		return nil, err
-	}
-
-	utility := client.Utility()
-  
-	structUtil := utility.Struct()
-
-	spec := resolveSpec(name, testfile)
-
-  clients, err := resolveClients(spec, store, structUtil)
-	if err != nil {
-		return nil, err
-	}
-  
-	subject, err := resolveSubject(name, utility)
-	if err != nil {
-		return nil, err
-	}
-
-  var runsetFlags RunSetFlags = func(
-		t *testing.T,
-		testspec any,
-		flags map[string]bool,
-		testsubject any,
-	) {
-
-		if testsubject != nil {
-			subject = subjectify(testsubject)
+// MakeRunner creates a runner function that can be used to run tests
+func MakeRunner(testfile string, clientIn ...Client) func(name string, store any) (*RunPack, error) {
+	var client Client
+	var err error
+	
+	if len(clientIn) > 0 && clientIn[0] != nil {
+		client = clientIn[0]
+	} else {
+		client, err = testClient(nil)
+		if err != nil {
+			// Since we can't return an error here, we'll panic if client creation fails
+			panic(err)
 		}
-    
-		flags = resolveFlags(flags)
+	}
 
-		var testspecmap = fixJSON(
-			testspec.(map[string]any),
-			flags,
-		).(map[string]any)
+	return func(name string, store any) (*RunPack, error) {
+		utility := client.Utility()
+		structUtil := utility.Struct()
 
-		testset, ok := testspecmap["set"].([]any)
-		if !ok {
-			panic(fmt.Sprintf("No test set in %v", name))
-			return
+		spec := resolveSpec(name, testfile)
+
+		clients, err := resolveClients(spec, store, structUtil)
+		if err != nil {
+			return nil, err
+		}
+		
+		subject, err := resolveSubject(name, utility)
+		if err != nil {
+			return nil, err
 		}
 
-		for _, entryVal := range testset {
-			entry := resolveEntry(entryVal, flags)
+		var runsetFlags RunSetFlags = func(
+			t *testing.T,
+			testspec any,
+			flags map[string]bool,
+			testsubject any,
+		) {
+			if testsubject != nil {
+				subject = subjectify(testsubject)
+			}
+			
+			flags = resolveFlags(flags)
 
-			testpack, err := resolveTestPack(name, entry, subject, client, clients)
-			if err != nil {
-				// No debug output
+			var testspecmap = fixJSON(
+				testspec.(map[string]any),
+				flags,
+			).(map[string]any)
+
+			testset, ok := testspecmap["set"].([]any)
+			if !ok {
+				panic(fmt.Sprintf("No test set in %v", name))
 				return
 			}
 
-			args := resolveArgs(entry, testpack)
+			for _, entryVal := range testset {
+				entry := resolveEntry(entryVal, flags)
 
-			res, err := testpack.Subject(args...)
+				testpack, err := resolveTestPack(name, entry, subject, client, clients)
+				if err != nil {
+					// No debug output
+					return
+				}
 
-			res = fixJSON(res, flags)
+				args := resolveArgs(entry, testpack)
 
-			entry["res"] = res
-			entry["thrown"] = err
+				res, err := testpack.Subject(args...)
 
-			if nil == err {
-				checkResult(t, entry, res, structUtil)
-			} else {
-				handleError(t, entry, err, structUtil)
+				res = fixJSON(res, flags)
+
+				entry["res"] = res
+				entry["thrown"] = err
+
+				if nil == err {
+					checkResult(t, entry, res, structUtil)
+				} else {
+					handleError(t, entry, err, structUtil)
+				}
 			}
 		}
-	}
 
-	var runset RunSet = func(
-		t *testing.T,
-		testspec any,
-		testsubject any,
-	) {
-		runsetFlags(t, testspec, nil, testsubject)
-	}
+		var runset RunSet = func(
+			t *testing.T,
+			testspec any,
+			testsubject any,
+		) {
+			runsetFlags(t, testspec, nil, testsubject)
+		}
 
-	return &RunPack{
-		Spec:        spec,
-		RunSet:      runset,
-		RunSetFlags: runsetFlags,
-    Subject:     subject,
-	}, nil
+		return &RunPack{
+			Spec:        spec,
+			RunSet:      runset,
+			RunSetFlags: runsetFlags,
+			Subject:     subject,
+		}, nil
+	}
 }
+
+
+// // Runner is a convenience function that creates a runner with default settings
+// func Runner(name string, store any, testfile string) (*RunPack, error) {
+// 	runner := MakeRunner(testfile)
+// 	return runner(name, store)
+// }
 
 
 func resolveSpec(
@@ -324,7 +336,7 @@ func resolveClients(
 		structUtil.Inject(opts, store)
 
 		// client, err := provider.Test(opts)
-    client, err := testClient(opts)
+		client, err := testClient(opts)
 		if err != nil {
 			return nil, err
 		}
@@ -338,21 +350,21 @@ func resolveClients(
 
 func resolveSubject(
 	name string,
-  container any,
-  // container Utility,
+	container any,
+	// container Utility,
 ) (Subject, error) {
-  name = uppercaseFirstLetter(name)
+	name = uppercaseFirstLetter(name)
 
 	val := reflect.ValueOf(container)
-  
-  if _, ok := container.(Utility); ok {
-    subjectVal := val.MethodByName(name)
-    subjectIF := subjectVal.Interface()
-    subject := subjectify(subjectIF)
-    return subject, nil
-  }
+	
+	if _, ok := container.(Utility); ok {
+		subjectVal := val.MethodByName(name)
+		subjectIF := subjectVal.Interface()
+		subject := subjectify(subjectIF)
+		return subject, nil
+	}
 
-  
+	
 	if val.Kind() == reflect.Ptr {
 		val = val.Elem()
 	}
@@ -362,7 +374,7 @@ func resolveSubject(
 
 	fieldVal := val.FieldByName(name)
 
-  if !fieldVal.IsValid() {
+	if !fieldVal.IsValid() {
 		return nil, fmt.Errorf("resolveSubject: field %q is not a func", name)
 	}
 
@@ -370,12 +382,12 @@ func resolveSubject(
 		return nil, fmt.Errorf("resolveSubject: field %q is not a func", name)
 	}
 
-  fn := fieldVal.Interface()
-  var sfn Subject
-  
+	fn := fieldVal.Interface()
+	var sfn Subject
+	
 	sfn, ok := fn.(Subject)
 	if !ok {
-    sfn = subjectify(fn)
+		sfn = subjectify(fn)
 	}
 
 	return sfn, nil
@@ -719,16 +731,16 @@ func MatchScalar(check, base any, structUtil *StructUtility) bool {
 }
 
 func subjectify(fn any) Subject {
-  v := reflect.ValueOf(fn)
+	v := reflect.ValueOf(fn)
 	if v.Kind() != reflect.Func {
 		panic("subjectify: not a function")
 	}
 
 	sfn, ok := v.Interface().(Subject)
-  if ok {
-    return sfn
-  }
-  
+	if ok {
+		return sfn
+	}
+	
 	fnType := v.Type()
 
 	return func(args ...any) (any, error) {

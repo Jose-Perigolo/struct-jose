@@ -40,7 +40,7 @@ const {
 
 
 const {
-  runner,
+  makeRunner,
   nullModifier,
   NULLMARK
 } = require('./runner')
@@ -49,8 +49,10 @@ const {
 // NOTE: tests are in order of increasing dependence.
 describe('struct', async () => {
 
+  const runner = await makeRunner('../../build/test/test.json')
+  
   const { spec, runset, runsetflags } =
-    await runner('struct', {}, '../../build/test/test.json')
+    await runner('struct')
 
   const minorSpec = spec.minor
   const walkSpec = spec.walk
@@ -471,8 +473,8 @@ describe('struct', async () => {
 
 describe('client', async () => {
 
-  const { spec, runset, subject } =
-    await runner('check', {}, '../../build/test/test.json')
+  const runner = await makeRunner('../../build/test/test.json')
+  const { spec, runset, subject } = await runner('check')
 
   test('client-check-basic', async () => {
     await runset(spec.basic, subject)

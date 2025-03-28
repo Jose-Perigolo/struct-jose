@@ -5873,6 +5873,69 @@
                   "`$EACH`",
                   "x",
                   {
+                    "q": "Q01"
+                  }
+                ]
+              }
+            },
+            "out": {
+              "z": []
+            }
+          },
+          {
+            "in": {
+              "data": {},
+              "spec": {
+                "z": [
+                  [
+                    "`$EACH`",
+                    "x",
+                    {
+                      "q": "Q02"
+                    }
+                  ]
+                ]
+              }
+            },
+            "out": {
+              "z": [
+                []
+              ]
+            }
+          },
+          {
+            "in": {
+              "data": {},
+              "spec": {
+                "z": [
+                  [
+                    [
+                      "`$EACH`",
+                      "x",
+                      {
+                        "q": "Q02"
+                      }
+                    ]
+                  ]
+                ]
+              }
+            },
+            "out": {
+              "z": [
+                [
+                  []
+                ]
+              ]
+            }
+          },
+          {
+            "in": {
+              "data": {},
+              "spec": {
+                "z": [
+                  "`$EACH`",
+                  "x",
+                  {
                     "y": "`$COPY`",
                     "q": "Q0"
                   }
@@ -6147,6 +6210,29 @@
               ]
             },
             "out": []
+          },
+          {
+            "in": {
+              "data": {
+                "x": {
+                  "a": {
+                    "y": 101
+                  }
+                }
+              },
+              "spec": [
+                "`$EACH`",
+                "x",
+                {
+                  "p": "P102"
+                }
+              ]
+            },
+            "out": [
+              {
+                "p": "P102"
+              }
+            ]
           },
           {
             "in": {
@@ -7405,6 +7491,19 @@
               }
             },
             "err": "Expected string at a, found number: 1"
+          },
+          {
+            "in": {
+              "data": {
+                "a": 11,
+                "b": "B"
+              },
+              "spec": {
+                "a": "`$STRING`",
+                "b": "`$NUMBER`"
+              }
+            },
+            "err": "Expected string at a, found number: 11 | Expected number at b, found string: B"
           },
           {
             "in": {

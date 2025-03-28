@@ -8,7 +8,8 @@ const struct_1 = require("../dist/struct");
 const runner_1 = require("./runner");
 // NOTE: tests are in order of increasing dependence.
 (0, node_test_1.describe)('struct', async () => {
-    const { spec, runset, runsetflags } = await (0, runner_1.runner)('struct', {}, '../../build/test/test.json');
+    const runner = await (0, runner_1.makeRunner)('../../build/test/test.json');
+    const { spec, runset, runsetflags } = await runner('struct');
     const minorSpec = spec.minor;
     const walkSpec = spec.walk;
     const mergeSpec = spec.merge;
@@ -291,7 +292,8 @@ const runner_1 = require("./runner");
     });
 });
 (0, node_test_1.describe)('client', async () => {
-    const { spec, runset, subject } = await (0, runner_1.runner)('check', {}, '../../build/test/test.json');
+    const runner = await (0, runner_1.makeRunner)('../../build/test/test.json');
+    const { spec, runset, subject } = await runner('check');
     (0, node_test_1.test)('client-check-basic', async () => {
         await runset(spec.basic, subject);
     });

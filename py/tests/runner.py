@@ -3,7 +3,7 @@
 import os
 import json
 import re
-from typing import Any, Dict, List, Callable
+from typing import Any, Dict, List, Callable, TypedDict, Optional, Union
 
 from voxgig_struct import (
     clone,
@@ -76,56 +76,68 @@ class Client:
         return self._utility
 
 
+class RunPack(TypedDict):
+    spec: Dict[str, Any]
+    runset: Callable
+    runsetflags: Callable
+    subject: Callable
+    client: Optional[Client]
 
 
-def runner(
-    name: str,
-    store: Any,
-    testfile: str,
-):
-    client = Client.test()
-    utility = client.utility()
-    structUtils = utility.struct()
+def makeRunner(testfile: str, client_in=None):
+    client = client_in or Client.test()
     
-    spec = resolve_spec(name, testfile)
-    clients = resolve_clients(spec, store, structUtils)
-    subject = resolve_subject(name, utility)
+    def runner(
+        name: str,
+        store: Any = None,
+    ) -> RunPack:
+        store = store or {}
         
-    def runsetflags(testspec, flags, testsubject):
-        nonlocal subject, clients
+        utility = client.utility()
+        structUtils = utility.struct()
         
-        subject = testsubject or subject
-        flags = resolve_flags(flags)
-        testspecmap = fixJSON(testspec, flags)
-        testset = testspecmap['set']
-                
-        for entry in testset:
-            try:
-                entry = resolve_entry(entry, flags)
+        spec = resolve_spec(name, testfile)
+        clients = resolve_clients(spec, store, structUtils)
+        subject = resolve_subject(name, utility)
+            
+        def runsetflags(testspec, flags, testsubject):
+            nonlocal subject, clients
+            
+            subject = testsubject or subject
+            flags = resolve_flags(flags)
+            testspecmap = fixJSON(testspec, flags)
+            testset = testspecmap['set']
+                    
+            for entry in testset:
+                try:
+                    entry = resolve_entry(entry, flags)
 
-                testpack = resolve_testpack(name, entry, subject, client, clients)
-                args = resolve_args(entry, testpack, structUtils)
-                
-                # Execute the test function
-                res = testpack["subject"](*args)
-                res = fixJSON(res, flags)
-                entry['res'] = res
-                check_result(entry, res, structUtils)
-                
-            except Exception as err:
-                handle_error(entry, err, structUtils)
+                    testpack = resolve_testpack(name, entry, subject, client, clients)
+                    args = resolve_args(entry, testpack, structUtils)
+                    
+                    # Execute the test function
+                    res = testpack["subject"](*args)
+                    res = fixJSON(res, flags)
+                    entry['res'] = res
+                    check_result(entry, res, structUtils)
+                    
+                except Exception as err:
+                    handle_error(entry, err, structUtils)
 
-    def runset(testspec, testsubject):
-        return runsetflags(testspec, {}, testsubject)
-                
-    runpack = {
-        "spec": spec,
-        "runset": runset,
-        "runsetflags": runsetflags,
-        "subject": subject,
-    }
+        def runset(testspec, testsubject):
+            return runsetflags(testspec, {}, testsubject)
+                    
+        runpack = {
+            "spec": spec,
+            "runset": runset,
+            "runsetflags": runsetflags,
+            "subject": subject,
+            "client": client
+        }
 
-    return runpack
+        return runpack
+    
+    return runner
 
 
 def resolve_spec(name: str, testfile: str) -> Dict[str, Any]:
@@ -142,7 +154,7 @@ def resolve_spec(name: str, testfile: str) -> Dict[str, Any]:
     return spec
 
 
-def resolve_clients(spec: Dict[str, Any], store: Any, structUtils: Dict[str, Any]) -> Dict[str, Any]:
+def resolve_clients(spec: Dict[str, Any], store: Any, structUtils: Any) -> Dict[str, Any]:
     clients = {}
     if 'DEF' in spec and 'client' in spec['DEF']:
         for client_name, client_val in structUtils.items(spec['DEF']['client']):
@@ -159,8 +171,8 @@ def resolve_clients(spec: Dict[str, Any], store: Any, structUtils: Dict[str, Any
     return clients
 
 
-def resolve_subject(name: str, container: Any):
-    return getattr(container, name, None)
+def resolve_subject(name: str, container: Any, subject=None):
+    return subject or getattr(container, name, None)
 
 
 def check_result(entry, res, structUtils):
@@ -392,4 +404,13 @@ def nullModifier(val, key, parent, _state=None, _current=None, _store=None):
         parent[key] = None
     elif isinstance(val, str):
         parent[key] = val.replace(NULLMARK, "null")
+
+
+# Export the necessary components similar to TypeScript
+__all__ = [
+    'NULLMARK',
+    'nullModifier',
+    'makeRunner',
+    'Client',
+]
 

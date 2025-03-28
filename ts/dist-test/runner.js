@@ -11,24 +11,32 @@ var __classPrivateFieldGet = (this && this.__classPrivateFieldGet) || function (
     if (typeof state === "function" ? receiver !== state || !f : !state.has(receiver)) throw new TypeError("Cannot read private member from an object whose class did not declare it");
     return kind === "m" ? f : kind === "a" ? f.call(receiver) : f ? f.value : state.get(receiver);
 };
-var _Client_opts, _Client_utility;
+var _Client_utility;
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.Client = exports.NULLMARK = void 0;
 exports.nullModifier = nullModifier;
-exports.runner = runner;
+exports.makeRunner = makeRunner;
 const node_fs_1 = require("node:fs");
 const node_path_1 = require("node:path");
 const node_assert_1 = require("node:assert");
 // Runner does make use of these struct utilities, and this usage is
 // circular. This is a trade-off tp make the runner code simpler.
 const struct_1 = require("../dist/struct");
-const NULLMARK = '__NULL__';
+const NULLMARK = "__NULL__"; // Value is JSON null
 exports.NULLMARK = NULLMARK;
+const UNDEFMARK = "__UNDEF__"; // Value is not present (thus, undefined).
 class Client {
-    constructor(opts) {
-        _Client_opts.set(this, void 0);
+    constructor(optsin) {
         _Client_utility.set(this, void 0);
-        __classPrivateFieldSet(this, _Client_opts, opts || {}, "f");
+        const opts = optsin || { x: Math.random() };
+        function check(ctx) {
+            return {
+                zed: 'ZED' +
+                    (null == opts ? '' : null == opts.foo ? '' : opts.foo) +
+                    '_' +
+                    (null == ctx.bar ? '0' : ctx.bar)
+            };
+        }
         __classPrivateFieldSet(this, _Client_utility, {
             struct: {
                 clone: struct_1.clone,
@@ -38,15 +46,11 @@ class Client {
                 stringify: struct_1.stringify,
                 walk: struct_1.walk,
             },
-            check: (ctx) => {
-                return {
-                    zed: 'ZED' +
-                        (null == __classPrivateFieldGet(this, _Client_opts, "f") ? '' : null == __classPrivateFieldGet(this, _Client_opts, "f").foo ? '' : __classPrivateFieldGet(this, _Client_opts, "f").foo) +
-                        '_' +
-                        (null == ctx.bar ? '0' : ctx.bar)
-                };
-            }
+            check,
         }, "f");
+    }
+    async test(opts) {
+        return Client.test(opts);
     }
     static async test(opts) {
         return new Client(opts);
@@ -56,49 +60,53 @@ class Client {
     }
 }
 exports.Client = Client;
-_Client_opts = new WeakMap(), _Client_utility = new WeakMap();
-async function runner(name, store, testfile) {
-    const client = await Client.test();
-    const utility = client.utility();
-    const structUtils = utility.struct;
-    let spec = resolveSpec(name, testfile);
-    let clients = await resolveClients(spec, store, structUtils);
-    let subject = resolveSubject(name, utility);
-    let runsetflags = async (testspec, flags, testsubject) => {
-        subject = testsubject || subject;
-        flags = resolveFlags(flags);
-        const testspecmap = fixJSON(testspec, flags);
-        const testset = testspecmap.set;
-        for (let entry of testset) {
-            try {
-                entry = resolveEntry(entry, flags);
-                let testpack = resolveTestPack(name, entry, subject, client, clients);
-                let args = resolveArgs(entry, testpack);
-                let res = await testpack.subject(...args);
-                res = fixJSON(res, flags);
-                entry.res = res;
-                checkResult(entry, res, structUtils);
+_Client_utility = new WeakMap();
+async function makeRunner(testfile, clientin) {
+    const client = clientin || await Client.test();
+    return async function runner(name, store) {
+        store = store || {};
+        const utility = client.utility();
+        const structUtils = utility.struct;
+        let spec = resolveSpec(name, testfile);
+        let clients = await resolveClients(client, spec, store, structUtils);
+        let subject = resolveSubject(name, utility);
+        let runsetflags = async (testspec, flags, testsubject) => {
+            subject = testsubject || subject;
+            flags = resolveFlags(flags);
+            const testspecmap = fixJSON(testspec, flags);
+            const testset = testspecmap.set;
+            for (let entry of testset) {
+                try {
+                    entry = resolveEntry(entry, flags);
+                    let testpack = resolveTestPack(name, entry, subject, client, clients);
+                    let args = resolveArgs(entry, testpack, structUtils);
+                    let res = await testpack.subject(...args);
+                    res = fixJSON(res, flags);
+                    entry.res = res;
+                    checkResult(entry, res, structUtils);
+                }
+                catch (err) {
+                    handleError(entry, err, structUtils);
+                }
             }
-            catch (err) {
-                handleError(entry, err, structUtils);
-            }
-        }
+        };
+        let runset = async (testspec, testsubject) => runsetflags(testspec, {}, testsubject);
+        const runpack = {
+            spec,
+            runset,
+            runsetflags,
+            subject,
+            client,
+        };
+        return runpack;
     };
-    let runset = async (testspec, testsubject) => runsetflags(testspec, {}, testsubject);
-    const runpack = {
-        spec,
-        runset,
-        runsetflags,
-        subject,
-    };
-    return runpack;
 }
 function resolveSpec(name, testfile) {
     const alltests = JSON.parse((0, node_fs_1.readFileSync)((0, node_path_1.join)(__dirname, testfile), 'utf8'));
     let spec = alltests.primary?.[name] || alltests[name] || alltests;
     return spec;
 }
-async function resolveClients(spec, store, structUtils) {
+async function resolveClients(client, spec, store, structUtils) {
     const clients = {};
     if (spec.DEF && spec.DEF.client) {
         for (let cn in spec.DEF.client) {
@@ -107,13 +115,13 @@ async function resolveClients(spec, store, structUtils) {
             if ('object' === typeof store && structUtils?.inject) {
                 structUtils.inject(copts, store);
             }
-            clients[cn] = await Client.test(copts);
+            clients[cn] = await client.test(copts);
         }
     }
     return clients;
 }
-function resolveSubject(name, container) {
-    return container?.[name];
+function resolveSubject(name, container, subject) {
+    return subject || container?.[name];
 }
 function resolveFlags(flags) {
     if (null == flags) {
@@ -127,13 +135,20 @@ function resolveEntry(entry, flags) {
     return entry;
 }
 function checkResult(entry, res, structUtils) {
-    if (undefined === entry.match || undefined !== entry.out) {
-        // NOTE: don't use clone as we want to strip functions
-        (0, node_assert_1.deepEqual)(null != res ? JSON.parse(JSON.stringify(res)) : res, entry.out);
-    }
+    let matched = false;
     if (entry.match) {
-        match(entry.match, { in: entry.in, out: entry.res, ctx: entry.ctx }, structUtils);
+        const result = { in: entry.in, out: entry.res, ctx: entry.ctx };
+        match(entry.match, result, structUtils);
+        matched = true;
     }
+    if (entry.out === res) {
+        return;
+    }
+    // NOTE: allow match with no out.
+    if (matched && (NULLMARK === entry.out || null == entry.out)) {
+        return;
+    }
+    (0, node_assert_1.deepEqual)(null != res ? JSON.parse(JSON.stringify(res)) : res, entry.out);
 }
 // Handle errors from test execution
 function handleError(entry, err, structUtils) {
@@ -157,8 +172,8 @@ function handleError(entry, err, structUtils) {
         (0, node_assert_1.fail)(err.stack + '\\nnENTRY: ' + JSON.stringify(entry, null, 2));
     }
 }
-function resolveArgs(entry, testpack) {
-    let args = [(0, struct_1.clone)(entry.in)];
+function resolveArgs(entry, testpack, structUtils) {
+    let args = [structUtils.clone(entry.in)];
     if (entry.ctx) {
         args = [entry.ctx];
     }
@@ -168,7 +183,7 @@ function resolveArgs(entry, testpack) {
     if (entry.ctx || entry.args) {
         let first = args[0];
         if ('object' === typeof first && null != first) {
-            entry.ctx = first = args[0] = (0, struct_1.clone)(args[0]);
+            entry.ctx = first = args[0] = structUtils.clone(args[0]);
             first.client = testpack.client;
             first.utility = testpack.utility;
         }
@@ -184,6 +199,7 @@ function resolveTestPack(name, entry, subject, client, clients) {
     if (entry.client) {
         testpack.client = clients[entry.client];
         testpack.utility = testpack.client.utility();
+        // testpack.subject = resolveSubject(name, testpack.utility, subject)
         testpack.subject = resolveSubject(name, testpack.utility);
     }
     return testpack;
@@ -193,6 +209,13 @@ function match(check, base, structUtils) {
         let scalar = 'object' != typeof val;
         if (scalar) {
             let baseval = structUtils.getpath(path, base);
+            if (baseval === val) {
+                return;
+            }
+            // Explicit undefined expected
+            if (UNDEFMARK === val && undefined === baseval) {
+                return;
+            }
             if (!matchval(val, baseval, structUtils)) {
                 (0, node_assert_1.fail)('MATCH: ' + path.join('.') +
                     ': [' + structUtils.stringify(val) +
@@ -202,7 +225,7 @@ function match(check, base, structUtils) {
     });
 }
 function matchval(check, base, structUtils) {
-    check = NULLMARK === check ? undefined : check;
+    // check = NULLMARK === check ? undefined : check
     let pass = check === base;
     if (!pass) {
         if ('string' === typeof check) {
@@ -225,7 +248,19 @@ function fixJSON(val, flags) {
     if (null == val) {
         return flags.null ? NULLMARK : val;
     }
-    const replacer = (_k, v) => null == v && flags.null ? NULLMARK : v;
+    const replacer = (_k, v) => {
+        if (null == v && flags.null) {
+            return NULLMARK;
+        }
+        if (v instanceof Error) {
+            return {
+                ...v,
+                name: v.name,
+                message: v.message,
+            };
+        }
+        return v;
+    };
     return JSON.parse(JSON.stringify(val, replacer));
 }
 function nullModifier(val, key, parent) {
