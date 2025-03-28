@@ -57,62 +57,64 @@ class Client {
 }
 
 
-async function runner(
-  name,
-  store,
-  testfile
-) {
-
-  const client = await Client.test()
-  const utility = client.utility()
-  const structUtils = utility.struct
+async function makeRunner(testfile, clientin) {
+  const client = clientin || await Client.test()
   
-  let spec = resolveSpec(name, testfile)
-  let clients = await resolveClients(spec, store, structUtils)
-  let subject = resolveSubject(name, utility)
+  return async function runner(
+    name,
+    store = {}
+  ) {
+    const utility = client.utility()
+    const structUtils = utility.struct
+    
+    let spec = resolveSpec(name, testfile)
+    let clients = await resolveClients(spec, store, structUtils)
+    let subject = resolveSubject(name, utility)
 
-  let runsetflags = async (
-    testspec,
-    flags,
-    testsubject
-  ) => {
-    subject = testsubject || subject
-    flags = resolveFlags(flags)
-    const testspecmap = fixJSON(testspec, flags)
+    let runsetflags = async (
+      testspec,
+      flags,
+      testsubject
+    ) => {
+      subject = testsubject || subject
+      flags = resolveFlags(flags)
+      const testspecmap = fixJSON(testspec, flags)
 
-    const testset = testspecmap.set
-    for (let entry of testset) {
-      try {
-        entry = resolveEntry(entry, flags)
+      const testset = testspecmap.set
+      for (let entry of testset) {
+        try {
+          entry = resolveEntry(entry, flags)
 
-        let testpack = resolveTestPack(name, entry, subject, client, clients)
-        let args = resolveArgs(entry, testpack)
+          let testpack = resolveTestPack(name, entry, subject, client, clients)
+          let args = resolveArgs(entry, testpack)
 
-        let res = await testpack.subject(...args)
-        res = fixJSON(res, flags)
-        entry.res = res
+          let res = await testpack.subject(...args)
+          res = fixJSON(res, flags)
+          entry.res = res
 
-        checkResult(entry, res, structUtils)
-      }
-      catch (err) {
-        handleError(entry, err, structUtils)
+          checkResult(entry, res, structUtils)
+        }
+        catch (err) {
+          handleError(entry, err, structUtils)
+        }
       }
     }
+
+    let runset = async (
+      testspec,
+      testsubject
+    ) => runsetflags(testspec, {}, testsubject)
+
+    const runpack = {
+      spec,
+      runset,
+      runsetflags,
+      subject,
+      client,
+    }
+
+    return runpack
   }
-
-  let runset = async (
-    testspec,
-    testsubject
-  ) => runsetflags(testspec, {}, testsubject)
-
-  const runpack = {
-    spec,
-    runset,
-    runsetflags,
-    subject,
-  }
-
-  return runpack
 }
 
 
@@ -338,6 +340,6 @@ function nullModifier(
 module.exports = {
   NULLMARK,
   nullModifier,
-  runner,
+  makeRunner,
   Client
 }

@@ -6,7 +6,7 @@
 import unittest
 
 from runner import (
-    runner,
+    makeRunner,
     nullModifier,
     NULLMARK,
 )
@@ -41,11 +41,8 @@ from voxgig_struct import (
 )
 
 
-runparts = runner(
-    name='struct',
-    store={},
-    testfile='../../build/test/test.json',  # adapt path as needed
-)
+runner = makeRunner('../../build/test/test.json')
+runparts = runner('struct')
 
 spec = runparts["spec"]
 runset = runparts["runset"]
@@ -412,11 +409,7 @@ class TestStruct(unittest.TestCase):
 
 
         
-runparts_client = runner(
-    name='check',
-    store={},
-    testfile='../../build/test/test.json',
-)
+runparts_client = runner('check')
 
 spec_client = runparts_client["spec"]
 runset_client = runparts_client["runset"]
