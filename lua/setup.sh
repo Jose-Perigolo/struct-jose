@@ -33,7 +33,7 @@ install_lua() {
       
       # Download and install latest LuaRocks from source
       cd /tmp
-      curl -R -O "https://luarocks.org/releases/luarocks-3.11.1.tar.gz"
+      curl -L -R -O "https://luarocks.org/releases/luarocks-3.11.1.tar.gz"
       tar zxpf "luarocks-3.11.1.tar.gz"
       cd "luarocks-3.11.1"
       ./configure && make && sudo make install
@@ -66,7 +66,7 @@ install_lua() {
     
     # Download and install latest LuaRocks from source
     cd /tmp
-    curl -R -O "https://luarocks.org/releases/luarocks-3.11.1.tar.gz"
+    curl -L -R -O "https://luarocks.org/releases/luarocks-3.11.1.tar.gz"
     tar zxpf "luarocks-3.11.1.tar.gz"
     cd "luarocks-3.11.1"
     ./configure --with-lua-include=/usr/local/include && make && sudo make install
@@ -101,7 +101,7 @@ else
     
     # Download and install only LuaRocks
     cd /tmp
-    curl -R -O "https://luarocks.org/releases/luarocks-3.11.1.tar.gz"
+    curl -L -R -O "https://luarocks.org/releases/luarocks-3.11.1.tar.gz"
     tar zxpf "luarocks-3.11.1.tar.gz"
     cd "luarocks-3.11.1"
     ./configure && make && sudo make install
