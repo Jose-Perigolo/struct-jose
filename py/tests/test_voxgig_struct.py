@@ -245,7 +245,7 @@ class TestStruct(unittest.TestCase):
 
     def test_getpath_state(self):
         def handler_fn(state, val, _current=None, _ref=None, _store=None):
-            out = f"{state.meta["step"]}:{val}"
+            out = f"{state.meta['step']}:{val}"
             state.meta["step"] = state.meta["step"]+1 
             return out
 
