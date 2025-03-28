@@ -5,39 +5,6 @@
 import { test, describe } from 'node:test'
 import { equal, deepEqual } from 'node:assert'
 
-import {
-  clone,
-  escre,
-  escurl,
-  getpath,
-  getprop,
-
-  haskey,
-  inject,
-  isempty,
-  isfunc,
-  iskey,
-
-  islist,
-  ismap,
-  isnode,
-  items,
-  joinurl,
-
-  keysof,
-  merge,
-  pathify,
-  setprop,
-  strkey,
-
-  stringify,
-  transform,
-  typify,
-  validate,
-  walk,
-
-} from '../dist/struct'
-
 import type {
   Injection
 } from '../dist/struct'
@@ -49,14 +16,50 @@ import {
   NULLMARK,
 } from './runner'
 
+import { SDK } from './sdk.js'
+
+const TEST_JSON_FILE = '../../build/test/test.json'
+
 
 // NOTE: tests are in order of increasing dependence.
 describe('struct', async () => {
 
-  const runner = await makeRunner('../../build/test/test.json')
+  const runner = await makeRunner(TEST_JSON_FILE, await SDK.test())
 
-  const { spec, runset, runsetflags } =
-    await runner('struct')
+  const { spec, runset, runsetflags, client } = await runner('struct')
+
+  const {
+    clone,
+    escre,
+    escurl,
+    getpath,
+    getprop,
+
+    haskey,
+    inject,
+    isempty,
+    isfunc,
+    iskey,
+
+    islist,
+    ismap,
+    isnode,
+    items,
+    joinurl,
+
+    keysof,
+    merge,
+    pathify,
+    setprop,
+    strkey,
+
+    stringify,
+    transform,
+    typify,
+    validate,
+    walk,
+
+  } = client.utility().struct
 
   const minorSpec = spec.minor
   const walkSpec = spec.walk
@@ -394,7 +397,7 @@ describe('struct', async () => {
   test('transform-modify', async () => {
     await runset(transformSpec.modify, (vin: any) =>
       transform(vin.data, vin.spec, vin.store,
-        (val, key, parent) => {
+        (val: any, key: any, parent: any) => {
           if (null != key && null != parent && 'string' === typeof val) {
             val = parent[key] = '@' + val
           }
@@ -477,7 +480,7 @@ describe('struct', async () => {
 
 describe('client', async () => {
 
-  const runner = await makeRunner('../../build/test/test.json')
+  const runner = await makeRunner(TEST_JSON_FILE, await SDK.test())
 
   const { spec, runset, subject } =
     await runner('check')

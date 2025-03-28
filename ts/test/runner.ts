@@ -21,49 +21,6 @@ const NULLMARK = "__NULL__" // Value is JSON null
 const UNDEFMARK = "__UNDEF__" // Value is not present (thus, undefined).
 
 
-class Client {
-
-  #utility: Record<string, any>
-
-  constructor(optsin?: Record<string, any>) {
-    const opts = optsin || { x: Math.random() }
-
-    function check(ctx: any): any {
-      return {
-        zed: 'ZED' +
-          (null == opts ? '' : null == opts.foo ? '' : opts.foo) +
-          '_' +
-          (null == ctx.bar ? '0' : ctx.bar)
-      }
-    }
-
-    this.#utility = {
-      struct: {
-        clone,
-        getpath,
-        inject,
-        items,
-        stringify,
-        walk,
-      },
-      check,
-    }
-  }
-
-  async test(opts?: Record<string, any>): Promise<Client> {
-    return Client.test(opts)
-  }
-
-  static async test(opts?: Record<string, any>): Promise<Client> {
-    return new Client(opts)
-  }
-
-  utility() {
-    return this.#utility
-  }
-}
-
-
 type Subject = (...args: any[]) => any
 type RunSet = (testspec: any, testsubject: Function) => Promise<any>
 type RunSetFlags = (testspec: any, flags: Record<string, boolean>, testsubject: Function)
@@ -74,20 +31,19 @@ type RunPack = {
   runset: RunSet
   runsetflags: RunSetFlags
   subject: Subject
-  client: Client
+  client: any
 }
 
 type TestPack = {
-  client: Client
+  client: any
   subject: Subject
-  utility: ReturnType<Client['utility']>
+  utility: any
 }
 
 type Flags = Record<string, boolean>
 
 
-async function makeRunner(testfile: string, clientin?: Client) {
-  const client = clientin || await Client.test()
+async function makeRunner(testfile: string, client: any) {
 
   return async function runner(
     name: string,
@@ -159,14 +115,14 @@ function resolveSpec(name: string, testfile: string): Record<string, any> {
 
 
 async function resolveClients(
-  client: Client,
+  client: any,
   spec: Record<string, any>,
   store: any,
   structUtils: Record<string, any>
 ):
-  Promise<Record<string, Client>> {
+  Promise<Record<string, any>> {
 
-  const clients: Record<string, Client> = {}
+  const clients: Record<string, any> = {}
   if (spec.DEF && spec.DEF.client) {
     for (let cn in spec.DEF.client) {
       const cdef = spec.DEF.client[cn]
@@ -287,8 +243,8 @@ function resolveTestPack(
   name: string,
   entry: any,
   subject: Subject,
-  client: Client,
-  clients: Record<string, Client>
+  client: any,
+  clients: Record<string, any>
 ) {
   const testpack: TestPack = {
     client,
@@ -410,6 +366,5 @@ export {
   NULLMARK,
   nullModifier,
   makeRunner,
-  Client,
 }
 
