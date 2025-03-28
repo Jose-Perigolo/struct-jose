@@ -50,7 +50,7 @@ jobs:
           python-version: '3.10'
       - name: Install dependencies
         working-directory: ./py
-        run: pip install -e .
+#        run: pip install -e .
       - name: Run tests
         working-directory: ./py
         run: python -m unittest discover -s tests
@@ -62,7 +62,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v4
         with:
-          go-version: '1.20'
+          go-version: '1.23'
       - name: Run tests
         working-directory: ./go
         run: go test -v ./...
