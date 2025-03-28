@@ -18,9 +18,26 @@ install_lua() {
     fi
     brew install lua luarocks
   elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
-    echo "Installing Lua environment on Linux..."
+    echo "Installing latest Lua environment on Linux..."
     sudo apt-get update
-    sudo apt-get install -y lua5.3 liblua5.3-dev luarocks
+    sudo apt-get install -y build-essential libreadline-dev
+    
+    # Download and install latest Lua from source
+    cd /tmp
+    curl -R -O "https://www.lua.org/ftp/lua-5.4.7.tar.gz"  # Current latest stable
+    tar xvfz "lua-5.4.7.tar.gz"
+    cd "lua-5.4.7"
+    make linux
+    sudo make install
+    
+    # Download and install latest LuaRocks from source
+    cd /tmp
+    curl -R -O "https://luarocks.org/releases/luarocks-3.11.1.tar.gz"
+    tar xvfz "luarocks-3.11.1.tar.gz"
+    cd "luarocks-3.11.1"
+    ./configure --with-lua-include=/usr/local/include
+    make
+    sudo make install
   else
     echo "Unsupported OS: $OSTYPE"
     exit 1
