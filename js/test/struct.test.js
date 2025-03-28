@@ -6,54 +6,56 @@ const { test, describe } = require('node:test')
 const { equal, deepEqual } = require('node:assert')
 
 const {
-  clone,
-  escre,
-  escurl,
-  getpath,
-  getprop,
-  
-  haskey,
-  inject,
-  isempty,
-  isfunc,
-  iskey,
-  
-  islist,
-  ismap,
-  isnode,
-  items,
-  joinurl,
-  
-  keysof,
-  merge,
-  pathify,
-  setprop,
-  strkey,
-  
-  stringify,
-  transform,
-  typify,
-  validate,
-  walk,
-  
-} = require('../src/struct')
-
-
-const {
   makeRunner,
   nullModifier,
   NULLMARK
 } = require('./runner')
 
+const { SDK } = require('./sdk.js')
 
-// NOTE: tests are in order of increasing dependence.
+const TEST_JSON_FILE = '../../build/test/test.json'
+
+
+// NOTE: tests are (mostly) in order of increasing dependence.
 describe('struct', async () => {
 
-  const runner = await makeRunner('../../build/test/test.json')
+  const runner = await makeRunner(TEST_JSON_FILE, await SDK.test())
   
-  const { spec, runset, runsetflags } =
-    await runner('struct')
+  const { spec, runset, runsetflags, client } = await runner('struct')
 
+  const {
+    clone,
+    escre,
+    escurl,
+    getpath,
+    getprop,
+    
+    haskey,
+    inject,
+    isempty,
+    isfunc,
+    iskey,
+    
+    islist,
+    ismap,
+    isnode,
+    items,
+    joinurl,
+    
+    keysof,
+    merge,
+    pathify,
+    setprop,
+    strkey,
+    
+    stringify,
+    transform,
+    typify,
+    validate,
+    walk,
+
+  } = client.utility().struct
+  
   const minorSpec = spec.minor
   const walkSpec = spec.walk
   const mergeSpec = spec.merge
@@ -449,7 +451,7 @@ describe('struct', async () => {
         let t = typeof out
         if ('number' !== t && !Number.isInteger(out)) {
           state.errs.push('Not an integer at ' + state.path.slice(1).join('.') + ': ' + out)
-          return
+          return undefined
         }
 
         return out
@@ -470,10 +472,10 @@ describe('struct', async () => {
 })
 
 
-
 describe('client', async () => {
 
-  const runner = await makeRunner('../../build/test/test.json')
+  const runner = await makeRunner(TEST_JSON_FILE, await SDK.test())
+
   const { spec, runset, subject } = await runner('check')
 
   test('client-check-basic', async () => {
