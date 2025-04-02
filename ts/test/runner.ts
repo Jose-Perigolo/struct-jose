@@ -131,7 +131,7 @@ async function resolveClients(
         structUtils.inject(copts, store)
       }
 
-      clients[cn] = await client.test(copts)
+      clients[cn] = await client.tester(copts)
     }
   }
   return clients

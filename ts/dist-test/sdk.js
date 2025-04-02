@@ -67,8 +67,8 @@ class SDK {
     static async test(opts) {
         return new SDK(opts);
     }
-    async test(opts) {
-        return new SDK(opts);
+    async tester(opts) {
+        return new SDK(opts || __classPrivateFieldGet(this, _SDK_opts, "f"));
     }
     utility() {
         return __classPrivateFieldGet(this, _SDK_utility, "f");

@@ -338,8 +338,8 @@ def pathify(val: Any = UNDEF, from_index: int = UNDEF) -> str:
 
 def clone(val: Any = UNDEF):
     """
-    // Clone a JSON-like data structure.
-    // NOTE: function value references are copied, *not* cloned.
+    Clone a JSON-like data structure.
+    NOTE: function value references are copied, *not* cloned.
     """
     if UNDEF == val:
         return UNDEF

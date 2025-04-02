@@ -18,74 +18,15 @@ from voxgig_struct import (
 NULLMARK = '__NULL__'
 
 
-class StructUtils:
-    def __init__(self):
-        pass
-
-    def clone(self, *args, **kwargs):
-        return clone(*args, **kwargs)
-
-    def getpath(self, *args, **kwargs):
-        return getpath(*args, **kwargs)
-
-    def inject(self, *args, **kwargs):
-        return inject(*args, **kwargs)
-
-    def items(self, *args, **kwargs):
-        return items(*args, **kwargs)
-
-    def stringify(self, *args, **kwargs):
-        return stringify(*args, **kwargs)
-
-    def walk(self, *args, **kwargs):
-        return walk(*args, **kwargs)
-    
-
-class Utility:
-    def __init__(self, opts=None):
-        self._opts = opts
-        self._struct = StructUtils()
-
-    def struct(self):
-        return self._struct
-
-    def check(self, ctx):
-        zed = "ZED"
-    
-        if self._opts is None:
-            zed += ""
-        else:
-            foo = self._opts.get("foo")
-            zed += "0" if foo is None else str(foo)
-
-        zed += "_"
-        zed += str(ctx.get("bar"))
-
-        return {"zed": zed}
-        
-
-class Client:
-    def __init__(self, opts=None):
-        self._utility = Utility(opts)
-
-    @staticmethod
-    def test(opts=None):
-        return Client(opts)
-
-    def utility(self):
-        return self._utility
-
-
 class RunPack(TypedDict):
     spec: Dict[str, Any]
     runset: Callable
     runsetflags: Callable
     subject: Callable
-    client: Optional[Client]
+    client: Optional[Any]
 
 
-def makeRunner(testfile: str, client_in=None):
-    client = client_in or Client.test()
+def makeRunner(testfile: str, client: Any):
     
     def runner(
         name: str,
@@ -94,10 +35,10 @@ def makeRunner(testfile: str, client_in=None):
         store = store or {}
         
         utility = client.utility()
-        structUtils = utility.struct()
+        structUtils = utility.struct
         
         spec = resolve_spec(name, testfile)
-        clients = resolve_clients(spec, store, structUtils)
+        clients = resolve_clients(client, spec, store, structUtils)
         subject = resolve_subject(name, utility)
             
         def runsetflags(testspec, flags, testsubject):
@@ -154,7 +95,7 @@ def resolve_spec(name: str, testfile: str) -> Dict[str, Any]:
     return spec
 
 
-def resolve_clients(spec: Dict[str, Any], store: Any, structUtils: Any) -> Dict[str, Any]:
+def resolve_clients(client: Any, spec: Dict[str, Any], store: Any, structUtils: Any) -> Dict[str, Any]:
     clients = {}
     if 'DEF' in spec and 'client' in spec['DEF']:
         for client_name, client_val in structUtils.items(spec['DEF']['client']):
@@ -162,11 +103,11 @@ def resolve_clients(spec: Dict[str, Any], store: Any, structUtils: Any) -> Dict[
             client_opts = client_val.get('test', {}).get('options', {})
             
             # Apply store injections if needed
-            if isinstance(store, dict):
+            if isinstance(store, dict) and hasattr(structUtils, 'inject'):
                 structUtils.inject(client_opts, store)
                 
-            # Create and store the client
-            clients[client_name] = Client.test(client_opts)
+            # Create and store the client using the passed client object
+            clients[client_name] = client.test(client_opts)
             
     return clients
 
@@ -256,9 +197,8 @@ def resolve_testpack(
     }
     
     if 'client' in entry:
-        test_client = clients[entry['client']]
-        testpack["client"] = test_client
-        testpack["utility"] = test_client.utility()
+        testpack["client"] = clients[entry['client']]
+        testpack["utility"] = testpack["client"].utility()
         testpack["subject"] = resolve_subject(name, testpack["utility"])
         
     return testpack

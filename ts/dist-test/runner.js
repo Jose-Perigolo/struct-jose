@@ -63,7 +63,7 @@ async function resolveClients(client, spec, store, structUtils) {
             if ('object' === typeof store && structUtils?.inject) {
                 structUtils.inject(copts, store);
             }
-            clients[cn] = await client.test(copts);
+            clients[cn] = await client.tester(copts);
         }
     }
     return clients;

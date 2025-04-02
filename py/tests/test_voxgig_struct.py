@@ -2,7 +2,6 @@
 # RUN: python -m unittest discover -s tests
 # RUN-SOME: python -m unittest discover -s tests -k getpath
 
-
 import unittest
 
 from runner import (
@@ -10,43 +9,48 @@ from runner import (
     nullModifier,
     NULLMARK,
 )
-        
-from voxgig_struct import (
-    clone,
-    escre,
-    escurl,
-    getpath,
-    getprop,
-    haskey,
-    inject,
-    isempty,
-    isfunc,
-    iskey,
-    islist,
-    ismap,
-    isnode,
-    items,
-    joinurl,
-    keysof,
-    merge,
-    pathify,
-    setprop,
-    stringify,
-    strkey,
-    transform,
-    typify,
-    validate,
-    walk,
-    InjectState
-)
+
+from sdk import SDK
+
+from voxgig_struct import InjectState
 
 
-runner = makeRunner('../../build/test/test.json')
+sdk_client = SDK.test()
+runner = makeRunner('../../build/test/test.json', sdk_client)
 runparts = runner('struct')
 
 spec = runparts["spec"]
 runset = runparts["runset"]
 runsetflags = runparts["runsetflags"]
+client = runparts["client"]
+
+# Get all the struct utilities from the client
+struct_utils = client.utility().struct
+clone = struct_utils.clone
+escre = struct_utils.escre
+escurl = struct_utils.escurl
+getpath = struct_utils.getpath
+getprop = struct_utils.getprop
+haskey = struct_utils.haskey
+inject = struct_utils.inject
+isempty = struct_utils.isempty
+isfunc = struct_utils.isfunc
+iskey = struct_utils.iskey
+islist = struct_utils.islist
+ismap = struct_utils.ismap
+isnode = struct_utils.isnode
+items = struct_utils.items
+joinurl = struct_utils.joinurl
+keysof = struct_utils.keysof
+merge = struct_utils.merge
+pathify = struct_utils.pathify
+setprop = struct_utils.setprop
+stringify = struct_utils.stringify
+strkey = struct_utils.strkey
+transform = struct_utils.transform
+typify = struct_utils.typify
+validate = struct_utils.validate
+walk = struct_utils.walk
 
 minorSpec     = spec["minor"]
 walkSpec      = spec["walk"]
@@ -408,7 +412,6 @@ class TestStruct(unittest.TestCase):
         self.assertEqual(errs, ["Not an integer at a: A"])
 
 
-        
 runparts_client = runner('check')
 
 spec_client = runparts_client["spec"]
