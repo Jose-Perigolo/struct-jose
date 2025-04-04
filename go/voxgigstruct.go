@@ -2080,7 +2080,7 @@ func validation(
 
 			// Closed object, so reject extra keys not in shape.
 			if len(badkeys) > 0 {
-				state.Errs.Append("Unexpected keys at " + Pathify(state.Path, 1) +
+				state.Errs.Append("Unexpected keys at field " + Pathify(state.Path, 1) +
 					": " + strings.Join(badkeys, ", "))
 			}
 		} else {
@@ -2206,14 +2206,19 @@ func _join(vals []any, sep string) string {
 
 
 func _invalidTypeMsg(path []string, expected string, actual string, val any) string {
-	vs := Stringify(val)
+  vs := "no value"
+
+  if nil != val {
+    vs = Stringify(val)
+  }
+  
 	valueStr := vs
 	if val != nil {
 		valueStr = actual + ": " + vs
 	}
 
 	return fmt.Sprintf(
-		"Expected %s at %s, found %s",
+		"Expected %s at field %s, found %s",
 		expected,
 		Pathify(path, 1),
 		valueStr,

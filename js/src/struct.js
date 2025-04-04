@@ -1379,7 +1379,7 @@ const _validation = (
 
       // Closed object, so reject extra keys not in shape.
       if (0 < badkeys.length) {
-        const msg = 'Unexpected keys at ' + pathify(state.path, 1) + ': ' + badkeys.join(', ')
+        const msg = 'Unexpected keys at field ' + pathify(state.path, 1) + ': ' + badkeys.join(', ')
         state.errs.push(msg)
       }
     }
@@ -1467,13 +1467,12 @@ function validate(
 // ==================
 
 // Build a type validation error message.
-function _invalidTypeMsg(path, type, vt, v) {
-  let vs = stringify(v)
+function _invalidTypeMsg(path, needtype, vt, v) {
+  let vs = null == v ? 'no value' : stringify(v)
 
-  return 'Expected ' + type + ' at ' + pathify(path, 1) +
+  return 'Expected ' + needtype + ' at field ' + pathify(path, 1) +
     ', found ' + (null != v ? vt + ': ' : '') + vs
 }
-
 
 
 module.exports = {

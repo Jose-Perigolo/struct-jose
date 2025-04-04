@@ -7459,14 +7459,14 @@
               "spec": "`$STRING`"
             },
             "out": 1,
-            "err": "Expected string at <root>, found number: 1"
+            "err": "Expected string at field <root>, found number: 1"
           },
           {
             "in": {
               "data": null,
               "spec": "`$STRING`"
             },
-            "err": "Expected string at <root>, found null"
+            "err": "Expected string at field <root>, found null"
           },
           {
             "in": {
@@ -7490,7 +7490,7 @@
                 "a": "`$STRING`"
               }
             },
-            "err": "Expected string at a, found number: 1"
+            "err": "Expected string at field a, found number: 1"
           },
           {
             "in": {
@@ -7503,7 +7503,7 @@
                 "b": "`$NUMBER`"
               }
             },
-            "err": "Expected string at a, found number: 11 | Expected number at b, found string: B"
+            "err": "Expected string at field a, found number: 11 | Expected number at field b, found string: B"
           },
           {
             "in": {
@@ -7538,7 +7538,7 @@
               "a": 3,
               "b": "B"
             },
-            "err": "Unexpected keys at <root>: b"
+            "err": "Unexpected keys at field <root>: b"
           },
           {
             "in": {
@@ -7582,7 +7582,7 @@
                 "b": "C"
               }
             },
-            "err": "Expected string at b, found number: 2"
+            "err": "Expected string at field b, found number: 2"
           },
           {
             "in": {
@@ -7701,6 +7701,15 @@
                 }
               }
             }
+          },
+          {
+            "in": {
+              "data": {},
+              "spec": {
+                "b0": "`$BOOLEAN`"
+              }
+            },
+            "err": "Expected boolean at field b0, found no value"
           }
         ]
       },
@@ -7790,7 +7799,7 @@
                 "a1": []
               }
             },
-            "err": "Expected array at a1, found object: {}"
+            "err": "Expected array at field a1, found object: {}"
           },
           {
             "in": {
@@ -7801,7 +7810,7 @@
                 "a2": {}
               }
             },
-            "err": "Expected object at a2, found array: []"
+            "err": "Expected object at field a2, found array: []"
           },
           {
             "in": {
@@ -7868,7 +7877,7 @@
                 }
               }
             },
-            "err": "Invalid data: Expected number at q.a.x, found string: X"
+            "err": "Invalid data: Expected number at field q.a.x, found string: X"
           },
           {
             "in": {
@@ -7996,7 +8005,7 @@
                 ]
               }
             },
-            "err": "Expected number at q.1, found string: a23"
+            "err": "Expected number at field q.1, found string: a23"
           },
           {
             "in": {
@@ -8068,7 +8077,7 @@
                 ]
               }
             },
-            "err": "Expected array at q, found string: a25"
+            "err": "Expected array at field q, found string: a25"
           },
           {
             "in": {
@@ -8130,7 +8139,7 @@
                 "`$NUMBER`"
               ]
             },
-            "err": "Expected one of string, number at <root>, found boolean: true"
+            "err": "Expected one of string, number at field <root>, found boolean: true"
           },
           {
             "in": {
@@ -8185,7 +8194,7 @@
                 }
               }
             },
-            "err": "Expected number at a411.x2, found string: X"
+            "err": "Expected number at field a411.x2, found string: X"
           },
           {
             "in": {
@@ -8228,7 +8237,7 @@
                 }
               }
             },
-            "err": "Expected object at a44, found number: 1"
+            "err": "Expected object at field a44, found number: 1"
           },
           {
             "in": {

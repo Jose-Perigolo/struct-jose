@@ -165,19 +165,19 @@ def handle_error(entry, err, structUtils):
             return True
         
         # Expected error didn't match the actual error
-        raise AssertionError_(
+        raise AssertionError(
             f"ERROR MATCH: [{structUtils.stringify(entry_err)}] <=> [{str(err)}]"
         )
     # If the test doesn't expect an error
     elif isinstance(err, AssertionError):
         # Propagate assertion errors with added context
-        raise AssertionError_(
+        raise AssertionError(
             f"{str(err)}\n\nENTRY: {json.dumps(entry, indent=2, default=jsonfallback)}"
         )
     else:
         # For other errors, include the full error stack
         import traceback
-        raise AssertionError_(
+        raise AssertionError(
             f"{traceback.format_exc()}\nENTRY: "+
             f"{json.dumps(entry, indent=2, default=jsonfallback)}"
         )
@@ -286,7 +286,7 @@ def match(check, base, structUtils):
             
             # Check if values match
             if not matchval(val, baseval, structUtils):
-                raise AssertionError_(
+                raise AssertionError(
                     f"MATCH: {'.'.join(map(str, path))}: "
                     f"[{structUtils.stringify(val)}] <=> [{structUtils.stringify(baseval)}]"
                 )

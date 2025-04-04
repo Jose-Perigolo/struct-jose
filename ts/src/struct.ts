@@ -663,6 +663,8 @@ function inject(
     current = null == parentkey ? current : getprop(current, parentkey)
   }
 
+  // console.log('INJECT', state.path.join('.'))
+
   // Descend into node.
   if (isnode(val)) {
 
@@ -1371,7 +1373,8 @@ const _validation: Modify = (
 
       // Closed object, so reject extra keys not in shape.
       if (0 < badkeys.length) {
-        const msg = 'Unexpected keys at ' + pathify(state.path, 1) + ': ' + badkeys.join(', ')
+        const msg =
+          'Unexpected keys at field ' + pathify(state.path, 1) + ': ' + badkeys.join(', ')
         state.errs.push(msg)
       }
     }
@@ -1545,13 +1548,12 @@ function _updateAncestors(_state: Injection, target: any, tkey: any, tval: any) 
 
 
 // Build a type validation error message.
-function _invalidTypeMsg(path: any, type: string, vt: string, v: any) {
-  let vs = stringify(v)
+function _invalidTypeMsg(path: any, needtype: string, vt: string, v: any) {
+  let vs = null == v ? 'no value' : stringify(v)
 
-  return 'Expected ' + type + ' at ' + pathify(path, 1) +
+  return 'Expected ' + needtype + ' at field ' + pathify(path, 1) +
     ', found ' + (null != v ? vt + ': ' : '') + vs
 }
-
 
 
 export {

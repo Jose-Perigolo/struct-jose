@@ -424,13 +424,7 @@ class TestClient(unittest.TestCase):
     def test_client_check_basic(self):
         runset_client(spec_client["basic"], subject_client)
 
-
         
-
 # If you want to run this file directly, add:
 if __name__ == "__main__":
     unittest.main()
-
-
-
-    

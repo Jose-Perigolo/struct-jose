@@ -1229,7 +1229,7 @@ def _validation(
                 if not haskey(pval, ckey):
                     badkeys.append(ckey)
             if 0 < len(badkeys):
-                msg = f"Unexpected keys at {pathify(state.path,1)}: {', '.join(badkeys)}"
+                msg = f"Unexpected keys at field {pathify(state.path,1)}: {', '.join(badkeys)}"
                 state.errs.append(msg)
         else:
             # Object is open, so merge in extra keys.
@@ -1354,11 +1354,11 @@ def _injectstr(val, store, current=UNDEF, state=UNDEF):
     return out
 
 
-def _invalidTypeMsg(path, expected_type, vt, v):
-    vs = stringify(v)
+def _invalidTypeMsg(path, needtype, vt, v):
+    vs = 'no value' if UNDEF == v else stringify(v)
     return (
-        f"Expected {expected_type} at {pathify(path,1)}, "
-        f"found {(vt+': ' + vs) if UNDEF != v else ''}"
+        f"Expected {needtype} at field {pathify(path,1)}"
+        f", found {(vt+': ') if UNDEF != v else ''}{vs}"
     )
 
 # from pprint import pformat
