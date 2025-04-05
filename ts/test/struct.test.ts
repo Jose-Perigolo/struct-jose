@@ -446,6 +446,11 @@ describe('struct', async () => {
   })
 
 
+  test('validate-invalid', async () => {
+    await runset(validateSpec.invalid, (vin: any) => validate(vin.data, vin.spec))
+  })
+
+
   // test('validate-exact', async () => {
   //   await runset(validateSpec.exact, (vin: any) => validate(vin.data, vin.spec))
   // })

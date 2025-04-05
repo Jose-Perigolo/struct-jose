@@ -709,6 +709,14 @@ func TestStruct(t *testing.T) {
 	})
 
   
+	t.Run("validate-invalid", func(t *testing.T) {
+		runset(t, validateSpec["invalid"], func(v any) (any, error) {
+			m := v.(map[string]any)
+			return voxgigstruct.Validate(m["data"], m["spec"])
+		})
+	})
+
+  
 	t.Run("validate-custom", func(t *testing.T) {
 		errs := voxgigstruct.ListRefCreate[any]() // make([]any,0)
 

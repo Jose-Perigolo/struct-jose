@@ -441,6 +441,11 @@ describe('struct', async () => {
   })
 
 
+  test('validate-invalid', async () => {
+    await runset(validateSpec.node, (vin) => validate(vin.data, vin.spec))
+  })
+
+
   test('validate-custom', async () => {
     const errs = []
     const extra = {

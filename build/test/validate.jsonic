@@ -128,6 +128,24 @@ node: {
     { in: { data:{a51:[3,4]}, spec: {a51:['`$CHILD`',1]}}, out:{a51:[3,4]} }
     { in: { data:{a52:[]}, spec: {a52:['`$CHILD`',1]}}, out:{a52:[]} }
     { in: { data:{}, spec: {a53:['`$CHILD`',1]}}, out:{a53:[]} }
+
+
+    { in: {
+        data: {a54:1,b54:2}
+        spec: { '`$OPEN`':true, '`$CHILD`': '`$NUMBER`' }
+      }
+      out:{a54:1,b54:2} }
+
+      { in: {
+        data: {x:{a55:1,b55:2}}
+        spec: {x:{ '`$OPEN`':true, '`$CHILD`': '`$NUMBER`' }}
+      }
+      out:{x:{a55:1,b55:2}} }
   ]
 }
 
+
+invalid: set: [
+  { in: { data:{b0:1,a0:'a'}, spec: {a0:11,b0:'bb'}},
+     err: 'Invalid data: Expected number at field a0, found string: a | Expected string at field b0, found number: 1' }
+]

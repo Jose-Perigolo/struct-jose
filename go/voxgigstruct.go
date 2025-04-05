@@ -1128,6 +1128,7 @@ func InjectDescend(
 			}
 		}
 
+		sort.Strings(normalKeys)
 		sort.Strings(transformKeys)
 		nodekeys := append(normalKeys, transformKeys...)
 

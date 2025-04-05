@@ -270,6 +270,9 @@ const TEST_JSON_FILE = '../../build/test/test.json';
     (0, node_test_1.test)('validate-node', async () => {
         await runset(validateSpec.node, (vin) => validate(vin.data, vin.spec));
     });
+    (0, node_test_1.test)('validate-invalid', async () => {
+        await runset(validateSpec.invalid, (vin) => validate(vin.data, vin.spec));
+    });
     // test('validate-exact', async () => {
     //   await runset(validateSpec.exact, (vin: any) => validate(vin.data, vin.spec))
     // })

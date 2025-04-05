@@ -673,7 +673,7 @@ function inject(
     // NOTE: the optional digits suffix of the transform can thus be
     // used to order the transforms.
     let nodekeys = ismap(val) ? [
-      ...Object.keys(val).filter(k => !k.includes(S_DS)),
+      ...Object.keys(val).filter(k => !k.includes(S_DS)).sort(),
       ...Object.keys(val).filter(k => k.includes(S_DS)).sort(),
     ] : val.map((_n: any, i: number) => i)
 

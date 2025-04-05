@@ -384,11 +384,17 @@ class TestStruct(unittest.TestCase):
             return validate(vin.get("data"), vin.get("spec"))
         runset(spec["validate"]["basic"], validate_wrapper)
 
+        
     def test_validate_node(self):
         def validate_wrapper(vin):
             return validate(vin.get("data"), vin.get("spec"))
         runset(spec["validate"]["node"], validate_wrapper)
 
+        
+    def test_validate_invalid(self):
+        runset(spec["validate"]["node"], lambda vin: validate(vin.get("data"), vin.get("spec")))
+
+        
     def test_validate_custom(self):
         errs = []
 

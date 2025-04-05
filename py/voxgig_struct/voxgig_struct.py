@@ -354,6 +354,8 @@ def clone(val: Any = UNDEF):
             return {k: replacer(v) for k, v in item.items()}
         elif isinstance(item, (list, tuple)):
             return [replacer(elem) for elem in item]
+        elif hasattr(item, 'to_json'):
+            return item.to_json()
         else:
             return item
 
@@ -609,6 +611,7 @@ def inject(val, store, modify=UNDEF, current=UNDEF, state=UNDEF):
         # Sort keys (transforms with `$...` go last).
         if ismap(val):
             normal_keys = [k for k in val.keys() if S_DS not in k]
+            normal_keys.sort()
             transform_keys = [k for k in val.keys() if S_DS in k]
             transform_keys.sort()
             nodekeys = normal_keys + transform_keys
@@ -1365,4 +1368,50 @@ def _invalidTypeMsg(path, needtype, vt, v):
 # print(pformat(vars(instance)))
 
 
+# Create a StructUtils class with all utility functions as attributes
+class StructUtils:
+    """
+    Class that provides access to all struct utility functions.
+    Each function is accessible as an instance attribute.
+    """
+    
+    def __init__(self):
+        """Initialize StructUtils with all utility functions as attributes"""
+        self.clone = clone
+        self.escre = escre
+        self.escurl = escurl
+        self.getpath = getpath
+        self.getprop = getprop
+        self.haskey = haskey
+        self.inject = inject
+        self.isempty = isempty
+        self.isfunc = isfunc
+        self.iskey = iskey
+        self.islist = islist
+        self.ismap = ismap
+        self.isnode = isnode
+        self.items = items
+        self.joinurl = joinurl
+        self.keysof = keysof
+        self.merge = merge
+        self.pathify = pathify
+        self.setprop = setprop
+        self.stringify = stringify
+        self.strkey = strkey
+        self.transform = transform
+        self.typify = typify
+        self.validate = validate
+        self.walk = walk
+    
+    def __getitem__(self, key):
+        """Support dictionary-like access for backward compatibility"""
+        if hasattr(self, key):
+            return getattr(self, key)
+        raise KeyError(f"StructUtils has no function '{key}'")
+
+# Create an instance of StructUtils to maintain the existing struct interface
+struct = StructUtils()
+
+# Export the InjectState class and the StructUtils class
+__all__ = ['InjectState', 'StructUtils', 'struct']
 
