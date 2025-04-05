@@ -54,6 +54,7 @@ class SDK {
         __classPrivateFieldSet(this, _SDK_opts, opts || {}, "f");
         __classPrivateFieldSet(this, _SDK_utility, {
             struct: structUtils,
+            contextify: (ctxmap) => ctxmap,
             check: (ctx) => {
                 return {
                     zed: 'ZED' +

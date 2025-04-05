@@ -217,7 +217,8 @@ def resolve_args(entry, testpack, structUtils):
     # If we have context or arguments, we might need to patch them
     if ('ctx' in entry or 'args' in entry) and len(args) > 0:
         first_arg = args[0]
-        if isinstance(first_arg, dict):
+        # if isinstance(first_arg, dict):
+        if structUtils.ismap(first_arg):
             # Clone the argument
             first_arg = structUtils.clone(first_arg)
             args[0] = first_arg

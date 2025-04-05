@@ -708,7 +708,6 @@ function inject(
       ...Object.keys(val).filter(k => k.includes(S_DS)).sort(),
     ] : val.map((_n, i) => i)
 
-
     // Each child key-value pair is processed in three injection phases:
     // 1. state.mode='key:pre' - Key string is injected, returning a possibly altered key.
     // 2. state.mode='val' - The child value is injected.
@@ -1502,3 +1501,4 @@ module.exports = {
   validate,
   walk,
 }
+

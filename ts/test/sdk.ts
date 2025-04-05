@@ -10,6 +10,7 @@ class SDK {
     this.#opts = opts || {}
     this.#utility = {
       struct: structUtils,
+      contextify: (ctxmap: any) => ctxmap,
       check: (ctx: any) => {
         return {
           zed: 'ZED' +

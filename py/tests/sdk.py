@@ -1,21 +1,21 @@
-# import os
-
 
 import voxgig_struct
 
 class StructUtils:
     def __init__(self):
-        # Copy all attributes from the voxgig_struct module to this class
         for attr_name in dir(voxgig_struct):
-            # Skip private attributes and modules
             if not attr_name.startswith('_'):
                 setattr(self, attr_name, getattr(voxgig_struct, attr_name))
+
 
 class Utility:
     def __init__(self, opts=None):
         self._opts = opts
         self.struct = StructUtils()
 
+    def contextify(self, ctxmap):
+        return ctxmap
+        
     def check(self, ctx):
         zed = "ZED"
     

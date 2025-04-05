@@ -37,7 +37,7 @@ async function makeRunner(testfile, client) {
           entry = resolveEntry(entry, flags)
 
           let testpack = resolveTestPack(name, entry, subject, client, clients)
-          let args = resolveArgs(entry, testpack, structUtils)
+          let args = resolveArgs(entry, testpack, utility, structUtils)
 
           let res = await testpack.subject(...args)
           res = fixJSON(res, flags)
@@ -124,6 +124,7 @@ function resolveEntry(entry, flags) {
 
 function checkResult(entry, res, structUtils) {
   let matched = false
+
   if (entry.match) {
     const result = { in: entry.in, out: entry.res, ctx: entry.ctx }
     match(
@@ -135,12 +136,14 @@ function checkResult(entry, res, structUtils) {
     matched = true
   }
 
-  if (entry.out === res) {
+  const out = entry.out
+  
+  if (out === res) {
     return
   }
 
   // NOTE: allow match with no out.
-  if (matched && (NULLMARK === entry.out || null == entry.out)) {
+  if (matched && (NULLMARK === out || null == out)) {
     return
   }
 
@@ -179,7 +182,7 @@ function handleError(entry, err, structUtils) {
 }
 
 
-function resolveArgs(entry, testpack, structUtils) {
+function resolveArgs(entry, testpack, utility, structUtils) {
   let args = [structUtils.clone(entry.in)]
 
   if (entry.ctx) {
@@ -191,8 +194,12 @@ function resolveArgs(entry, testpack, structUtils) {
 
   if (entry.ctx || entry.args) {
     let first = args[0]
-    if ('object' === typeof first && null != first) {
-      entry.ctx = first = args[0] = structUtils.clone(args[0])
+    // if ('object' === typeof first && null != first) {
+    if(structUtils.ismap(first)) {
+      first = structUtils.clone(first)
+      first = utility.contextify(first)
+      args[0] = first
+      entry.ctx = first
       first.client = testpack.client
       first.utility = testpack.utility
     }
