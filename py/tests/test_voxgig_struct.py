@@ -392,7 +392,7 @@ class TestStruct(unittest.TestCase):
 
         
     def test_validate_invalid(self):
-        runset(spec["validate"]["node"], lambda vin: validate(vin.get("data"), vin.get("spec")))
+        runset(spec["validate"]["invalid"], lambda vin: validate(vin.get("data"), vin.get("spec")))
 
         
     def test_validate_custom(self):
