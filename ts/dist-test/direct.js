@@ -1,0 +1,24 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const __1 = require("..");
+let out;
+let errs;
+errs = [];
+out = (0, __1.validate)(1, '`$STRING`', undefined, errs);
+console.log('OUT-A0', out, errs);
+errs = [];
+out = (0, __1.validate)({ a: 1 }, { a: '`$STRING`' }, undefined, errs);
+console.log('OUT-A1', out, errs);
+errs = [];
+out = (0, __1.validate)(true, ['`$ONE`', '`$STRING`', '`$NUMBER`'], undefined, errs);
+console.log('OUT-B0', out, errs);
+errs = [];
+out = (0, __1.validate)(true, ['`$ONE`', '`$STRING`'], undefined, errs);
+console.log('OUT-B1', out, errs);
+errs = [];
+out = (0, __1.validate)(3, ['`$EXACT`', 4], undefined, errs);
+console.log('OUT', out, errs);
+errs = [];
+out = (0, __1.validate)({ a: 3 }, { a: ['`$EXACT`', 4] }, undefined, errs);
+console.log('OUT', out, errs);
+//# sourceMappingURL=direct.js.map

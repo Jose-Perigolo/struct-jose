@@ -344,17 +344,19 @@ function stringify(val: any, maxlen?: number): string {
 
 
 // Build a human friendly path string.
-function pathify(val: any, from?: number) {
+function pathify(val: any, startin?: number, endin?: number) {
   let pathstr: string | undefined = UNDEF
 
   let path: any[] | undefined = islist(val) ? val :
     S_string == typeof val ? [val] :
       S_number == typeof val ? [val] :
         UNDEF
-  const start = null == from ? 0 : -1 < from ? from : 0
+
+  const start = null == startin ? 0 : -1 < startin ? startin : 0
+  const end = null == endin ? 0 : -1 < endin ? endin : 0
 
   if (UNDEF != path && 0 <= start) {
-    path = path.slice(start)
+    path = path.slice(start, path.length - end)
     if (0 === path.length) {
       pathstr = '<root>'
     }
@@ -662,8 +664,6 @@ function inject(
     const parentkey = getprop(state.path, state.path.length - 2)
     current = null == parentkey ? current : getprop(current, parentkey)
   }
-
-  // console.log('INJECT', state.path.join('.'))
 
   // Descend into node.
   if (isnode(val)) {
@@ -1262,14 +1262,30 @@ const validate_CHILD: Injector = (state: Injection, _val: any, current: any) => 
 
 // Match at least one of the specified shapes.
 // Syntax: ['`$ONE`', alt0, alt1, ...]okI
-const validate_ONE: Injector = (state: Injection, _val: any, current: any, store: any) => {
+const validate_ONE: Injector = (
+  state: Injection,
+  _val: any,
+  current: any,
+  _ref: string,
+  store: any
+) => {
   const { mode, parent, path, nodes } = state
 
   // Only operate in val mode, since parent is a list.
   if (S_MVAL === mode) {
     state.keyI = state.keys.length
 
+    const grandparent = nodes[nodes.length - 2]
+    const grandkey = path[path.length - 2]
+    setprop(grandparent, grandkey, UNDEF)
+
     let tvals = parent.slice(1)
+    if (0 === tvals.length) {
+      state.errs.push('The $ONE validator at field ' +
+        pathify(state.path, 1, 1) +
+        ' must have at least one argument.')
+      return
+    }
 
     // See if we can find a match.
     for (let tval of tvals) {
@@ -1278,25 +1294,12 @@ const validate_ONE: Injector = (state: Injection, _val: any, current: any, store
       let terrs: any[] = []
       validate(current, tval, store, terrs)
 
-      // The parent is the list we are inside. Go up one level
-      // to set the actual value.
-      const grandparent = nodes[nodes.length - 2]
-      const grandkey = path[path.length - 2]
+      // Accept current value if there was a match
+      if (0 === terrs.length) {
 
-      if (isnode(grandparent)) {
-
-        // Accept current value if there was a match
-        if (0 === terrs.length) {
-
-          // Ensure generic type validation (in validate "modify") passes.
-          setprop(grandparent, grandkey, current)
-          return
-        }
-
-        // Ensure generic validation does not generate a spurious error.
-        else {
-          setprop(grandparent, grandkey, UNDEF)
-        }
+        // Ensure generic type validation (in validate "modify") passes.
+        setprop(grandparent, grandkey, current)
+        return
       }
     }
 
@@ -1309,7 +1312,54 @@ const validate_ONE: Injector = (state: Injection, _val: any, current: any, store
 
     state.errs.push(_invalidTypeMsg(
       state.path.slice(0, state.path.length - 1),
-      'one of ' + valdesc,
+      (1 < tvals.length ? 'one of ' : '') + valdesc,
+      typify(current), current))
+  }
+}
+
+
+const validate_EXACT: Injector = (
+  state: Injection,
+  _val: any,
+  current: any,
+  _ref: string,
+  _store: any
+) => {
+  const { mode, parent, path, nodes } = state
+
+  // Only operate in val mode, since parent is a list.
+  if (S_MVAL === mode) {
+    state.keyI = state.keys.length
+
+    const grandparent = nodes[nodes.length - 2]
+    const grandkey = path[path.length - 2]
+    setprop(grandparent, grandkey, UNDEF)
+
+    let tvals = parent.slice(1)
+    if (0 === tvals.length) {
+      state.errs.push('The $EXACT validator at field ' +
+        pathify(state.path, 1, 1) +
+        ' must have at least one argument.')
+      return
+    }
+
+    // See if we can find an exact value match.
+    for (let tval of tvals) {
+      if (tval === current) {
+        setprop(grandparent, grandkey, current)
+        return
+      }
+    }
+
+    const valdesc = tvals
+      .map((v: any) => stringify(v))
+      .join(', ')
+      .replace(/`\$([A-Z]+)`/g, (_m: any, p1: string) => p1.toLowerCase())
+
+    state.errs.push(_invalidTypeMsg(
+      state.path.slice(0, state.path.length - 1),
+      (2 < state.path.length ? '' : 'value ') +
+      'to exactly equal ' + (1 === tvals.length ? '' : 'one of ') + valdesc,
       typify(current), current))
   }
 }
@@ -1423,9 +1473,6 @@ function validate(
   const errs = null == collecterrs ? [] : collecterrs
 
   const store = {
-    // A special top level value to collect errors.
-    $ERRS: errs,
-
     // Remove the transform commands.
     $DELETE: null,
     $COPY: null,
@@ -1444,13 +1491,18 @@ function validate(
     $ANY: validate_ANY,
     $CHILD: validate_CHILD,
     $ONE: validate_ONE,
+    $EXACT: validate_EXACT,
 
-    ...(extra || {})
+    ...(extra || {}),
+
+    // A special top level value to collect errors.
+    $ERRS: errs,
   }
 
   const out = transform(data, spec, store, _validation)
 
-  if (0 < errs.length && null == collecterrs) {
+  const generr = (0 < errs.length && null == collecterrs)
+  if (generr) {
     throw new Error('Invalid data: ' + errs.join(' | '))
   }
 
@@ -1551,8 +1603,9 @@ function _updateAncestors(_state: Injection, target: any, tkey: any, tval: any) 
 function _invalidTypeMsg(path: any, needtype: string, vt: string, v: any) {
   let vs = null == v ? 'no value' : stringify(v)
 
-  return 'Expected ' + needtype + ' at field ' + pathify(path, 1) +
-    ', found ' + (null != v ? vt + ': ' : '') + vs
+  return 'Expected ' +
+    (1 < path.length ? ('field ' + pathify(path, 1) + ' to be a ') : '') +
+    needtype + ', but found a ' + (null != v ? vt + ': ' : '') + vs + '.'
 }
 
 

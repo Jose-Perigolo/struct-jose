@@ -698,7 +698,7 @@ def _injecthandler(state, val, current, ref, store):
 
     # Only call val function if it is a special command ($NAME format).
     if iscmd:
-        out = val(state, val, current, store)
+        out = val(state, val, current, ref, store)
 
     # Update parent with value. Ensures references remain in node tree.
     else:
@@ -991,7 +991,7 @@ def transform(
     return out
 
 
-def validate_STRING(state, _val, current, store):
+def validate_STRING(state, _val, current, _ref, store):
     """
     A required string value. Rejects empty strings.
     """
@@ -1009,7 +1009,7 @@ def validate_STRING(state, _val, current, store):
         return UNDEF
 
 
-def validate_NUMBER(state, _val, current, store):
+def validate_NUMBER(state, _val, current, _ref, store):
     """
     A required number value (int or float).
     """
@@ -1022,7 +1022,7 @@ def validate_NUMBER(state, _val, current, store):
     return out
 
 
-def validate_BOOLEAN(state, _val, current, store):
+def validate_BOOLEAN(state, _val, current, _ref, store):
     """
     A required boolean value.
     """
@@ -1035,7 +1035,7 @@ def validate_BOOLEAN(state, _val, current, store):
     return out
 
 
-def validate_OBJECT(state, _val, current, store):
+def validate_OBJECT(state, _val, current, _ref, store):
     """
     A required object (dict), contents not further validated by this step.
     """
@@ -1048,7 +1048,7 @@ def validate_OBJECT(state, _val, current, store):
     return out
 
 
-def validate_ARRAY(state, _val, current, store):
+def validate_ARRAY(state, _val, current, _ref, store):
     """
     A required list, contents not further validated by this step.
     """
@@ -1061,7 +1061,7 @@ def validate_ARRAY(state, _val, current, store):
     return out
 
 
-def validate_FUNCTION(state, _val, current, store):
+def validate_FUNCTION(state, _val, current, _ref, store):
     """
     A required function (callable in Python).
     """
@@ -1074,14 +1074,14 @@ def validate_FUNCTION(state, _val, current, store):
     return out
 
 
-def validate_ANY(state, _val, current, store):
+def validate_ANY(state, _val, current, _ref, store):
     """
     Allow any value.
     """
     return getprop(current, state.key)
 
 
-def validate_CHILD(state, _val, current, store):
+def validate_CHILD(state, _val, current, _ref, store):
     mode = state.mode
     key = state.key
     parent = state.parent
@@ -1151,7 +1151,7 @@ def validate_CHILD(state, _val, current, store):
     return UNDEF
 
 
-def validate_ONE(state, _val, current, store):
+def validate_ONE(state, _val, current, _ref, store):
     """
     Match at least one of the specified shapes.
     Syntax: ['`$ONE`', alt0, alt1, ...]
@@ -1168,7 +1168,7 @@ def validate_ONE(state, _val, current, store):
 
         for tval in tvals:
             terrs = []
-            validate(current, tval, UNDEF, terrs)
+            validate(current, tval, store, terrs)
 
             # The parent is the list itself. The "grandparent" is the next node up
             grandparent = nodes[-2] if len(nodes) >= 2 else UNDEF

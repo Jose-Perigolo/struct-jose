@@ -194,7 +194,6 @@ function resolveArgs(entry, testpack, utility, structUtils) {
 
   if (entry.ctx || entry.args) {
     let first = args[0]
-    // if ('object' === typeof first && null != first) {
     if(structUtils.ismap(first)) {
       first = structUtils.clone(first)
       first = utility.contextify(first)
