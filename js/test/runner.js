@@ -191,13 +191,16 @@ function resolveArgs(
   utility,
   structUtils
 ) {
-  let args = [structUtils.clone(entry.in)]
+  let args = []
 
   if (entry.ctx) {
     args = [entry.ctx]
   }
   else if (entry.args) {
     args = entry.args
+  }
+  else {
+    args = [structUtils.clone(entry.in)]
   }
 
   if (entry.ctx || entry.args) {
@@ -274,6 +277,7 @@ function matchval(
   base,
   structUtils
 ) {
+  // check = NULLMARK === check || UNDEFMARK === check ? undefined : check
   // check = NULLMARK === check ? undefined : check
 
   let pass = check === base

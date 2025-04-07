@@ -214,7 +214,7 @@ function resolveArgs(
   utility: any,
   structUtils: Record<string, any>
 ): any[] {
-  let args = [structUtils.clone(entry.in)]
+  let args: any[] = []
 
   if (entry.ctx) {
     args = [entry.ctx]
@@ -222,6 +222,10 @@ function resolveArgs(
   else if (entry.args) {
     args = entry.args
   }
+  else {
+    args = [structUtils.clone(entry.in)]
+  }
+
 
   if (entry.ctx || entry.args) {
     let first = args[0]
@@ -301,6 +305,7 @@ function matchval(
   base: any,
   structUtils: Record<string, any>
 ) {
+  // check = NULLMARK === check || UNDEFMARK === check ? undefined : check
   // check = NULLMARK === check ? undefined : check
 
   let pass = check === base

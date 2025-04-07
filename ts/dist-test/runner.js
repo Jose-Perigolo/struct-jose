@@ -123,12 +123,15 @@ function handleError(entry, err, structUtils) {
     }
 }
 function resolveArgs(entry, testpack, utility, structUtils) {
-    let args = [structUtils.clone(entry.in)];
+    let args = [];
     if (entry.ctx) {
         args = [entry.ctx];
     }
     else if (entry.args) {
         args = entry.args;
+    }
+    else {
+        args = [structUtils.clone(entry.in)];
     }
     if (entry.ctx || entry.args) {
         let first = args[0];
@@ -180,6 +183,7 @@ function match(check, base, structUtils) {
     });
 }
 function matchval(check, base, structUtils) {
+    // check = NULLMARK === check || UNDEFMARK === check ? undefined : check
     // check = NULLMARK === check ? undefined : check
     let pass = check === base;
     if (!pass) {

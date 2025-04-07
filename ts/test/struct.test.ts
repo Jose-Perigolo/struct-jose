@@ -221,7 +221,8 @@ describe('struct', async () => {
 
 
   test('minor-haskey', async () => {
-    await runset(minorSpec.haskey, haskey)
+    await runsetflags(minorSpec.haskey, { null: false }, (vin: any) =>
+      haskey(vin.src, vin.key))
   })
 
 

@@ -122,7 +122,7 @@ const TEST_JSON_FILE = '../../build/test/test.json';
         (0, node_assert_1.deepEqual)(setprop(intarr1, '2', 555), [2, 3, 555, 7, 11]);
     });
     (0, node_test_1.test)('minor-haskey', async () => {
-        await runset(minorSpec.haskey, haskey);
+        await runsetflags(minorSpec.haskey, { null: false }, (vin) => haskey(vin.src, vin.key));
     });
     (0, node_test_1.test)('minor-keysof', async () => {
         await runset(minorSpec.keysof, keysof);

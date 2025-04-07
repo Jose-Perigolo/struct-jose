@@ -229,26 +229,26 @@ keysof: {
 
 haskey: {
   set: [
-    { args: [{a:1},a], out: true }
-    { args: [{a:2},b], out: false }
-    { args: [{a:11,c:12},a], out: true }
-    { args: [{a:12,c:13},b], out: false }
-    { args: [{a:13,c:14},c], out: true }
-    { args: [{a:21,b:22},a], out: true }
-    { args: [{a:22,b:23},b], out: true }
-    { args: [{a:24,b:25},c], out: false }
-    { args: [[3],0], out: true }
-    { args: [[3],1], out: false }
-    { args: [[3],'0'], out: true }
-    { args: [[3],'1'], out: false }
-    { args: [null,'a'], out: false }
-    { args: [null,1], out: false }
-    { args: [null,null], out: false }
-    { args: [{},null], out: false }
-    { args: [[],null], out: false }
-    { args: [[]], out: false }
-    { args: [{}], out: false }
-    { args: [], out: false }
+    { in: { src: {a:1}, key:a}, out: true }
+    { in: { src: {a:2}, key:b}, out: false }
+    { in: { src: {a:11,c:12}, key:a}, out: true }
+    { in: { src: {a:12,c:13}, key:b}, out: false }
+    { in: { src: {a:13,c:14}, key:c}, out: true }
+    { in: { src: {a:21,b:22}, key:a}, out: true }
+    { in: { src: {a:22,b:23}, key:b}, out: true }
+    { in: { src: {a:24,b:25}, key:c}, out: false }
+    { in: { src: [3], key:0}, out: true }
+    { in: { src: [3], key:1}, out: false }
+    { in: { src: [3], key:'0'}, out: true }
+    { in: { src: [3], key:'1'}, out: false }
+    { in: { src: null, key:'a'}, out: false }
+    { in: { src: null, key:1}, out: false }
+    { in: { src: null, key:null}, out: false }
+    { in: { src: {}, key:null}, out: false }
+    { in: { src: [], key:null}, out: false }
+    { in: { src: []}, out: false }
+    { in: { src: {}}, out: false }
+    { in: {}, out: false }
   ]
 }
 
