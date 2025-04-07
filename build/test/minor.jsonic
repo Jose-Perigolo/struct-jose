@@ -307,6 +307,7 @@ stringify: {
     { in: { }, out: '' }
     { in: { val: [2,'b',true] }, out: '[2,b,true]' }
     { in: { val: [[3],{x:1}] }, out: '[[3],{x:1}]' }
+    { in: { val: {b:2,a:3}}, out: '{a:3,b:2}' }
     { in: { val: {x:4,y:'c',z:false} }, out: '{x:4,y:c,z:false}' }
     { in: { val: {x:{y:5,z:'d'},y:[6]} }, out: '{x:{y:5,z:d},y:[6]}' }
     { in: { val: {x:{y:5,z:'d'},y:[6]}, max:10 }, out: '{x:{y:5...' }

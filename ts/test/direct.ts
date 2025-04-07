@@ -33,3 +33,15 @@ errs = []
 out = validate({ a: 3 }, { a: ['`$EXACT`', 4] }, undefined, errs)
 console.log('OUT', out, errs)
 
+errs = []
+out = validate({}, { '`$EXACT`': 1 }, undefined, errs)
+console.log('OUT', out, errs)
+
+errs = []
+out = validate({}, { a: '`$EXACT`' }, undefined, errs)
+console.log('OUT', out, errs)
+
+errs = []
+out = validate({}, { a: [1, '`$EXACT`'] }, undefined, errs)
+console.log('OUT', out, errs)
+

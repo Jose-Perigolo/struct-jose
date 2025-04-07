@@ -1269,15 +1269,26 @@ const validate_ONE: Injector = (
   _ref: string,
   store: any
 ) => {
-  const { mode, parent, path, nodes } = state
+  const { mode, parent, path, keyI, nodes } = state
 
   // Only operate in val mode, since parent is a list.
   if (S_MVAL === mode) {
+    if (!islist(parent) || 0 !== keyI) {
+      state.errs.push('The $ONE validator at field ' +
+        pathify(state.path, 1, 1) +
+        ' must be the first element of an array.')
+      return
+    }
+
     state.keyI = state.keys.length
 
     const grandparent = nodes[nodes.length - 2]
     const grandkey = path[path.length - 2]
-    setprop(grandparent, grandkey, UNDEF)
+
+    // Clean up structure, replacing [$ONE, ...] with current
+    setprop(grandparent, grandkey, current)
+    state.path = state.path.slice(0, state.path.length - 1)
+    state.key = state.path[state.path.length - 1]
 
     let tvals = parent.slice(1)
     if (0 === tvals.length) {
@@ -1296,9 +1307,6 @@ const validate_ONE: Injector = (
 
       // Accept current value if there was a match
       if (0 === terrs.length) {
-
-        // Ensure generic type validation (in validate "modify") passes.
-        setprop(grandparent, grandkey, current)
         return
       }
     }
@@ -1311,9 +1319,9 @@ const validate_ONE: Injector = (
       .replace(/`\$([A-Z]+)`/g, (_m: any, p1: string) => p1.toLowerCase())
 
     state.errs.push(_invalidTypeMsg(
-      state.path.slice(0, state.path.length - 1),
+      state.path,
       (1 < tvals.length ? 'one of ' : '') + valdesc,
-      typify(current), current))
+      typify(current), current, 'V0210'))
   }
 }
 
@@ -1325,15 +1333,26 @@ const validate_EXACT: Injector = (
   _ref: string,
   _store: any
 ) => {
-  const { mode, parent, path, nodes } = state
+  const { mode, parent, key, keyI, path, nodes } = state
 
   // Only operate in val mode, since parent is a list.
   if (S_MVAL === mode) {
+    if (!islist(parent) || 0 !== keyI) {
+      state.errs.push('The $EXACT validator at field ' +
+        pathify(state.path, 1, 1) +
+        ' must be the first element of an array.')
+      return
+    }
+
     state.keyI = state.keys.length
 
     const grandparent = nodes[nodes.length - 2]
     const grandkey = path[path.length - 2]
-    setprop(grandparent, grandkey, UNDEF)
+
+    // Clean up structure, replacing [$EXACT, ...] with current
+    setprop(grandparent, grandkey, current)
+    state.path = state.path.slice(0, state.path.length - 1)
+    state.key = state.path[state.path.length - 1]
 
     let tvals = parent.slice(1)
     if (0 === tvals.length) {
@@ -1344,9 +1363,18 @@ const validate_EXACT: Injector = (
     }
 
     // See if we can find an exact value match.
+    let currentstr: string | undefined = undefined
     for (let tval of tvals) {
-      if (tval === current) {
-        setprop(grandparent, grandkey, current)
+      // console.log('TVAL', tval, stringify(tval), stringify(current))
+      let exactmatch = tval === current
+
+      if (!exactmatch && isnode(tval)) {
+        currentstr = undefined === currentstr ? stringify(current) : currentstr
+        const tvalstr = stringify(tval)
+        exactmatch = tvalstr === currentstr
+      }
+
+      if (exactmatch) {
         return
       }
     }
@@ -1357,10 +1385,13 @@ const validate_EXACT: Injector = (
       .replace(/`\$([A-Z]+)`/g, (_m: any, p1: string) => p1.toLowerCase())
 
     state.errs.push(_invalidTypeMsg(
-      state.path.slice(0, state.path.length - 1),
-      (2 < state.path.length ? '' : 'value ') +
-      'to exactly equal ' + (1 === tvals.length ? '' : 'one of ') + valdesc,
-      typify(current), current))
+      state.path,
+      (1 < state.path.length ? '' : 'value ') +
+      'exactly equal to ' + (1 === tvals.length ? '' : 'one of ') + valdesc,
+      typify(current), current, 'V0110'))
+  }
+  else {
+    setprop(parent, key, UNDEF)
   }
 }
 
@@ -1375,10 +1406,11 @@ const _validation: Modify = (
   current?: any,
   _store?: any
 ) => {
-
   if (UNDEF === state) {
     return
   }
+
+  // console.log('VALID', pval, key, parent, state)
 
   // Current val to verify.
   const cval = getprop(current, key)
@@ -1399,13 +1431,13 @@ const _validation: Modify = (
 
   // Type mismatch.
   if (ptype !== ctype && UNDEF !== pval) {
-    state.errs.push(_invalidTypeMsg(state.path, ptype, ctype, cval))
+    state.errs.push(_invalidTypeMsg(state.path, ptype, ctype, cval, 'V0010'))
     return
   }
 
   if (ismap(cval)) {
     if (!ismap(pval)) {
-      state.errs.push(_invalidTypeMsg(state.path, ptype, ctype, cval))
+      state.errs.push(_invalidTypeMsg(state.path, ptype, ctype, cval, 'V0020'))
       return
     }
 
@@ -1438,7 +1470,7 @@ const _validation: Modify = (
   }
   else if (islist(cval)) {
     if (!islist(pval)) {
-      state.errs.push(_invalidTypeMsg(state.path, ptype, ctype, cval))
+      state.errs.push(_invalidTypeMsg(state.path, ptype, ctype, cval, 'V0030'))
     }
   }
   else {
@@ -1600,12 +1632,18 @@ function _updateAncestors(_state: Injection, target: any, tkey: any, tval: any) 
 
 
 // Build a type validation error message.
-function _invalidTypeMsg(path: any, needtype: string, vt: string, v: any) {
+function _invalidTypeMsg(path: any, needtype: string, vt: string, v: any, whence?: string) {
   let vs = null == v ? 'no value' : stringify(v)
 
   return 'Expected ' +
-    (1 < path.length ? ('field ' + pathify(path, 1) + ' to be a ') : '') +
-    needtype + ', but found a ' + (null != v ? vt + ': ' : '') + vs + '.'
+    (1 < path.length ? ('field ' + pathify(path, 1) + ' to be ') : '') +
+    needtype + ', but found ' +
+    (null != v ? vt + ': ' : '') + vs +
+
+    // Uncomment to help debug validation errors.
+    // (null == whence ? '' : ' [' + whence + ']') +
+
+    '.'
 }
 
 

@@ -441,19 +441,25 @@ describe('struct', async () => {
   })
 
 
-  test('validate-node', async () => {
-    await runset(validateSpec.node, (vin: any) => validate(vin.data, vin.spec))
+  test('validate-child', async () => {
+    await runset(validateSpec.child, (vin: any) => validate(vin.data, vin.spec))
+  })
+
+
+  test('validate-one', async () => {
+    await runset(validateSpec.one, (vin: any) => validate(vin.data, vin.spec))
+  })
+
+
+  test('validate-exact', async () => {
+    await runset(validateSpec.exact, (vin: any) => validate(vin.data, vin.spec))
   })
 
 
   test('validate-invalid', async () => {
-    await runset(validateSpec.invalid, (vin: any) => validate(vin.data, vin.spec))
+    await runsetflags(validateSpec.invalid, { null: false },
+      (vin: any) => validate(vin.data, vin.spec))
   })
-
-
-  // test('validate-exact', async () => {
-  //   await runset(validateSpec.exact, (vin: any) => validate(vin.data, vin.spec))
-  // })
 
 
   test('validate-custom', async () => {

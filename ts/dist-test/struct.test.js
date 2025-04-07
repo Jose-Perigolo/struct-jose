@@ -267,15 +267,18 @@ const TEST_JSON_FILE = '../../build/test/test.json';
     (0, node_test_1.test)('validate-basic', async () => {
         await runset(validateSpec.basic, (vin) => validate(vin.data, vin.spec));
     });
-    (0, node_test_1.test)('validate-node', async () => {
-        await runset(validateSpec.node, (vin) => validate(vin.data, vin.spec));
+    (0, node_test_1.test)('validate-child', async () => {
+        await runset(validateSpec.child, (vin) => validate(vin.data, vin.spec));
+    });
+    (0, node_test_1.test)('validate-one', async () => {
+        await runset(validateSpec.one, (vin) => validate(vin.data, vin.spec));
+    });
+    (0, node_test_1.test)('validate-exact', async () => {
+        await runset(validateSpec.exact, (vin) => validate(vin.data, vin.spec));
     });
     (0, node_test_1.test)('validate-invalid', async () => {
-        await runset(validateSpec.invalid, (vin) => validate(vin.data, vin.spec));
+        await runsetflags(validateSpec.invalid, { null: false }, (vin) => validate(vin.data, vin.spec));
     });
-    // test('validate-exact', async () => {
-    //   await runset(validateSpec.exact, (vin: any) => validate(vin.data, vin.spec))
-    // })
     (0, node_test_1.test)('validate-custom', async () => {
         const errs = [];
         const extra = {
