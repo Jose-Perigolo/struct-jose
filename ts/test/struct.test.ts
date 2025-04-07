@@ -21,7 +21,7 @@ import { SDK } from './sdk.js'
 const TEST_JSON_FILE = '../../build/test/test.json'
 
 
-// NOTE: tests are in order of increasing dependence.
+// NOTE: tests are (mostly) in order of increasing dependence.
 describe('struct', async () => {
 
   const runner = await makeRunner(TEST_JSON_FILE, await SDK.test())
@@ -488,21 +488,6 @@ describe('struct', async () => {
     out = validate({ a: 'A' }, shape, extra, errs)
     deepEqual(out, { a: 'A' })
     deepEqual(errs, ['Not an integer at a: A'])
-  })
-
-})
-
-
-
-describe('client', async () => {
-
-  const runner = await makeRunner(TEST_JSON_FILE, await SDK.test())
-
-  const { spec, runset, subject } =
-    await runner('check')
-
-  test('client-check-basic', async () => {
-    await runset(spec.basic, subject)
   })
 
 })

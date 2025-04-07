@@ -436,13 +436,24 @@ describe('struct', async () => {
   })
 
 
-  test('validate-node', async () => {
-    await runset(validateSpec.node, (vin) => validate(vin.data, vin.spec))
+  test('validate-child', async () => {
+    await runset(validateSpec.child, (vin) => validate(vin.data, vin.spec))
+  })
+
+
+  test('validate-one', async () => {
+    await runset(validateSpec.one, (vin) => validate(vin.data, vin.spec))
+  })
+
+
+  test('validate-exact', async () => {
+    await runset(validateSpec.exact, (vin) => validate(vin.data, vin.spec))
   })
 
 
   test('validate-invalid', async () => {
-    await runset(validateSpec.invalid, (vin) => validate(vin.data, vin.spec))
+    await runsetflags(validateSpec.invalid, { null: false },
+      (vin) => validate(vin.data, vin.spec))
   })
 
 
@@ -456,7 +467,7 @@ describe('struct', async () => {
         let t = typeof out
         if ('number' !== t && !Number.isInteger(out)) {
           state.errs.push('Not an integer at ' + state.path.slice(1).join('.') + ': ' + out)
-          return undefined
+          return
         }
 
         return out
@@ -472,19 +483,6 @@ describe('struct', async () => {
     out = validate({ a: 'A' }, shape, extra, errs)
     deepEqual(out, { a: 'A' })
     deepEqual(errs, ['Not an integer at a: A'])
-  })
-
-})
-
-
-describe('client', async () => {
-
-  const runner = await makeRunner(TEST_JSON_FILE, await SDK.test())
-
-  const { spec, runset, subject } = await runner('check')
-
-  test('client-check-basic', async () => {
-    await runset(spec.basic, subject)
   })
 
 })

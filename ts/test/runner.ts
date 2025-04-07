@@ -5,20 +5,8 @@ import { join } from 'node:path'
 import { deepEqual, fail, AssertionError } from 'node:assert'
 
 
-// Runner does make use of these struct utilities, and this usage is
-// circular. This is a trade-off tp make the runner code simpler.
-import {
-  clone,
-  getpath,
-  inject,
-  items,
-  stringify,
-  walk,
-} from '../dist/struct'
-
-
-const NULLMARK = "__NULL__" // Value is JSON null
-const UNDEFMARK = "__UNDEF__" // Value is not present (thus, undefined).
+const NULLMARK = '__NULL__' // Value is JSON null
+const UNDEFMARK = '__UNDEF__' // Value is not present (thus, undefined).
 
 
 type Subject = (...args: any[]) => any
@@ -73,7 +61,7 @@ async function makeRunner(testfile: string, client: any) {
           entry = resolveEntry(entry, flags)
 
           let testpack = resolveTestPack(name, entry, subject, client, clients)
-          let args = resolveArgs(entry, testpack, structUtils)
+          let args = resolveArgs(entry, testpack, utility, structUtils)
 
           let res = await testpack.subject(...args)
           res = fixJSON(res, flags)
@@ -138,8 +126,9 @@ async function resolveClients(
 }
 
 
-function resolveSubject(name: string, container: any, subject?: Subject) {
-  return subject || container?.[name]
+function resolveSubject(name: string, container: any) {
+  const subject = container[name] || container.struct[name]
+  return subject
 }
 
 
@@ -160,6 +149,7 @@ function resolveEntry(entry: any, flags: Flags): any {
 
 function checkResult(entry: any, res: any, structUtils: Record<string, any>) {
   let matched = false
+
   if (entry.match) {
     const result = { in: entry.in, out: entry.res, ctx: entry.ctx }
     match(
@@ -171,12 +161,14 @@ function checkResult(entry: any, res: any, structUtils: Record<string, any>) {
     matched = true
   }
 
-  if (entry.out === res) {
+  const out = entry.out
+
+  if (out === res) {
     return
   }
 
   // NOTE: allow match with no out.
-  if (matched && (NULLMARK === entry.out || null == entry.out)) {
+  if (matched && (NULLMARK === out || null == out)) {
     return
   }
 
@@ -216,7 +208,12 @@ function handleError(entry: any, err: any, structUtils: Record<string, any>) {
 }
 
 
-function resolveArgs(entry: any, testpack: TestPack, structUtils: Record<string, any>): any[] {
+function resolveArgs(
+  entry: any,
+  testpack: TestPack,
+  utility: any,
+  structUtils: Record<string, any>
+): any[] {
   let args = [structUtils.clone(entry.in)]
 
   if (entry.ctx) {
@@ -228,8 +225,15 @@ function resolveArgs(entry: any, testpack: TestPack, structUtils: Record<string,
 
   if (entry.ctx || entry.args) {
     let first = args[0]
-    if ('object' === typeof first && null != first) {
-      entry.ctx = first = args[0] = structUtils.clone(args[0])
+    // if ('object' === typeof first && null != first) {
+    // entry.ctx = first = args[0] = structUtils.clone(args[0])
+
+    if (structUtils.ismap(first)) {
+      first = structUtils.clone(first)
+      first = utility.contextify(first)
+      args[0] = first
+      entry.ctx = first
+
       first.client = testpack.client
       first.utility = testpack.utility
     }

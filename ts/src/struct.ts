@@ -66,9 +66,8 @@ const S_DERRS = '$ERRS'
 
 // General strings.
 const S_array = 'array'
-// const S_base = 'base'
+const S_base = 'base'
 const S_boolean = 'boolean'
-
 const S_function = 'function'
 const S_number = 'number'
 const S_object = 'object'
@@ -578,8 +577,7 @@ function getpath(path: string | string[], store: any, current?: any, state?: Inj
 
   let root = store
   let val = store
-  // const base = getprop(state, S_base)
-  const base = state?.base
+  const base = getprop(state, S_base)
 
   // An empty path (incl empty string) just finds the store.
   if (null == path || null == store || (1 === parts.length && S_MT === parts[0])) {
@@ -763,33 +761,6 @@ function inject(
   // Original val reference may no longer be correct.
   // This return value is only used as the top level result.
   return getprop(state.parent, S_DTOP)
-}
-
-
-// Default inject handler for transforms. If the path resolves to a function,
-// call the function passing the injection state. This is how transforms operate.
-const _injecthandler: Injector = (
-  state: Injection,
-  val: any,
-  current: any,
-  ref: string,
-  store: any
-): any => {
-  let out = val
-  const iscmd = isfunc(val) && (UNDEF === ref || ref.startsWith(S_DS))
-
-  // Only call val function if it is a special command ($NAME format).
-  if (iscmd) {
-    out = (val as Injector)(state, val, current, ref, store)
-  }
-
-  // Update parent with value. Ensures references remain in node tree.
-  else if (S_MVAL === state.mode && state.full) {
-    // setprop(state.parent, state.key, val)
-    _setparentprop(state, val)
-  }
-
-  return out
 }
 
 
@@ -1022,7 +993,7 @@ const transform_PACK: Injector = (
     tcurrent,
   )
 
-  setprop(target, tkey, tval)
+  _updateAncestors(state, target, tkey, tval)
 
   // Drop transform key.
   return UNDEF
@@ -1406,11 +1377,10 @@ const _validation: Modify = (
   current?: any,
   _store?: any
 ) => {
+
   if (UNDEF === state) {
     return
   }
-
-  // console.log('VALID', pval, key, parent, state)
 
   // Current val to verify.
   const cval = getprop(current, key)
@@ -1546,7 +1516,64 @@ function validate(
 // ==================
 
 
-// Inject store values into a string. Not a public utility - used by
+// Set state.key property of state.parent node, ensuring reference consistency
+// when needed by implementation language.
+function _setparentprop(state: Injection, val: any) {
+  setprop(state.parent, state.key, val)
+}
+
+
+// Update all references to target in state.nodes.
+function _updateAncestors(_state: Injection, target: any, tkey: any, tval: any) {
+  // SetProp is sufficient in TypeScript as target reference remains consistent even for lists.
+  setprop(target, tkey, tval)
+}
+
+
+// Build a type validation error message.
+function _invalidTypeMsg(path: any, needtype: string, vt: string, v: any, _whence?: string) {
+  let vs = null == v ? 'no value' : stringify(v)
+
+  return 'Expected ' +
+    (1 < path.length ? ('field ' + pathify(path, 1) + ' to be ') : '') +
+    needtype + ', but found ' +
+    (null != v ? vt + ': ' : '') + vs +
+
+    // Uncomment to help debug validation errors.
+    // (null == _whence ? '' : ' [' + _whence + ']') +
+
+    '.'
+}
+
+
+// Default inject handler for transforms. If the path resolves to a function,
+// call the function passing the injection state. This is how transforms operate.
+const _injecthandler: Injector = (
+  state: Injection,
+  val: any,
+  current: any,
+  ref: string,
+  store: any
+): any => {
+  let out = val
+  const iscmd = isfunc(val) && (UNDEF === ref || ref.startsWith(S_DS))
+
+  // Only call val function if it is a special command ($NAME format).
+  if (iscmd) {
+    out = (val as Injector)(state, val, current, ref, store)
+  }
+
+  // Update parent with value. Ensures references remain in node tree.
+  else if (S_MVAL === state.mode && state.full) {
+    // setprop(state.parent, state.key, val)
+    _setparentprop(state, val)
+  }
+
+  return out
+}
+
+
+// Inject values from a data store into a string. Not a public utility - used by
 // `inject`.  Inject are marked with `path` where path is resolved
 // with getpath against the store or current (if defined)
 // arguments. See `getpath`.  Custom injection handling can be
@@ -1610,40 +1637,9 @@ function _injectstr(
       state.full = true
       out = state.handler(state, out, current, val, store)
     }
-
   }
 
   return out
-}
-
-
-// Set state.key property of state.parent node, ensuring reference consistency
-// when needed by implementation language.
-function _setparentprop(state: Injection, val: any) {
-  setprop(state.parent, state.key, val)
-}
-
-
-// Update all references to target in state.nodes.
-function _updateAncestors(_state: Injection, target: any, tkey: any, tval: any) {
-  // SetProp is sufficient in TypeScript as target reference remains consistent even for lists.
-  setprop(target, tkey, tval)
-}
-
-
-// Build a type validation error message.
-function _invalidTypeMsg(path: any, needtype: string, vt: string, v: any, whence?: string) {
-  let vs = null == v ? 'no value' : stringify(v)
-
-  return 'Expected ' +
-    (1 < path.length ? ('field ' + pathify(path, 1) + ' to be ') : '') +
-    needtype + ', but found ' +
-    (null != v ? vt + ': ' : '') + vs +
-
-    // Uncomment to help debug validation errors.
-    // (null == whence ? '' : ' [' + whence + ']') +
-
-    '.'
 }
 
 

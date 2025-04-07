@@ -5,16 +5,18 @@ const { join } = require('node:path')
 const { deepEqual, fail, AssertionError } = require('node:assert')
 
 
-const NULLMARK = '__NULL__'
-const UNDEFMARK = '__UNDEF__'
+const NULLMARK = '__NULL__' // Value is JSON null
+const UNDEFMARK = '__UNDEF__' // Value is not present (thus, undefined).
 
 
 async function makeRunner(testfile, client) {
-  
+
   return async function runner(
     name,
     store = {}
   ) {
+    store = store || {}
+
     const utility = client.utility()
     const structUtils = utility.struct
     
@@ -94,7 +96,7 @@ async function resolveClients(
         structUtils.inject(copts, store)
       }
 
-      clients[cn] = await client.test(copts)
+      clients[cn] = await client.tester(copts)
     }
   }
   return clients
@@ -172,6 +174,7 @@ function handleError(entry, err, structUtils) {
     fail('ERROR MATCH: [' + structUtils.stringify(entry_err) +
       '] <=> [' + err.message + ']')
   }
+
   // Unexpected error (test didn't specify an error expectation)
   else if (err instanceof AssertionError) {
     fail(err.message + '\n\nENTRY: ' + JSON.stringify(entry, null, 2))
@@ -182,7 +185,12 @@ function handleError(entry, err, structUtils) {
 }
 
 
-function resolveArgs(entry, testpack, utility, structUtils) {
+function resolveArgs(
+  entry,
+  testpack,
+  utility,
+  structUtils
+) {
   let args = [structUtils.clone(entry.in)]
 
   if (entry.ctx) {
@@ -199,6 +207,7 @@ function resolveArgs(entry, testpack, utility, structUtils) {
       first = utility.contextify(first)
       args[0] = first
       entry.ctx = first
+
       first.client = testpack.client
       first.utility = testpack.utility
     }
@@ -241,6 +250,15 @@ function match(
     if (scalar) {
       let baseval = structUtils.getpath(path, base)
 
+      if (baseval === val) {
+        return
+      }
+
+      // Explicit undefined expected
+      if (UNDEFMARK === val && undefined === baseval) {
+        return
+      }
+
       if (!matchval(val, baseval, structUtils)) {
         fail('MATCH: ' + path.join('.') +
              ': [' + structUtils.stringify(val) +
@@ -256,7 +274,7 @@ function matchval(
   base,
   structUtils
 ) {
-  check = NULLMARK === check || UNDEFMARK === check ? undefined : check
+  // check = NULLMARK === check ? undefined : check
 
   let pass = check === base
 

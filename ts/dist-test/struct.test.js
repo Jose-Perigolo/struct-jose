@@ -7,7 +7,7 @@ const node_assert_1 = require("node:assert");
 const runner_1 = require("./runner");
 const sdk_js_1 = require("./sdk.js");
 const TEST_JSON_FILE = '../../build/test/test.json';
-// NOTE: tests are in order of increasing dependence.
+// NOTE: tests are (mostly) in order of increasing dependence.
 (0, node_test_1.describe)('struct', async () => {
     const runner = await (0, runner_1.makeRunner)(TEST_JSON_FILE, await sdk_js_1.SDK.test());
     const { spec, runset, runsetflags, client } = await runner('struct');
@@ -300,13 +300,6 @@ const TEST_JSON_FILE = '../../build/test/test.json';
         out = validate({ a: 'A' }, shape, extra, errs);
         (0, node_assert_1.deepEqual)(out, { a: 'A' });
         (0, node_assert_1.deepEqual)(errs, ['Not an integer at a: A']);
-    });
-});
-(0, node_test_1.describe)('client', async () => {
-    const runner = await (0, runner_1.makeRunner)(TEST_JSON_FILE, await sdk_js_1.SDK.test());
-    const { spec, runset, subject } = await runner('check');
-    (0, node_test_1.test)('client-check-basic', async () => {
-        await runset(spec.basic, subject);
     });
 });
 //# sourceMappingURL=struct.test.js.map

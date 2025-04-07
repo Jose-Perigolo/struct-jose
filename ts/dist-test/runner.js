@@ -7,9 +7,9 @@ exports.makeRunner = makeRunner;
 const node_fs_1 = require("node:fs");
 const node_path_1 = require("node:path");
 const node_assert_1 = require("node:assert");
-const NULLMARK = "__NULL__"; // Value is JSON null
+const NULLMARK = '__NULL__'; // Value is JSON null
 exports.NULLMARK = NULLMARK;
-const UNDEFMARK = "__UNDEF__"; // Value is not present (thus, undefined).
+const UNDEFMARK = '__UNDEF__'; // Value is not present (thus, undefined).
 async function makeRunner(testfile, client) {
     return async function runner(name, store) {
         store = store || {};
@@ -27,7 +27,7 @@ async function makeRunner(testfile, client) {
                 try {
                     entry = resolveEntry(entry, flags);
                     let testpack = resolveTestPack(name, entry, subject, client, clients);
-                    let args = resolveArgs(entry, testpack, structUtils);
+                    let args = resolveArgs(entry, testpack, utility, structUtils);
                     let res = await testpack.subject(...args);
                     res = fixJSON(res, flags);
                     entry.res = res;
@@ -68,8 +68,9 @@ async function resolveClients(client, spec, store, structUtils) {
     }
     return clients;
 }
-function resolveSubject(name, container, subject) {
-    return subject || container?.[name];
+function resolveSubject(name, container) {
+    const subject = container[name] || container.struct[name];
+    return subject;
 }
 function resolveFlags(flags) {
     if (null == flags) {
@@ -89,11 +90,12 @@ function checkResult(entry, res, structUtils) {
         match(entry.match, result, structUtils);
         matched = true;
     }
-    if (entry.out === res) {
+    const out = entry.out;
+    if (out === res) {
         return;
     }
     // NOTE: allow match with no out.
-    if (matched && (NULLMARK === entry.out || null == entry.out)) {
+    if (matched && (NULLMARK === out || null == out)) {
         return;
     }
     (0, node_assert_1.deepEqual)(null != res ? JSON.parse(JSON.stringify(res)) : res, entry.out);
@@ -120,7 +122,7 @@ function handleError(entry, err, structUtils) {
         (0, node_assert_1.fail)(err.stack + '\\nnENTRY: ' + JSON.stringify(entry, null, 2));
     }
 }
-function resolveArgs(entry, testpack, structUtils) {
+function resolveArgs(entry, testpack, utility, structUtils) {
     let args = [structUtils.clone(entry.in)];
     if (entry.ctx) {
         args = [entry.ctx];
@@ -130,8 +132,13 @@ function resolveArgs(entry, testpack, structUtils) {
     }
     if (entry.ctx || entry.args) {
         let first = args[0];
-        if ('object' === typeof first && null != first) {
-            entry.ctx = first = args[0] = structUtils.clone(args[0]);
+        // if ('object' === typeof first && null != first) {
+        // entry.ctx = first = args[0] = structUtils.clone(args[0])
+        if (structUtils.ismap(first)) {
+            first = structUtils.clone(first);
+            first = utility.contextify(first);
+            args[0] = first;
+            entry.ctx = first;
             first.client = testpack.client;
             first.utility = testpack.utility;
         }

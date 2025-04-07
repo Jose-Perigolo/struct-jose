@@ -26,8 +26,8 @@ class SDK {
     return new SDK(opts)
   }
 
-  async test(opts) {
-    return new SDK(opts)
+  async tester(opts) {
+    return new SDK(opts || this.#opts)
   }
 
   utility() { 
