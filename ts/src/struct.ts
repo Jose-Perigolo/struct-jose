@@ -1013,13 +1013,15 @@ function transform(
   spec = clone(spec)
 
   const extraTransforms: any = {}
-  const extraData = null == extra ? {} : items(extra)
+  const extraData = null == extra ? UNDEF : items(extra)
     .reduce((a: any, n: any[]) =>
       (n[0].startsWith(S_DS) ? extraTransforms[n[0]] = n[1] : (a[n[0]] = n[1]), a), {})
 
   const dataClone = merge([
-    clone(UNDEF === extraData ? {} : extraData),
-    clone(UNDEF === data ? {} : data),
+    // clone(UNDEF === extraData ? {} : extraData),
+    isempty(extraData) ? UNDEF : clone(extraData),
+    // clone(UNDEF === data ? {} : data),
+    clone(data),
   ])
 
   // Define a top level store that provides transform operations.
@@ -1274,7 +1276,11 @@ const validate_ONE: Injector = (
 
       // If match, then errs.length = 0
       let terrs: any[] = []
-      validate(current, tval, store, terrs)
+
+      const vstore = { ...store }
+      vstore.$TOP = current
+      const vcurrent = validate(current, tval, vstore, terrs)
+      setprop(grandparent, grandkey, vcurrent)
 
       // Accept current value if there was a match
       if (0 === terrs.length) {
@@ -1336,7 +1342,6 @@ const validate_EXACT: Injector = (
     // See if we can find an exact value match.
     let currentstr: string | undefined = undefined
     for (let tval of tvals) {
-      // console.log('TVAL', tval, stringify(tval), stringify(current))
       let exactmatch = tval === current
 
       if (!exactmatch && isnode(tval)) {

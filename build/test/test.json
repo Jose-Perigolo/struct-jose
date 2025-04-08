@@ -8419,6 +8419,68 @@
                 "a": 1
               }
             }
+          },
+          {
+            "in": {
+              "data": {
+                "a": {}
+              },
+              "spec": {
+                "a": [
+                  "`$ONE`",
+                  "`$OBJECT`",
+                  "`$ARRAY`"
+                ]
+              }
+            },
+            "out": {
+              "a": {}
+            }
+          },
+          {
+            "in": {
+              "data": {
+                "a": []
+              },
+              "spec": {
+                "a": [
+                  "`$ONE`",
+                  "`$OBJECT`",
+                  "`$ARRAY`"
+                ]
+              }
+            },
+            "out": {
+              "a": []
+            }
+          },
+          {
+            "in": {
+              "data": {
+                "a": 1
+              },
+              "spec": {
+                "a": [
+                  "`$ONE`",
+                  "`$OBJECT`",
+                  "`$ARRAY`"
+                ]
+              }
+            },
+            "err": "Expected field a to be one of object, array, but found number: 1."
+          },
+          {
+            "in": {
+              "data": {},
+              "spec": {
+                "a": [
+                  "`$ONE`",
+                  "`$OBJECT`",
+                  "`$ARRAY`"
+                ]
+              }
+            },
+            "err": "Expected field a to be one of object, array, but found no value."
           }
         ]
       },

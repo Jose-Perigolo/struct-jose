@@ -797,8 +797,6 @@ const transform_EACH = (
   _ref,
   store
 ) => {
-  const { mode, keys, path, parent, nodes } = state
-
   // Remove arguments to avoid spurious processing.
   if (null != state.keys) {
     state.keys.length = 1
@@ -950,13 +948,13 @@ function transform(
   spec = clone(spec)
 
   const extraTransforms = {}
-  const extraData = null == extra ? {} : items(extra)
+  const extraData = null == extra ? UNDEF : items(extra)
     .reduce((a, n) =>
       (n[0].startsWith(S_DS) ? extraTransforms[n[0]] = n[1] : (a[n[0]] = n[1]), a), {})
 
   const dataClone = merge([
-    clone(UNDEF === extraData ? {} : extraData),
-    clone(UNDEF === data ? {} : data),
+    isempty(extraData) ? UNDEF : clone(extraData),
+    clone(data),
   ])
 
   // Define a top level store that provides transform operations.
@@ -1211,7 +1209,11 @@ const validate_ONE = (
 
       // If match, then errs.length = 0
       let terrs = []
-      validate(current, tval, store, terrs)
+
+      const vstore = { ...store }
+      vstore.$TOP = current
+      const vcurrent = validate(current, tval, vstore, terrs)
+      setprop(grandparent, grandkey, vcurrent)
 
       // Accept current value if there was a match
       if (0 === terrs.length) {
@@ -1275,7 +1277,6 @@ const validate_EXACT = (
     // See if we can find an exact value match.
     let currentstr = undefined
     for (let tval of tvals) {
-      // console.log('TVAL', tval, stringify(tval), stringify(current))
       let exactmatch = tval === current
 
       if (!exactmatch && isnode(tval)) {
@@ -1504,7 +1505,6 @@ const _injecthandler = (
 
   // Update parent with value. Ensures references remain in node tree.
   else if (S_MVAL === state.mode && state.full) {
-    // setprop(state.parent, state.key, val)
     _setparentprop(state, val)
   }
 
@@ -1555,6 +1555,7 @@ function _injectstr(
   else {
     // Check for injections within the string.
     const partial = (_m, ref) => {
+
       // Special escapes inside injection.
       ref = 3 < ref.length ? ref.replace(/\$BT/g, S_BT).replace(/\$DS/g, S_DS) : ref
       if (state) {
@@ -1564,8 +1565,6 @@ function _injectstr(
 
       // Ensure inject value is a string.
       return UNDEF === found ? S_MT : S_string === typeof found ? found : JSON.stringify(found)
-      // S_object === typeof found ? JSON.stringify(found) :
-      // found
     }
 
     out = val.replace(/`([^`]+)`/g, partial)
