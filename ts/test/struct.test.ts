@@ -202,7 +202,7 @@ describe('struct', async () => {
 
 
   test('minor-setprop', async () => {
-    await runsetflags(minorSpec.setprop, { null: false }, (vin: any) =>
+    await runset(minorSpec.setprop, (vin: any) =>
       setprop(vin.parent, vin.key, vin.val))
   })
 

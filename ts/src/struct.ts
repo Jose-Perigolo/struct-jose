@@ -304,14 +304,14 @@ function joinurl(sarr: any[]) {
 
 // Safely stringify a value for humans (NOT JSON!).
 function stringify(val: any, maxlen?: number): string {
-  let str = S_MT
+  let valstr = S_MT
 
   if (UNDEF === val) {
-    return str
+    return valstr
   }
 
   try {
-    str = JSON.stringify(val, function(_key: string, val: any) {
+    valstr = JSON.stringify(val, function(_key: string, val: any) {
       if (
         val !== null &&
         typeof val === "object" &&
@@ -327,18 +327,18 @@ function stringify(val: any, maxlen?: number): string {
     })
   }
   catch (err: any) {
-    str = S_MT + val
+    valstr = S_MT + val
   }
 
-  str = S_string !== typeof str ? S_MT + str : str
-  str = str.replace(/"/g, '')
+  valstr = S_string !== typeof valstr ? S_MT + valstr : valstr
+  valstr = valstr.replace(/"/g, '')
 
   if (null != maxlen) {
-    let js = str.substring(0, maxlen)
-    str = maxlen < str.length ? (js.substring(0, maxlen - 3) + '...') : str
+    let js = valstr.substring(0, maxlen)
+    valstr = maxlen < valstr.length ? (js.substring(0, maxlen - 3) + '...') : valstr
   }
 
-  return str
+  return valstr
 }
 
 
@@ -1064,7 +1064,7 @@ const validate_STRING: Injector = (state: Injection, _val: any, current: any) =>
 
   const t = typify(out)
   if (S_string !== t) {
-    let msg = _invalidTypeMsg(state.path, S_string, t, out)
+    let msg = _invalidTypeMsg(state.path, S_string, t, out, 'V1010')
     state.errs.push(msg)
     return UNDEF
   }
@@ -1085,7 +1085,7 @@ const validate_NUMBER: Injector = (state: Injection, _val: any, current: any) =>
 
   const t = typify(out)
   if (S_number !== t) {
-    state.errs.push(_invalidTypeMsg(state.path, S_number, t, out))
+    state.errs.push(_invalidTypeMsg(state.path, S_number, t, out, 'V1020'))
     return UNDEF
   }
 
@@ -1099,7 +1099,7 @@ const validate_BOOLEAN: Injector = (state: Injection, _val: any, current: any) =
 
   const t = typify(out)
   if (S_boolean !== t) {
-    state.errs.push(_invalidTypeMsg(state.path, S_boolean, t, out))
+    state.errs.push(_invalidTypeMsg(state.path, S_boolean, t, out, 'V1030'))
     return UNDEF
   }
 
@@ -1113,7 +1113,7 @@ const validate_OBJECT: Injector = (state: Injection, _val: any, current: any) =>
 
   const t = typify(out)
   if (t !== S_object) {
-    state.errs.push(_invalidTypeMsg(state.path, S_object, t, out))
+    state.errs.push(_invalidTypeMsg(state.path, S_object, t, out, 'V1040'))
     return UNDEF
   }
 
@@ -1127,7 +1127,7 @@ const validate_ARRAY: Injector = (state: Injection, _val: any, current: any) => 
 
   const t = typify(out)
   if (t !== S_array) {
-    state.errs.push(_invalidTypeMsg(state.path, S_array, t, out))
+    state.errs.push(_invalidTypeMsg(state.path, S_array, t, out, 'V1050'))
     return UNDEF
   }
 
@@ -1141,7 +1141,7 @@ const validate_FUNCTION: Injector = (state: Injection, _val: any, current: any) 
 
   const t = typify(out)
   if (S_function !== t) {
-    state.errs.push(_invalidTypeMsg(state.path, S_function, t, out))
+    state.errs.push(_invalidTypeMsg(state.path, S_function, t, out, 'V1060'))
     return UNDEF
   }
 
@@ -1177,7 +1177,7 @@ const validate_CHILD: Injector = (state: Injection, _val: any, current: any) => 
     }
     else if (!ismap(tval)) {
       state.errs.push(_invalidTypeMsg(
-        state.path.slice(0, state.path.length - 1), S_object, typify(tval), tval))
+        state.path.slice(0, state.path.length - 1), S_object, typify(tval), tval), 'V0220')
       return UNDEF
     }
 
@@ -1213,7 +1213,7 @@ const validate_CHILD: Injector = (state: Injection, _val: any, current: any) => 
 
     if (!islist(current)) {
       const msg = _invalidTypeMsg(
-        state.path.slice(0, state.path.length - 1), S_array, typify(current), current)
+        state.path.slice(0, state.path.length - 1), S_array, typify(current), current, 'V0230')
       state.errs.push(msg)
       state.keyI = parent.length
       return current
@@ -1394,7 +1394,6 @@ const _validation: Modify = (
     return
   }
 
-  // const pval = getprop(parent, key)
   const ptype = typify(pval)
 
   // Delete any special commands remaining.
@@ -1503,6 +1502,7 @@ function validate(
     ...(extra || {}),
 
     // A special top level value to collect errors.
+    // NOTE: collecterrs paramter always wins.
     $ERRS: errs,
   }
 
@@ -1545,7 +1545,7 @@ function _invalidTypeMsg(path: any, needtype: string, vt: string, v: any, _whenc
     (null != v ? vt + ': ' : '') + vs +
 
     // Uncomment to help debug validation errors.
-    // (null == _whence ? '' : ' [' + _whence + ']') +
+    // ' [' + _whence + ']' +
 
     '.'
 }

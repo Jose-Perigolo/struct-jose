@@ -109,7 +109,7 @@ const TEST_JSON_FILE = '../../build/test/test.json';
         (0, node_assert_1.deepEqual)(getprop(intarr, '2'), 5);
     });
     (0, node_test_1.test)('minor-setprop', async () => {
-        await runsetflags(minorSpec.setprop, { null: false }, (vin) => setprop(vin.parent, vin.key, vin.val));
+        await runset(minorSpec.setprop, (vin) => setprop(vin.parent, vin.key, vin.val));
     });
     (0, node_test_1.test)('minor-edge-setprop', async () => {
         let strarr0 = ['a', 'b', 'c', 'd', 'e'];

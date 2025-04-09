@@ -1,4 +1,9 @@
 
+struct: &: {
+  name: .$KEY
+  set: []
+}
+
 struct: minor: @"minor.jsonic"
 struct: getpath: @"getpath.jsonic"
 struct: inject: @"inject.jsonic"

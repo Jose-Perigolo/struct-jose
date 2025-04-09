@@ -41,6 +41,7 @@ islist: {
 iskey: {
   set: [
     { in: 1, out: true }
+    { in: 2.2, out: true }
     { in: 'a', out: true }
     { in: '', out: false }
     { in: true, out: false }

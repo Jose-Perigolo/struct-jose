@@ -113,6 +113,10 @@
             "out": true
           },
           {
+            "in": 2.2,
+            "out": true
+          },
+          {
             "in": "a",
             "out": true
           },
@@ -2391,7 +2395,9 @@
             "out": "null"
           }
         ]
-      }
+      },
+      "name": "minor",
+      "set": []
     },
     "getpath": {
       "basic": {
@@ -3203,7 +3209,9 @@
             "out": "6:444"
           }
         ]
-      }
+      },
+      "name": "getpath",
+      "set": []
     },
     "inject": {
       "basic": {
@@ -3650,7 +3658,9 @@
             }
           }
         ]
-      }
+      },
+      "name": "inject",
+      "set": []
     },
     "merge": {
       "basic": {
@@ -4684,7 +4694,9 @@
             }
           }
         ]
-      }
+      },
+      "name": "merge",
+      "set": []
     },
     "transform": {
       "basic": {
@@ -7038,7 +7050,9 @@
             }
           }
         ]
-      }
+      },
+      "name": "transform",
+      "set": []
     },
     "walk": {
       "log": {
@@ -7439,7 +7453,9 @@
             }
           }
         ]
-      }
+      },
+      "name": "walk",
+      "set": []
     },
     "validate": {
       "basic": {
@@ -8816,7 +8832,9 @@
             "err": "Expected field a0 to be number, but found string: a. | Expected field b0 to be string, but found number: 1."
           }
         ]
-      }
+      },
+      "name": "validate",
+      "set": []
     }
   },
   "primary": {
