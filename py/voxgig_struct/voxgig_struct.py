@@ -36,7 +36,6 @@ import urllib.parse
 import json
 import re
 
-
 # Mode value for inject step.
 S_MKEYPRE =  'key:pre'
 S_MKEYPOST =  'key:post'
@@ -128,6 +127,7 @@ def iskey(key: Any = UNDEF) -> bool:
     "Value is a defined string (non-empty) or integer key."
     if isinstance(key, str):
         return len(key) > 0
+    # Exclude bool (which is a subclass of int)
     if isinstance(key, bool):
         return False
     if isinstance(key, int):
@@ -251,7 +251,7 @@ def items(val: Any = UNDEF):
     else:
         return []
     
-        
+
 def escre(s: Any):
     "Escape regular expression."
     if UNDEF == s:
@@ -375,6 +375,8 @@ def clone(val: Any = UNDEF):
             return [replacer(elem) for elem in item]
         elif hasattr(item, 'to_json'):
             return item.to_json()
+        elif hasattr(item, '__dict__'):
+            return item.__dict__ 
         else:
             return item
 
