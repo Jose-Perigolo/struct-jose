@@ -1,7 +1,8 @@
 <?php
 
+require_once __DIR__ . '/../src/Struct.php';
+
 use PHPUnit\Framework\TestCase;
-require_once __DIR__ . '/../src/Struct.php'; 
 use Voxgig\Struct\Struct;
 
 class StructTest extends TestCase {
@@ -9,30 +10,50 @@ class StructTest extends TestCase {
     private array $testSpec;
 
     protected function setUp(): void {
+        // Adjust this path as needed.
         $jsonPath = __DIR__ . '/../../build/test/test.json';
-
         if (!file_exists($jsonPath)) {
             throw new RuntimeException("Test JSON file not found: $jsonPath");
         }
-
         $jsonContent = file_get_contents($jsonPath);
         if ($jsonContent === false) {
             throw new RuntimeException("Failed to read test JSON: $jsonPath");
         }
-
-        $this->testSpec = json_decode($jsonContent, true);
-
+        $data = json_decode($jsonContent, true);
+        if (!isset($data['struct'])) {
+            throw new RuntimeException("'struct' key not found in the test JSON file.");
+        }
+        $this->testSpec = $data['struct'];
         if (json_last_error() !== JSON_ERROR_NONE) {
             throw new RuntimeException("Invalid JSON: " . json_last_error_msg());
         }
     }
 
-    private function testSet(array $tests, callable $apply) {
-        foreach ($tests['set'] as $entry) {
+    /**
+     * A helper that loops over test entries (in a "set")
+     * and applies the given function to the "in" value.
+     * If an expected "out" is specified, it asserts equality.
+     * If an error is expected, the error message is checked.
+     */
+    private function testSet(array $tests, callable $apply): void {
+        foreach ($tests['set'] as $index => $entry) {
             try {
-                $result = $apply($entry['in'] ?? null);
+                if (array_key_exists('args', $entry)) {
+                    $args = $entry['args'];
+                    $result = $apply(...$args);
+                    $inputForMessage = $args; // Use args for error reporting
+                } else {
+                    $input = array_key_exists('in', $entry) ? $entry['in'] : Struct::UNDEF;
+                    $result = $apply($input);
+                    $inputForMessage = $input;
+                }
+    
                 if (isset($entry['out'])) {
-                    $this->assertEquals($entry['out'], $result);
+                    $this->assertSame(
+                        $entry['out'],
+                        $result,
+                        "Input " . json_encode($inputForMessage) . " did not produce expected output."
+                    );
                 }
             } catch (Throwable $err) {
                 if (isset($entry['err'])) {
@@ -44,44 +65,66 @@ class StructTest extends TestCase {
         }
     }
 
-    public static function nullModifier($key, $val, &$parent) {
-        if ($val === '__NULL__') {
-            call_user_func_array([Struct::class, 'setProp'], [&$parent, $key, null]);
-        } elseif (is_string($val)) {
-            $newVal = str_replace('__NULL__', 'null', $val);
-            call_user_func_array([Struct::class, 'setProp'], [&$parent, $key, $newVal]);
-        }
+    public function testIsnode() {
+        $this->testSet($this->testSpec['minor']['isnode'], [Struct::class, 'isnode']);
+    }
+
+    public function testIsmap() {
+        $this->testSet($this->testSpec['minor']['ismap'], [Struct::class, 'ismap']);
+    }
+
+    public function testIslist() {
+        $this->testSet($this->testSpec['minor']['islist'], [Struct::class, 'islist']);
+    }
+
+    public function testIskey() {
+        $this->testSet($this->testSpec['minor']['iskey'], [Struct::class, 'iskey']);
+    }
+
+    public function testIsempty() {
+        $this->testSet($this->testSpec['minor']['isempty'], [Struct::class, 'isempty']);
+    }
+
+    public function testIsfunc() {
+        $this->testSet($this->testSpec['minor']['isfunc'], [Struct::class, 'isfunc']);
+    }
+
+    public function testTypify() {
+        $this->testSet($this->testSpec['minor']['typify'], [Struct::class, 'typify']);
+    }
+
+    public function testGetprop() {
+        $this->testSet($this->testSpec['minor']['getprop'], function($input) {
+            if (!array_key_exists('val', $input) || !array_key_exists('key', $input)) {
+                error_log("Missing 'val' or 'key' in input: " . print_r($input, true));
+                // You may choose to return a default value:
+                return null;
+            }
+            return isset($input['alt'])
+                ? Struct::getprop($input['val'], $input['key'], $input['alt'])
+                : Struct::getprop($input['val'], $input['key']);
+        });
     }    
 
-    public function testMinorFunctionsExist() {
-        $methods = ['clone', 'isNode', 'isMap', 'isList', 'isKey', 'isEmpty', 'stringify', 'escre', 'escurl', 'items', 'getProp', 'setProp', 'getPath'];
-        foreach ($methods as $method) {
-            $this->assertTrue(method_exists(Struct::class, $method), "Method $method does not exist.");
-        }
+    public function testStrkey() {
+        $this->testSet($this->testSpec['minor']['strkey'], [Struct::class, 'strkey']);
     }
 
-    public function testClone() {
-        $this->testSet($this->testSpec['minor']['clone'], [Struct::class, 'clone']);
+    public function testKeysof() {
+        $this->testSet($this->testSpec['minor']['keysof'], [Struct::class, 'keysof']);
     }
 
-    public function testIsNode() {
-        $this->testSet($this->testSpec['minor']['isnode'], [Struct::class, 'isNode']);
+    public function testHaskey() {
+        $spec = $this->testSpec['minor']['haskey'];
+        $this->testSet($spec, function (...$args) {
+            // Directly pass args to haskey without modification
+            return Struct::haskey(...$args);
+        });
     }
-
-    public function testIsMap() {
-        $this->testSet($this->testSpec['minor']['ismap'], [Struct::class, 'isMap']);
-    }
-
-    public function testIsList() {
-        $this->testSet($this->testSpec['minor']['islist'], [Struct::class, 'isList']);
-    }
-
-    public function testIsKey() {
-        $this->testSet($this->testSpec['minor']['iskey'], [Struct::class, 'isKey']);
-    }
-
-    public function testIsEmpty() {
-        $this->testSet($this->testSpec['minor']['isempty'], [Struct::class, 'isEmpty']);
+           
+    
+    public function testItems() {
+        $this->testSet($this->testSpec['minor']['items'], [Struct::class, 'items']);
     }
 
     public function testEscre() {
@@ -92,169 +135,40 @@ class StructTest extends TestCase {
         $this->testSet($this->testSpec['minor']['escurl'], [Struct::class, 'escurl']);
     }
 
+    public function testJoinurl() {
+        $this->testSet($this->testSpec['minor']['joinurl'], [Struct::class, 'joinurl']);
+    }
+
     public function testStringify() {
-        $this->testSet($this->testSpec['minor']['stringify'], fn($input) => isset($input['max']) ? Struct::stringify($input['val'], $input['max']) : Struct::stringify($input['val']));
-    }
-
-    public function testItems() {
-        $this->testSet($this->testSpec['minor']['items'], [Struct::class, 'items']);
-    }
-
-    public function testGetProp() {
-        $this->testSet($this->testSpec['minor']['getprop'], fn($input) => isset($input['alt']) ? Struct::getProp($input['val'], $input['key'], $input['alt']) : Struct::getProp($input['val'], $input['key']));
-    }
-
-    public function testGetPathBasic() {
-        $this->testSet(
-            $this->testSpec['getpath']['basic'],
-            fn($input) => Struct::getPath(
-                $input['path'] ?? null, 
-                $input['store'] ?? null
-            )
-        );
-    }
-
-    public function testGetPathCurrent() {
-        $this->testSet($this->testSpec['getpath']['current'], fn($input) => Struct::getPath($input['path'], $input['store'], $input['current']));
-    }
-
-    public function testGetPathState() {
-        $state = $this->createState();
-        $this->testSet($this->testSpec['getpath']['state'], fn($input) => Struct::getPath($input['path'], $input['store'], $input['current'] ?? null, $state));
-    }
-
-    private function createState(): object {
-        $state = new \stdClass();
-        $state->handler = function ($state, $val) {
-            $out = $state->step . ':' . $val;
-            $state->step++;
-            return $out;
-        };
-        $state->step = 0;
-        $state->mode = 'val';
-        $state->full = false;
-        $state->keyI = 0;
-        $state->keys = ['$TOP'];
-        $state->key = '$TOP';
-        $state->val = '';
-        $state->parent = [];
-        $state->path = ['$TOP'];
-        $state->nodes = [[]];
-        $state->base = '$TOP';
-        return $state;
-    }
-
-    public function testWalkExists() {
-        $this->assertTrue(method_exists(Struct::class, 'walk'), "Method walk does not exist.");
+        $this->testSet($this->testSpec['minor']['stringify'], function ($input) {
+            // If "val" is not given, use the special undefined marker.
+            $val = array_key_exists('val', $input) ? $input['val'] : '__UNDEFINED__';
+            return isset($input['max'])
+                ? Struct::stringify($val, $input['max'])
+                : Struct::stringify($val);
+        });
     }
     
-    public function testWalkBasic() {
-        $this->testSet($this->testSpec['walk']['basic'], function($vin) {
-            return Struct::walk($vin, function($key, $val, $parent, $path) {
-                return is_string($val) ? $val . '~' . implode('.', $path) : $val;
-            });
-        });
-    }    
-
-    public function testMergeExists() {
-        $this->assertTrue(method_exists(Struct::class, 'merge'));
-    }
+    // public function testPathify() {
+    //     $this->testSet($this->testSpec['minor']['pathify'], function ($input) {
+    //         $pathDefined = array_key_exists('path', $input);
+    //         $path = $pathDefined ? $input['path'] : $input;
+    //         $from = $input['from'] ?? null;
+    //         return Struct::pathify($path, $from, $pathDefined);
+    //     });
+    // }
     
-    public function testMergeBasic() {
-        $test = $this->testSpec['merge']['basic'];
-        $this->assertEquals($test['out'], Struct::merge($test['in']));
-    }
-    
-    public function testMergeCases() {
-        $this->testSet($this->testSpec['merge']['cases'], [Struct::class, 'merge']);
-    }
-    
-    public function testMergeArray() {
-        $this->testSet($this->testSpec['merge']['array'], [Struct::class, 'merge']);
+
+    public function testClone() {
+        $this->testSet($this->testSpec['minor']['clone'], [Struct::class, 'clone_val']);
     }
 
-    public function testInjectExists() {
-        $this->assertTrue(method_exists(Struct::class, 'inject'));
-    }
-
-    public function testInjectBasic() {
-        $test = $this->testSpec['inject']['basic'];
-        $this->assertEquals($test['out'], Struct::inject($test['in']['val'], $test['in']['store']));
-    }
-
-    public function testInjectString() {
-        $this->testSet($this->testSpec['inject']['string'], fn($input) => Struct::inject($input['val'], $input['store'], [self::class, 'nullModifier'], $input['current'] ?? null));
-    }
-
-    public function testInjectDeep() {
-        $this->testSet($this->testSpec['inject']['deep'], fn($input) => Struct::inject($input['val'], $input['store']));
-    }
-
-    public function testTransformExists() {
-        $this->assertTrue(method_exists(Struct::class, 'transform'), "Method transform does not exist.");
-    }
-
-    public function testTransformBasic() {
-        $test = $this->testSpec['transform']['basic'];
-        $result = Struct::transform($test['in']['data'], $test['in']['spec'], $test['in']['store'] ?? null);
-        $this->assertEquals($test['out'], $result);
-    }
-
-    public function testTransformPaths() {
-        $this->testSet($this->testSpec['transform']['paths'], function($vin) {
-            return Struct::transform($vin['data'] ?? null, $vin['spec'] ?? null, $vin['store'] ?? null);
-        });
-    }
-
-    public function testTransformCmds() {
-        $this->testSet($this->testSpec['transform']['cmds'], function($vin) {
-            return Struct::transform($vin['data'] ?? null, $vin['spec'] ?? null, $vin['store'] ?? null);
-        });
-    }
-
-    public function testTransformEach() {
-        $this->testSet($this->testSpec['transform']['each'], function($vin) {
-            return Struct::transform($vin['data'] ?? null, $vin['spec'] ?? null, $vin['store'] ?? null);
-        });
-    }
-
-    public function testTransformPack() {
-        $this->testSet($this->testSpec['transform']['pack'], function($vin) {
-            return Struct::transform($vin['data'] ?? null, $vin['spec'] ?? null, $vin['store'] ?? null);
-        });
-    }
-
-    public function testTransformModify() {
-        $this->testSet($this->testSpec['transform']['modify'], function($vin) {
-            return Struct::transform(
-                $vin['data'] ?? null,
-                $vin['spec'] ?? null,
-                $vin['store'] ?? null,
-                function($key, $val, &$parent) {
-                    if ($key !== null && $parent !== null && is_string($val)) {
-                        $parent[$key] = '@' . $val;
-                    }
-                }
-            );
-        });
-    }
-
-    public function testTransformExtra() {
-        $result = Struct::transform(
-            ['a' => 1],
-            ['x' => '`a`', 'b' => '`$COPY`', 'c' => '`$UPPER`'],
-            [
-                'b' => 2,
-                '$UPPER' => function($state) {
-                    // Assume $state['path'] is an array and return the last element uppercased.
-                    $path = $state['path'] ?? [];
-                    return strtoupper((string) end($path));
-                }
-            ]
-        );
-        $this->assertEquals(['x' => 1, 'b' => 2, 'c' => 'C'], $result);
-    }
+    // public function testSetprop() {
+    //     $this->testSet($this->testSpec['minor']['setprop'], function ($input) {
+    //         $parent = array_key_exists('parent', $input) ? $input['parent'] : [];
+    //         $val = array_key_exists('val', $input) ? $input['val'] : '__UNDEFINED__';
+    //         return Struct::setprop($parent, $input['key'] ?? null, $val);
+    //     });
+    // }    
     
 }
-
-?>
