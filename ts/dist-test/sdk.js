@@ -1,37 +1,4 @@
 "use strict";
-var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    var desc = Object.getOwnPropertyDescriptor(m, k);
-    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
-      desc = { enumerable: true, get: function() { return m[k]; } };
-    }
-    Object.defineProperty(o, k2, desc);
-}) : (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    o[k2] = m[k];
-}));
-var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
-    Object.defineProperty(o, "default", { enumerable: true, value: v });
-}) : function(o, v) {
-    o["default"] = v;
-});
-var __importStar = (this && this.__importStar) || (function () {
-    var ownKeys = function(o) {
-        ownKeys = Object.getOwnPropertyNames || function (o) {
-            var ar = [];
-            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
-            return ar;
-        };
-        return ownKeys(o);
-    };
-    return function (mod) {
-        if (mod && mod.__esModule) return mod;
-        var result = {};
-        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
-        __setModuleDefault(result, mod);
-        return result;
-    };
-})();
 var __classPrivateFieldSet = (this && this.__classPrivateFieldSet) || function (receiver, state, value, kind, f) {
     if (kind === "m") throw new TypeError("Private method is not writable");
     if (kind === "a" && !f) throw new TypeError("Private accessor was defined without a setter");
@@ -46,21 +13,21 @@ var __classPrivateFieldGet = (this && this.__classPrivateFieldGet) || function (
 var _SDK_opts, _SDK_utility;
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.SDK = void 0;
-const structUtils = __importStar(require("../dist/struct"));
+const struct_1 = require("../dist/struct");
 class SDK {
     constructor(opts) {
         _SDK_opts.set(this, {});
         _SDK_utility.set(this, {});
         __classPrivateFieldSet(this, _SDK_opts, opts || {}, "f");
         __classPrivateFieldSet(this, _SDK_utility, {
-            struct: structUtils,
+            struct: new struct_1.StructUtility(),
             contextify: (ctxmap) => ctxmap,
             check: (ctx) => {
                 return {
                     zed: 'ZED' +
                         (null == __classPrivateFieldGet(this, _SDK_opts, "f") ? '' : null == __classPrivateFieldGet(this, _SDK_opts, "f").foo ? '' : __classPrivateFieldGet(this, _SDK_opts, "f").foo) +
                         '_' +
-                        (null == ctx.bar ? '0' : ctx.bar)
+                        (null == ctx.meta?.bar ? '0' : ctx.meta.bar)
                 };
             }
         }, "f");

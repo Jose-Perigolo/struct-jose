@@ -151,7 +151,7 @@ class TestStruct(unittest.TestCase):
                lambda vin: stringify("null" if NULLMARK == vin.get('val') else
                                      vin.get('val'), vin.get('max')))
 
-        
+    
     def test_minor_pathify(self):
         def pathify_wrapper(vin=None):
             path = vin.get("path")
@@ -267,6 +267,9 @@ class TestStruct(unittest.TestCase):
 
     def test_merge_array(self):
         runset(spec["merge"]["array"], merge)
+
+    def test_merge_integrity(self):
+        runset(spec["merge"]["integrity"], merge)
 
     def test_merge_special(self):
         def f0():

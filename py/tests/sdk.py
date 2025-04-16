@@ -1,21 +1,32 @@
 
 import voxgig_struct
 
-class StructUtils:
-    def __init__(self):
-        for attr_name in dir(voxgig_struct):
-            if not attr_name.startswith('_'):
-                setattr(self, attr_name, getattr(voxgig_struct, attr_name))
+# class StructUtils:
+#     def __init__(self):
+#         for attr_name in dir(voxgig_struct):
+#             if not attr_name.startswith('_'):
+#                 setattr(self, attr_name, getattr(voxgig_struct, attr_name))
 
+
+class Context:
+    def __init__(self):
+        self.client = None
+        self.utility = None
+        self.meta = {}
 
 class Utility:
     def __init__(self, opts=None):
         self._opts = opts
-        self.struct = StructUtils()
+        # self.struct = StructUtils()
+        self.struct = voxgig_struct.StructUtility()
 
     def contextify(self, ctxmap):
-        return ctxmap
-        
+        ctx = Context()
+        meta = ctxmap.get('meta',{})
+        for k,v in meta.items():
+            ctx.meta[k] = v
+        return ctx
+            
     def check(self, ctx):
         zed = "ZED"
     
@@ -26,7 +37,7 @@ class Utility:
             zed += "0" if foo is None else str(foo)
 
         zed += "_"
-        zed += str(ctx.get("bar"))
+        zed += str(ctx.meta.get("bar"))
 
         return {"zed": zed}
 

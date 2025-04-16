@@ -5,20 +5,10 @@ import json
 import re
 from typing import Any, Dict, List, Callable, TypedDict, Optional, Union
 
-# from src.utility.struct_utility import (
-#   clone,
-#   getpath,
-#   inject,
-#   ismap,
-#   isnode,
-#   items,
-#   stringify,
-#   walk,
-# )
-
 
 NULLMARK = '__NULL__'  # Value is JSON null
 UNDEFMARK = '__UNDEF__'  # Value is not present (thus, undefined)
+EXISTSMARK = '__EXISTS__' # Value exists (not undefined).
 
 
 class RunPack(TypedDict):
@@ -30,7 +20,7 @@ class RunPack(TypedDict):
 
 
 def makeRunner(testfile: str, client: Any):
-    
+
     def runner(
         name: str,
         store: Any = None,
@@ -51,10 +41,9 @@ def makeRunner(testfile: str, client: Any):
             flags = resolve_flags(flags)
             testspecmap = fixJSON(testspec, flags)
             testset = testspecmap['set']
-                    
+
             for entry in testset:
                 try:
-                    # entry = resolve_entry(entry, name, subject, flags)
                     entry = resolve_entry(entry, flags)
 
                     testpack = resolve_testpack(name, entry, subject, client, clients)
@@ -166,9 +155,9 @@ def handle_error(entry, err, structUtils):
         if entry_err is True or matchval(entry_err, str(err), structUtils):
             # If we also need to match error details
             if 'match' in entry:
-                err_json = None
-                if None != err:
-                    err_json = {"message":str(err)}
+                #err_json = None
+                #if None != err:
+                    #err_json = {"message":str(err)}
                     
                 match(
                     entry['match'],
@@ -176,7 +165,8 @@ def handle_error(entry, err, structUtils):
                         'in': entry.get('in'),
                         'out': entry.get('res'),
                         'ctx': entry.get('ctx'),
-                        'err': err_json
+                        #'err': err_json
+                        'err': fixJSON(err)
                     },
                     structUtils
                 )
@@ -232,7 +222,7 @@ def resolve_args(entry, testpack, utility, structUtils):
         args = entry['args']
     elif 'in' in entry:
         args = [structUtils.clone(entry['in'])]
-        
+
     # If we have context or arguments, we might need to patch them
     if ('ctx' in entry or 'args' in entry) and len(args) > 0:
         first = args[0]
@@ -242,8 +232,8 @@ def resolve_args(entry, testpack, utility, structUtils):
             first = utility.contextify(first)
             args[0] = first
             entry['ctx'] = first
-            first['client'] = testpack["client"]
-            first['utility'] = testpack["utility"]
+            first.client = testpack["client"]
+            first.utility = testpack["utility"]
             
     return args
 
@@ -257,16 +247,7 @@ def resolve_flags(flags: Dict[str, Any] = None) -> Dict[str, bool]:
     return flags
 
 
-def resolve_entry(
-        entry: Dict[str, Any],
-        # name: str,
-        # subject: Callable,
-        flags: Dict[str, bool]
-) -> Dict[str, Any]:
-
-    # entry['name'] = name
-    # entry['subject'] = getattr(subject, '__name__', 'UNKNOWN')
-
+def resolve_entry(entry: Dict[str, Any], flags: Dict[str, bool]) -> Dict[str, Any]:
     # Set default output value for missing 'out' field
     if 'out' not in entry and flags.get("null", True):
         entry["out"] = NULLMARK
@@ -274,7 +255,7 @@ def resolve_entry(
     return entry
 
 
-def fixJSON(obj, flags):
+def fixJSON(obj, flags={}):
     # Handle nulls
     if obj is None:
         return NULLMARK if flags.get("null", True) else None
@@ -303,12 +284,9 @@ def jsonfallback(obj):
 
 def match(check, base, structUtils):
     base = structUtils.clone(base)
-    # print('MATCH', check, base)
     
     # Use walk function to iterate through the check structure
-    def walk_apply(key, val, parent, path):
-        # Process scalar values only (non-objects)
-        # if not isinstance(val, (dict, list)):
+    def walk_apply(_key, val, _parent, path):
         if not structUtils.isnode(val):
             baseval = structUtils.getpath(path, base)
             
@@ -318,8 +296,11 @@ def match(check, base, structUtils):
             # Explicit undefined expected
             if UNDEFMARK == val and baseval is None:
                 return val
+
+            # Explicit defined expected
+            if EXISTSMARK == val and baseval is not None:
+                return val
             
-            # Check if values match
             if not matchval(val, baseval, structUtils):
                 raise AssertionError(
                     f"MATCH: {'.'.join(map(str, path))}: "

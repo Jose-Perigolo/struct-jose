@@ -216,8 +216,6 @@ exact: {
 }
 
 
-
-
 invalid: set: [
   { in: { data: null, spec: '`$STRING`' },
     err: 'Expected string, but found no value.' }

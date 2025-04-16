@@ -285,6 +285,11 @@ describe('struct', async () => {
   })
 
 
+  test('merge-integrity', async () => {
+    await runset(mergeSpec.integrity, merge)
+  })
+
+
   test('merge-special', async () => {
     const f0 = () => null
     deepEqual(merge([f0]), f0)

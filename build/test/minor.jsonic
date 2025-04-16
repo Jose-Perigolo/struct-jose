@@ -389,6 +389,8 @@ joinurl: {
     { out: 'a/b' in: ['a/','//b'] }
     { out: 'a/b/c/d' in: ['a','b','c//d'] }
     { out: '//a/b' in: ['//a','/b'] }
+    { in: ['https://www.example.com/','/a','/b/','/c','d'],
+      out: 'https://www.example.com/a/b/c/d' }
   ]
 }
 

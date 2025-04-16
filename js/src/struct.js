@@ -231,7 +231,7 @@ function escurl(s) {
 function joinurl(sarr) {
   return sarr
     .filter(s => null != s && '' !== s)
-    .map((s, i) => 0 === i ? s.replace(/([^\/])\/+/, '$1/').replace(/\/+$/, '') :
+    .map((s, i) => 0 === i ? s.replace(/\/+$/, '') :
       s.replace(/([^\/])\/+/, '$1/').replace(/^\/+/, '').replace(/\/+$/, ''))
     .filter(s => '' !== s)
     .join('/')
@@ -431,7 +431,7 @@ function merge(val) {
   out = getprop(list, 0, {})
 
   for (let oI = 1; oI < lenlist; oI++) {
-    let obj = list[oI]
+    let obj = clone(list[oI])
 
     if (!isnode(obj)) {
       // Nodes win.
@@ -1581,7 +1581,38 @@ function _injectstr(
 }
 
 
+class StructUtility {
+  clone = clone
+  escre = escre
+  escurl = escurl
+  getpath = getpath
+  getprop = getprop
+  haskey = haskey
+  inject = inject
+  isempty = isempty
+  isfunc = isfunc
+  iskey = iskey
+  islist = islist
+  ismap = ismap
+  isnode = isnode
+  items = items
+  joinurl = joinurl
+  keysof = keysof
+  merge = merge
+  pathify = pathify
+  setprop = setprop
+  strkey = strkey
+  stringify = stringify
+  transform = transform
+  typify = typify
+  validate = validate
+  walk = walk
+}
+
+
 module.exports = {
+  StructUtility,
+
   clone,
   escre,
   escurl,
@@ -1607,5 +1638,5 @@ module.exports = {
   typify,
   validate,
   walk,
-}
 
+}

@@ -1,5 +1,5 @@
 
-const structUtils = require('../src/struct')
+const { StructUtility } = require('../src/struct')
 
 class SDK {
 
@@ -9,14 +9,14 @@ class SDK {
   constructor(opts) {
     this.#opts = opts || {}
     this.#utility = {
-      struct: structUtils,
+      struct: new StructUtility(),
       contextify: (ctxmap) => ctxmap,
       check: (ctx) => {
         return {
           zed: 'ZED' +
             (null == this.#opts ? '' : null == this.#opts.foo ? '' : this.#opts.foo) +
             '_' +
-            (null == ctx.bar ? '0' : ctx.bar)
+            (null == ctx.meta.bar ? '0' : ctx.meta.bar)
         }
       }
     }

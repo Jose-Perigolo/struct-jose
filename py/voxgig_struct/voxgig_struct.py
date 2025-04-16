@@ -273,11 +273,10 @@ def joinurl(sarr):
 
     transformed = []
     for i, s in enumerate(sarr):
-        s = re.sub(r'([^/])/{2,}', r'\1/', s)
-
         if i == 0:
             s = re.sub(r'/+$', '', s)
         else:
+            s = re.sub(r'([^/])/{2,}', r'\1/', s)
             s = re.sub(r'^/+', '', s)
             s = re.sub(r'/+$', '', s)
 
@@ -495,7 +494,7 @@ def merge(objs: List[Any] = None) -> Any:
     out = getprop(objs, 0, {})
 
     for i in range(1, len(objs)):
-        obj = objs[i]
+        obj = clone(objs[i])
 
         if not isnode(obj):
             out = obj
@@ -1526,19 +1525,10 @@ def _invalidTypeMsg(path, needtype, vt, v, _whence=None):
         '.'
     )
 
-# from pprint import pformat
-# print(pformat(vars(instance)))
-
 
 # Create a StructUtils class with all utility functions as attributes
-class StructUtils:
-    """
-    Class that provides access to all struct utility functions.
-    Each function is accessible as an instance attribute.
-    """
-    
+class StructUtility:
     def __init__(self):
-        """Initialize StructUtils with all utility functions as attributes"""
         self.clone = clone
         self.escre = escre
         self.escurl = escurl
@@ -1565,15 +1555,34 @@ class StructUtils:
         self.validate = validate
         self.walk = walk
     
-    def __getitem__(self, key):
-        """Support dictionary-like access for backward compatibility"""
-        if hasattr(self, key):
-            return getattr(self, key)
-        raise KeyError(f"StructUtils has no function '{key}'")
 
-# Create an instance of StructUtils to maintain the existing struct interface
-struct = StructUtils()
-
-# Export the InjectState class and the StructUtils class
-__all__ = ['InjectState', 'StructUtils', 'struct']
+__all__ = [
+    'InjectState',
+    'StructUtility',
+    'clone',
+    'escre',
+    'escurl',
+    'getpath',
+    'getprop',
+    'haskey',
+    'inject',
+    'isempty',
+    'isfunc',
+    'iskey',
+    'islist',
+    'ismap',
+    'isnode',
+    'items',
+    'joinurl',
+    'keysof',
+    'merge',
+    'pathify',
+    'setprop',
+    'stringify',
+    'strkey',
+    'transform',
+    'typify',
+    'validate',
+    'walk',
+]
 

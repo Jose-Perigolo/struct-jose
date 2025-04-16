@@ -1,5 +1,5 @@
 
-import * as structUtils from '../dist/struct'
+import { StructUtility } from '../dist/struct'
 
 class SDK {
 
@@ -9,14 +9,14 @@ class SDK {
   constructor(opts?: any) {
     this.#opts = opts || {}
     this.#utility = {
-      struct: structUtils,
+      struct: new StructUtility(),
       contextify: (ctxmap: any) => ctxmap,
       check: (ctx: any) => {
         return {
           zed: 'ZED' +
             (null == this.#opts ? '' : null == this.#opts.foo ? '' : this.#opts.foo) +
             '_' +
-            (null == ctx.bar ? '0' : ctx.bar)
+            (null == ctx.meta?.bar ? '0' : ctx.meta.bar)
         }
       }
     }

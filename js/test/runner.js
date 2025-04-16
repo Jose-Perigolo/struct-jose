@@ -7,6 +7,7 @@ const { deepEqual, fail, AssertionError } = require('node:assert')
 
 const NULLMARK = '__NULL__' // Value is JSON null
 const UNDEFMARK = '__UNDEF__' // Value is not present (thus, undefined).
+const EXISTSMARK = '__EXISTS__' // Value exists (not undefined).
 
 
 async function makeRunner(testfile, client) {
@@ -164,7 +165,7 @@ function handleError(entry, err, structUtils) {
       if (entry.match) {
         match(
           entry.match,
-          { in: entry.in, out: entry.res, ctx: entry.ctx, err },
+          { in: entry.in, out: entry.res, ctx: entry.ctx, err:fixJSON(err) },
           structUtils
         )
       }
@@ -228,6 +229,7 @@ function resolveTestPack(
   clients
 ) {
   const testpack = {
+    name,
     client,
     subject,
     utility: client.utility(),
@@ -248,26 +250,34 @@ function match(
   base,
   structUtils
 ) {
+  base = structUtils.clone(base)
+  
   structUtils.walk(check, (_key, val, _parent, path) => {
-    let scalar = 'object' != typeof val
-    if (scalar) {
+    if(!structUtils.isnode(val)) {
       let baseval = structUtils.getpath(path, base)
 
       if (baseval === val) {
-        return
+        return val
       }
 
       // Explicit undefined expected
       if (UNDEFMARK === val && undefined === baseval) {
-        return
+        return val
       }
 
+      // Explicit defined expected
+      if (EXISTSMARK === val && null != baseval) {
+        return val
+      }
+      
       if (!matchval(val, baseval, structUtils)) {
         fail('MATCH: ' + path.join('.') +
              ': [' + structUtils.stringify(val) +
              '] <=> [' + structUtils.stringify(baseval) + ']')
       }
     }
+
+    return val
   })
 }
 
