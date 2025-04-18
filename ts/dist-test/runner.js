@@ -1,15 +1,17 @@
 "use strict";
 // This test utility runs the JSON-specified tests in build/test/test.json.
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.NULLMARK = void 0;
+exports.EXISTSMARK = exports.NULLMARK = void 0;
 exports.nullModifier = nullModifier;
 exports.makeRunner = makeRunner;
 const node_fs_1 = require("node:fs");
 const node_path_1 = require("node:path");
 const node_assert_1 = require("node:assert");
-const NULLMARK = "__NULL__"; // Value is JSON null
+const NULLMARK = '__NULL__'; // Value is JSON null
 exports.NULLMARK = NULLMARK;
-const UNDEFMARK = "__UNDEF__"; // Value is not present (thus, undefined).
+const UNDEFMARK = '__UNDEF__'; // Value is not present (thus, undefined).
+const EXISTSMARK = '__EXISTS__'; // Value exists (not undefined).
+exports.EXISTSMARK = EXISTSMARK;
 async function makeRunner(testfile, client) {
     return async function runner(name, store) {
         store = store || {};
@@ -27,7 +29,7 @@ async function makeRunner(testfile, client) {
                 try {
                     entry = resolveEntry(entry, flags);
                     let testpack = resolveTestPack(name, entry, subject, client, clients);
-                    let args = resolveArgs(entry, testpack, structUtils);
+                    let args = resolveArgs(entry, testpack, utility, structUtils);
                     let res = await testpack.subject(...args);
                     res = fixJSON(res, flags);
                     entry.res = res;
@@ -63,13 +65,14 @@ async function resolveClients(client, spec, store, structUtils) {
             if ('object' === typeof store && structUtils?.inject) {
                 structUtils.inject(copts, store);
             }
-            clients[cn] = await client.test(copts);
+            clients[cn] = await client.tester(copts);
         }
     }
     return clients;
 }
-function resolveSubject(name, container, subject) {
-    return subject || container?.[name];
+function resolveSubject(name, container) {
+    const subject = container[name] || container.struct[name];
+    return subject;
 }
 function resolveFlags(flags) {
     if (null == flags) {
@@ -89,11 +92,12 @@ function checkResult(entry, res, structUtils) {
         match(entry.match, result, structUtils);
         matched = true;
     }
-    if (entry.out === res) {
+    const out = entry.out;
+    if (out === res) {
         return;
     }
     // NOTE: allow match with no out.
-    if (matched && (NULLMARK === entry.out || null == entry.out)) {
+    if (matched && (NULLMARK === out || null == out)) {
         return;
     }
     (0, node_assert_1.deepEqual)(null != res ? JSON.parse(JSON.stringify(res)) : res, entry.out);
@@ -105,7 +109,7 @@ function handleError(entry, err, structUtils) {
     if (null != entry_err) {
         if (true === entry_err || matchval(entry_err, err.message, structUtils)) {
             if (entry.match) {
-                match(entry.match, { in: entry.in, out: entry.res, ctx: entry.ctx, err }, structUtils);
+                match(entry.match, { in: entry.in, out: entry.res, ctx: entry.ctx, err: fixJSON(err, { null: true }) }, structUtils);
             }
             return;
         }
@@ -120,18 +124,24 @@ function handleError(entry, err, structUtils) {
         (0, node_assert_1.fail)(err.stack + '\\nnENTRY: ' + JSON.stringify(entry, null, 2));
     }
 }
-function resolveArgs(entry, testpack, structUtils) {
-    let args = [structUtils.clone(entry.in)];
+function resolveArgs(entry, testpack, utility, structUtils) {
+    let args = [];
     if (entry.ctx) {
         args = [entry.ctx];
     }
     else if (entry.args) {
         args = entry.args;
     }
+    else {
+        args = [structUtils.clone(entry.in)];
+    }
     if (entry.ctx || entry.args) {
         let first = args[0];
-        if ('object' === typeof first && null != first) {
-            entry.ctx = first = args[0] = structUtils.clone(args[0]);
+        if (structUtils.ismap(first)) {
+            first = structUtils.clone(first);
+            first = utility.contextify(first);
+            args[0] = first;
+            entry.ctx = first;
             first.client = testpack.client;
             first.utility = testpack.utility;
         }
@@ -140,6 +150,7 @@ function resolveArgs(entry, testpack, structUtils) {
 }
 function resolveTestPack(name, entry, subject, client, clients) {
     const testpack = {
+        name,
         client,
         subject,
         utility: client.utility(),
@@ -147,22 +158,25 @@ function resolveTestPack(name, entry, subject, client, clients) {
     if (entry.client) {
         testpack.client = clients[entry.client];
         testpack.utility = testpack.client.utility();
-        // testpack.subject = resolveSubject(name, testpack.utility, subject)
         testpack.subject = resolveSubject(name, testpack.utility);
     }
     return testpack;
 }
 function match(check, base, structUtils) {
+    base = structUtils.clone(base);
     structUtils.walk(check, (_key, val, _parent, path) => {
-        let scalar = 'object' != typeof val;
-        if (scalar) {
+        if (!structUtils.isnode(val)) {
             let baseval = structUtils.getpath(path, base);
             if (baseval === val) {
-                return;
+                return val;
             }
             // Explicit undefined expected
             if (UNDEFMARK === val && undefined === baseval) {
-                return;
+                return val;
+            }
+            // Explicit defined expected
+            if (EXISTSMARK === val && null != baseval) {
+                return val;
             }
             if (!matchval(val, baseval, structUtils)) {
                 (0, node_assert_1.fail)('MATCH: ' + path.join('.') +
@@ -170,9 +184,11 @@ function match(check, base, structUtils) {
                     '] <=> [' + structUtils.stringify(baseval) + ']');
             }
         }
+        return val;
     });
 }
 function matchval(check, base, structUtils) {
+    // check = NULLMARK === check || UNDEFMARK === check ? undefined : check
     // check = NULLMARK === check ? undefined : check
     let pass = check === base;
     if (!pass) {
@@ -194,10 +210,10 @@ function matchval(check, base, structUtils) {
 }
 function fixJSON(val, flags) {
     if (null == val) {
-        return flags.null ? NULLMARK : val;
+        return flags?.null ? NULLMARK : val;
     }
     const replacer = (_k, v) => {
-        if (null == v && flags.null) {
+        if (null == v && flags?.null) {
             return NULLMARK;
         }
         if (v instanceof Error) {

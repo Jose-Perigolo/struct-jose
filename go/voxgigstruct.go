@@ -446,11 +446,12 @@ func JoinUrl(parts []any) string {
 	}
 
 	for i, s := range filtered {
-		s = reNonSlashSlash.ReplaceAllString(s, `$1/`)
-
 		if i == 0 {
+			// For the first part, only remove trailing slashes
 			s = reTrailingSlash.ReplaceAllString(s, "")
 		} else {
+			// For remaining parts, handle both leading and trailing slashes
+			s = reNonSlashSlash.ReplaceAllString(s, `$1/`)
 			s = reLeadingSlash.ReplaceAllString(s, "")
 			s = reTrailingSlash.ReplaceAllString(s, "")
 		}
@@ -954,20 +955,12 @@ func GetPathState(
 		}
 	}
 
-  // mode := "none"
-  // if nil != state {
-  //   mode = state.Mode
-  // }
-  
-  // // fmt.Println("GP-A", mode, path, val)
   
 	if nil != state && state.Handler != nil {
 		ref := Pathify(path)
 		val = state.Handler(state, val, current, &ref, store)
 	}
 
-  // // fmt.Println("GP-B", mode, path, val)
-  
 	return val
 }
 
@@ -1128,6 +1121,7 @@ func InjectDescend(
 			}
 		}
 
+		sort.Strings(normalKeys)
 		sort.Strings(transformKeys)
 		nodekeys := append(normalKeys, transformKeys...)
 
@@ -1208,7 +1202,6 @@ func InjectDescend(
 		if ok {
 			val = _injectStr(strVal, store, current, state)
 
-      // fmt.Println("+++++++ SP", state.Key, val, state.Parent)
       _setParentProp("IV", state, val)
 		}
 	}
@@ -1228,13 +1221,9 @@ func InjectDescend(
 		)
 	}
 
-  // // fmt.Println("AAA", val)
-  
 	// Original val reference may no longer be correct.
 	// This return value is only used as the top level result.
 	rval := GetProp(state.Parent, S_DTOP)
-
-  // // fmt.Println("BBB", rval)
 
   return rval
 }
@@ -1252,8 +1241,6 @@ var injectHandler Injector = func(
   var out = val
 	iscmd := IsFunc(val) && (nil == ref || strings.HasPrefix(*ref, S_DS))
 
-  // fmt.Println("IH", Stringify(ref), state.Key, iscmd, out)
-  
 	if iscmd {
 		fnih, ok := val.(Injector)
 
@@ -1420,7 +1407,6 @@ var Transform_EACH Injector = func(
 	ref *string,
 	store any,
 ) any {
-  // // fmt.Println("EACH-A", fdt(state))
   
 	// Remove arguments to avoid spurious processing.
 	if nil != state.Keys {
@@ -1442,8 +1428,6 @@ var Transform_EACH Injector = func(
   srcstore := GetProp(store, state.Base, store)
   src := GetPathState(srcpath, srcstore, current, nil)
   
-  // // fmt.Println("EACH-B", child, srcpath, src, srcstore)
-  
 	// Create parallel data structures:
 	// source entries :: child templates
 	var tcur any
@@ -1457,8 +1441,6 @@ var Transform_EACH Injector = func(
 		target = state.Nodes[len(state.Nodes)-1]
 	}
 
-  // // fmt.Println("EACH-C", tkey, target)
-  
 	// Create clones of the child template for each value of the current source.
 	if IsList(src) {
 		srcList, ok := src.([]any)
@@ -1502,15 +1484,11 @@ var Transform_EACH Injector = func(
 		S_DTOP: tcur,
 	}
 
-  // // fmt.Println("EACH-D", tcur, "TVAL=", tval, fdt(state.Parent))
-  
 	// Build the substructure.
 	tval = InjectDescend(tval, store, state.Modify, tcur, nil)
-  // fmt.Println("EACH-E", tkey, tval, target, fdt(state))
 
   state.Parent = tval
 	// _updateAncestors("EACH", state, target, tkey, tval)
-  // fmt.Println("EACH-F", fdt(state))
   
 	// Return the first element
 	listVal, ok := tval.([]any)
@@ -1783,10 +1761,12 @@ var validate_OBJECT Injector = func(
 	out := GetProp(current, state.Key)
 
 	t := Typify(out)
+
 	if S_object != t {
 		msg := _invalidTypeMsg(state.Path, S_object, t, out)
 		state.Errs.Append(msg)
-		return nil
+
+    return nil
 	}
 
 	return out
@@ -1938,6 +1918,9 @@ var validate_CHILD Injector = func(
 // Forward declaration for validate_ONE
 var validate_ONE Injector
 
+// Forward declaration for validate_EXACT
+var validate_EXACT Injector
+
 // Implementation will be set after ValidateCollect is defined
 func init_validate_ONE() {
 	validate_ONE = func(
@@ -1949,45 +1932,69 @@ func init_validate_ONE() {
 	) any {
 		// Only operate in "val mode" (list mode).
 		if state.Mode == S_MVAL {
+			// Validate that parent is a list and we're at the first element
+			if !IsList(state.Parent) || state.KeyI != 0 {
+				state.Errs.Append("The $ONE validator at field " +
+					Pathify(state.Path, 1, 1) +
+					" must be the first element of an array.")
+				return nil
+			}
+
 			// Once we handle `$ONE`, we skip further iteration by setting KeyI to keys.length
 			state.KeyI = len(state.Keys)
 
 			// The parent is assumed to be a slice: ["`$ONE`", alt0, alt1, ...].
 			parentSlice, ok := state.Parent.([]any)
-			if !ok || len(parentSlice) < 2 {
+			if !ok {
 				return nil
 			}
 
+			// Get grandparent and grandkey to replace the structure
+			grandparent := GetProp(state.Nodes, len(state.Nodes)-2)
+			grandkey := GetProp(state.Path, len(state.Path)-2)
+
+			// Clean up structure by replacing [$ONE, ...] with current value
+			SetProp(grandparent, grandkey, current)
+      state.Parent = current
+      // _updateAncestors("ONE",state,grandparent,grandkey,current)
+      
+			// Adjust the path
+			state.Path = state.Path[:len(state.Path)-1]
+			state.Key = state.Path[len(state.Path)-1]
+
 			// The shape alternatives are everything after the first element.
 			tvals := parentSlice[1:] // alt0, alt1, ...
+			
+			// Ensure we have at least one alternative
+			if len(tvals) == 0 {
+				state.Errs.Append("The $ONE validator at field " +
+					Pathify(state.Path, 1, 1) +
+					" must have at least one argument.")
+				return nil
+			}
 
 			// Try each alternative shape
 			for _, tval := range tvals {
 				// Collect errors in a temporary slice
 				var terrs = ListRefCreate[any]()
 
+				// Create a new store for validation
+				vstore := Clone(store).(map[string]any)
+				vstore["$TOP"] = current
+
 				// Attempt validation of `current` with shape `tval`
-				_, err := ValidateCollect(current, tval, nil, terrs)
+				vcurrent, err := ValidateCollect(current, tval, vstore, terrs)
+
+				// Update the value in the grandparent
+				SetProp(grandparent, grandkey, vcurrent)
+
+				// If no errors, we found a match
 				if err == nil && len(terrs.List) == 0 {
-					// The parent is the list we are inside.
-					// We look up one level: that is `nodes[nodes.length - 2]`.
-					grandparent := GetProp(state.Nodes, len(state.Nodes)-2)
-					grandkey := GetProp(state.Path, len(state.Path)-2)
-
-					if IsNode(grandparent) {
-
-						if 0 == len(terrs.List) {
-							SetProp(grandparent, grandkey, current)
-							state.Parent = current
-							return nil
-
-						} else {
-							SetProp(grandparent, grandkey, nil)
-						}
-					}
+					return nil
 				}
 			}
 
+			// If we get here, there was no match
 			mapped := make([]string, len(tvals))
 			for i, v := range tvals {
 				mapped[i] = Stringify(v)
@@ -2004,14 +2011,141 @@ func init_validate_ONE() {
 				return match
 			})
 
-			actualType := Typify(current)
+			prefix := ""
+			if len(tvals) > 1 {
+				prefix = "one of "
+			}
+
 			msg := _invalidTypeMsg(
-				state.Path[:len(state.Path)-1],
-				"one of "+valdesc,
-				actualType,
+				state.Path,
+				prefix+valdesc,
+				Typify(current),
 				current,
+				"V0210",
 			)
 			state.Errs.Append(msg)
+		}
+
+		return nil
+	}
+}
+
+func init_validate_EXACT() {
+	validate_EXACT = func(
+		state *Injection,
+		_val any,
+		current any,
+		ref *string,
+		_store any,
+	) any {
+		// Only operate in "val mode" (list mode).
+		if state.Mode == S_MVAL {
+			// Validate that parent is a list and we're at the first element
+			if !IsList(state.Parent) || state.KeyI != 0 {
+				state.Errs.Append("The $EXACT validator at field " +
+					Pathify(state.Path, 1, 1) +
+					" must be the first element of an array.")
+				return nil
+			}
+
+			// Once we handle `$EXACT`, we skip further iteration by setting KeyI to keys.length
+			state.KeyI = len(state.Keys)
+
+			// The parent is assumed to be a slice: ["`$EXACT`", alt0, alt1, ...].
+			parentSlice, ok := state.Parent.([]any)
+			if !ok {
+				return nil
+			}
+      
+			// Get grandparent and grandkey to replace the structure
+			grandparent := GetProp(state.Nodes, len(state.Nodes)-2)
+			grandkey := GetProp(state.Path, len(state.Path)-2)
+
+			// Clean up structure by replacing [$EXACT, ...] with current value
+			SetProp(grandparent, grandkey, current)
+      state.Parent = current
+			
+			// Adjust the path
+			state.Path = state.Path[:len(state.Path)-1]
+			state.Key = state.Path[len(state.Path)-1]
+
+			// The exact values to match are everything after the first element.
+			tvals := parentSlice[1:] // alt0, alt1, ...
+
+			// Ensure we have at least one alternative
+			if len(tvals) == 0 {
+				state.Errs.Append("The $EXACT validator at field " +
+					Pathify(state.Path, 1, 1) +
+					" must have at least one argument.")
+				return nil
+			}
+
+			// See if we can find an exact value match
+			var currentStr *string
+			for _, tval := range tvals {
+        exactMatch := false
+
+        // fmt.Println("EXACT-CMP", tval, current)
+        
+        // if tval.(any) == current.(any) {
+        //   exactMatch = true
+        // }
+
+        if !exactMatch {
+          exactMatch = reflect.DeepEqual(tval, current)
+        }
+        
+				if !exactMatch && IsNode(tval) {
+					if nil == currentStr {
+						tmpstr := Stringify(current)
+            currentStr = &tmpstr
+					}
+					tvalStr := Stringify(tval)
+					exactMatch = tvalStr == *currentStr
+				}
+
+				if exactMatch {
+					return nil
+				}
+			}
+
+			// If we get here, there was no match
+			mapped := make([]string, len(tvals))
+			for i, v := range tvals {
+				mapped[i] = Stringify(v)
+			}
+
+			joined := strings.Join(mapped, ", ")
+
+			re := regexp.MustCompile("`\\$([A-Z]+)`")
+			valdesc := re.ReplaceAllStringFunc(joined, func(match string) string {
+				submatches := re.FindStringSubmatch(match)
+				if len(submatches) == 2 {
+					return strings.ToLower(submatches[1])
+				}
+				return match
+			})
+
+			prefix := ""
+			if len(state.Path) <= 1 {
+				prefix = "value "
+			}
+			
+			oneOf := ""
+			if len(tvals) > 1 {
+				oneOf = "one of "
+			}
+
+			msg := _invalidTypeMsg(
+				state.Path,
+				prefix+"exactly equal to "+oneOf+valdesc,
+				Typify(current),
+				current,
+				"V0110",
+			)
+			state.Errs.Append(msg)
+		} else {
+			SetProp(state.Parent, state.Key, nil)
 		}
 
 		return nil
@@ -2080,7 +2214,7 @@ func validation(
 
 			// Closed object, so reject extra keys not in shape.
 			if len(badkeys) > 0 {
-				state.Errs.Append("Unexpected keys at " + Pathify(state.Path, 1) +
+				state.Errs.Append("Unexpected keys at field " + Pathify(state.Path, 1) +
 					": " + strings.Join(badkeys, ", "))
 			}
 		} else {
@@ -2109,37 +2243,44 @@ func Validate(
 	return ValidateCollect(data, spec, nil, nil)
 }
 
+
 func ValidateCollect(
 	data any,
 	spec any,
 	extra map[string]any,
 	collecterrs *ListRef[any],
 ) (any, error) {
-
-	if nil == collecterrs {
-		collecterrs = ListRefCreate[any]()
+	// Use the provided error collection or create a new one
+	errs := collecterrs
+	if nil == errs {
+		errs = ListRefCreate[any]()
 	}
 
+  
 	// Initialize validate_ONE if not already initialized.
 	// This avoids a circular reference error, validate_ONE calls ValidateCollect.
 	if validate_ONE == nil {
 		init_validate_ONE()
 	}
 
-	store := map[string]any{
-		"$ERRS": collecterrs,
+	// Initialize validate_EXACT if not already initialized.
+	if validate_EXACT == nil {
+		init_validate_EXACT()
+	}
 
+	// Create the store with validation commands
+	store := map[string]any{
 		// Remove the transform commands
-		"$BT":     nil,
-		"$DS":     nil,
-		"$WHEN":   nil,
 		"$DELETE": nil,
-		"$COPY":   nil,
+		"$COPY":   nil, 
 		"$KEY":    nil,
 		"$META":   nil,
 		"$MERGE":  nil,
 		"$EACH":   nil,
 		"$PACK":   nil,
+		"$BT":     nil,
+		"$DS":     nil,
+		"$WHEN":   nil,
 
 		// Add validation commands
 		"$STRING":   validate_STRING,
@@ -2151,6 +2292,7 @@ func ValidateCollect(
 		"$ANY":      validate_ANY,
 		"$CHILD":    validate_CHILD,
 		"$ONE":      validate_ONE,
+		"$EXACT":    validate_EXACT,
 	}
 
 	// Add any extra validation commands
@@ -2160,12 +2302,28 @@ func ValidateCollect(
 		}
 	}
 
+  // A special top level value to collect errors
+  store["$ERRS"] = errs
+
+  
+	// Run the transformation with validation
 	out := TransformModify(data, spec, store, validation)
 
+	// Generate an error if we collected any errors and the caller didn't provide 
+	// their own error collection
 	var err error
-
-	if 0 < len(collecterrs.List) {
-		err = fmt.Errorf("Invalid data: %s", _join(collecterrs.List, " | "))
+	generr := 0 < len(errs.List) && collecterrs == nil
+	if generr {
+		// Join error messages
+		errmsgs := make([]string, len(errs.List))
+		for i, e := range errs.List {
+			if s, ok := e.(string); ok {
+				errmsgs[i] = s
+			} else {
+				errmsgs[i] = fmt.Sprintf("%v", e)
+			}
+		}
+		err = fmt.Errorf("Invalid data: %s", strings.Join(errmsgs, " | "))
 	}
 
 	return out, err
@@ -2205,19 +2363,31 @@ func _join(vals []any, sep string) string {
 }
 
 
-func _invalidTypeMsg(path []string, expected string, actual string, val any) string {
-	vs := Stringify(val)
-	valueStr := vs
-	if val != nil {
-		valueStr = actual + ": " + vs
+func _invalidTypeMsg(path []string, needtype string, vt string, v any, whence ...string) string {
+	vs := "no value"
+	if v != nil {
+		vs = Stringify(v)
 	}
 
-	return fmt.Sprintf(
-		"Expected %s at %s, found %s",
-		expected,
-		Pathify(path, 1),
-		valueStr,
-	)
+	fieldPart := ""
+	if len(path) > 1 {
+		fieldPart = "field " + Pathify(path, 1) + " to be "
+	}
+
+	typePart := ""
+	if v != nil {
+		typePart = vt + ": "
+	}
+
+	// Build the main error message
+	message := "Expected " + fieldPart + needtype + ", but found " + typePart + vs
+
+	// Uncomment to help debug validation errors
+	// if len(whence) > 0 {
+	//    message += " [" + whence[0] + "]"
+	// }
+
+	return message + "."
 }
 
 func _getType(v any) string {
@@ -2398,19 +2568,15 @@ func _stringifyValue(v any) string {
 // Set state.Key property of state.Parent node, ensuring reference consistency
 // when needed by implementation language.
 func _setParentProp(whence string, state *Injection, val any) {
-  // fmt.Println("SPP-A w="+whence+" p="+Stringify(state.Parent)+" k="+Stringify(state.Key)+" v="+Stringify(val))
-	// parent := SetProp(state.Parent, state.Key, val)
   parent := SetProp(state.Parent, state.Key, val)
   state.Parent = parent
   fixAncestors := IsList(parent) // && len(parent.([]any)) != len(state.Parent.([]any))
-  // fmt.Println("SPP-B w="+whence+" fa= "+Stringify(fixAncestors)+" np="+Stringify(parent))
   
   // List references are not stable in Go.
   if fixAncestors {
 		_updateAncestors("SPP", state, parent, nil, nil)
 	}
 
-  // fmt.Println("SPP-C w="+whence+" n="+fdt(state))
 }
 
 
@@ -2419,30 +2585,15 @@ func _updateAncestors(whence string, state *Injection, target any, tkey any, tva
   // state.Parent = ap
 	aI := len(state.Nodes) - 1
 
-  // // fmt.Println("UA-0 w="+whence+" aI="+Stringify(aI)+" t="+Stringify(target)+
-  //    " ap="+Stringify(ap)+" n="+Stringify(state.Nodes))
 
 	if -1 < aI {
 		state.Nodes[aI] = ap
 	}
 
-  // // fmt.Println("UA-1 w="+whence+" aI="+Stringify(aI)+" t="+Stringify(target)+
-    // " ap="+Stringify(ap)+
-    // " \nk="+Stringify(state.Path)+
-    // " \nn="+Stringify(state.Nodes))
-
 	aI = aI - 1
 	for -1 < aI {
     ak := state.Path[aI]
     an := state.Nodes[aI]
-  // ap = SetProp(an, ak, ap)
-
-    // // fmt.Println("UA-2 w="+whence+" aI="+Stringify(aI)+
-      // " \nan="+Stringify(an)+
-      // " \nak="+Stringify(ak)+
-      // " \nap="+Stringify(ap))
-      // " n="+Stringify(state.Nodes))
-    
     ap = SetProp(an, ak, ap)
   
 		if IsList(an) {
@@ -2452,9 +2603,6 @@ func _updateAncestors(whence string, state *Injection, target any, tkey any, tva
 		}
 	}
 
-  // // fmt.Println("UA-3 w="+whence+" aI="+Stringify(aI))
-  // // // fmt.Println("UA-4 w="+whence+" aI="+Stringify(aI))
-  
 }
 
 

@@ -5,16 +5,19 @@ const { join } = require('node:path')
 const { deepEqual, fail, AssertionError } = require('node:assert')
 
 
-const NULLMARK = '__NULL__'
-const UNDEFMARK = '__UNDEF__'
+const NULLMARK = '__NULL__' // Value is JSON null
+const UNDEFMARK = '__UNDEF__' // Value is not present (thus, undefined).
+const EXISTSMARK = '__EXISTS__' // Value exists (not undefined).
 
 
 async function makeRunner(testfile, client) {
-  
+
   return async function runner(
     name,
     store = {}
   ) {
+    store = store || {}
+
     const utility = client.utility()
     const structUtils = utility.struct
     
@@ -37,7 +40,7 @@ async function makeRunner(testfile, client) {
           entry = resolveEntry(entry, flags)
 
           let testpack = resolveTestPack(name, entry, subject, client, clients)
-          let args = resolveArgs(entry, testpack, structUtils)
+          let args = resolveArgs(entry, testpack, utility, structUtils)
 
           let res = await testpack.subject(...args)
           res = fixJSON(res, flags)
@@ -94,7 +97,7 @@ async function resolveClients(
         structUtils.inject(copts, store)
       }
 
-      clients[cn] = await client.test(copts)
+      clients[cn] = await client.tester(copts)
     }
   }
   return clients
@@ -124,6 +127,7 @@ function resolveEntry(entry, flags) {
 
 function checkResult(entry, res, structUtils) {
   let matched = false
+
   if (entry.match) {
     const result = { in: entry.in, out: entry.res, ctx: entry.ctx }
     match(
@@ -135,12 +139,14 @@ function checkResult(entry, res, structUtils) {
     matched = true
   }
 
-  if (entry.out === res) {
+  const out = entry.out
+  
+  if (out === res) {
     return
   }
 
   // NOTE: allow match with no out.
-  if (matched && (NULLMARK === entry.out || null == entry.out)) {
+  if (matched && (NULLMARK === out || null == out)) {
     return
   }
 
@@ -159,7 +165,7 @@ function handleError(entry, err, structUtils) {
       if (entry.match) {
         match(
           entry.match,
-          { in: entry.in, out: entry.res, ctx: entry.ctx, err },
+          { in: entry.in, out: entry.res, ctx: entry.ctx, err:fixJSON(err) },
           structUtils
         )
       }
@@ -169,6 +175,7 @@ function handleError(entry, err, structUtils) {
     fail('ERROR MATCH: [' + structUtils.stringify(entry_err) +
       '] <=> [' + err.message + ']')
   }
+
   // Unexpected error (test didn't specify an error expectation)
   else if (err instanceof AssertionError) {
     fail(err.message + '\n\nENTRY: ' + JSON.stringify(entry, null, 2))
@@ -179,8 +186,13 @@ function handleError(entry, err, structUtils) {
 }
 
 
-function resolveArgs(entry, testpack, structUtils) {
-  let args = [structUtils.clone(entry.in)]
+function resolveArgs(
+  entry,
+  testpack,
+  utility,
+  structUtils
+) {
+  let args = []
 
   if (entry.ctx) {
     args = [entry.ctx]
@@ -188,11 +200,18 @@ function resolveArgs(entry, testpack, structUtils) {
   else if (entry.args) {
     args = entry.args
   }
+  else {
+    args = [structUtils.clone(entry.in)]
+  }
 
   if (entry.ctx || entry.args) {
     let first = args[0]
-    if ('object' === typeof first && null != first) {
-      entry.ctx = first = args[0] = structUtils.clone(args[0])
+    if(structUtils.ismap(first)) {
+      first = structUtils.clone(first)
+      first = utility.contextify(first)
+      args[0] = first
+      entry.ctx = first
+
       first.client = testpack.client
       first.utility = testpack.utility
     }
@@ -210,6 +229,7 @@ function resolveTestPack(
   clients
 ) {
   const testpack = {
+    name,
     client,
     subject,
     utility: client.utility(),
@@ -230,17 +250,34 @@ function match(
   base,
   structUtils
 ) {
+  base = structUtils.clone(base)
+  
   structUtils.walk(check, (_key, val, _parent, path) => {
-    let scalar = 'object' != typeof val
-    if (scalar) {
+    if(!structUtils.isnode(val)) {
       let baseval = structUtils.getpath(path, base)
 
+      if (baseval === val) {
+        return val
+      }
+
+      // Explicit undefined expected
+      if (UNDEFMARK === val && undefined === baseval) {
+        return val
+      }
+
+      // Explicit defined expected
+      if (EXISTSMARK === val && null != baseval) {
+        return val
+      }
+      
       if (!matchval(val, baseval, structUtils)) {
         fail('MATCH: ' + path.join('.') +
              ': [' + structUtils.stringify(val) +
              '] <=> [' + structUtils.stringify(baseval) + ']')
       }
     }
+
+    return val
   })
 }
 
@@ -250,7 +287,8 @@ function matchval(
   base,
   structUtils
 ) {
-  check = NULLMARK === check || UNDEFMARK === check ? undefined : check
+  // check = NULLMARK === check || UNDEFMARK === check ? undefined : check
+  // check = NULLMARK === check ? undefined : check
 
   let pass = check === base
 

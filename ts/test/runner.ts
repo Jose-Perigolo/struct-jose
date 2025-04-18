@@ -4,21 +4,11 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { deepEqual, fail, AssertionError } from 'node:assert'
 
+import { StructUtility } from '../dist/struct'
 
-// Runner does make use of these struct utilities, and this usage is
-// circular. This is a trade-off tp make the runner code simpler.
-import {
-  clone,
-  getpath,
-  inject,
-  items,
-  stringify,
-  walk,
-} from '../dist/struct'
-
-
-const NULLMARK = "__NULL__" // Value is JSON null
-const UNDEFMARK = "__UNDEF__" // Value is not present (thus, undefined).
+const NULLMARK = '__NULL__' // Value is JSON null
+const UNDEFMARK = '__UNDEF__' // Value is not present (thus, undefined).
+const EXISTSMARK = '__EXISTS__' // Value exists (not undefined).
 
 
 type Subject = (...args: any[]) => any
@@ -35,6 +25,7 @@ type RunPack = {
 }
 
 type TestPack = {
+  name?: string
   client: any
   subject: Subject
   utility: any
@@ -43,7 +34,17 @@ type TestPack = {
 type Flags = Record<string, boolean>
 
 
-async function makeRunner(testfile: string, client: any) {
+type Utility = {
+  struct: StructUtility
+  contextify: (ctxmap: Record<string, any>) => any
+}
+
+type Client = {
+  utility: () => Utility
+}
+
+
+async function makeRunner(testfile: string, client: Client) {
 
   return async function runner(
     name: string,
@@ -73,7 +74,7 @@ async function makeRunner(testfile: string, client: any) {
           entry = resolveEntry(entry, flags)
 
           let testpack = resolveTestPack(name, entry, subject, client, clients)
-          let args = resolveArgs(entry, testpack, structUtils)
+          let args = resolveArgs(entry, testpack, utility, structUtils)
 
           let res = await testpack.subject(...args)
           res = fixJSON(res, flags)
@@ -131,15 +132,16 @@ async function resolveClients(
         structUtils.inject(copts, store)
       }
 
-      clients[cn] = await client.test(copts)
+      clients[cn] = await client.tester(copts)
     }
   }
   return clients
 }
 
 
-function resolveSubject(name: string, container: any, subject?: Subject) {
-  return subject || container?.[name]
+function resolveSubject(name: string, container: any) {
+  const subject = container[name] || container.struct[name]
+  return subject
 }
 
 
@@ -160,6 +162,7 @@ function resolveEntry(entry: any, flags: Flags): any {
 
 function checkResult(entry: any, res: any, structUtils: Record<string, any>) {
   let matched = false
+
   if (entry.match) {
     const result = { in: entry.in, out: entry.res, ctx: entry.ctx }
     match(
@@ -171,12 +174,14 @@ function checkResult(entry: any, res: any, structUtils: Record<string, any>) {
     matched = true
   }
 
-  if (entry.out === res) {
+  const out = entry.out
+
+  if (out === res) {
     return
   }
 
   // NOTE: allow match with no out.
-  if (matched && (NULLMARK === entry.out || null == entry.out)) {
+  if (matched && (NULLMARK === out || null == out)) {
     return
   }
 
@@ -195,7 +200,7 @@ function handleError(entry: any, err: any, structUtils: Record<string, any>) {
       if (entry.match) {
         match(
           entry.match,
-          { in: entry.in, out: entry.res, ctx: entry.ctx, err },
+          { in: entry.in, out: entry.res, ctx: entry.ctx, err: fixJSON(err, { null: true }) },
           structUtils
         )
       }
@@ -216,8 +221,13 @@ function handleError(entry: any, err: any, structUtils: Record<string, any>) {
 }
 
 
-function resolveArgs(entry: any, testpack: TestPack, structUtils: Record<string, any>): any[] {
-  let args = [structUtils.clone(entry.in)]
+function resolveArgs(
+  entry: any,
+  testpack: TestPack,
+  utility: Utility,
+  structUtils: Record<string, any>
+): any[] {
+  let args: any[] = []
 
   if (entry.ctx) {
     args = [entry.ctx]
@@ -225,11 +235,18 @@ function resolveArgs(entry: any, testpack: TestPack, structUtils: Record<string,
   else if (entry.args) {
     args = entry.args
   }
+  else {
+    args = [structUtils.clone(entry.in)]
+  }
 
   if (entry.ctx || entry.args) {
     let first = args[0]
-    if ('object' === typeof first && null != first) {
-      entry.ctx = first = args[0] = structUtils.clone(args[0])
+    if (structUtils.ismap(first)) {
+      first = structUtils.clone(first)
+      first = utility.contextify(first)
+      args[0] = first
+      entry.ctx = first
+
       first.client = testpack.client
       first.utility = testpack.utility
     }
@@ -247,6 +264,7 @@ function resolveTestPack(
   clients: Record<string, any>
 ) {
   const testpack: TestPack = {
+    name,
     client,
     subject,
     utility: client.utility(),
@@ -255,7 +273,6 @@ function resolveTestPack(
   if (entry.client) {
     testpack.client = clients[entry.client]
     testpack.utility = testpack.client.utility()
-    // testpack.subject = resolveSubject(name, testpack.utility, subject)
     testpack.subject = resolveSubject(name, testpack.utility)
   }
 
@@ -268,18 +285,24 @@ function match(
   base: any,
   structUtils: Record<string, any>
 ) {
+  base = structUtils.clone(base)
+
   structUtils.walk(check, (_key: any, val: any, _parent: any, path: any) => {
-    let scalar = 'object' != typeof val
-    if (scalar) {
+    if (!structUtils.isnode(val)) {
       let baseval = structUtils.getpath(path, base)
 
       if (baseval === val) {
-        return
+        return val
       }
 
       // Explicit undefined expected
       if (UNDEFMARK === val && undefined === baseval) {
-        return
+        return val
+      }
+
+      // Explicit defined expected
+      if (EXISTSMARK === val && null != baseval) {
+        return val
       }
 
       if (!matchval(val, baseval, structUtils)) {
@@ -288,6 +311,8 @@ function match(
           '] <=> [' + structUtils.stringify(baseval) + ']')
       }
     }
+
+    return val
   })
 }
 
@@ -297,6 +322,7 @@ function matchval(
   base: any,
   structUtils: Record<string, any>
 ) {
+  // check = NULLMARK === check || UNDEFMARK === check ? undefined : check
   // check = NULLMARK === check ? undefined : check
 
   let pass = check === base
@@ -323,13 +349,13 @@ function matchval(
 }
 
 
-function fixJSON(val: any, flags: Flags): any {
+function fixJSON(val: any, flags?: Flags): any {
   if (null == val) {
-    return flags.null ? NULLMARK : val
+    return flags?.null ? NULLMARK : val
   }
 
   const replacer = (_k: string, v: any) => {
-    if (null == v && flags.null) {
+    if (null == v && flags?.null) {
       return NULLMARK
     }
 
@@ -364,6 +390,7 @@ function nullModifier(
 
 export {
   NULLMARK,
+  EXISTSMARK,
   nullModifier,
   makeRunner,
 }

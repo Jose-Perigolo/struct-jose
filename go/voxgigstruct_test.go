@@ -20,9 +20,14 @@ import (
 func TestStruct(t *testing.T) {
 
 	store := make(map[string]any)
-	// provider := &TestProvider{}
+	
+	// Create an SDK client for the runner
+	sdk, err := runner.TestSDK(nil)
+	if err != nil {
+		t.Fatalf("Failed to create SDK: %v", err)
+	}
 
-	runnerFunc := runner.MakeRunner("../build/test/test.json")
+	runnerFunc := runner.MakeRunner("../build/test/test.json", sdk)
 	runnerMap, err := runnerFunc("struct", store)
 	if err != nil {
 		t.Fatalf("Failed to create runner struct: %v", err)
@@ -311,7 +316,12 @@ func TestStruct(t *testing.T) {
 
   
 	t.Run("minor-haskey", func(t *testing.T) {
-		runset(t, minorSpec["haskey"], voxgigstruct.HasKey)
+		runsetFlags(t, minorSpec["haskey"], map[string]bool{"null": false}, func(v any) any {
+			m := v.(map[string]any)
+			src := m["src"]
+			key := m["key"]
+			return voxgigstruct.HasKey(src, key)
+		})
 	})
 
   
@@ -415,6 +425,48 @@ func TestStruct(t *testing.T) {
   
 	t.Run("merge-array", func(t *testing.T) {
 		runset(t, mergeSpec["array"], voxgigstruct.Merge)
+	})
+
+	t.Run("merge-integrity", func(t *testing.T) {
+		runset(t, mergeSpec["integrity"], voxgigstruct.Merge)
+	})
+
+  
+	t.Run("merge-special", func(t *testing.T) {
+		f0 := func() int { return 11 }
+		
+		result0 := voxgigstruct.Merge([]any{f0})
+    var fr0 = result0.(func() int)
+
+    if f0() != fr0() {
+			t.Errorf("Expected same function reference (A)")
+		}
+		
+		result1 := voxgigstruct.Merge([]any{nil, f0})
+    var fr1 = result1.(func() int)
+		if f0() != fr1() {
+			t.Errorf("Expected same function reference (B)")
+		}
+		
+		result2 := voxgigstruct.Merge([]any{map[string]any{"a": f0}}).(map[string]any)
+    var fr2 = result2["a"].(func() int)
+		if f0() != fr2() {
+			t.Errorf("Expected object with function reference")
+		}
+
+		result3 := voxgigstruct.Merge([]any{[]any{f0}}).([]any)
+    var fr3 = result3[0].(func() int)
+		if f0() != fr3() {
+			t.Errorf("Expected array with function reference")
+		}
+    
+		result4 := voxgigstruct.Merge([]any{map[string]any{"a": map[string]any{"b": f0}}})
+    var b = result4.(map[string]any)["a"].(map[string]any)
+    var fr4 = b["b"].(func() int)
+
+		if f0() != fr4() {
+			t.Errorf("Expected deep object with function reference")
+		}
 	})
 
   
@@ -674,6 +726,35 @@ func TestStruct(t *testing.T) {
 		}
 	})
 
+
+	t.Run("transform-funcval", func(t *testing.T) {
+    f0 := func() int { return 22 }
+		
+		result1 := voxgigstruct.Transform(map[string]any{}, map[string]any{"x": 1})
+		expected1 := map[string]any{"x": 1}
+		if !reflect.DeepEqual(expected1, result1) {
+			t.Errorf("Expected simple value transform result")
+		}
+		
+		result2 := voxgigstruct.Transform(map[string]any{}, map[string]any{"x": f0})
+    var fr0 = result2.(map[string]any)["x"].(func() int) 
+    if f0() != fr0() {
+      t.Errorf("Expected x to be f0")
+		}
+		
+    result3 := voxgigstruct.Transform(map[string]any{"a": 1}, map[string]any{"x": "`a`"})
+    expected3 := map[string]any{"x": 1}
+    if !reflect.DeepEqual(expected3, result3) {
+	 		t.Errorf("Expected value lookup transform to work")
+    }
+		
+    result4 := voxgigstruct.Transform(map[string]any{"f0": f0}, map[string]any{"x": "`f0`"})
+    var fr4 = result4.(map[string]any)["x"].(func() int)
+    if 22 != fr4() {
+	 		t.Errorf("Expected function to be preserved")
+    }
+	})
+
   
 	// validate tests
 	// ===============
@@ -696,8 +777,8 @@ func TestStruct(t *testing.T) {
 	})
 
   
-	t.Run("validate-node", func(t *testing.T) {
-		runset(t, validateSpec["node"], func(v any) (any, error) {
+	t.Run("validate-child", func(t *testing.T) {
+		runset(t, validateSpec["child"], func(v any) (any, error) {
 			m := v.(map[string]any)
 			data := m["data"]
 			spec := m["spec"]
@@ -705,6 +786,34 @@ func TestStruct(t *testing.T) {
 
 			// Return both the output and error so the test framework can handle error checking
 			return out, err
+		})
+	})
+
+
+	t.Run("validate-one", func(t *testing.T) {
+		runset(t, validateSpec["one"], func(v any) (any, error) {
+			m := v.(map[string]any)
+			data := m["data"]
+			spec := m["spec"]
+			return voxgigstruct.Validate(data, spec)
+		})
+	})
+
+
+	t.Run("validate-exact", func(t *testing.T) {
+		runset(t, validateSpec["exact"], func(v any) (any, error) {
+			m := v.(map[string]any)
+			data := m["data"]
+			spec := m["spec"]
+			return voxgigstruct.Validate(data, spec)
+		})
+	})
+
+
+	t.Run("validate-invalid", func(t *testing.T) {
+		runset(t, validateSpec["invalid"], func(v any) (any, error) {
+			m := v.(map[string]any)
+			return voxgigstruct.Validate(m["data"], m["spec"])
 		})
 	})
 
@@ -720,14 +829,15 @@ func TestStruct(t *testing.T) {
 			store any,
 		) any {
 			out := voxgigstruct.GetProp(current, state.Key)
-			switch x := out.(type) {
+      
+      switch x := out.(type) {
 			case int:
 				return x
 			default:
 				msg := fmt.Sprintf("Not an integer at %s: %v",
 					voxgigstruct.Pathify(state.Path, 1), out)
 				state.Errs.Append(msg)
-				return out
+				return nil
 			}
 		})
 
@@ -735,13 +845,13 @@ func TestStruct(t *testing.T) {
 			"$INTEGER": integerCheck,
 		}
 
-		schema := map[string]any{
+		shape := map[string]any{
 			"a": "`$INTEGER`",
 		}
 
 		out, err := voxgigstruct.ValidateCollect(
 			map[string]any{"a": 1},
-			schema,
+			shape,
 			extra,
 			errs,
 		)
@@ -760,20 +870,19 @@ func TestStruct(t *testing.T) {
 
 		out, err = voxgigstruct.ValidateCollect(
 			map[string]any{"a": "A"},
-			schema,
+			shape,
 			extra,
 			errs,
 		)
-
-		expectedErr := "Invalid data: Not an integer at a: A"
-		if !reflect.DeepEqual(expectedErr, err.Error()) {
-			t.Errorf("Expected: %v, Got: %v", expectedErr, err.Error())
+		if nil != err {
+			t.Error(err)
 		}
-
+    
 		expected1 := map[string]any{"a": "A"}
 		if !reflect.DeepEqual(out, expected1) {
 			t.Errorf("Expected: %v, Got: %v", expected1, out)
 		}
+
 		errs1 := []any{"Not an integer at a: A"}
 		if !reflect.DeepEqual(errs.List, errs1) {
 			t.Errorf("Expected Error: %v, Got: %v", errs1, errs.List)
@@ -783,21 +892,10 @@ func TestStruct(t *testing.T) {
 }
 
 
-func TestClient(t *testing.T) {
-
-	store := make(map[string]any)
-
-	runnerFunc := runner.MakeRunner("../build/test/test.json")
-	runnerMap, err := runnerFunc("check", store)
-	if err != nil {
-		t.Fatalf("Failed to create runner check: %v", err)
+func IsSameFunc(target any, candidate any) bool {
+	if reflect.TypeOf(target).Kind() != reflect.Func || reflect.TypeOf(candidate).Kind() != reflect.Func {
+		return false
 	}
 
-	var spec map[string]any = runnerMap.Spec
-	var runset runner.RunSet = runnerMap.RunSet
-  var subject runner.Subject = runnerMap.Subject
-
-	t.Run("client-check-basic", func(t *testing.T) {
-		runset(t, spec["basic"], subject)
-	})
+	return reflect.ValueOf(target).Pointer() == reflect.ValueOf(candidate).Pointer()
 }

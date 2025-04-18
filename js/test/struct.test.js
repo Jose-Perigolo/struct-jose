@@ -216,7 +216,8 @@ describe('struct', async () => {
 
 
   test('minor-haskey', async () => {
-    await runset(minorSpec.haskey, haskey)
+    await runsetflags(minorSpec.haskey, { null: false }, (vin) =>
+      haskey(vin.src, vin.key))
   })
 
 
@@ -284,15 +285,22 @@ describe('struct', async () => {
   })
 
 
+  test('merge-integrity', async () => {
+    await runset(mergeSpec.integrity, merge)
+  })
+
+
   test('merge-special', async () => {
     const f0 = () => null
     deepEqual(merge([f0]), f0)
     deepEqual(merge([null, f0]), f0)
+    deepEqual(merge([[f0]]), [f0])
     deepEqual(merge([{ a: f0 }]), { a: f0 })
     deepEqual(merge([{ a: { b: f0 } }]), { a: { b: f0 } })
 
     // JavaScript only
     deepEqual(merge([{ a: global.fetch }]), { a: global.fetch })
+    deepEqual(merge([[global.fetch]]), [global.fetch])
     deepEqual(merge([{ a: { b: global.fetch } }]), { a: { b: global.fetch } })
   })
 
@@ -436,8 +444,24 @@ describe('struct', async () => {
   })
 
 
-  test('validate-node', async () => {
-    await runset(validateSpec.node, (vin) => validate(vin.data, vin.spec))
+  test('validate-child', async () => {
+    await runset(validateSpec.child, (vin) => validate(vin.data, vin.spec))
+  })
+
+
+  test('validate-one', async () => {
+    await runset(validateSpec.one, (vin) => validate(vin.data, vin.spec))
+  })
+
+
+  test('validate-exact', async () => {
+    await runset(validateSpec.exact, (vin) => validate(vin.data, vin.spec))
+  })
+
+
+  test('validate-invalid', async () => {
+    await runsetflags(validateSpec.invalid, { null: false },
+      (vin) => validate(vin.data, vin.spec))
   })
 
 
@@ -451,7 +475,7 @@ describe('struct', async () => {
         let t = typeof out
         if ('number' !== t && !Number.isInteger(out)) {
           state.errs.push('Not an integer at ' + state.path.slice(1).join('.') + ': ' + out)
-          return undefined
+          return
         }
 
         return out
@@ -467,19 +491,6 @@ describe('struct', async () => {
     out = validate({ a: 'A' }, shape, extra, errs)
     deepEqual(out, { a: 'A' })
     deepEqual(errs, ['Not an integer at a: A'])
-  })
-
-})
-
-
-describe('client', async () => {
-
-  const runner = await makeRunner(TEST_JSON_FILE, await SDK.test())
-
-  const { spec, runset, subject } = await runner('check')
-
-  test('client-check-basic', async () => {
-    await runset(spec.basic, subject)
   })
 
 })

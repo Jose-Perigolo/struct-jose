@@ -21,7 +21,7 @@ import { SDK } from './sdk.js'
 const TEST_JSON_FILE = '../../build/test/test.json'
 
 
-// NOTE: tests are in order of increasing dependence.
+// NOTE: tests are (mostly) in order of increasing dependence.
 describe('struct', async () => {
 
   const runner = await makeRunner(TEST_JSON_FILE, await SDK.test())
@@ -202,7 +202,7 @@ describe('struct', async () => {
 
 
   test('minor-setprop', async () => {
-    await runsetflags(minorSpec.setprop, { null: false }, (vin: any) =>
+    await runset(minorSpec.setprop, (vin: any) =>
       setprop(vin.parent, vin.key, vin.val))
   })
 
@@ -221,7 +221,8 @@ describe('struct', async () => {
 
 
   test('minor-haskey', async () => {
-    await runset(minorSpec.haskey, haskey)
+    await runsetflags(minorSpec.haskey, { null: false }, (vin: any) =>
+      haskey(vin.src, vin.key))
   })
 
 
@@ -289,15 +290,22 @@ describe('struct', async () => {
   })
 
 
+  test('merge-integrity', async () => {
+    await runset(mergeSpec.integrity, merge)
+  })
+
+
   test('merge-special', async () => {
     const f0 = () => null
     deepEqual(merge([f0]), f0)
     deepEqual(merge([null, f0]), f0)
     deepEqual(merge([{ a: f0 }]), { a: f0 })
+    deepEqual(merge([[f0]]), [f0])
     deepEqual(merge([{ a: { b: f0 } }]), { a: { b: f0 } })
 
     // JavaScript only
     deepEqual(merge([{ a: global.fetch }]), { a: global.fetch })
+    deepEqual(merge([[global.fetch]]), [global.fetch])
     deepEqual(merge([{ a: { b: global.fetch } }]), { a: { b: global.fetch } })
   })
 
@@ -425,6 +433,7 @@ describe('struct', async () => {
 
 
   test('transform-funcval', async () => {
+    // f0 should never be called (no $ prefix).
     const f0 = () => 99
     deepEqual(transform({}, { x: 1 }), { x: 1 })
     deepEqual(transform({}, { x: f0 }), { x: f0 })
@@ -441,8 +450,24 @@ describe('struct', async () => {
   })
 
 
-  test('validate-node', async () => {
-    await runset(validateSpec.node, (vin: any) => validate(vin.data, vin.spec))
+  test('validate-child', async () => {
+    await runset(validateSpec.child, (vin: any) => validate(vin.data, vin.spec))
+  })
+
+
+  test('validate-one', async () => {
+    await runset(validateSpec.one, (vin: any) => validate(vin.data, vin.spec))
+  })
+
+
+  test('validate-exact', async () => {
+    await runset(validateSpec.exact, (vin: any) => validate(vin.data, vin.spec))
+  })
+
+
+  test('validate-invalid', async () => {
+    await runsetflags(validateSpec.invalid, { null: false },
+      (vin: any) => validate(vin.data, vin.spec))
   })
 
 
@@ -472,21 +497,6 @@ describe('struct', async () => {
     out = validate({ a: 'A' }, shape, extra, errs)
     deepEqual(out, { a: 'A' })
     deepEqual(errs, ['Not an integer at a: A'])
-  })
-
-})
-
-
-
-describe('client', async () => {
-
-  const runner = await makeRunner(TEST_JSON_FILE, await SDK.test())
-
-  const { spec, runset, subject } =
-    await runner('check')
-
-  test('client-check-basic', async () => {
-    await runset(spec.basic, subject)
   })
 
 })

@@ -7,7 +7,7 @@ const node_assert_1 = require("node:assert");
 const runner_1 = require("./runner");
 const sdk_js_1 = require("./sdk.js");
 const TEST_JSON_FILE = '../../build/test/test.json';
-// NOTE: tests are in order of increasing dependence.
+// NOTE: tests are (mostly) in order of increasing dependence.
 (0, node_test_1.describe)('struct', async () => {
     const runner = await (0, runner_1.makeRunner)(TEST_JSON_FILE, await sdk_js_1.SDK.test());
     const { spec, runset, runsetflags, client } = await runner('struct');
@@ -109,7 +109,7 @@ const TEST_JSON_FILE = '../../build/test/test.json';
         (0, node_assert_1.deepEqual)(getprop(intarr, '2'), 5);
     });
     (0, node_test_1.test)('minor-setprop', async () => {
-        await runsetflags(minorSpec.setprop, { null: false }, (vin) => setprop(vin.parent, vin.key, vin.val));
+        await runset(minorSpec.setprop, (vin) => setprop(vin.parent, vin.key, vin.val));
     });
     (0, node_test_1.test)('minor-edge-setprop', async () => {
         let strarr0 = ['a', 'b', 'c', 'd', 'e'];
@@ -122,7 +122,7 @@ const TEST_JSON_FILE = '../../build/test/test.json';
         (0, node_assert_1.deepEqual)(setprop(intarr1, '2', 555), [2, 3, 555, 7, 11]);
     });
     (0, node_test_1.test)('minor-haskey', async () => {
-        await runset(minorSpec.haskey, haskey);
+        await runsetflags(minorSpec.haskey, { null: false }, (vin) => haskey(vin.src, vin.key));
     });
     (0, node_test_1.test)('minor-keysof', async () => {
         await runset(minorSpec.keysof, keysof);
@@ -166,14 +166,19 @@ const TEST_JSON_FILE = '../../build/test/test.json';
     (0, node_test_1.test)('merge-array', async () => {
         await runset(mergeSpec.array, merge);
     });
+    (0, node_test_1.test)('merge-integrity', async () => {
+        await runset(mergeSpec.integrity, merge);
+    });
     (0, node_test_1.test)('merge-special', async () => {
         const f0 = () => null;
         (0, node_assert_1.deepEqual)(merge([f0]), f0);
         (0, node_assert_1.deepEqual)(merge([null, f0]), f0);
         (0, node_assert_1.deepEqual)(merge([{ a: f0 }]), { a: f0 });
+        (0, node_assert_1.deepEqual)(merge([[f0]]), [f0]);
         (0, node_assert_1.deepEqual)(merge([{ a: { b: f0 } }]), { a: { b: f0 } });
         // JavaScript only
         (0, node_assert_1.deepEqual)(merge([{ a: global.fetch }]), { a: global.fetch });
+        (0, node_assert_1.deepEqual)(merge([[global.fetch]]), [global.fetch]);
         (0, node_assert_1.deepEqual)(merge([{ a: { b: global.fetch } }]), { a: { b: global.fetch } });
     });
     // getpath tests
@@ -256,6 +261,7 @@ const TEST_JSON_FILE = '../../build/test/test.json';
         });
     });
     (0, node_test_1.test)('transform-funcval', async () => {
+        // f0 should never be called (no $ prefix).
         const f0 = () => 99;
         (0, node_assert_1.deepEqual)(transform({}, { x: 1 }), { x: 1 });
         (0, node_assert_1.deepEqual)(transform({}, { x: f0 }), { x: f0 });
@@ -267,8 +273,17 @@ const TEST_JSON_FILE = '../../build/test/test.json';
     (0, node_test_1.test)('validate-basic', async () => {
         await runset(validateSpec.basic, (vin) => validate(vin.data, vin.spec));
     });
-    (0, node_test_1.test)('validate-node', async () => {
-        await runset(validateSpec.node, (vin) => validate(vin.data, vin.spec));
+    (0, node_test_1.test)('validate-child', async () => {
+        await runset(validateSpec.child, (vin) => validate(vin.data, vin.spec));
+    });
+    (0, node_test_1.test)('validate-one', async () => {
+        await runset(validateSpec.one, (vin) => validate(vin.data, vin.spec));
+    });
+    (0, node_test_1.test)('validate-exact', async () => {
+        await runset(validateSpec.exact, (vin) => validate(vin.data, vin.spec));
+    });
+    (0, node_test_1.test)('validate-invalid', async () => {
+        await runsetflags(validateSpec.invalid, { null: false }, (vin) => validate(vin.data, vin.spec));
     });
     (0, node_test_1.test)('validate-custom', async () => {
         const errs = [];
@@ -291,13 +306,6 @@ const TEST_JSON_FILE = '../../build/test/test.json';
         out = validate({ a: 'A' }, shape, extra, errs);
         (0, node_assert_1.deepEqual)(out, { a: 'A' });
         (0, node_assert_1.deepEqual)(errs, ['Not an integer at a: A']);
-    });
-});
-(0, node_test_1.describe)('client', async () => {
-    const runner = await (0, runner_1.makeRunner)(TEST_JSON_FILE, await sdk_js_1.SDK.test());
-    const { spec, runset, subject } = await runner('check');
-    (0, node_test_1.test)('client-check-basic', async () => {
-        await runset(spec.basic, subject);
     });
 });
 //# sourceMappingURL=struct.test.js.map

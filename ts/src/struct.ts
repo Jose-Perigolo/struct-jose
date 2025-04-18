@@ -66,9 +66,8 @@ const S_DERRS = '$ERRS'
 
 // General strings.
 const S_array = 'array'
-// const S_base = 'base'
+const S_base = 'base'
 const S_boolean = 'boolean'
-
 const S_function = 'function'
 const S_number = 'number'
 const S_object = 'object'
@@ -296,7 +295,7 @@ function escurl(s: string) {
 function joinurl(sarr: any[]) {
   return sarr
     .filter(s => null != s && '' !== s)
-    .map((s, i) => 0 === i ? s.replace(/([^\/])\/+/, '$1/').replace(/\/+$/, '') :
+    .map((s, i) => 0 === i ? s.replace(/\/+$/, '') :
       s.replace(/([^\/])\/+/, '$1/').replace(/^\/+/, '').replace(/\/+$/, ''))
     .filter(s => '' !== s)
     .join('/')
@@ -305,14 +304,14 @@ function joinurl(sarr: any[]) {
 
 // Safely stringify a value for humans (NOT JSON!).
 function stringify(val: any, maxlen?: number): string {
-  let str = S_MT
+  let valstr = S_MT
 
   if (UNDEF === val) {
-    return str
+    return valstr
   }
 
   try {
-    str = JSON.stringify(val, function(_key: string, val: any) {
+    valstr = JSON.stringify(val, function(_key: string, val: any) {
       if (
         val !== null &&
         typeof val === "object" &&
@@ -328,33 +327,35 @@ function stringify(val: any, maxlen?: number): string {
     })
   }
   catch (err: any) {
-    str = S_MT + val
+    valstr = S_MT + val
   }
 
-  str = S_string !== typeof str ? S_MT + str : str
-  str = str.replace(/"/g, '')
+  valstr = S_string !== typeof valstr ? S_MT + valstr : valstr
+  valstr = valstr.replace(/"/g, '')
 
   if (null != maxlen) {
-    let js = str.substring(0, maxlen)
-    str = maxlen < str.length ? (js.substring(0, maxlen - 3) + '...') : str
+    let js = valstr.substring(0, maxlen)
+    valstr = maxlen < valstr.length ? (js.substring(0, maxlen - 3) + '...') : valstr
   }
 
-  return str
+  return valstr
 }
 
 
 // Build a human friendly path string.
-function pathify(val: any, from?: number) {
+function pathify(val: any, startin?: number, endin?: number) {
   let pathstr: string | undefined = UNDEF
 
   let path: any[] | undefined = islist(val) ? val :
     S_string == typeof val ? [val] :
       S_number == typeof val ? [val] :
         UNDEF
-  const start = null == from ? 0 : -1 < from ? from : 0
+
+  const start = null == startin ? 0 : -1 < startin ? startin : 0
+  const end = null == endin ? 0 : -1 < endin ? endin : 0
 
   if (UNDEF != path && 0 <= start) {
-    path = path.slice(start)
+    path = path.slice(start, path.length - end)
     if (0 === path.length) {
       pathstr = '<root>'
     }
@@ -576,8 +577,7 @@ function getpath(path: string | string[], store: any, current?: any, state?: Inj
 
   let root = store
   let val = store
-  // const base = getprop(state, S_base)
-  const base = state?.base
+  const base = getprop(state, S_base)
 
   // An empty path (incl empty string) just finds the store.
   if (null == path || null == store || (1 === parts.length && S_MT === parts[0])) {
@@ -671,7 +671,7 @@ function inject(
     // NOTE: the optional digits suffix of the transform can thus be
     // used to order the transforms.
     let nodekeys = ismap(val) ? [
-      ...Object.keys(val).filter(k => !k.includes(S_DS)),
+      ...Object.keys(val).filter(k => !k.includes(S_DS)).sort(),
       ...Object.keys(val).filter(k => k.includes(S_DS)).sort(),
     ] : val.map((_n: any, i: number) => i)
 
@@ -761,33 +761,6 @@ function inject(
   // Original val reference may no longer be correct.
   // This return value is only used as the top level result.
   return getprop(state.parent, S_DTOP)
-}
-
-
-// Default inject handler for transforms. If the path resolves to a function,
-// call the function passing the injection state. This is how transforms operate.
-const _injecthandler: Injector = (
-  state: Injection,
-  val: any,
-  current: any,
-  ref: string,
-  store: any
-): any => {
-  let out = val
-  const iscmd = isfunc(val) && (UNDEF === ref || ref.startsWith(S_DS))
-
-  // Only call val function if it is a special command ($NAME format).
-  if (iscmd) {
-    out = (val as Injector)(state, val, current, ref, store)
-  }
-
-  // Update parent with value. Ensures references remain in node tree.
-  else if (S_MVAL === state.mode && state.full) {
-    // setprop(state.parent, state.key, val)
-    _setparentprop(state, val)
-  }
-
-  return out
 }
 
 
@@ -1020,7 +993,7 @@ const transform_PACK: Injector = (
     tcurrent,
   )
 
-  setprop(target, tkey, tval)
+  _updateAncestors(state, target, tkey, tval)
 
   // Drop transform key.
   return UNDEF
@@ -1040,13 +1013,15 @@ function transform(
   spec = clone(spec)
 
   const extraTransforms: any = {}
-  const extraData = null == extra ? {} : items(extra)
+  const extraData = null == extra ? UNDEF : items(extra)
     .reduce((a: any, n: any[]) =>
       (n[0].startsWith(S_DS) ? extraTransforms[n[0]] = n[1] : (a[n[0]] = n[1]), a), {})
 
   const dataClone = merge([
-    clone(UNDEF === extraData ? {} : extraData),
-    clone(UNDEF === data ? {} : data),
+    // clone(UNDEF === extraData ? {} : extraData),
+    isempty(extraData) ? UNDEF : clone(extraData),
+    // clone(UNDEF === data ? {} : data),
+    clone(data),
   ])
 
   // Define a top level store that provides transform operations.
@@ -1089,7 +1064,7 @@ const validate_STRING: Injector = (state: Injection, _val: any, current: any) =>
 
   const t = typify(out)
   if (S_string !== t) {
-    let msg = _invalidTypeMsg(state.path, S_string, t, out)
+    let msg = _invalidTypeMsg(state.path, S_string, t, out, 'V1010')
     state.errs.push(msg)
     return UNDEF
   }
@@ -1110,7 +1085,7 @@ const validate_NUMBER: Injector = (state: Injection, _val: any, current: any) =>
 
   const t = typify(out)
   if (S_number !== t) {
-    state.errs.push(_invalidTypeMsg(state.path, S_number, t, out))
+    state.errs.push(_invalidTypeMsg(state.path, S_number, t, out, 'V1020'))
     return UNDEF
   }
 
@@ -1124,7 +1099,7 @@ const validate_BOOLEAN: Injector = (state: Injection, _val: any, current: any) =
 
   const t = typify(out)
   if (S_boolean !== t) {
-    state.errs.push(_invalidTypeMsg(state.path, S_boolean, t, out))
+    state.errs.push(_invalidTypeMsg(state.path, S_boolean, t, out, 'V1030'))
     return UNDEF
   }
 
@@ -1138,7 +1113,7 @@ const validate_OBJECT: Injector = (state: Injection, _val: any, current: any) =>
 
   const t = typify(out)
   if (t !== S_object) {
-    state.errs.push(_invalidTypeMsg(state.path, S_object, t, out))
+    state.errs.push(_invalidTypeMsg(state.path, S_object, t, out, 'V1040'))
     return UNDEF
   }
 
@@ -1152,7 +1127,7 @@ const validate_ARRAY: Injector = (state: Injection, _val: any, current: any) => 
 
   const t = typify(out)
   if (t !== S_array) {
-    state.errs.push(_invalidTypeMsg(state.path, S_array, t, out))
+    state.errs.push(_invalidTypeMsg(state.path, S_array, t, out, 'V1050'))
     return UNDEF
   }
 
@@ -1166,7 +1141,7 @@ const validate_FUNCTION: Injector = (state: Injection, _val: any, current: any) 
 
   const t = typify(out)
   if (S_function !== t) {
-    state.errs.push(_invalidTypeMsg(state.path, S_function, t, out))
+    state.errs.push(_invalidTypeMsg(state.path, S_function, t, out, 'V1060'))
     return UNDEF
   }
 
@@ -1202,7 +1177,7 @@ const validate_CHILD: Injector = (state: Injection, _val: any, current: any) => 
     }
     else if (!ismap(tval)) {
       state.errs.push(_invalidTypeMsg(
-        state.path.slice(0, state.path.length - 1), S_object, typify(tval), tval))
+        state.path.slice(0, state.path.length - 1), S_object, typify(tval), tval), 'V0220')
       return UNDEF
     }
 
@@ -1238,7 +1213,7 @@ const validate_CHILD: Injector = (state: Injection, _val: any, current: any) => 
 
     if (!islist(current)) {
       const msg = _invalidTypeMsg(
-        state.path.slice(0, state.path.length - 1), S_array, typify(current), current)
+        state.path.slice(0, state.path.length - 1), S_array, typify(current), current, 'V0230')
       state.errs.push(msg)
       state.keyI = parent.length
       return current
@@ -1260,41 +1235,56 @@ const validate_CHILD: Injector = (state: Injection, _val: any, current: any) => 
 
 // Match at least one of the specified shapes.
 // Syntax: ['`$ONE`', alt0, alt1, ...]okI
-const validate_ONE: Injector = (state: Injection, _val: any, current: any, store: any) => {
-  const { mode, parent, path, nodes } = state
+const validate_ONE: Injector = (
+  state: Injection,
+  _val: any,
+  current: any,
+  _ref: string,
+  store: any
+) => {
+  const { mode, parent, path, keyI, nodes } = state
 
   // Only operate in val mode, since parent is a list.
   if (S_MVAL === mode) {
+    if (!islist(parent) || 0 !== keyI) {
+      state.errs.push('The $ONE validator at field ' +
+        pathify(state.path, 1, 1) +
+        ' must be the first element of an array.')
+      return
+    }
+
     state.keyI = state.keys.length
 
+    const grandparent = nodes[nodes.length - 2]
+    const grandkey = path[path.length - 2]
+
+    // Clean up structure, replacing [$ONE, ...] with current
+    setprop(grandparent, grandkey, current)
+    state.path = state.path.slice(0, state.path.length - 1)
+    state.key = state.path[state.path.length - 1]
+
     let tvals = parent.slice(1)
+    if (0 === tvals.length) {
+      state.errs.push('The $ONE validator at field ' +
+        pathify(state.path, 1, 1) +
+        ' must have at least one argument.')
+      return
+    }
 
     // See if we can find a match.
     for (let tval of tvals) {
 
       // If match, then errs.length = 0
       let terrs: any[] = []
-      validate(current, tval, store, terrs)
 
-      // The parent is the list we are inside. Go up one level
-      // to set the actual value.
-      const grandparent = nodes[nodes.length - 2]
-      const grandkey = path[path.length - 2]
+      const vstore = { ...store }
+      vstore.$TOP = current
+      const vcurrent = validate(current, tval, vstore, terrs)
+      setprop(grandparent, grandkey, vcurrent)
 
-      if (isnode(grandparent)) {
-
-        // Accept current value if there was a match
-        if (0 === terrs.length) {
-
-          // Ensure generic type validation (in validate "modify") passes.
-          setprop(grandparent, grandkey, current)
-          return
-        }
-
-        // Ensure generic validation does not generate a spurious error.
-        else {
-          setprop(grandparent, grandkey, UNDEF)
-        }
+      // Accept current value if there was a match
+      if (0 === terrs.length) {
+        return
       }
     }
 
@@ -1306,9 +1296,78 @@ const validate_ONE: Injector = (state: Injection, _val: any, current: any, store
       .replace(/`\$([A-Z]+)`/g, (_m: any, p1: string) => p1.toLowerCase())
 
     state.errs.push(_invalidTypeMsg(
-      state.path.slice(0, state.path.length - 1),
-      'one of ' + valdesc,
-      typify(current), current))
+      state.path,
+      (1 < tvals.length ? 'one of ' : '') + valdesc,
+      typify(current), current, 'V0210'))
+  }
+}
+
+
+const validate_EXACT: Injector = (
+  state: Injection,
+  _val: any,
+  current: any,
+  _ref: string,
+  _store: any
+) => {
+  const { mode, parent, key, keyI, path, nodes } = state
+
+  // Only operate in val mode, since parent is a list.
+  if (S_MVAL === mode) {
+    if (!islist(parent) || 0 !== keyI) {
+      state.errs.push('The $EXACT validator at field ' +
+        pathify(state.path, 1, 1) +
+        ' must be the first element of an array.')
+      return
+    }
+
+    state.keyI = state.keys.length
+
+    const grandparent = nodes[nodes.length - 2]
+    const grandkey = path[path.length - 2]
+
+    // Clean up structure, replacing [$EXACT, ...] with current
+    setprop(grandparent, grandkey, current)
+    state.path = state.path.slice(0, state.path.length - 1)
+    state.key = state.path[state.path.length - 1]
+
+    let tvals = parent.slice(1)
+    if (0 === tvals.length) {
+      state.errs.push('The $EXACT validator at field ' +
+        pathify(state.path, 1, 1) +
+        ' must have at least one argument.')
+      return
+    }
+
+    // See if we can find an exact value match.
+    let currentstr: string | undefined = undefined
+    for (let tval of tvals) {
+      let exactmatch = tval === current
+
+      if (!exactmatch && isnode(tval)) {
+        currentstr = undefined === currentstr ? stringify(current) : currentstr
+        const tvalstr = stringify(tval)
+        exactmatch = tvalstr === currentstr
+      }
+
+      if (exactmatch) {
+        return
+      }
+    }
+
+    const valdesc = tvals
+      .map((v: any) => stringify(v))
+      .join(', ')
+      .replace(/`\$([A-Z]+)`/g, (_m: any, p1: string) => p1.toLowerCase())
+
+    state.errs.push(_invalidTypeMsg(
+      state.path,
+      (1 < state.path.length ? '' : 'value ') +
+      'exactly equal to ' + (1 === tvals.length ? '' : 'one of ') + valdesc,
+      typify(current), current, 'V0110'))
+  }
+  else {
+    setprop(parent, key, UNDEF)
   }
 }
 
@@ -1335,7 +1394,6 @@ const _validation: Modify = (
     return
   }
 
-  // const pval = getprop(parent, key)
   const ptype = typify(pval)
 
   // Delete any special commands remaining.
@@ -1347,13 +1405,13 @@ const _validation: Modify = (
 
   // Type mismatch.
   if (ptype !== ctype && UNDEF !== pval) {
-    state.errs.push(_invalidTypeMsg(state.path, ptype, ctype, cval))
+    state.errs.push(_invalidTypeMsg(state.path, ptype, ctype, cval, 'V0010'))
     return
   }
 
   if (ismap(cval)) {
     if (!ismap(pval)) {
-      state.errs.push(_invalidTypeMsg(state.path, ptype, ctype, cval))
+      state.errs.push(_invalidTypeMsg(state.path, ptype, ctype, cval, 'V0020'))
       return
     }
 
@@ -1371,7 +1429,8 @@ const _validation: Modify = (
 
       // Closed object, so reject extra keys not in shape.
       if (0 < badkeys.length) {
-        const msg = 'Unexpected keys at ' + pathify(state.path, 1) + ': ' + badkeys.join(', ')
+        const msg =
+          'Unexpected keys at field ' + pathify(state.path, 1) + ': ' + badkeys.join(', ')
         state.errs.push(msg)
       }
     }
@@ -1385,7 +1444,7 @@ const _validation: Modify = (
   }
   else if (islist(cval)) {
     if (!islist(pval)) {
-      state.errs.push(_invalidTypeMsg(state.path, ptype, ctype, cval))
+      state.errs.push(_invalidTypeMsg(state.path, ptype, ctype, cval, 'V0030'))
     }
   }
   else {
@@ -1420,9 +1479,6 @@ function validate(
   const errs = null == collecterrs ? [] : collecterrs
 
   const store = {
-    // A special top level value to collect errors.
-    $ERRS: errs,
-
     // Remove the transform commands.
     $DELETE: null,
     $COPY: null,
@@ -1441,13 +1497,19 @@ function validate(
     $ANY: validate_ANY,
     $CHILD: validate_CHILD,
     $ONE: validate_ONE,
+    $EXACT: validate_EXACT,
 
-    ...(extra || {})
+    ...(extra || {}),
+
+    // A special top level value to collect errors.
+    // NOTE: collecterrs paramter always wins.
+    $ERRS: errs,
   }
 
   const out = transform(data, spec, store, _validation)
 
-  if (0 < errs.length && null == collecterrs) {
+  const generr = (0 < errs.length && null == collecterrs)
+  if (generr) {
     throw new Error('Invalid data: ' + errs.join(' | '))
   }
 
@@ -1459,7 +1521,64 @@ function validate(
 // ==================
 
 
-// Inject store values into a string. Not a public utility - used by
+// Set state.key property of state.parent node, ensuring reference consistency
+// when needed by implementation language.
+function _setparentprop(state: Injection, val: any) {
+  setprop(state.parent, state.key, val)
+}
+
+
+// Update all references to target in state.nodes.
+function _updateAncestors(_state: Injection, target: any, tkey: any, tval: any) {
+  // SetProp is sufficient in TypeScript as target reference remains consistent even for lists.
+  setprop(target, tkey, tval)
+}
+
+
+// Build a type validation error message.
+function _invalidTypeMsg(path: any, needtype: string, vt: string, v: any, _whence?: string) {
+  let vs = null == v ? 'no value' : stringify(v)
+
+  return 'Expected ' +
+    (1 < path.length ? ('field ' + pathify(path, 1) + ' to be ') : '') +
+    needtype + ', but found ' +
+    (null != v ? vt + ': ' : '') + vs +
+
+    // Uncomment to help debug validation errors.
+    // ' [' + _whence + ']' +
+
+    '.'
+}
+
+
+// Default inject handler for transforms. If the path resolves to a function,
+// call the function passing the injection state. This is how transforms operate.
+const _injecthandler: Injector = (
+  state: Injection,
+  val: any,
+  current: any,
+  ref: string,
+  store: any
+): any => {
+  let out = val
+  const iscmd = isfunc(val) && (UNDEF === ref || ref.startsWith(S_DS))
+
+  // Only call val function if it is a special command ($NAME format).
+  if (iscmd) {
+    out = (val as Injector)(state, val, current, ref, store)
+  }
+
+  // Update parent with value. Ensures references remain in node tree.
+  else if (S_MVAL === state.mode && state.full) {
+    // setprop(state.parent, state.key, val)
+    _setparentprop(state, val)
+  }
+
+  return out
+}
+
+
+// Inject values from a data store into a string. Not a public utility - used by
 // `inject`.  Inject are marked with `path` where path is resolved
 // with getpath against the store or current (if defined)
 // arguments. See `getpath`.  Custom injection handling can be
@@ -1523,38 +1642,43 @@ function _injectstr(
       state.full = true
       out = state.handler(state, out, current, val, store)
     }
-
   }
 
   return out
 }
 
 
-// Set state.key property of state.parent node, ensuring reference consistency
-// when needed by implementation language.
-function _setparentprop(state: Injection, val: any) {
-  setprop(state.parent, state.key, val)
+// Define a class to mirror the JavaScript implementation
+class StructUtility {
+  clone = clone;
+  escre = escre;
+  escurl = escurl;
+  getpath = getpath;
+  getprop = getprop;
+  haskey = haskey;
+  inject = inject;
+  isempty = isempty;
+  isfunc = isfunc;
+  iskey = iskey;
+  islist = islist;
+  ismap = ismap;
+  isnode = isnode;
+  items = items;
+  joinurl = joinurl;
+  keysof = keysof;
+  merge = merge;
+  pathify = pathify;
+  setprop = setprop;
+  strkey = strkey;
+  stringify = stringify;
+  transform = transform;
+  typify = typify;
+  validate = validate;
+  walk = walk;
 }
-
-
-// Update all references to target in state.nodes.
-function _updateAncestors(_state: Injection, target: any, tkey: any, tval: any) {
-  // SetProp is sufficient in TypeScript as target reference remains consistent even for lists.
-  setprop(target, tkey, tval)
-}
-
-
-// Build a type validation error message.
-function _invalidTypeMsg(path: any, type: string, vt: string, v: any) {
-  let vs = stringify(v)
-
-  return 'Expected ' + type + ' at ' + pathify(path, 1) +
-    ', found ' + (null != v ? vt + ': ' : '') + vs
-}
-
-
 
 export {
+  StructUtility,
   clone,
   escre,
   escurl,

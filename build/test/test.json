@@ -113,6 +113,10 @@
             "out": true
           },
           {
+            "in": 2.2,
+            "out": true
+          },
+          {
             "in": "a",
             "out": true
           },
@@ -1262,168 +1266,168 @@
       "haskey": {
         "set": [
           {
-            "args": [
-              {
+            "in": {
+              "src": {
                 "a": 1
               },
-              "a"
-            ],
+              "key": "a"
+            },
             "out": true
           },
           {
-            "args": [
-              {
+            "in": {
+              "src": {
                 "a": 2
               },
-              "b"
-            ],
+              "key": "b"
+            },
             "out": false
           },
           {
-            "args": [
-              {
+            "in": {
+              "src": {
                 "a": 11,
                 "c": 12
               },
-              "a"
-            ],
+              "key": "a"
+            },
             "out": true
           },
           {
-            "args": [
-              {
+            "in": {
+              "src": {
                 "a": 12,
                 "c": 13
               },
-              "b"
-            ],
+              "key": "b"
+            },
             "out": false
           },
           {
-            "args": [
-              {
+            "in": {
+              "src": {
                 "a": 13,
                 "c": 14
               },
-              "c"
-            ],
+              "key": "c"
+            },
             "out": true
           },
           {
-            "args": [
-              {
+            "in": {
+              "src": {
                 "a": 21,
                 "b": 22
               },
-              "a"
-            ],
+              "key": "a"
+            },
             "out": true
           },
           {
-            "args": [
-              {
+            "in": {
+              "src": {
                 "a": 22,
                 "b": 23
               },
-              "b"
-            ],
+              "key": "b"
+            },
             "out": true
           },
           {
-            "args": [
-              {
+            "in": {
+              "src": {
                 "a": 24,
                 "b": 25
               },
-              "c"
-            ],
+              "key": "c"
+            },
             "out": false
           },
           {
-            "args": [
-              [
+            "in": {
+              "src": [
                 3
               ],
-              0
-            ],
+              "key": 0
+            },
             "out": true
           },
           {
-            "args": [
-              [
+            "in": {
+              "src": [
                 3
               ],
-              1
-            ],
+              "key": 1
+            },
             "out": false
           },
           {
-            "args": [
-              [
+            "in": {
+              "src": [
                 3
               ],
-              "0"
-            ],
+              "key": "0"
+            },
             "out": true
           },
           {
-            "args": [
-              [
+            "in": {
+              "src": [
                 3
               ],
-              "1"
-            ],
+              "key": "1"
+            },
             "out": false
           },
           {
-            "args": [
-              null,
-              "a"
-            ],
+            "in": {
+              "src": null,
+              "key": "a"
+            },
             "out": false
           },
           {
-            "args": [
-              null,
-              1
-            ],
+            "in": {
+              "src": null,
+              "key": 1
+            },
             "out": false
           },
           {
-            "args": [
-              null,
-              null
-            ],
+            "in": {
+              "src": null,
+              "key": null
+            },
             "out": false
           },
           {
-            "args": [
-              {},
-              null
-            ],
+            "in": {
+              "src": {},
+              "key": null
+            },
             "out": false
           },
           {
-            "args": [
-              [],
-              null
-            ],
+            "in": {
+              "src": [],
+              "key": null
+            },
             "out": false
           },
           {
-            "args": [
-              []
-            ],
+            "in": {
+              "src": []
+            },
             "out": false
           },
           {
-            "args": [
-              {}
-            ],
+            "in": {
+              "src": {}
+            },
             "out": false
           },
           {
-            "args": [],
+            "in": {},
             "out": false
           }
         ]
@@ -1846,6 +1850,15 @@
               ]
             },
             "out": "[[3],{x:1}]"
+          },
+          {
+            "in": {
+              "val": {
+                "b": 2,
+                "a": 3
+              }
+            },
+            "out": "{a:3,b:2}"
           },
           {
             "in": {
@@ -2333,6 +2346,16 @@
               "//a",
               "/b"
             ]
+          },
+          {
+            "in": [
+              "https://www.example.com/",
+              "/a",
+              "/b/",
+              "/c",
+              "d"
+            ],
+            "out": "https://www.example.com/a/b/c/d"
           }
         ]
       },
@@ -2382,7 +2405,9 @@
             "out": "null"
           }
         ]
-      }
+      },
+      "name": "minor",
+      "set": []
     },
     "getpath": {
       "basic": {
@@ -3194,7 +3219,9 @@
             "out": "6:444"
           }
         ]
-      }
+      },
+      "name": "getpath",
+      "set": []
     },
     "inject": {
       "basic": {
@@ -3641,7 +3668,9 @@
             }
           }
         ]
-      }
+      },
+      "name": "inject",
+      "set": []
     },
     "merge": {
       "basic": {
@@ -4675,7 +4704,49 @@
             }
           }
         ]
-      }
+      },
+      "integrity": {
+        "set": [
+          {
+            "in": [
+              {
+                "e": 5
+              },
+              {
+                "a": 1,
+                "d": 4
+              },
+              {
+                "a": 2,
+                "b": 3
+              }
+            ],
+            "out": {
+              "a": 2,
+              "b": 3,
+              "d": 4,
+              "e": 5
+            },
+            "match": {
+              "in": [
+                {
+                  "e": 5
+                },
+                {
+                  "a": 1,
+                  "d": 4
+                },
+                {
+                  "a": 2,
+                  "b": 3
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "name": "merge",
+      "set": []
     },
     "transform": {
       "basic": {
@@ -7029,7 +7100,9 @@
             }
           }
         ]
-      }
+      },
+      "name": "transform",
+      "set": []
     },
     "walk": {
       "log": {
@@ -7430,7 +7503,9 @@
             }
           }
         ]
-      }
+      },
+      "name": "walk",
+      "set": []
     },
     "validate": {
       "basic": {
@@ -7459,14 +7534,7 @@
               "spec": "`$STRING`"
             },
             "out": 1,
-            "err": "Expected string at <root>, found number: 1"
-          },
-          {
-            "in": {
-              "data": null,
-              "spec": "`$STRING`"
-            },
-            "err": "Expected string at <root>, found null"
+            "err": "Invalid data: Expected string, but found number: 1."
           },
           {
             "in": {
@@ -7490,7 +7558,7 @@
                 "a": "`$STRING`"
               }
             },
-            "err": "Expected string at a, found number: 1"
+            "err": "Expected field a to be string, but found number: 1"
           },
           {
             "in": {
@@ -7503,7 +7571,7 @@
                 "b": "`$NUMBER`"
               }
             },
-            "err": "Expected string at a, found number: 11 | Expected number at b, found string: B"
+            "err": "Expected field a to be string, but found number: 11. | Expected field b to be number, but found string: B."
           },
           {
             "in": {
@@ -7538,7 +7606,7 @@
               "a": 3,
               "b": "B"
             },
-            "err": "Unexpected keys at <root>: b"
+            "err": "Unexpected keys at field <root>: b"
           },
           {
             "in": {
@@ -7582,7 +7650,7 @@
                 "b": "C"
               }
             },
-            "err": "Expected string at b, found number: 2"
+            "err": "Expected field b to be string, but found number: 2"
           },
           {
             "in": {
@@ -7701,11 +7769,16 @@
                 }
               }
             }
-          }
-        ]
-      },
-      "node": {
-        "set": [
+          },
+          {
+            "in": {
+              "data": {},
+              "spec": {
+                "b0": "`$BOOLEAN`"
+              }
+            },
+            "err": "Expected field b0 to be boolean, but found no value."
+          },
           {
             "in": {
               "data": {
@@ -7761,6 +7834,35 @@
           },
           {
             "in": {
+              "data": [
+                30
+              ],
+              "spec": [
+                "`$NUMBER`"
+              ]
+            },
+            "out": [
+              30
+            ]
+          },
+          {
+            "in": {
+              "data": [
+                31,
+                32
+              ],
+              "spec": [
+                "`$NUMBER`",
+                "`$NUMBER`"
+              ]
+            },
+            "out": [
+              31,
+              32
+            ]
+          },
+          {
+            "in": {
               "data": {
                 "a": {
                   "x": 12,
@@ -7790,7 +7892,7 @@
                 "a1": []
               }
             },
-            "err": "Expected array at a1, found object: {}"
+            "err": "Expected field a1 to be array, but found object: {}."
           },
           {
             "in": {
@@ -7801,8 +7903,12 @@
                 "a2": {}
               }
             },
-            "err": "Expected object at a2, found array: []"
-          },
+            "err": "Expected field a2 to be object, but found array: []."
+          }
+        ]
+      },
+      "child": {
+        "set": [
           {
             "in": {
               "data": {
@@ -7868,7 +7974,7 @@
                 }
               }
             },
-            "err": "Invalid data: Expected number at q.a.x, found string: X"
+            "err": "Invalid data: Expected field q.a.x to be number, but found string: X"
           },
           {
             "in": {
@@ -7996,7 +8102,7 @@
                 ]
               }
             },
-            "err": "Expected number at q.1, found string: a23"
+            "err": "Expected field q.1 to be number, but found string: a23"
           },
           {
             "in": {
@@ -8068,69 +8174,7 @@
                 ]
               }
             },
-            "err": "Expected array at q, found string: a25"
-          },
-          {
-            "in": {
-              "data": [
-                30
-              ],
-              "spec": [
-                "`$NUMBER`"
-              ]
-            },
-            "out": [
-              30
-            ]
-          },
-          {
-            "in": {
-              "data": [
-                31,
-                32
-              ],
-              "spec": [
-                "`$NUMBER`",
-                "`$NUMBER`"
-              ]
-            },
-            "out": [
-              31,
-              32
-            ]
-          },
-          {
-            "in": {
-              "data": 33,
-              "spec": [
-                "`$ONE`",
-                "`$STRING`",
-                "`$NUMBER`"
-              ]
-            },
-            "out": 33
-          },
-          {
-            "in": {
-              "data": "a31",
-              "spec": [
-                "`$ONE`",
-                "`$STRING`",
-                "`$NUMBER`"
-              ]
-            },
-            "out": "a31"
-          },
-          {
-            "in": {
-              "data": true,
-              "spec": [
-                "`$ONE`",
-                "`$STRING`",
-                "`$NUMBER`"
-              ]
-            },
-            "err": "Expected one of string, number at <root>, found boolean: true"
+            "err": "Expected field q to be array, but found string: a25"
           },
           {
             "in": {
@@ -8185,7 +8229,7 @@
                 }
               }
             },
-            "err": "Expected number at a411.x2, found string: X"
+            "err": "Expected field a411.x2 to be number, but found string: X"
           },
           {
             "in": {
@@ -8228,7 +8272,7 @@
                 }
               }
             },
-            "err": "Expected object at a44, found number: 1"
+            "err": "Expected field a44 to be object, but found number: 1"
           },
           {
             "in": {
@@ -8301,9 +8345,556 @@
             "out": {
               "a53": []
             }
+          },
+          {
+            "in": {
+              "data": {
+                "a54": 1,
+                "b54": 2
+              },
+              "spec": {
+                "`$OPEN`": true,
+                "`$CHILD`": "`$NUMBER`"
+              }
+            },
+            "out": {
+              "a54": 1,
+              "b54": 2
+            }
+          },
+          {
+            "in": {
+              "data": {
+                "x": {
+                  "a55": 1,
+                  "b55": 2
+                }
+              },
+              "spec": {
+                "x": {
+                  "`$OPEN`": true,
+                  "`$CHILD`": "`$NUMBER`"
+                }
+              }
+            },
+            "out": {
+              "x": {
+                "a55": 1,
+                "b55": 2
+              }
+            }
           }
         ]
-      }
+      },
+      "one": {
+        "set": [
+          {
+            "in": {
+              "data": 33,
+              "spec": [
+                "`$ONE`",
+                "`$STRING`",
+                "`$NUMBER`"
+              ]
+            },
+            "out": 33
+          },
+          {
+            "in": {
+              "data": "a31",
+              "spec": [
+                "`$ONE`",
+                "`$STRING`",
+                "`$NUMBER`"
+              ]
+            },
+            "out": "a31"
+          },
+          {
+            "in": {
+              "data": true,
+              "spec": [
+                "`$ONE`",
+                "`$STRING`",
+                "`$NUMBER`"
+              ]
+            },
+            "err": "Expected one of string, number, but found boolean: true."
+          },
+          {
+            "in": {
+              "data": {
+                "x0": true
+              },
+              "spec": {
+                "x0": [
+                  "`$ONE`",
+                  "`$STRING`",
+                  "`$NUMBER`"
+                ]
+              }
+            },
+            "err": "Expected field x0 to be one of string, number, but found boolean: true."
+          },
+          {
+            "in": {
+              "data": {
+                "x1": {
+                  "a": 1
+                }
+              },
+              "spec": [
+                "`$ONE`",
+                {
+                  "x1": "`$ARRAY`"
+                },
+                {
+                  "x1": "`$OBJECT`"
+                }
+              ]
+            },
+            "out": {
+              "x1": {
+                "a": 1
+              }
+            }
+          },
+          {
+            "in": {
+              "data": {
+                "x2": {
+                  "a": 1
+                }
+              },
+              "spec": [
+                "`$ONE`",
+                {
+                  "x2": {
+                    "a": "`$STRING`"
+                  }
+                },
+                {
+                  "x2": {
+                    "a": "`$NUMBER`"
+                  }
+                }
+              ]
+            },
+            "out": {
+              "x2": {
+                "a": 1
+              }
+            }
+          },
+          {
+            "in": {
+              "data": {
+                "a": {}
+              },
+              "spec": {
+                "a": [
+                  "`$ONE`",
+                  "`$OBJECT`",
+                  "`$ARRAY`"
+                ]
+              }
+            },
+            "out": {
+              "a": {}
+            }
+          },
+          {
+            "in": {
+              "data": {
+                "a": []
+              },
+              "spec": {
+                "a": [
+                  "`$ONE`",
+                  "`$OBJECT`",
+                  "`$ARRAY`"
+                ]
+              }
+            },
+            "out": {
+              "a": []
+            }
+          },
+          {
+            "in": {
+              "data": {
+                "a": 1
+              },
+              "spec": {
+                "a": [
+                  "`$ONE`",
+                  "`$OBJECT`",
+                  "`$ARRAY`"
+                ]
+              }
+            },
+            "err": "Expected field a to be one of object, array, but found number: 1."
+          },
+          {
+            "in": {
+              "data": {},
+              "spec": {
+                "a": [
+                  "`$ONE`",
+                  "`$OBJECT`",
+                  "`$ARRAY`"
+                ]
+              }
+            },
+            "err": "Expected field a to be one of object, array, but found no value."
+          }
+        ]
+      },
+      "exact": {
+        "set": [
+          {
+            "in": {
+              "data": 11,
+              "spec": [
+                "`$EXACT`",
+                22,
+                11
+              ]
+            },
+            "out": 11
+          },
+          {
+            "in": {
+              "data": 12,
+              "spec": [
+                "`$EXACT`",
+                12,
+                23
+              ]
+            },
+            "out": 12
+          },
+          {
+            "in": {
+              "data": 13,
+              "spec": [
+                "`$EXACT`",
+                13
+              ]
+            },
+            "out": 13
+          },
+          {
+            "in": {
+              "data": "a",
+              "spec": [
+                "`$EXACT`",
+                "a"
+              ]
+            },
+            "out": "a"
+          },
+          {
+            "in": {
+              "data": true,
+              "spec": [
+                "`$EXACT`",
+                true
+              ]
+            },
+            "out": true
+          },
+          {
+            "in": {
+              "data": null,
+              "spec": [
+                "`$EXACT`",
+                null
+              ]
+            },
+            "out": null
+          },
+          {
+            "in": {
+              "data": {
+                "x": 1
+              },
+              "spec": [
+                "`$EXACT`",
+                {
+                  "x": 1
+                }
+              ]
+            },
+            "out": {
+              "x": 1
+            }
+          },
+          {
+            "in": {
+              "data": {
+                "x": [
+                  2
+                ]
+              },
+              "spec": [
+                "`$EXACT`",
+                {
+                  "x": [
+                    2
+                  ]
+                }
+              ]
+            },
+            "out": {
+              "x": [
+                2
+              ]
+            }
+          },
+          {
+            "in": {
+              "data": {
+                "x": {
+                  "y": [
+                    3
+                  ]
+                }
+              },
+              "spec": [
+                "`$EXACT`",
+                {
+                  "x": {
+                    "y": [
+                      3
+                    ]
+                  }
+                }
+              ]
+            },
+            "out": {
+              "x": {
+                "y": [
+                  3
+                ]
+              }
+            }
+          },
+          {
+            "in": {
+              "data": [
+                33
+              ],
+              "spec": [
+                "`$EXACT`",
+                [
+                  33
+                ]
+              ]
+            },
+            "out": [
+              33
+            ]
+          },
+          {
+            "in": {
+              "data": [
+                {
+                  "x": 2
+                }
+              ],
+              "spec": [
+                "`$EXACT`",
+                [
+                  {
+                    "x": 2
+                  }
+                ]
+              ]
+            },
+            "out": [
+              {
+                "x": 2
+              }
+            ]
+          },
+          {
+            "in": {
+              "data": 21,
+              "spec": [
+                "`$EXACT`",
+                22
+              ]
+            },
+            "err": "Expected value exactly equal to 22, but found number: 21."
+          },
+          {
+            "in": {
+              "data": 23,
+              "spec": [
+                "`$EXACT`",
+                "a",
+                false,
+                24
+              ]
+            },
+            "err": "Expected value exactly equal to one of a, false, 24, but found number: 23."
+          },
+          {
+            "in": {
+              "data": 25,
+              "spec": [
+                "`$EXACT`",
+                {},
+                []
+              ]
+            },
+            "err": "Expected value exactly equal to one of {}, [], but found number: 25."
+          },
+          {
+            "in": {
+              "data": 26,
+              "spec": [
+                "`$EXACT`",
+                {
+                  "x": 1
+                },
+                [
+                  2
+                ]
+              ]
+            },
+            "err": "Expected value exactly equal to one of {x:1}, [2], but found number: 26."
+          },
+          {
+            "in": {
+              "data": 27,
+              "spec": [
+                "`$EXACT`",
+                {
+                  "x": [
+                    3
+                  ]
+                },
+                [
+                  {
+                    "y": 4
+                  }
+                ]
+              ]
+            },
+            "err": "Expected value exactly equal to one of {x:[3]}, [{y:4}], but found number: 27."
+          },
+          {
+            "in": {
+              "data": 28,
+              "spec": [
+                "`$EXACT`",
+                {
+                  "x": {
+                    "y": {
+                      "z": []
+                    }
+                  }
+                }
+              ]
+            },
+            "err": "Expected value exactly equal to {x:{y:{z:[]}}}, but found number: 28."
+          },
+          {
+            "in": {
+              "data": [
+                31,
+                32
+              ],
+              "spec": [
+                "`$EXACT`",
+                [
+                  33,
+                  34
+                ]
+              ]
+            },
+            "err": "Expected value exactly equal to [33,34], but found array: [31,32]."
+          },
+          {
+            "in": {
+              "data": {
+                "x": 111
+              },
+              "spec": [
+                "`$EXACT`",
+                {
+                  "x": 222
+                }
+              ]
+            },
+            "err": "Expected value exactly equal to {x:222}, but found object: {x:111}."
+          },
+          {
+            "in": {
+              "data": {
+                "b": 35,
+                "a": 36
+              },
+              "spec": [
+                "`$EXACT`",
+                {
+                  "b": 37,
+                  "a": 36
+                }
+              ]
+            },
+            "err": "Expected value exactly equal to {a:36,b:37}, but found object: {a:36,b:35}."
+          },
+          {
+            "in": {
+              "data": {
+                "x0": {
+                  "b": 35,
+                  "a": 36
+                }
+              },
+              "spec": {
+                "x0": [
+                  "`$EXACT`",
+                  {
+                    "b": 37,
+                    "a": 36
+                  }
+                ]
+              }
+            },
+            "err": "Expected field x0 to be exactly equal to {a:36,b:37}, but found object: {a:36,b:35}."
+          }
+        ]
+      },
+      "invalid": {
+        "set": [
+          {
+            "in": {
+              "data": null,
+              "spec": "`$STRING`"
+            },
+            "err": "Expected string, but found no value."
+          },
+          {
+            "in": {
+              "data": {
+                "b0": 1,
+                "a0": "a"
+              },
+              "spec": {
+                "a0": 11,
+                "b0": "bb"
+              }
+            },
+            "err": "Expected field a0 to be number, but found string: a. | Expected field b0 to be string, but found number: 1."
+          }
+        ]
+      },
+      "name": "validate",
+      "set": []
     }
   },
   "primary": {
@@ -8323,7 +8914,9 @@
         "set": [
           {
             "ctx": {
-              "bar": "BAR0"
+              "meta": {
+                "bar": "BAR0"
+              }
             },
             "out": {
               "zed": "ZED_BAR0"
@@ -8331,7 +8924,9 @@
           },
           {
             "ctx": {
-              "bar": "BAR1"
+              "meta": {
+                "bar": "BAR1"
+              }
             },
             "client": "a",
             "out": {
