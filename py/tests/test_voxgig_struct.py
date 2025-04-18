@@ -277,8 +277,10 @@ class TestStruct(unittest.TestCase):
         self.assertEqual(merge([f0]), f0)
         self.assertEqual(merge([None, f0]), f0)
         self.assertEqual(merge([{"a": f0}]), {"a": f0})
+        self.assertEqual(merge([[f0]]), [f0])
         self.assertEqual(merge([{"a": {"b": f0}}]), {"a": {"b": f0}})
 
+        
     # -------------------------------------------------
     # getpath tests
     # -------------------------------------------------

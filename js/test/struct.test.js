@@ -294,11 +294,13 @@ describe('struct', async () => {
     const f0 = () => null
     deepEqual(merge([f0]), f0)
     deepEqual(merge([null, f0]), f0)
+    deepEqual(merge([[f0]]), [f0])
     deepEqual(merge([{ a: f0 }]), { a: f0 })
     deepEqual(merge([{ a: { b: f0 } }]), { a: { b: f0 } })
 
     // JavaScript only
     deepEqual(merge([{ a: global.fetch }]), { a: global.fetch })
+    deepEqual(merge([[global.fetch]]), [global.fetch])
     deepEqual(merge([{ a: { b: global.fetch } }]), { a: { b: global.fetch } })
   })
 

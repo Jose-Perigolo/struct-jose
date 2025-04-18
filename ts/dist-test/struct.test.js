@@ -166,14 +166,19 @@ const TEST_JSON_FILE = '../../build/test/test.json';
     (0, node_test_1.test)('merge-array', async () => {
         await runset(mergeSpec.array, merge);
     });
+    (0, node_test_1.test)('merge-integrity', async () => {
+        await runset(mergeSpec.integrity, merge);
+    });
     (0, node_test_1.test)('merge-special', async () => {
         const f0 = () => null;
         (0, node_assert_1.deepEqual)(merge([f0]), f0);
         (0, node_assert_1.deepEqual)(merge([null, f0]), f0);
         (0, node_assert_1.deepEqual)(merge([{ a: f0 }]), { a: f0 });
+        (0, node_assert_1.deepEqual)(merge([[f0]]), [f0]);
         (0, node_assert_1.deepEqual)(merge([{ a: { b: f0 } }]), { a: { b: f0 } });
         // JavaScript only
         (0, node_assert_1.deepEqual)(merge([{ a: global.fetch }]), { a: global.fetch });
+        (0, node_assert_1.deepEqual)(merge([[global.fetch]]), [global.fetch]);
         (0, node_assert_1.deepEqual)(merge([{ a: { b: global.fetch } }]), { a: { b: global.fetch } });
     });
     // getpath tests
@@ -256,6 +261,7 @@ const TEST_JSON_FILE = '../../build/test/test.json';
         });
     });
     (0, node_test_1.test)('transform-funcval', async () => {
+        // f0 should never be called (no $ prefix).
         const f0 = () => 99;
         (0, node_assert_1.deepEqual)(transform({}, { x: 1 }), { x: 1 });
         (0, node_assert_1.deepEqual)(transform({}, { x: f0 }), { x: f0 });

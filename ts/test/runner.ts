@@ -4,9 +4,11 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { deepEqual, fail, AssertionError } from 'node:assert'
 
+import { StructUtility } from '../dist/struct'
 
 const NULLMARK = '__NULL__' // Value is JSON null
 const UNDEFMARK = '__UNDEF__' // Value is not present (thus, undefined).
+const EXISTSMARK = '__EXISTS__' // Value exists (not undefined).
 
 
 type Subject = (...args: any[]) => any
@@ -23,6 +25,7 @@ type RunPack = {
 }
 
 type TestPack = {
+  name?: string
   client: any
   subject: Subject
   utility: any
@@ -31,7 +34,17 @@ type TestPack = {
 type Flags = Record<string, boolean>
 
 
-async function makeRunner(testfile: string, client: any) {
+type Utility = {
+  struct: StructUtility
+  contextify: (ctxmap: Record<string, any>) => any
+}
+
+type Client = {
+  utility: () => Utility
+}
+
+
+async function makeRunner(testfile: string, client: Client) {
 
   return async function runner(
     name: string,
@@ -187,7 +200,7 @@ function handleError(entry: any, err: any, structUtils: Record<string, any>) {
       if (entry.match) {
         match(
           entry.match,
-          { in: entry.in, out: entry.res, ctx: entry.ctx, err },
+          { in: entry.in, out: entry.res, ctx: entry.ctx, err: fixJSON(err, { null: true }) },
           structUtils
         )
       }
@@ -211,7 +224,7 @@ function handleError(entry: any, err: any, structUtils: Record<string, any>) {
 function resolveArgs(
   entry: any,
   testpack: TestPack,
-  utility: any,
+  utility: Utility,
   structUtils: Record<string, any>
 ): any[] {
   let args: any[] = []
@@ -226,12 +239,8 @@ function resolveArgs(
     args = [structUtils.clone(entry.in)]
   }
 
-
   if (entry.ctx || entry.args) {
     let first = args[0]
-    // if ('object' === typeof first && null != first) {
-    // entry.ctx = first = args[0] = structUtils.clone(args[0])
-
     if (structUtils.ismap(first)) {
       first = structUtils.clone(first)
       first = utility.contextify(first)
@@ -255,6 +264,7 @@ function resolveTestPack(
   clients: Record<string, any>
 ) {
   const testpack: TestPack = {
+    name,
     client,
     subject,
     utility: client.utility(),
@@ -263,7 +273,6 @@ function resolveTestPack(
   if (entry.client) {
     testpack.client = clients[entry.client]
     testpack.utility = testpack.client.utility()
-    // testpack.subject = resolveSubject(name, testpack.utility, subject)
     testpack.subject = resolveSubject(name, testpack.utility)
   }
 
@@ -276,18 +285,24 @@ function match(
   base: any,
   structUtils: Record<string, any>
 ) {
+  base = structUtils.clone(base)
+
   structUtils.walk(check, (_key: any, val: any, _parent: any, path: any) => {
-    let scalar = 'object' != typeof val
-    if (scalar) {
+    if (!structUtils.isnode(val)) {
       let baseval = structUtils.getpath(path, base)
 
       if (baseval === val) {
-        return
+        return val
       }
 
       // Explicit undefined expected
       if (UNDEFMARK === val && undefined === baseval) {
-        return
+        return val
+      }
+
+      // Explicit defined expected
+      if (EXISTSMARK === val && null != baseval) {
+        return val
       }
 
       if (!matchval(val, baseval, structUtils)) {
@@ -296,6 +311,8 @@ function match(
           '] <=> [' + structUtils.stringify(baseval) + ']')
       }
     }
+
+    return val
   })
 }
 
@@ -332,13 +349,13 @@ function matchval(
 }
 
 
-function fixJSON(val: any, flags: Flags): any {
+function fixJSON(val: any, flags?: Flags): any {
   if (null == val) {
-    return flags.null ? NULLMARK : val
+    return flags?.null ? NULLMARK : val
   }
 
   const replacer = (_k: string, v: any) => {
-    if (null == v && flags.null) {
+    if (null == v && flags?.null) {
       return NULLMARK
     }
 
@@ -373,6 +390,7 @@ function nullModifier(
 
 export {
   NULLMARK,
+  EXISTSMARK,
   nullModifier,
   makeRunner,
 }

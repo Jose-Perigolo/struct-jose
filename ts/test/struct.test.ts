@@ -290,15 +290,22 @@ describe('struct', async () => {
   })
 
 
+  test('merge-integrity', async () => {
+    await runset(mergeSpec.integrity, merge)
+  })
+
+
   test('merge-special', async () => {
     const f0 = () => null
     deepEqual(merge([f0]), f0)
     deepEqual(merge([null, f0]), f0)
     deepEqual(merge([{ a: f0 }]), { a: f0 })
+    deepEqual(merge([[f0]]), [f0])
     deepEqual(merge([{ a: { b: f0 } }]), { a: { b: f0 } })
 
     // JavaScript only
     deepEqual(merge([{ a: global.fetch }]), { a: global.fetch })
+    deepEqual(merge([[global.fetch]]), [global.fetch])
     deepEqual(merge([{ a: { b: global.fetch } }]), { a: { b: global.fetch } })
   })
 
@@ -426,6 +433,7 @@ describe('struct', async () => {
 
 
   test('transform-funcval', async () => {
+    // f0 should never be called (no $ prefix).
     const f0 = () => 99
     deepEqual(transform({}, { x: 1 }), { x: 1 })
     deepEqual(transform({}, { x: f0 }), { x: f0 })

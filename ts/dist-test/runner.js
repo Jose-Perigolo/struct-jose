@@ -1,7 +1,7 @@
 "use strict";
 // This test utility runs the JSON-specified tests in build/test/test.json.
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.NULLMARK = void 0;
+exports.EXISTSMARK = exports.NULLMARK = void 0;
 exports.nullModifier = nullModifier;
 exports.makeRunner = makeRunner;
 const node_fs_1 = require("node:fs");
@@ -10,6 +10,8 @@ const node_assert_1 = require("node:assert");
 const NULLMARK = '__NULL__'; // Value is JSON null
 exports.NULLMARK = NULLMARK;
 const UNDEFMARK = '__UNDEF__'; // Value is not present (thus, undefined).
+const EXISTSMARK = '__EXISTS__'; // Value exists (not undefined).
+exports.EXISTSMARK = EXISTSMARK;
 async function makeRunner(testfile, client) {
     return async function runner(name, store) {
         store = store || {};
@@ -107,7 +109,7 @@ function handleError(entry, err, structUtils) {
     if (null != entry_err) {
         if (true === entry_err || matchval(entry_err, err.message, structUtils)) {
             if (entry.match) {
-                match(entry.match, { in: entry.in, out: entry.res, ctx: entry.ctx, err }, structUtils);
+                match(entry.match, { in: entry.in, out: entry.res, ctx: entry.ctx, err: fixJSON(err, { null: true }) }, structUtils);
             }
             return;
         }
@@ -135,8 +137,6 @@ function resolveArgs(entry, testpack, utility, structUtils) {
     }
     if (entry.ctx || entry.args) {
         let first = args[0];
-        // if ('object' === typeof first && null != first) {
-        // entry.ctx = first = args[0] = structUtils.clone(args[0])
         if (structUtils.ismap(first)) {
             first = structUtils.clone(first);
             first = utility.contextify(first);
@@ -150,6 +150,7 @@ function resolveArgs(entry, testpack, utility, structUtils) {
 }
 function resolveTestPack(name, entry, subject, client, clients) {
     const testpack = {
+        name,
         client,
         subject,
         utility: client.utility(),
@@ -157,22 +158,25 @@ function resolveTestPack(name, entry, subject, client, clients) {
     if (entry.client) {
         testpack.client = clients[entry.client];
         testpack.utility = testpack.client.utility();
-        // testpack.subject = resolveSubject(name, testpack.utility, subject)
         testpack.subject = resolveSubject(name, testpack.utility);
     }
     return testpack;
 }
 function match(check, base, structUtils) {
+    base = structUtils.clone(base);
     structUtils.walk(check, (_key, val, _parent, path) => {
-        let scalar = 'object' != typeof val;
-        if (scalar) {
+        if (!structUtils.isnode(val)) {
             let baseval = structUtils.getpath(path, base);
             if (baseval === val) {
-                return;
+                return val;
             }
             // Explicit undefined expected
             if (UNDEFMARK === val && undefined === baseval) {
-                return;
+                return val;
+            }
+            // Explicit defined expected
+            if (EXISTSMARK === val && null != baseval) {
+                return val;
             }
             if (!matchval(val, baseval, structUtils)) {
                 (0, node_assert_1.fail)('MATCH: ' + path.join('.') +
@@ -180,6 +184,7 @@ function match(check, base, structUtils) {
                     '] <=> [' + structUtils.stringify(baseval) + ']');
             }
         }
+        return val;
     });
 }
 function matchval(check, base, structUtils) {
@@ -205,10 +210,10 @@ function matchval(check, base, structUtils) {
 }
 function fixJSON(val, flags) {
     if (null == val) {
-        return flags.null ? NULLMARK : val;
+        return flags?.null ? NULLMARK : val;
     }
     const replacer = (_k, v) => {
-        if (null == v && flags.null) {
+        if (null == v && flags?.null) {
             return NULLMARK;
         }
         if (v instanceof Error) {

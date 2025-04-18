@@ -144,13 +144,14 @@ child: {
 one: {
   set: [
     { in: { data: 33, spec: ['`$ONE`','`$STRING`','`$NUMBER`']}, out: 33 }
+
     { in: { data: 'a31', spec: ['`$ONE`','`$STRING`','`$NUMBER`']}, out: 'a31' }
 
     { in: { data: true, spec: ['`$ONE`','`$STRING`','`$NUMBER`']},
-      err: 'Expected one of string, number, but found boolean: true.' }
+     err: 'Expected one of string, number, but found boolean: true.' }
 
     { in: { data: {x0:true}, spec: {x0:['`$ONE`','`$STRING`','`$NUMBER`']}},
-      err: 'Expected field x0 to be one of string, number, but found boolean: true.' }
+     err: 'Expected field x0 to be one of string, number, but found boolean: true.' }
 
     { in: { data: {x1:{a:1}}, spec: ['`$ONE`',{x1:'`$ARRAY`'}, {x1:'`$OBJECT`'}]},
       out: {x1:{a:1}} }
@@ -160,8 +161,10 @@ one: {
 
     { in: { data: {a:{}}, spec: {a:['`$ONE`','`$OBJECT`','`$ARRAY`']} }, out: {a:{}} }
     { in: { data: {a:[]}, spec: {a:['`$ONE`','`$OBJECT`','`$ARRAY`']} }, out: {a:[]} }
+
     { in: { data: {a:1}, spec: {a:['`$ONE`','`$OBJECT`','`$ARRAY`']} },
       err: 'Expected field a to be one of object, array, but found number: 1.' }
+
     { in: { data: {}, spec: {a:['`$ONE`','`$OBJECT`','`$ARRAY`']} },
       err: 'Expected field a to be one of object, array, but found no value.' }
   ]
@@ -175,6 +178,7 @@ exact: {
     { in: { data: 13, spec: ['`$EXACT`',13]}, out: 13 }
     { in: { data: 'a', spec: ['`$EXACT`','a']}, out: 'a' }
     { in: { data: true, spec: ['`$EXACT`',true]}, out: true }
+    { in: { data: null, spec: ['`$EXACT`',null]}, out: null }
     { in: { data: {x:1}, spec: ['`$EXACT`',{x:1}]}, out: {x:1} }
     { in: { data: {x:[2]}, spec: ['`$EXACT`', {x:[2]} ] }, out: {x:[2]} }
     { in: { data: {x:{y:[3]}}, spec: ['`$EXACT`', {x:{y:[3]}} ] }, out: {x:{y:[3]}} }

@@ -19,6 +19,8 @@ import (
 )
 
 
+
+// Client interface defines the minimum needed to work with the runner
 type Client interface {
 	Utility() Utility
 }
@@ -37,76 +39,6 @@ type StructUtility struct {
 	Items      func(val any) [][2]any
 	Stringify  func(val any, maxlen ...int) string
 	Walk       func(val any, apply voxgigstruct.WalkApply) any
-}
-
-type ClientStruct struct {
-	opts map[string]any
-}
-
-
-func newClient(opts map[string]any) (Client, error) {
-	if nil == opts {
-		opts = map[string]any{}
-	}
-	client := ClientStruct{
-		opts: opts,
-	}
-	return client, nil
-}
-
-
-func testClient(opts map[string]any) (Client, error) {
-	testClient, error := newClient(nil)
-	return testClient, error
-}
-
-
-type utility struct {
-	opts map[string]any
-}
-
-func (u utility) Struct() *StructUtility {
-	return &StructUtility{
-		IsNode:     voxgigstruct.IsNode,
-		Clone:      voxgigstruct.Clone,
-		CloneFlags: voxgigstruct.CloneFlags,
-		GetPath:    voxgigstruct.GetPath,
-		Inject:     voxgigstruct.Inject,
-		Items:      voxgigstruct.Items,
-		Stringify:  voxgigstruct.Stringify,
-		Walk:       voxgigstruct.Walk,
-	}
-}
-
-func (u utility) Check(ctx map[string]any) map[string]any {
-	var zed string
-	zed = "ZED"
-
-	if nil != u.opts {
-		foo := u.opts["foo"]
-		if nil != foo {
-			zed += foo.(string)
-		}
-	}
-
-	zed += "_"
-
-	if nil == ctx {
-		zed += "0"
-	} else {
-		zed += ctx["bar"].(string)
-	}
-
-	return map[string]any{
-		"zed": zed,
-	}
-}
-
-
-func (c ClientStruct) Utility() Utility {
-	return utility{
-		opts: c.opts,
-	}
 }
 
 
@@ -134,6 +66,7 @@ type RunPack struct {
 }
 
 type TestPack struct {
+	Name    string  // Optional name field
 	Client  Client
 	Subject Subject
 	Utility Utility
@@ -142,24 +75,14 @@ type TestPack struct {
 
 
 var (
-	NULLMARK = "__NULL__"
+	NULLMARK   = "__NULL__"   // Value is JSON null
+	UNDEFMARK  = "__UNDEF__"  // Value is not present (thus, undefined)
+	EXISTSMARK = "__EXISTS__" // Value exists (not undefined)
 )
 
 
 // MakeRunner creates a runner function that can be used to run tests
-func MakeRunner(testfile string, clientIn ...Client) func(name string, store any) (*RunPack, error) {
-	var client Client
-	var err error
-	
-	if len(clientIn) > 0 && clientIn[0] != nil {
-		client = clientIn[0]
-	} else {
-		client, err = testClient(nil)
-		if err != nil {
-			// Since we can't return an error here, we'll panic if client creation fails
-			panic(err)
-		}
-	}
+func MakeRunner(testfile string, client Client) func(name string, store any) (*RunPack, error) {
 
 	return func(name string, store any) (*RunPack, error) {
 		utility := client.Utility()
@@ -167,7 +90,7 @@ func MakeRunner(testfile string, clientIn ...Client) func(name string, store any
 
 		spec := resolveSpec(name, testfile)
 
-		clients, err := resolveClients(spec, store, structUtil)
+		clients, err := resolveClients(spec, store, structUtil, client)
 		if err != nil {
 			return nil, err
 		}
@@ -294,8 +217,8 @@ func resolveSpec(
 func resolveClients(
 	spec map[string]any,
 	store any,
-	// provider Provider,
 	structUtil *StructUtility,
+	baseClient Client,
 ) (map[string]Client, error) {
 	clients := make(map[string]Client)
 
@@ -319,6 +242,15 @@ func resolveClients(
 		return clients, nil
 	}
 
+	// Check if the client has a Tester method using reflection (similar to client.tester in TypeScript)
+	baseClientValue := reflect.ValueOf(baseClient)
+	testerMethod := baseClientValue.MethodByName("Tester")
+	if !testerMethod.IsValid() {
+		// If there's no Tester method, we can't create child clients
+		// Just return empty clients map
+		return clients, nil
+	}
+
 	for _, cdef := range structUtil.Items(clientMap) {
 		key, _ := cdef[0].(string)            // cdef[0]
 		valMap, _ := cdef[1].(map[string]any) // cdef[1]
@@ -333,15 +265,31 @@ func resolveClients(
 			opts = make(map[string]any)
 		}
 
-		structUtil.Inject(opts, store)
+		// Inject store values into options
+		if store != nil && structUtil.Inject != nil {
+			structUtil.Inject(opts, store)
+		}
 
-		// client, err := provider.Test(opts)
-		client, err := testClient(opts)
-		if err != nil {
+		// Call the client's Tester method using reflection
+		results := testerMethod.Call([]reflect.Value{reflect.ValueOf(opts)})
+		if len(results) != 2 {
+			return nil, fmt.Errorf("resolveClients: Tester method must return (Client, error)")
+		}
+
+		// Check for error
+		if !results[1].IsNil() {
+			err := results[1].Interface().(error)
 			return nil, err
 		}
 
-		clients[key] = client
+		// Get the new client instance
+		newClientValue := results[0].Interface()
+		newClient, ok := newClientValue.(Client)
+		if !ok {
+			return nil, fmt.Errorf("resolveClients: Tester method did not return a Client")
+		}
+
+		clients[key] = newClient
 	}
 
 	return clients, nil
@@ -518,6 +466,8 @@ func handleError(
 	testerr error,
 	structUtils *StructUtility,
 ) {
+	// Record the error in the entry
+	entry["thrown"] = testerr
 	entryErr := entry["err"]
 
 	// Special cases for testing - if there's no expected error but test expects success
@@ -555,15 +505,21 @@ func handleError(
 
 	matchErr, err := MatchNode(entryErr, errStr, structUtils)
 
+  if err != nil {
+    t.Error(fmt.Sprintf("match error: %v", err))
+    return
+  }
+
 	if boolErr || matchErr {
 		if entry["match"] != nil {
+			flags := map[string]bool{"null": true}
 			matchErr, err := MatchNode(
 				entry["match"],
 				map[string]any{
 					"in":  entry["in"],
 					"out": entry["res"],
 					"ctx": entry["ctx"],
-					"err": err.Error(),
+					"err": fixJSON(testerr, flags), // Use fixJSON to process the error object
 				},
 				structUtils,
 			)
@@ -636,6 +592,7 @@ func resolveTestPack(
 	}
 
 	testpack := TestPack{
+		Name:    name,
 		Client:  client,
 		Subject: subject,
 		Utility: client.Utility(),
@@ -667,6 +624,9 @@ func MatchNode(
 	pass := true
 	var err error = nil
 
+	// Clone the base object to avoid modifying the original
+	base = structUtil.Clone(base)
+
 	structUtil.Walk(
 		check,
 		func(key *string, val any, _parent any, path []string) any {
@@ -692,14 +652,19 @@ func MatchNode(
 }
 
 func MatchScalar(check, base any, structUtil *StructUtility) bool {
-	if s, ok := check.(string); ok && s == "__UNDEF__" {
-		check = nil
+	// Handle special cases for undefined and null values
+	if s, ok := check.(string); ok && s == UNDEFMARK {
+		return base == nil || reflect.ValueOf(base).IsZero()
+	}
+	
+	// Handle EXISTSMARK - value exists and is not undefined
+	if s, ok := check.(string); ok && s == EXISTSMARK {
+		return base != nil
 	}
 
 	pass := (check == base)
 
 	if !pass {
-
 		if checkStr, ok := check.(string); ok {
 			basestr := structUtil.Stringify(base)
 
@@ -806,14 +771,28 @@ func subjectify(fn any) Subject {
 
 
 func fixJSON(data any, flags map[string]bool) any {
+	// Ensure flags is initialized
+	if flags == nil {
+		flags = map[string]bool{"null": true}
+	}
+
+	// Handle nil data
 	if nil == data && flags["null"] {
 		return NULLMARK
+	}
+
+	// Handle error objects specially
+	if err, ok := data.(error); ok {
+		errorMap := map[string]any{
+			"name":    reflect.TypeOf(err).String(),
+			"message": err.Error(),
+		}
+		return errorMap
 	}
 
 	v := reflect.ValueOf(data)
 
 	switch v.Kind() {
-
 	case reflect.Float64:
 		if v.Float() == float64(int(v.Float())) {
 			return int(v.Float())
@@ -825,7 +804,13 @@ func fixJSON(data any, flags map[string]bool) any {
 		for _, key := range v.MapKeys() {
 			strKey, ok := key.Interface().(string)
 			if ok {
-				fixedMap[strKey] = fixJSON(v.MapIndex(key).Interface(), flags)
+				value := v.MapIndex(key).Interface()
+				// Special handling for nil values based on flags
+				if value == nil && flags["null"] {
+					fixedMap[strKey] = NULLMARK
+				} else {
+					fixedMap[strKey] = fixJSON(value, flags)
+				}
 			}
 		}
 		return fixedMap
@@ -834,7 +819,13 @@ func fixJSON(data any, flags map[string]bool) any {
 		length := v.Len()
 		fixedSlice := make([]any, length)
 		for i := 0; i < length; i++ {
-			fixedSlice[i] = fixJSON(v.Index(i).Interface(), flags)
+			value := v.Index(i).Interface()
+			// Special handling for nil values based on flags
+			if value == nil && flags["null"] {
+				fixedSlice[i] = NULLMARK
+			} else {
+				fixedSlice[i] = fixJSON(value, flags)
+			}
 		}
 		return fixedSlice
 
@@ -842,7 +833,13 @@ func fixJSON(data any, flags map[string]bool) any {
 		length := v.Len()
 		fixedSlice := make([]any, length)
 		for i := 0; i < length; i++ {
-			fixedSlice[i] = fixJSON(v.Index(i).Interface(), flags)
+			value := v.Index(i).Interface()
+			// Special handling for nil values based on flags
+			if value == nil && flags["null"] {
+				fixedSlice[i] = NULLMARK
+			} else {
+				fixedSlice[i] = fixJSON(value, flags)
+			}
 		}
 		return fixedSlice
 
@@ -862,8 +859,14 @@ func NullModifier(
 ) {
 	switch v := val.(type) {
 	case string:
-		if "__NULL__" == v {
+		if NULLMARK == v {
 			_ = voxgigstruct.SetProp(parent, key, nil)
+		} else if UNDEFMARK == v {
+			// Handle undefined values - in Go, we just set to nil
+			_ = voxgigstruct.SetProp(parent, key, nil)
+		} else if EXISTSMARK == v {
+			// For EXISTSMARK, we don't need to do anything special in the modifier
+			// since this is a marker used during matching, not a value to be transformed
 		} else {
 			_ = voxgigstruct.SetProp(parent, key,
 				strings.ReplaceAll(v, NULLMARK, "null"))
