@@ -594,7 +594,8 @@ describe("struct", function()
 --     }, out)
 --     assert.same({"Not an integer at a: A"}, errs)
 --   end)
--- end)
+
+end)
 
 ----------------------------------------------------------
 -- Client Tests
