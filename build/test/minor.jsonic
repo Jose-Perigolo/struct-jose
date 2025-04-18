@@ -41,6 +41,7 @@ islist: {
 iskey: {
   set: [
     { in: 1, out: true }
+    { in: 2.2, out: true }
     { in: 'a', out: true }
     { in: '', out: false }
     { in: true, out: false }
@@ -229,26 +230,26 @@ keysof: {
 
 haskey: {
   set: [
-    { args: [{a:1},a], out: true }
-    { args: [{a:2},b], out: false }
-    { args: [{a:11,c:12},a], out: true }
-    { args: [{a:12,c:13},b], out: false }
-    { args: [{a:13,c:14},c], out: true }
-    { args: [{a:21,b:22},a], out: true }
-    { args: [{a:22,b:23},b], out: true }
-    { args: [{a:24,b:25},c], out: false }
-    { args: [[3],0], out: true }
-    { args: [[3],1], out: false }
-    { args: [[3],'0'], out: true }
-    { args: [[3],'1'], out: false }
-    { args: [null,'a'], out: false }
-    { args: [null,1], out: false }
-    { args: [null,null], out: false }
-    { args: [{},null], out: false }
-    { args: [[],null], out: false }
-    { args: [[]], out: false }
-    { args: [{}], out: false }
-    { args: [], out: false }
+    { in: { src: {a:1}, key:a}, out: true }
+    { in: { src: {a:2}, key:b}, out: false }
+    { in: { src: {a:11,c:12}, key:a}, out: true }
+    { in: { src: {a:12,c:13}, key:b}, out: false }
+    { in: { src: {a:13,c:14}, key:c}, out: true }
+    { in: { src: {a:21,b:22}, key:a}, out: true }
+    { in: { src: {a:22,b:23}, key:b}, out: true }
+    { in: { src: {a:24,b:25}, key:c}, out: false }
+    { in: { src: [3], key:0}, out: true }
+    { in: { src: [3], key:1}, out: false }
+    { in: { src: [3], key:'0'}, out: true }
+    { in: { src: [3], key:'1'}, out: false }
+    { in: { src: null, key:'a'}, out: false }
+    { in: { src: null, key:1}, out: false }
+    { in: { src: null, key:null}, out: false }
+    { in: { src: {}, key:null}, out: false }
+    { in: { src: [], key:null}, out: false }
+    { in: { src: []}, out: false }
+    { in: { src: {}}, out: false }
+    { in: {}, out: false }
   ]
 }
 
@@ -307,6 +308,7 @@ stringify: {
     { in: { }, out: '' }
     { in: { val: [2,'b',true] }, out: '[2,b,true]' }
     { in: { val: [[3],{x:1}] }, out: '[[3],{x:1}]' }
+    { in: { val: {b:2,a:3}}, out: '{a:3,b:2}' }
     { in: { val: {x:4,y:'c',z:false} }, out: '{x:4,y:c,z:false}' }
     { in: { val: {x:{y:5,z:'d'},y:[6]} }, out: '{x:{y:5,z:d},y:[6]}' }
     { in: { val: {x:{y:5,z:'d'},y:[6]}, max:10 }, out: '{x:{y:5...' }
@@ -387,6 +389,8 @@ joinurl: {
     { out: 'a/b' in: ['a/','//b'] }
     { out: 'a/b/c/d' in: ['a','b','c//d'] }
     { out: '//a/b' in: ['//a','/b'] }
+    { in: ['https://www.example.com/','/a','/b/','/c','d'],
+      out: 'https://www.example.com/a/b/c/d' }
   ]
 }
 

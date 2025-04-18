@@ -5,114 +5,70 @@ const { join } = require('node:path')
 const { deepEqual, fail, AssertionError } = require('node:assert')
 
 
-// Runner does make use of these struct utilities, and this usage is
-// circular. This is a trade-off tp make the runner code simpler.
-const {
-  clone,
-  getpath,
-  inject,
-  items,
-  stringify,
-  walk,
-} = require('../src/struct')
+const NULLMARK = '__NULL__' // Value is JSON null
+const UNDEFMARK = '__UNDEF__' // Value is not present (thus, undefined).
+const EXISTSMARK = '__EXISTS__' // Value exists (not undefined).
 
 
-const NULLMARK = "__NULL__"
+async function makeRunner(testfile, client) {
 
+  return async function runner(
+    name,
+    store = {}
+  ) {
+    store = store || {}
 
-class Client {
+    const utility = client.utility()
+    const structUtils = utility.struct
+    
+    let spec = resolveSpec(name, testfile)
+    let clients = await resolveClients(client, spec, store, structUtils)
+    let subject = resolveSubject(name, utility)
 
-  #opts = {}
-  #utility = {}
-  
-  constructor(opts) {
-    this.#opts = opts || {}
-    this.#utility = {
-      struct: {
-        clone,
-        getpath,
-        inject,
-        items,
-        stringify,
-        walk,
-      },
-      check: (ctx) => {
-        return {
-          zed: 'ZED' +
-            (null == this.#opts ? '' : null == this.#opts.foo ? '' : this.#opts.foo) +
-            '_' +
-            (null == ctx.bar ? '0' : ctx.bar)
+    let runsetflags = async (
+      testspec,
+      flags,
+      testsubject
+    ) => {
+      subject = testsubject || subject
+      flags = resolveFlags(flags)
+      const testspecmap = fixJSON(testspec, flags)
+
+      const testset = testspecmap.set
+      for (let entry of testset) {
+        try {
+          entry = resolveEntry(entry, flags)
+
+          let testpack = resolveTestPack(name, entry, subject, client, clients)
+          let args = resolveArgs(entry, testpack, utility, structUtils)
+
+          let res = await testpack.subject(...args)
+          res = fixJSON(res, flags)
+          entry.res = res
+
+          checkResult(entry, res, structUtils)
+        }
+        catch (err) {
+          handleError(entry, err, structUtils)
         }
       }
     }
-  }
 
-  static async test(opts) {
-    return new Client(opts)
-  }
+    let runset = async (
+      testspec,
+      testsubject
+    ) => runsetflags(testspec, {}, testsubject)
 
-  utility() { 
-    return this.#utility 
-  }
-}
-
-
-async function runner(
-  name,
-  store,
-  testfile
-) {
-
-  const client = await Client.test()
-  const utility = client.utility()
-  const structUtils = utility.struct
-  
-  let spec = resolveSpec(name, testfile)
-  let clients = await resolveClients(spec, store, structUtils)
-  let subject = resolveSubject(name, utility)
-
-  let runsetflags = async (
-    testspec,
-    flags,
-    testsubject
-  ) => {
-    subject = testsubject || subject
-    flags = resolveFlags(flags)
-    const testspecmap = fixJSON(testspec, flags)
-
-    const testset = testspecmap.set
-    for (let entry of testset) {
-      try {
-        entry = resolveEntry(entry, flags)
-
-        let testpack = resolveTestPack(name, entry, subject, client, clients)
-        let args = resolveArgs(entry, testpack)
-
-        let res = await testpack.subject(...args)
-        res = fixJSON(res, flags)
-        entry.res = res
-
-        checkResult(entry, res, structUtils)
-      }
-      catch (err) {
-        handleError(entry, err, structUtils)
-      }
+    const runpack = {
+      spec,
+      runset,
+      runsetflags,
+      subject,
+      client,
     }
+
+    return runpack
   }
-
-  let runset = async (
-    testspec,
-    testsubject
-  ) => runsetflags(testspec, {}, testsubject)
-
-  const runpack = {
-    spec,
-    runset,
-    runsetflags,
-    subject,
-  }
-
-  return runpack
 }
 
 
@@ -127,6 +83,7 @@ function resolveSpec(name, testfile) {
 
 
 async function resolveClients(
+  client,
   spec,
   store,
   structUtils
@@ -140,7 +97,7 @@ async function resolveClients(
         structUtils.inject(copts, store)
       }
 
-      clients[cn] = await Client.test(copts)
+      clients[cn] = await client.tester(copts)
     }
   }
   return clients
@@ -148,7 +105,8 @@ async function resolveClients(
 
 
 function resolveSubject(name, container) {
-  return container?.[name]
+  const subject = container[name] || container.struct[name]
+  return subject
 }
 
 
@@ -168,18 +126,31 @@ function resolveEntry(entry, flags) {
 
 
 function checkResult(entry, res, structUtils) {
-  if (undefined === entry.match || undefined !== entry.out) {
-    // NOTE: don't use clone as we want to strip functions
-    deepEqual(null != res ? JSON.parse(JSON.stringify(res)) : res, entry.out)
-  }
+  let matched = false
 
   if (entry.match) {
+    const result = { in: entry.in, out: entry.res, ctx: entry.ctx }
     match(
       entry.match,
-      { in: entry.in, out: entry.res, ctx: entry.ctx },
+      result,
       structUtils
     )
+
+    matched = true
   }
+
+  const out = entry.out
+  
+  if (out === res) {
+    return
+  }
+
+  // NOTE: allow match with no out.
+  if (matched && (NULLMARK === out || null == out)) {
+    return
+  }
+
+  deepEqual(null != res ? JSON.parse(JSON.stringify(res)) : res, entry.out)
 }
 
 
@@ -194,7 +165,7 @@ function handleError(entry, err, structUtils) {
       if (entry.match) {
         match(
           entry.match,
-          { in: entry.in, out: entry.res, ctx: entry.ctx, err },
+          { in: entry.in, out: entry.res, ctx: entry.ctx, err:fixJSON(err) },
           structUtils
         )
       }
@@ -204,6 +175,7 @@ function handleError(entry, err, structUtils) {
     fail('ERROR MATCH: [' + structUtils.stringify(entry_err) +
       '] <=> [' + err.message + ']')
   }
+
   // Unexpected error (test didn't specify an error expectation)
   else if (err instanceof AssertionError) {
     fail(err.message + '\n\nENTRY: ' + JSON.stringify(entry, null, 2))
@@ -214,8 +186,13 @@ function handleError(entry, err, structUtils) {
 }
 
 
-function resolveArgs(entry, testpack) {
-  let args = [clone(entry.in)]
+function resolveArgs(
+  entry,
+  testpack,
+  utility,
+  structUtils
+) {
+  let args = []
 
   if (entry.ctx) {
     args = [entry.ctx]
@@ -223,11 +200,18 @@ function resolveArgs(entry, testpack) {
   else if (entry.args) {
     args = entry.args
   }
+  else {
+    args = [structUtils.clone(entry.in)]
+  }
 
   if (entry.ctx || entry.args) {
     let first = args[0]
-    if ('object' === typeof first && null != first) {
-      entry.ctx = first = args[0] = clone(args[0])
+    if(structUtils.ismap(first)) {
+      first = structUtils.clone(first)
+      first = utility.contextify(first)
+      args[0] = first
+      entry.ctx = first
+
       first.client = testpack.client
       first.utility = testpack.utility
     }
@@ -245,6 +229,7 @@ function resolveTestPack(
   clients
 ) {
   const testpack = {
+    name,
     client,
     subject,
     utility: client.utility(),
@@ -265,17 +250,34 @@ function match(
   base,
   structUtils
 ) {
+  base = structUtils.clone(base)
+  
   structUtils.walk(check, (_key, val, _parent, path) => {
-    let scalar = 'object' != typeof val
-    if (scalar) {
+    if(!structUtils.isnode(val)) {
       let baseval = structUtils.getpath(path, base)
 
+      if (baseval === val) {
+        return val
+      }
+
+      // Explicit undefined expected
+      if (UNDEFMARK === val && undefined === baseval) {
+        return val
+      }
+
+      // Explicit defined expected
+      if (EXISTSMARK === val && null != baseval) {
+        return val
+      }
+      
       if (!matchval(val, baseval, structUtils)) {
         fail('MATCH: ' + path.join('.') +
              ': [' + structUtils.stringify(val) +
              '] <=> [' + structUtils.stringify(baseval) + ']')
       }
     }
+
+    return val
   })
 }
 
@@ -285,7 +287,8 @@ function matchval(
   base,
   structUtils
 ) {
-  check = NULLMARK === check ? undefined : check
+  // check = NULLMARK === check || UNDEFMARK === check ? undefined : check
+  // check = NULLMARK === check ? undefined : check
 
   let pass = check === base
 
@@ -316,7 +319,22 @@ function fixJSON(val, flags) {
     return flags.null ? NULLMARK : val
   }
 
-  const replacer = (_k, v) => null == v && flags.null ? NULLMARK : v
+  const replacer = (_k, v) => {
+    if(null == v && flags.null) {
+      return NULLMARK
+    }
+
+    if(v instanceof Error) {
+      return {
+        ...v,
+        name: v.name,
+        message: v.message,
+      }
+    }
+    
+    return v
+  }
+  
   return JSON.parse(JSON.stringify(val, replacer))
 }
 
@@ -338,6 +356,5 @@ function nullModifier(
 module.exports = {
   NULLMARK,
   nullModifier,
-  runner,
-  Client
+  makeRunner,
 }
