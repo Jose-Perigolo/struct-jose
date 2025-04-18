@@ -277,7 +277,9 @@ describe("struct", function()
   end)
 
   test("minor-haskey", function()
-    runset(minorSpec.haskey, haskey)
+    runsetflags(minorSpec.haskey, {
+      null = false
+    }, haskey)
   end)
 
   test("minor-keysof", function()

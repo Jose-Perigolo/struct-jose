@@ -209,7 +209,7 @@ class TestVoxgigStruct < Minitest::Test
 
   def test_minor_haskey
     tests = @minor_spec["haskey"]
-    @runsetflags.call(tests, {}, VoxgigStruct.method(:haskey))
+    @runsetflags.call(tests, {"null" => false}, VoxgigStruct.method(:haskey))
   end
 
   def test_minor_keysof

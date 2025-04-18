@@ -448,13 +448,14 @@ local function joinurl(sarr)
   for i = 1, #filtered do
     local s = filtered[i]
 
-    -- Replace multiple slashes after non-slash with single slash
-    s = s:gsub("([^/])/+", "%1/")
 
     if i == 1 then
       -- For first element, only remove trailing slashes
       s = s:gsub("/+$", "")
     else
+      -- Replace multiple slashes after non-slash with single slash
+      s = s:gsub("([^/])/+", "%1/")
+
       -- For other elements, remove both leading and trailing slashes
       s = s:gsub("^/+", "")
       s = s:gsub("/+$", "")

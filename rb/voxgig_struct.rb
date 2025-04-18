@@ -263,7 +263,7 @@ module VoxgigStruct
     parts.compact.map.with_index do |s, i|
       s = s.to_s
       if i.zero?
-        s.sub(/([^\/])\/+/, '\1/').sub(/\/+$/, '')
+        s.sub(/\/+$/, '')
       else
         s.sub(/([^\/])\/+/, '\1/').sub(/^\/+/, '').sub(/\/+$/, '')
       end

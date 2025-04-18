@@ -348,7 +348,6 @@ class Struct {
                 continue;
             }
             if ($i === 0) {
-                $s = preg_replace("/([^\/])\/+/", "$1/", $s);
                 $s = preg_replace("/\/+$/", "", $s);
             } else {
                 $s = preg_replace("/([^\/])\/+/", "$1/", $s);
