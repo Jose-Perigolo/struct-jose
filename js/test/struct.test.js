@@ -6,52 +6,56 @@ const { test, describe } = require('node:test')
 const { equal, deepEqual } = require('node:assert')
 
 const {
-  clone,
-  escre,
-  escurl,
-  getpath,
-  getprop,
-  
-  haskey,
-  inject,
-  isempty,
-  isfunc,
-  iskey,
-  
-  islist,
-  ismap,
-  isnode,
-  items,
-  joinurl,
-  
-  keysof,
-  merge,
-  pathify,
-  setprop,
-  strkey,
-  
-  stringify,
-  transform,
-  typify,
-  validate,
-  walk,
-  
-} = require('../src/struct')
-
-
-const {
-  runner,
+  makeRunner,
   nullModifier,
   NULLMARK
 } = require('./runner')
 
+const { SDK } = require('./sdk.js')
 
-// NOTE: tests are in order of increasing dependence.
+const TEST_JSON_FILE = '../../build/test/test.json'
+
+
+// NOTE: tests are (mostly) in order of increasing dependence.
 describe('struct', async () => {
 
-  const { spec, runset, runsetflags } =
-    await runner('struct', {}, '../../build/test/test.json')
+  const runner = await makeRunner(TEST_JSON_FILE, await SDK.test())
+  
+  const { spec, runset, runsetflags, client } = await runner('struct')
 
+  const {
+    clone,
+    escre,
+    escurl,
+    getpath,
+    getprop,
+    
+    haskey,
+    inject,
+    isempty,
+    isfunc,
+    iskey,
+    
+    islist,
+    ismap,
+    isnode,
+    items,
+    joinurl,
+    
+    keysof,
+    merge,
+    pathify,
+    setprop,
+    strkey,
+    
+    stringify,
+    transform,
+    typify,
+    validate,
+    walk,
+
+  } = client.utility().struct
+  
   const minorSpec = spec.minor
   const walkSpec = spec.walk
   const mergeSpec = spec.merge
@@ -212,7 +216,8 @@ describe('struct', async () => {
 
 
   test('minor-haskey', async () => {
-    await runset(minorSpec.haskey, haskey)
+    await runsetflags(minorSpec.haskey, { null: false }, (vin) =>
+      haskey(vin.src, vin.key))
   })
 
 
@@ -280,15 +285,22 @@ describe('struct', async () => {
   })
 
 
+  test('merge-integrity', async () => {
+    await runset(mergeSpec.integrity, merge)
+  })
+
+
   test('merge-special', async () => {
     const f0 = () => null
     deepEqual(merge([f0]), f0)
     deepEqual(merge([null, f0]), f0)
+    deepEqual(merge([[f0]]), [f0])
     deepEqual(merge([{ a: f0 }]), { a: f0 })
     deepEqual(merge([{ a: { b: f0 } }]), { a: { b: f0 } })
 
     // JavaScript only
     deepEqual(merge([{ a: global.fetch }]), { a: global.fetch })
+    deepEqual(merge([[global.fetch]]), [global.fetch])
     deepEqual(merge([{ a: { b: global.fetch } }]), { a: { b: global.fetch } })
   })
 
@@ -432,8 +444,24 @@ describe('struct', async () => {
   })
 
 
-  test('validate-node', async () => {
-    await runset(validateSpec.node, (vin) => validate(vin.data, vin.spec))
+  test('validate-child', async () => {
+    await runset(validateSpec.child, (vin) => validate(vin.data, vin.spec))
+  })
+
+
+  test('validate-one', async () => {
+    await runset(validateSpec.one, (vin) => validate(vin.data, vin.spec))
+  })
+
+
+  test('validate-exact', async () => {
+    await runset(validateSpec.exact, (vin) => validate(vin.data, vin.spec))
+  })
+
+
+  test('validate-invalid', async () => {
+    await runsetflags(validateSpec.invalid, { null: false },
+      (vin) => validate(vin.data, vin.spec))
   })
 
 
@@ -463,19 +491,6 @@ describe('struct', async () => {
     out = validate({ a: 'A' }, shape, extra, errs)
     deepEqual(out, { a: 'A' })
     deepEqual(errs, ['Not an integer at a: A'])
-  })
-
-})
-
-
-
-describe('client', async () => {
-
-  const { spec, runset, subject } =
-    await runner('check', {}, '../../build/test/test.json')
-
-  test('client-check-basic', async () => {
-    await runset(spec.basic, subject)
   })
 
 })

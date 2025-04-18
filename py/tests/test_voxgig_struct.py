@@ -2,54 +2,56 @@
 # RUN: python -m unittest discover -s tests
 # RUN-SOME: python -m unittest discover -s tests -k getpath
 
-
 import unittest
 
 from runner import (
-    runner,
+    makeRunner,
     nullModifier,
     NULLMARK,
-)
-        
-from voxgig_struct import (
-    clone,
-    escre,
-    escurl,
-    getpath,
-    getprop,
-    haskey,
-    inject,
-    isempty,
-    isfunc,
-    iskey,
-    islist,
-    ismap,
-    isnode,
-    items,
-    joinurl,
-    keysof,
-    merge,
-    pathify,
-    setprop,
-    stringify,
-    strkey,
-    transform,
-    typify,
-    validate,
-    walk,
-    InjectState
+    UNDEFMARK,
 )
 
+from sdk import SDK
 
-runparts = runner(
-    name='struct',
-    store={},
-    testfile='../../build/test/test.json',  # adapt path as needed
-)
+from voxgig_struct import InjectState
+
+
+sdk_client = SDK.test()
+runner = makeRunner('../../build/test/test.json', sdk_client)
+runparts = runner('struct')
 
 spec = runparts["spec"]
 runset = runparts["runset"]
 runsetflags = runparts["runsetflags"]
+client = runparts["client"]
+
+# Get all the struct utilities from the client
+struct_utils = client.utility().struct
+clone = struct_utils.clone
+escre = struct_utils.escre
+escurl = struct_utils.escurl
+getpath = struct_utils.getpath
+getprop = struct_utils.getprop
+haskey = struct_utils.haskey
+inject = struct_utils.inject
+isempty = struct_utils.isempty
+isfunc = struct_utils.isfunc
+iskey = struct_utils.iskey
+islist = struct_utils.islist
+ismap = struct_utils.ismap
+isnode = struct_utils.isnode
+items = struct_utils.items
+joinurl = struct_utils.joinurl
+keysof = struct_utils.keysof
+merge = struct_utils.merge
+pathify = struct_utils.pathify
+setprop = struct_utils.setprop
+stringify = struct_utils.stringify
+strkey = struct_utils.strkey
+transform = struct_utils.transform
+typify = struct_utils.typify
+validate = struct_utils.validate
+walk = struct_utils.walk
 
 minorSpec     = spec["minor"]
 walkSpec      = spec["walk"]
@@ -65,29 +67,36 @@ class TestStruct(unittest.TestCase):
     # minor tests
     # ===========
 
-    def test_minor_exists(self):
+    def test_exists(self):
         self.assertTrue(callable(clone))
         self.assertTrue(callable(escre))
         self.assertTrue(callable(escurl))
         self.assertTrue(callable(getprop))
-        self.assertTrue(callable(haskey))
+        self.assertTrue(callable(getpath))
         
+        self.assertTrue(callable(haskey))
+        self.assertTrue(callable(inject))
         self.assertTrue(callable(isempty))
         self.assertTrue(callable(isfunc))
         self.assertTrue(callable(iskey))
+        
         self.assertTrue(callable(islist))
         self.assertTrue(callable(ismap))
-        
         self.assertTrue(callable(isnode))
         self.assertTrue(callable(items))
         self.assertTrue(callable(joinurl))
+        
         self.assertTrue(callable(keysof))
+        self.assertTrue(callable(merge))
         self.assertTrue(callable(pathify))
-
         self.assertTrue(callable(setprop))
-        self.assertTrue(callable(stringify))
         self.assertTrue(callable(strkey))
+        
+        self.assertTrue(callable(stringify))
+        self.assertTrue(callable(transform))
         self.assertTrue(callable(typify))
+        self.assertTrue(callable(validate))
+        self.assertTrue(callable(walk))
 
 
     def test_minor_isnode(self):
@@ -142,14 +151,15 @@ class TestStruct(unittest.TestCase):
                lambda vin: stringify("null" if NULLMARK == vin.get('val') else
                                      vin.get('val'), vin.get('max')))
 
-        
+    
     def test_minor_pathify(self):
         def pathify_wrapper(vin=None):
             path = vin.get("path")
             path = None if NULLMARK == path else path 
             pathstr = pathify(path, vin.get("from")).replace("__NULL__.","")
-            pathstr = pathstr.replace(">", ":null") if NULLMARK == vin.path else pathstr
+            pathstr = pathstr.replace(">", ":null>") if NULLMARK == vin.get('path') else pathstr
             return pathstr
+        runsetflags(minorSpec["pathify"], {"null": True}, pathify_wrapper)
             
 
     def test_minor_items(self):
@@ -162,17 +172,42 @@ class TestStruct(unittest.TestCase):
                 return getprop(vin.get("val"), vin.get("key"))
             else:
                 return getprop(vin.get("val"), vin.get("key"), vin.get("alt"))
-        runset(minorSpec["getprop"], getprop_wrapper)
+        runsetflags(minorSpec["getprop"], {"null": False}, getprop_wrapper)
+        
+    def test_minor_edge_getprop(self):
+        # String array tests
+        strarr = ['a', 'b', 'c', 'd', 'e']
+        self.assertEqual(getprop(strarr, 2), 'c')
+        self.assertEqual(getprop(strarr, '2'), 'c')
+        
+        # Integer array tests
+        intarr = [2, 3, 5, 7, 11]
+        self.assertEqual(getprop(intarr, 2), 5)
+        self.assertEqual(getprop(intarr, '2'), 5)
 
         
     def test_minor_setprop(self):
-        def setprop_wrapper(vin):
-            return setprop(vin.get("parent"), vin.get("key"), vin.get("val"))
-        runset(minorSpec["setprop"], setprop_wrapper)
+        runset(minorSpec["setprop"],
+               lambda vin: setprop(vin.get("parent"), vin.get("key"), vin.get("val")))
+
+        
+    def test_minor_edge_setprop(self):
+        # String array tests
+        strarr0 = ['a', 'b', 'c', 'd', 'e']
+        strarr1 = ['a', 'b', 'c', 'd', 'e']
+        self.assertEqual(setprop(strarr0, 2, 'C'), ['a', 'b', 'C', 'd', 'e'])
+        self.assertEqual(setprop(strarr1, '2', 'CC'), ['a', 'b', 'CC', 'd', 'e'])
+        
+        # Integer array tests
+        intarr0 = [2, 3, 5, 7, 11]
+        intarr1 = [2, 3, 5, 7, 11]
+        self.assertEqual(setprop(intarr0, 2, 55), [2, 3, 55, 7, 11])
+        self.assertEqual(setprop(intarr1, '2', 555), [2, 3, 555, 7, 11])
 
         
     def test_minor_haskey(self):
-        runset(minorSpec["haskey"], haskey)
+        runsetflags(minorSpec["haskey"], {"null": False},
+                   lambda vin: haskey(vin.get("src"), vin.get("key")))
 
         
     def test_minor_keysof(self):
@@ -190,9 +225,21 @@ class TestStruct(unittest.TestCase):
     # walk tests
     # ==========
 
-    def test_walk_exists(self):
-        self.assertTrue(callable(walk))
-
+    def test_walk_log(self):
+        test_data = clone(walkSpec["log"])
+        
+        log = []
+        
+        def walklog(key, val, parent, path):
+            log.append('k=' + stringify(key) +
+                      ', v=' + stringify(val) +
+                      ', p=' + stringify(parent) +
+                      ', t=' + pathify(path))
+            return val
+            
+        walk(test_data["in"], walklog)
+        self.assertEqual(log, test_data["out"])
+        
     def test_walk_basic(self):
         def walkpath(_key, val, _parent, path):
             if isinstance(val, str):
@@ -221,14 +268,19 @@ class TestStruct(unittest.TestCase):
     def test_merge_array(self):
         runset(spec["merge"]["array"], merge)
 
+    def test_merge_integrity(self):
+        runset(spec["merge"]["integrity"], merge)
+
     def test_merge_special(self):
         def f0():
             return None
         self.assertEqual(merge([f0]), f0)
         self.assertEqual(merge([None, f0]), f0)
         self.assertEqual(merge([{"a": f0}]), {"a": f0})
+        self.assertEqual(merge([[f0]]), [f0])
         self.assertEqual(merge([{"a": {"b": f0}}]), {"a": {"b": f0}})
 
+        
     # -------------------------------------------------
     # getpath tests
     # -------------------------------------------------
@@ -248,7 +300,7 @@ class TestStruct(unittest.TestCase):
 
     def test_getpath_state(self):
         def handler_fn(state, val, _current=None, _ref=None, _store=None):
-            out = f"{state.meta["step"]}:{val}"
+            out = f"{state.meta['step']}:{val}"
             state.meta["step"] = state.meta["step"]+1 
             return out
 
@@ -333,32 +385,28 @@ class TestStruct(unittest.TestCase):
         runset(spec["transform"]["pack"], transform_wrapper)
 
     def test_transform_modify(self):
-        def modifier(val, key, parent, _state, _current, _store):
-            if isinstance(val, str):
-                setprop(parent, key, '@' + val)
+        def modifier(val, key, parent, _state=None, _current=None, _store=None):
+            if key is not None and parent is not None and isinstance(val, str):
+                parent[key] = '@' + val
 
         runset(spec["transform"]["modify"],
                lambda vin: transform(vin.get("data"), vin.get("spec"), vin.get("store"), modifier))
 
     def test_transform_extra(self):
-        """
-        Equivalent to JS:
-            transform({ a: 1 }, { x: '`a`', b: '`$COPY`', c: '`$UPPER`' }, { b: 2, $UPPER: (...) => {...} })
-        """
-        def upper_func(state, val, current, store):
+        def upper_func(state, val, current, ref, store):
             path = state.path
             this_key = path[-1] if path else None
             return str(this_key).upper()
 
-        data = {"a": 1}
-        spc = {"x": "`a`", "b": "`$COPY`", "c": "`$UPPER`"}
-        store = {
-            "b": 2,
-            "$UPPER": upper_func
-        }
-
         self.assertEqual(
-            transform(data, spc, store),
+            transform(
+                {"a": 1},
+                {"x": "`a`", "b": "`$COPY`", "c": "`$UPPER`"},
+                {
+                    "b": 2,
+                    "$UPPER": upper_func
+                }
+            ),
             {"x": 1, "b": 2, "c": "C"}
         )
 
@@ -383,58 +431,60 @@ class TestStruct(unittest.TestCase):
             return validate(vin.get("data"), vin.get("spec"))
         runset(spec["validate"]["basic"], validate_wrapper)
 
-    def test_validate_node(self):
+        
+    def test_validate_child(self):
         def validate_wrapper(vin):
             return validate(vin.get("data"), vin.get("spec"))
-        runset(spec["validate"]["node"], validate_wrapper)
+        runset(spec["validate"]["child"], validate_wrapper)
+        
+    def test_validate_one(self):
+        def validate_wrapper(vin):
+            return validate(vin.get("data"), vin.get("spec"))
+        runset(spec["validate"]["one"], validate_wrapper)
+        
+    def test_validate_exact(self):
+        def validate_wrapper(vin):
+            return validate(vin.get("data"), vin.get("spec"))
+        runset(spec["validate"]["exact"], validate_wrapper)
 
+        
+    def test_validate_invalid(self):
+        runsetflags(spec["validate"]["invalid"], {"null": False}, 
+                  lambda vin: validate(vin.get("data"), vin.get("spec")))
+
+        
     def test_validate_custom(self):
         errs = []
 
-        def integer_check(state, _val, current, store):
+        def integer_check(state, _val, current, _ref, _store):
             key = state.key
-            out = current.get(key)
-            if not isinstance(out, int):
+            out = getprop(current, key)
+            
+            if not isinstance(out, int) and not (isinstance(out, float) and out.is_integer()):
                 state.errs.append(
                     f"Not an integer at {'.'.join(state.path[1:])}: {out}"
                 )
+                return None
+            
             return out
 
         extra = {
             "$INTEGER": integer_check
         }
 
-        validate({"a": 1}, {"a": "`$INTEGER`"}, extra, errs)
+        shape = {"a": "`$INTEGER`"}
+        
+        # Test with valid integer
+        out = validate({"a": 1}, shape, extra, errs)
+        self.assertEqual(out, {"a": 1})
         self.assertEqual(len(errs), 0)
 
-        validate({"a": "A"}, {"a": "`$INTEGER`"}, extra, errs)
+        # Test with invalid value
+        out = validate({"a": "A"}, shape, extra, errs)
+        self.assertEqual(out, {"a": "A"})
         self.assertEqual(errs, ["Not an integer at a: A"])
 
-
-        
-runparts_client = runner(
-    name='check',
-    store={},
-    testfile='../../build/test/test.json',
-)
-
-spec_client = runparts_client["spec"]
-runset_client = runparts_client["runset"]
-subject_client = runparts_client["subject"]
-
-        
-class TestClient(unittest.TestCase):
-
-    def test_client_check_basic(self):
-        runset_client(spec_client["basic"], subject_client)
-
-
-        
 
 # If you want to run this file directly, add:
 if __name__ == "__main__":
     unittest.main()
-
-
-
-    
