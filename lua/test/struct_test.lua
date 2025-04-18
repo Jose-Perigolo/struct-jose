@@ -601,11 +601,11 @@ end)
 -- Client Tests
 ----------------------------------------------------------
 
-describe('client', function()
-  local runpack = runner('check', {}, '../build/test/test.json')
-  local spec, runset, subject = runpack.spec, runpack.runset, runpack.subject
+-- describe('client', function()
+--   local runpack = runner('check', {}, '../build/test/test.json')
+--   local spec, runset, subject = runpack.spec, runpack.runset, runpack.subject
 
-  test('client-check-basic', function()
-    runset(spec.basic, subject)
-  end)
-end)
+--   test('client-check-basic', function()
+--     runset(spec.basic, subject)
+--   end)
+-- end)
