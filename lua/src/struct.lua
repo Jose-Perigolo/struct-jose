@@ -2227,6 +2227,141 @@ validate = function(data, spec, extra, collecterrs)
   return out
 end
 
+-- Match exactly one of the specified values.
+-- Syntax: ['`$EXACT`', val1, val2, ...]
+-- @param state (table) The validation state
+-- @param _val (any) The value to validate (unused)
+-- @param current (any) The current context
+-- @param _ref (string) The reference string (unused)
+-- @param _store (table) The data store
+-- @return (nil) Does not return a value directly
+local function validate_EXACT(state, _val, current, _ref, _store)
+  local mode, parent, path, keyI, nodes = state.mode, state.parent, state.path, state.keyI, state.nodes
+
+  -- Only operate in val mode, since parent is a list.
+  if S_MVAL == mode then
+    if not islist(parent) or 0 ~= keyI then
+      table.insert(state.errs, 'The $EXACT validator at field ' ..
+        pathify(state.path, 1, 1) ..
+        ' must be the first element of an array.')
+      return
+    end
+
+    state.keyI = #state.keys
+
+    local grandparent = nodes[#nodes - 1]
+    local grandkey = path[#path - 1]
+
+    -- Clean up structure, replacing [$EXACT, ...] with current
+    setprop(grandparent, grandkey, current)
+    state.path = {table.unpack(state.path, 1, #state.path - 1)}
+    state.key = state.path[#state.path]
+
+    -- Create tvals array from parent elements starting at index 2
+    local tvals = {}
+    for i = 2, #parent do
+      table.insert(tvals, parent[i])
+    end
+
+    if #tvals == 0 then
+      table.insert(state.errs, 'The $EXACT validator at field ' ..
+        pathify(state.path, 1, 1) ..
+        ' must have at least one argument.')
+      return
+    end
+
+    -- See if we can find an exact value match.
+    local currentstr
+    local found_match = false
+    
+    for _, tval in ipairs(tvals) do
+      local exactmatch = tval == current
+
+      if not exactmatch and isnode(tval) then
+        if currentstr == nil then
+          currentstr = stringify(current)
+        end
+        local tvalstr = stringify(tval)
+        exactmatch = tvalstr == currentstr
+      end
+
+      if exactmatch then
+        found_match = true
+        break
+      end
+    end
+
+    -- If no match was found, report the error
+    if not found_match then
+      local valdesc = {}
+      for _, v in ipairs(tvals) do
+        table.insert(valdesc, stringify(v))
+      end
+      local valdesc_str = table.concat(valdesc, ', ')
+      
+      table.insert(state.errs, _invalidTypeMsg(
+        state.path,
+        (#state.path > 1 and '' or 'value ') ..
+        'exactly equal to ' .. (#tvals == 1 and '' or 'one of ') .. valdesc_str,
+        typify(current), current))
+    end
+  else
+    setprop(parent, state.key, UNDEF)
+  end
+end
+
+-- ... existing code ...
+
+validate = function(data, spec, extra, collecterrs)
+  local errs = collecterrs or {}
+
+  -- Create the store with validation functions and commands
+  local store = {
+    -- A special top level value to collect errors.
+    ["$ERRS"] = errs,
+
+    -- Remove the transform commands.
+    ["$DELETE"] = nil,
+    ["$COPY"] = nil,
+    ["$KEY"] = nil,
+    ["$META"] = nil,
+    ["$MERGE"] = nil,
+    ["$EACH"] = nil,
+    ["$PACK"] = nil,
+
+    -- Validation functions
+    ["$STRING"] = validate_STRING,
+    ["$NUMBER"] = validate_NUMBER,
+    ["$BOOLEAN"] = validate_BOOLEAN,
+    ["$OBJECT"] = validate_OBJECT,
+    ["$ARRAY"] = validate_ARRAY,
+    ["$FUNCTION"] = validate_FUNCTION,
+    ["$ANY"] = validate_ANY,
+    ["$CHILD"] = validate_CHILD,
+    ["$ONE"] = validate_ONE,
+    ["$EXACT"] = validate_EXACT
+  }
+
+  -- Merge in any extra validators/commands
+  if extra then
+    -- Check if extra is a table; if not, assume it's a string from a test
+    if type(extra) == "table" then
+      for k, v in pairs(extra) do
+        store[k] = v
+      end
+    end
+    -- If extra is not a table, simply ignore it
+  end
+
+  local out = transform(data, spec, store, _validation)
+
+  if #errs > 0 and not collecterrs then
+    error('Invalid data: ' .. table.concat(errs, ' | '))
+  end
+
+  return out
+end
+
 ----------------------------------------------------------
 -- Module Export
 ----------------------------------------------------------
