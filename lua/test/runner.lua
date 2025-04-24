@@ -54,48 +54,107 @@ local function deepEqual(actual, expected)
 end
 
 ----------------------------------------------------------
--- Client Class Implementation
+-- Client Interface
 ----------------------------------------------------------
 
+-- Utility interface that contains struct utilities and contextify function
+-- @class Utility
+local Utility = {}
+Utility.__index = Utility
+
+-- Create a new utility instance
+-- @param structUtil (table) The struct utility functions
+-- @param opts (table) Optional configuration
+-- @return (table) New Utility instance
+function Utility.new(structUtil, opts)
+  local instance = setmetatable({}, Utility)
+  instance._struct = structUtil or {}
+  instance._opts = opts or {}
+  return instance
+end
+
+-- Get the struct utility
+-- @return (table) The struct utility
+function Utility:struct()
+  return self._struct
+end
+
+-- Contextify a context map with additional properties
+-- @param ctx (table) The context map to enrich
+-- @return (table) The enriched context
+function Utility:contextify(ctx)
+  ctx = ctx or {}
+  -- Implement any context enrichment needed
+  return ctx
+end
+
+-- Check function for testing
+-- @param ctx (table) The context to check
+-- @return (table) Result with additional properties for testing
+function Utility:check(ctx)
+  return {
+    zed = "ZED" ..
+      ((self._opts.foo == nil) and "" or self._opts.foo) ..
+      "_" .. ((ctx.bar == nil) and "0" or ctx.bar)
+  }
+end
+
+-- Client interface for testing
+-- @class Client
 local Client = {}
 Client.__index = Client
 
 -- Create a new client instance
--- @param opts (table) Optional configuration table
+-- @param opts (table) Optional configuration
 -- @return (table) New Client instance
 function Client.new(opts)
   local instance = setmetatable({}, Client)
-
-  -- Private fields (using closure instead of # private fields)
-  local _opts = opts or {}
-  local _utility = {
-    struct = {
-      clone = struct.clone,
-      getpath = struct.getpath,
-      inject = struct.inject,
-      items = struct.items,
-      stringify = struct.stringify,
-      walk = struct.walk
-    },
-    check = function(ctx)
-      return {
-        zed = "ZED" ..
-          ((_opts == nil) and "" or (_opts.foo == nil and "" or _opts.foo)) ..
-          "_" .. ((ctx.bar == nil) and "0" or ctx.bar)
-      }
-    end
+  
+  -- Initialize struct utilities
+  local structUtil = {
+    clone = struct.clone,
+    getpath = struct.getpath,
+    inject = struct.inject,
+    items = struct.items,
+    stringify = struct.stringify,
+    walk = struct.walk,
+    isnode = function(val) return type(val) == "table" end
   }
-
-  -- Method to access private utility
-  instance.utility = function()
-    return _utility
-  end
-
+  
+  -- Create utility instance
+  instance._utility = Utility.new(structUtil, opts)
+  instance._opts = opts or {}
+  
   return instance
 end
 
--- Static method equivalent (matching TypeScript implementation)
--- @param opts (table) Optional configuration table
+-- Get the utility instance
+-- @return (table) The utility instance
+function Client:utility()
+  return self._utility
+end
+
+-- Create a new tester client with given options
+-- @param opts (table) Options for the tester
+-- @return (table) New Client instance for testing
+function Client:tester(opts)
+  -- Merge options from parent with new options
+  local mergedOpts = {}
+  for k, v in pairs(self._opts) do
+    mergedOpts[k] = v
+  end
+  
+  if opts then
+    for k, v in pairs(opts) do
+      mergedOpts[k] = v
+    end
+  end
+  
+  return Client.new(mergedOpts)
+end
+
+-- Static test function for backward compatibility
+-- @param opts (table) Options for the client
 -- @return (table) New Client instance
 function Client.test(opts)
   return Client.new(opts)
@@ -272,10 +331,19 @@ end
 
 -- Resolve the test subject function
 -- @param name (string) The name of the subject to resolve
--- @param container (table) The container object
+-- @param container (table) The container object (Utility)
 -- @return (function) The resolved subject function
 function resolveSubject(name, container)
-  return container and container[name]
+  -- Try to get the subject directly from the utility
+  local subject = container[name]
+  
+  -- If not found, try to get it from the struct
+  if subject == nil and container.struct then
+    local struct = container:struct()
+    subject = struct[name]
+  end
+  
+  return subject
 end
 
 -- Resolve the test specification from a file
@@ -291,33 +359,12 @@ function resolveSpec(name, testfile)
   return spec
 end
 
--- Resolve client instances based on specification
--- @param spec (table) The test specification
--- @param store (table) Store with configuration values
--- @param structUtils (table) Structure utility functions
--- @return (table) Table of resolved client instances
-function resolveClients(spec, store, structUtils)
-  local clients = {}
-
-  if spec.DEF and spec.DEF.client then
-    for clientName, clientDef in pairs(spec.DEF.client) do
-      local copts = clientDef.test.options or {}
-      if type(store) == "table" and structUtils.inject then
-        structUtils.inject(copts, store)
-      end
-
-      clients[clientName] = Client.test(copts)
-    end
-  end
-  return clients
-end
-
 -- Prepare test arguments
 -- @param entry (table) The test entry
 -- @param testpack (table) The test pack with client and utility
 -- @return (table) Array of arguments for the test
 function resolveArgs(entry, testpack)
-  local structUtils = testpack.utility.struct
+  local structUtils = testpack.utility:struct()
   local args = {structUtils.clone(entry["in"])}
 
   if entry.ctx then
@@ -330,16 +377,38 @@ function resolveArgs(entry, testpack)
     local first = args[1]
     if type(first) == "table" and first ~= nil then
       local cloned_value = structUtils.clone(args[1])
-      args[1] = cloned_value
-      first = cloned_value
-      entry.ctx = cloned_value
+      args[1] = testpack.utility:contextify(cloned_value)
+      entry.ctx = args[1]
 
-      first.client = testpack.client
-      first.utility = testpack.utility
+      args[1].client = testpack.client
+      args[1].utility = testpack.utility
     end
   end
 
   return args
+end
+
+-- Resolve client instances based on specification
+-- @param spec (table) The test specification
+-- @param store (table) Store with configuration values
+-- @param structUtils (table) Structure utility functions
+-- @param baseClient (table) The base client instance
+-- @return (table) Table of resolved client instances
+function resolveClients(spec, store, structUtils, baseClient)
+  local clients = {}
+
+  if spec.DEF and spec.DEF.client then
+    for clientName, clientDef in pairs(spec.DEF.client) do
+      local copts = clientDef.test.options or {}
+      if type(store) == "table" and structUtils.inject then
+        structUtils.inject(copts, store)
+      end
+
+      -- Use the tester method on the base client to create new test clients
+      clients[clientName] = baseClient:tester(copts)
+    end
+  end
+  return clients
 end
 
 -- Resolve the test pack with client and subject
@@ -351,15 +420,18 @@ end
 -- @return (table) The resolved test pack
 function resolveTestPack(name, entry, subject, client, clients)
   local pack = {
+    name = name,
     client = client,
     subject = subject,
-    utility = client.utility()
+    utility = client:utility()
   }
 
   if entry.client then
     pack.client = clients[entry.client]
-    pack.utility = pack.client.utility()
-    pack.subject = resolveSubject(name, pack.utility)
+    if pack.client then
+      pack.utility = pack.client:utility()
+      pack.subject = resolveSubject(name, pack.utility)
+    end
   end
 
   return pack
@@ -447,11 +519,11 @@ local function makeRunner(testfile, client)
   return function(name, store)
     store = store or {}
     
-    local utility = client.utility()
-    local structUtils = utility.struct
+    local utility = client:utility()
+    local structUtils = utility:struct()
 
     local spec = resolveSpec(name, testfile)
-    local clients = resolveClients(spec, store, structUtils)
+    local clients = resolveClients(spec, store, structUtils, client)
     local subject = resolveSubject(name, utility)
 
     -- Run test set with flags
@@ -504,8 +576,11 @@ end
 
 -- Convenience function for backward compatibility
 local function runner(name, store, testfile)
-  local client = Client.test()
+  -- Create a new client instance
+  local client = Client.new()
+  -- Create the runner function
   local runnerFn = makeRunner(testfile, client)
+  -- Run the test
   return runnerFn(name, store)
 end
 
