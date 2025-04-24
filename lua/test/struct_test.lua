@@ -4,7 +4,7 @@
   Run with: busted struct_test.lua
 ]] 
 -- Update package.path to include the current directory for module loading
-package.path = package.path .. ";./lua/test/?.lua"
+package.path = package.path .. ";./test/?.lua"
 
 local assert = require("luassert")
 
@@ -17,7 +17,7 @@ local NULLMARK, EXISTSMARK, nullModifier, makeRunner = runnerModule.NULLMARK,
 local SDK = require("sdk")
 
 -- Fix the path to the test JSON file
-local TEST_JSON_FILE = "build/test/test.json"
+local TEST_JSON_FILE = "../build/test/test.json"
 
 ----------------------------------------------------------
 -- Helper Functions

@@ -4,7 +4,7 @@
 ]]
 
 -- Update to use the correct path for the struct module
-local struct = require("lua.src.struct")
+local struct = require("src.struct")
 
 -- StructUtility class - wrapper for struct functions
 local StructUtility = {}

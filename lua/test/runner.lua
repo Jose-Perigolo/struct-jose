@@ -4,7 +4,7 @@
 ]] local json = require("dkjson")
 local lfs = require("lfs")
 local luassert = require("luassert")
-local struct = require("lua.src.struct")
+local struct = require("src.struct")
 
 -- Constants
 local NULLMARK = "__NULL__"
