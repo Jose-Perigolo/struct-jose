@@ -23,20 +23,6 @@ local TEST_JSON_FILE = "../build/test/test.json"
 -- Helper Functions
 ----------------------------------------------------------
 
--- Modifier function for walk tests (appends path to string values)
--- @param _key (any) The current key (unused)
--- @param val (any) The current value
--- @param _parent (any) The parent object (unused)
--- @param path (table) The current path
--- @return (any) Modified value or original value
-local function walkpath(_key, val, _parent, path)
-  if type(val) == "string" then
-    return val .. "~" .. table.concat(path, ".")
-  else
-    return val
-  end
-end
-
 -- Helper function to create an array-like table with metatable
 -- @param ... (any) Variable arguments to include in array
 -- @return (table) Table with array metatable
@@ -63,7 +49,7 @@ end
 
 describe("struct", function()
 
-  local runner = makeRunner(TEST_JSON_FILE, SDK.test())
+  local runner = makeRunner(TEST_JSON_FILE, SDK:test())
 
   local runnerStruct = runner('struct')
   local spec, runset, runsetflags, client = runnerStruct.spec, 
@@ -271,9 +257,7 @@ describe("struct", function()
   end)
 
   test("minor-setprop", function()
-    runsetflags(minorSpec.setprop, {
-      null = false
-    }, function(vin)
+    runset(minorSpec.setprop, function (vin)
       return setprop(vin.parent, vin.key, vin.val)
     end)
   end)
@@ -335,6 +319,13 @@ describe("struct", function()
   end)
 
   test("walk-basic", function()
+local function walkpath(_key, val, _parent, path)
+  if type(val) == "string" then
+    return val .. "~" .. table.concat(path, ".")
+  else
+    return val
+  end
+end
     runset(walkSpec.basic, function(vin)
       return walk(vin, walkpath)
     end)
@@ -418,10 +409,10 @@ describe("struct", function()
       key = '$TOP',
       val = '',
       parent = {},
-      path = {'$TOP'},
-      nodes = {{}},
+      path = array('$TOP'),
+      nodes = array({}),
       base = '$TOP',
-      errs = {}
+      errs = array()
     }
     runset(spec.getpath.state, function(vin)
       return getpath(vin.path, vin.store, vin.current, state)
@@ -585,7 +576,7 @@ describe("struct", function()
 
   test("validate-custom", function()
     -- Test custom validation functions
-    local errs = {}
+    local errs = array()
     local extra = {
       ["$INTEGER"] = function(state, _val, current)
         local key = state.key
@@ -593,7 +584,7 @@ describe("struct", function()
         local t = type(out)
 
         -- Verify the value is an integer
-        if t ~= "number" or out ~= math.floor(out) then
+        if t ~= "number" and not math.type(out) == "integer" then
           -- Build path string from state.path elements, starting at index 2
           local path_parts = {}
           for i = 2, #state.path do
@@ -619,38 +610,15 @@ describe("struct", function()
     }, out)
     assert.equal(0, #errs)
 
-    -- Reset errors array for the second test
-    errs = {}
     out = validate({
       a = "A"
     }, shape, extra, errs)
     assert.same({
       a = "A"
     }, out)
-    assert.same({"Not an integer at a: A"}, errs)
+    assert.same(array("Not an integer at a: A"), errs)
   end)
 
 end)
 
-----------------------------------------------------------
--- Client Tests
-----------------------------------------------------------
-
-describe('client', function()
-  test('sdk-test', function()
-    local sdk = SDK.test({ foo = 'BAR' })
-    local utility = sdk:utility()
-    
-    -- Test the contextify function
-    local ctx = utility:contextify({ meta = { bar = '123' } })
-    
-    -- Test the check function
-    local result = utility:check(ctx)
-    assert.equal('ZEDBAR_123', result.zed)
-    
-    -- Test that struct functions are available
-    assert.equal('function', type(utility:struct().clone))
-    assert.equal('function', type(utility:struct().walk))
-    assert.equal('function', type(utility:struct().transform))
-  end)
-end)
+-- Client tests moved to client_test.lua
