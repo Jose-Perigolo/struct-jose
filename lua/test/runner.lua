@@ -219,10 +219,28 @@ end
 -- @param base (table) The base structure to validate against
 -- @param structUtils (table) Structure utility functions
 function match(check, base, structUtils)
+  -- Clone the base to avoid modifying the original
+  base = structUtils.clone(base)
+
   structUtils.walk(check, function(_key, val, _parent, path)
     local scalar = type(val) ~= "table"
     if scalar then
       local baseval = structUtils.getpath(path, base)
+
+      -- Direct match check
+      if baseval == val then
+        return val
+      end
+      
+      -- Explicit undefined expected
+      if val == UNDEFMARK and baseval == nil then
+        return val
+      end
+      
+      -- Explicit defined expected
+      if val == EXISTSMARK and baseval ~= nil then
+        return val
+      end
 
       if not matchval(val, baseval, structUtils) then
         fail("MATCH: " .. table.concat(path, ".") .. ": [" ..
@@ -230,6 +248,8 @@ function match(check, base, structUtils)
                structUtils.stringify(baseval) .. "]")
       end
     end
+    
+    return val
   end)
 end
 
