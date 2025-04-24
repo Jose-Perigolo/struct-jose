@@ -434,72 +434,85 @@ end
 -- Main Runner Function
 ----------------------------------------------------------
 
--- Main test runner function
--- @param name (string) The name of the test
--- @param store (table) Store with configuration values
+-- Creates a runner function that can be used to run tests
 -- @param testfile (string) The path to the test file
--- @return (table) The runner pack with test functions
-local function runner(name, store, testfile)
-  local client = Client.test()
-  local utility = client.utility()
-  local structUtils = utility.struct
+-- @param client (table) The client instance to use
+-- @return (function) A runner function
+local function makeRunner(testfile, client)
 
-  local spec = resolveSpec(name, testfile)
-  local clients = resolveClients(spec, store, structUtils)
-  local subject = resolveSubject(name, utility)
+  -- Main test runner function
+  -- @param name (string) The name of the test
+  -- @param store (table) Store with configuration values
+  -- @return (table) The runner pack with test functions
+  return function(name, store)
+    store = store or {}
+    
+    local utility = client.utility()
+    local structUtils = utility.struct
 
-  -- Run test set with flags
-  -- @param testspec (table) The test specification
-  -- @param flags (table) Processing flags
-  -- @param testsubject (function) Optional test subject override
-  local function runsetflags(testspec, flags, testsubject)
-    subject = testsubject or subject
-    flags = resolveFlags(flags)
-    local testspecmap = fixJSON(testspec, flags)
+    local spec = resolveSpec(name, testfile)
+    local clients = resolveClients(spec, store, structUtils)
+    local subject = resolveSubject(name, utility)
 
-    for _, entry in ipairs(testspecmap.set) do
-      local success, err = pcall(function()
-        entry = resolveEntry(entry, flags)
+    -- Run test set with flags
+    -- @param testspec (table) The test specification
+    -- @param flags (table) Processing flags
+    -- @param testsubject (function) Optional test subject override
+    local function runsetflags(testspec, flags, testsubject)
+      subject = testsubject or subject
+      flags = resolveFlags(flags)
+      local testspecmap = fixJSON(testspec, flags)
 
-        local testpack = resolveTestPack(name, entry, subject, client, clients)
-        local args = resolveArgs(entry, testpack)
+      for _, entry in ipairs(testspecmap.set) do
+        local success, err = pcall(function()
+          entry = resolveEntry(entry, flags)
 
-        local res = testpack.subject(table.unpack(args))
-        res = fixJSON(res, flags)
-        entry.res = res
+          local testpack = resolveTestPack(name, entry, subject, client, clients)
+          local args = resolveArgs(entry, testpack)
 
-        checkResult(entry, res, structUtils)
-      end)
+          local res = testpack.subject(table.unpack(args))
+          res = fixJSON(res, flags)
+          entry.res = res
 
-      if not success then
-        handleError(entry, err, structUtils)
+          checkResult(entry, res, structUtils)
+        end)
+
+        if not success then
+          handleError(entry, err, structUtils)
+        end
       end
     end
+
+    -- Run test set with default flags
+    -- @param testspec (table) The test specification
+    -- @param testsubject (function) Optional test subject override
+    local function runset(testspec, testsubject)
+      return runsetflags(testspec, {}, testsubject)
+    end
+
+    local runpack = {
+      spec = spec,
+      runset = runset,
+      runsetflags = runsetflags,
+      subject = subject,
+      client = client
+    }
+
+    return runpack
   end
+end
 
-  -- Run test set with default flags
-  -- @param testspec (table) The test specification
-  -- @param testsubject (function) Optional test subject override
-  local function runset(testspec, testsubject)
-    return runsetflags(testspec, {}, testsubject)
-  end
-
-  local runpack = {
-    spec = spec,
-    runset = runset,
-    runsetflags = runsetflags,
-    subject = subject
-  }
-
-  return runpack
+-- Convenience function for backward compatibility
+local function runner(name, store, testfile)
+  local client = Client.test()
+  local runnerFn = makeRunner(testfile, client)
+  return runnerFn(name, store)
 end
 
 -- Module exports
 return {
   NULLMARK = NULLMARK,
-  UNDEFMARK = UNDEFMARK,
   EXISTSMARK = EXISTSMARK,
   nullModifier = nullModifier,
-  runner = runner,
-  Client = Client
+  makeRunner = makeRunner
 }
