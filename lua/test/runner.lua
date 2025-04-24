@@ -111,8 +111,19 @@ end
 -- @param structUtils (table) Structure utility functions
 -- @return (boolean) Whether the value matches
 function matchval(check, base, structUtils)
+  -- Handle special markers
   if check == NULLMARK then
     check = nil
+  end
+  
+  -- Handle UNDEFMARK - expected base to be undefined/nil
+  if check == UNDEFMARK then
+    return base == nil
+  end
+  
+  -- Handle EXISTSMARK - expected base to exist and not be nil
+  if check == EXISTSMARK then
+    return base ~= nil
   end
 
   local pass = check == base
@@ -168,8 +179,20 @@ end
 -- @param flags (table) Processing flags including null handling
 -- @return (any) The processed value
 function fixJSON(val, flags)
+  if flags == nil then
+    flags = { null = true }
+  end
+  
   if val == nil or val == "null" then
     return flags.null and NULLMARK or val
+  end
+  
+  -- Handle error objects specially
+  if type(val) == "table" and val.message ~= nil then
+    return {
+      name = val.name or "Error",
+      message = val.message,
+    }
   end
 
   -- Deep clone and preserve metatables
@@ -177,6 +200,14 @@ function fixJSON(val, flags)
     if (v == nil or v == "null") and flags.null then
       return NULLMARK
     elseif type(v) == "table" then
+      -- Special handling for error objects
+      if v.message ~= nil then
+        return {
+          name = v.name or "Error",
+          message = v.message,
+        }
+      end
+      
       local result = {}
       for k, value in pairs(v) do
         result[k] = deepClone(value)
@@ -202,10 +233,16 @@ end
 -- @param key (any) The key in the parent
 -- @param parent (table) The parent table
 function nullModifier(val, key, parent)
-  if val == "__NULL__" then
+  if val == NULLMARK then
     parent[key] = nil -- In Lua, nil represents null
+  elseif val == UNDEFMARK then
+    -- Handle undefined values - in Lua, we also set to nil
+    parent[key] = nil
+  elseif val == EXISTSMARK then
+    -- For EXISTSMARK, we don't need to do anything special in the modifier
+    -- since this is a marker used during matching, not a value to be transformed
   elseif type(val) == "string" then
-    parent[key] = val:gsub("__NULL__", "null")
+    parent[key] = val:gsub(NULLMARK, "null")
   end
 end
 
