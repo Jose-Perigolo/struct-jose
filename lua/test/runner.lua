@@ -8,6 +8,8 @@ local struct = require("struct")
 
 -- Constants
 local NULLMARK = "__NULL__"
+local UNDEFMARK = "__UNDEF__"  -- Value is not present (thus, undefined)
+local EXISTSMARK = "__EXISTS__" -- Value exists (not undefined)
 
 -- Forward declarations to avoid interdependencies
 local fixJSON, resolveFlags, resolveEntry, resolveSpec, resolveClients
@@ -458,6 +460,8 @@ end
 -- Module exports
 return {
   NULLMARK = NULLMARK,
+  UNDEFMARK = UNDEFMARK,
+  EXISTSMARK = EXISTSMARK,
   nullModifier = nullModifier,
   runner = runner,
   Client = Client
