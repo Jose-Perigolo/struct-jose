@@ -4,7 +4,7 @@
 ]] local json = require("dkjson")
 local lfs = require("lfs")
 local luassert = require("luassert")
-local struct = require("struct")
+local struct = require("lua.src.struct")
 
 -- Constants
 local NULLMARK = "__NULL__"
@@ -358,9 +358,12 @@ function resolveSubject(name, container)
   local subject = container[name]
   
   -- If not found, try to get it from the struct
-  if subject == nil and container.struct then
-    local struct = container:struct()
-    subject = struct[name]
+  if subject == nil then
+    -- Call struct() as a method
+    local struct_util = container:struct()
+    if struct_util then
+      subject = struct_util[name]
+    end
   end
   
   return subject

@@ -2,44 +2,22 @@
   Test suite for the struct module.
   This matches the structure and tests found in struct.test.ts.
   Run with: busted struct_test.lua
-]] package.path = package.path .. ";./test/?.lua"
+]] 
+-- Update package.path to include the current directory for module loading
+package.path = package.path .. ";./lua/test/?.lua"
 
 local assert = require("luassert")
 
 -- Import the runner module
 local runnerModule = require("runner")
-local NULLMARK, EXISTSMARK, nullModifier, runner = runnerModule.NULLMARK,
-  runnerModule.EXISTSMARK, runnerModule.nullModifier, runnerModule.runner
+local NULLMARK, EXISTSMARK, nullModifier, makeRunner = runnerModule.NULLMARK,
+  runnerModule.EXISTSMARK, runnerModule.nullModifier, runnerModule.makeRunner
 
--- Import the struct module functions
-local struct = require("struct")
+-- Import the SDK module
+local SDK = require("sdk")
 
--- Extract functions from the struct module for testing
-local clone = struct.clone
-local escre = struct.escre
-local escurl = struct.escurl
-local getpath = struct.getpath
-local getprop = struct.getprop
-local strkey = struct.strkey
-local inject = struct.inject
-local isempty = struct.isempty
-local isfunc = struct.isfunc
-local iskey = struct.iskey
-local islist = struct.islist
-local ismap = struct.ismap
-local isnode = struct.isnode
-local items = struct.items
-local haskey = struct.haskey
-local keysof = struct.keysof
-local merge = struct.merge
-local setprop = struct.setprop
-local stringify = struct.stringify
-local transform = struct.transform
-local typify = struct.typify
-local walk = struct.walk
-local validate = struct.validate
-local joinurl = struct.joinurl
-local pathify = struct.pathify
+-- Fix the path to the test JSON file
+local TEST_JSON_FILE = "build/test/test.json"
 
 ----------------------------------------------------------
 -- Helper Functions
@@ -84,12 +62,44 @@ end
 ----------------------------------------------------------
 
 describe("struct", function()
-  -- Initialize test runner with the struct specs
-  local runpack = runner("struct", {}, "../build/test/test.json")
-  local spec, runset, runsetflags = runpack.spec, runpack.runset,
-    runpack.runsetflags
 
+  local runner = makeRunner(TEST_JSON_FILE, SDK.test())
+
+  local runnerStruct = runner('struct')
+  local spec, runset, runsetflags, client = runnerStruct.spec, 
+  runnerStruct.runset, runnerStruct.runsetflags, runnerStruct.client
+
+  local struct_util = client:utility():struct()
   -- Extract test specifications for different function groups
+  local clone = struct_util.clone
+  local escre = struct_util.escre
+  local escurl = struct_util.escurl
+  local getpath = struct_util.getpath
+  local getprop = struct_util.getprop
+
+  local haskey = struct_util.haskey
+  local inject = struct_util.inject
+  local isempty = struct_util.isempty
+  local isfunc = struct_util.isfunc
+  local iskey = struct_util.iskey
+
+  local islist = struct_util.islist
+  local ismap = struct_util.ismap
+  local isnode = struct_util.isnode
+  local items = struct_util.items
+  local joinurl = struct_util.joinurl
+  local keysof = struct_util.keysof
+  local merge = struct_util.merge
+  local pathify = struct_util.pathify
+  local setprop = struct_util.setprop
+  local strkey = struct_util.strkey
+
+  local stringify = struct_util.stringify
+  local transform = struct_util.transform
+  local typify = struct_util.typify
+  local validate = struct_util.validate
+  local walk = struct_util.walk
+
   local minorSpec = spec.minor
   local walkSpec = spec.walk
   local mergeSpec = spec.merge
@@ -627,10 +637,20 @@ end)
 ----------------------------------------------------------
 
 describe('client', function()
-  local runpack = runner('check', {}, '../build/test/test.json')
-  local spec, runset, subject = runpack.spec, runpack.runset, runpack.subject
-
-  test('client-check-basic', function()
-    runset(spec.basic, subject)
+  test('sdk-test', function()
+    local sdk = SDK.test({ foo = 'BAR' })
+    local utility = sdk:utility()
+    
+    -- Test the contextify function
+    local ctx = utility:contextify({ meta = { bar = '123' } })
+    
+    -- Test the check function
+    local result = utility:check(ctx)
+    assert.equal('ZEDBAR_123', result.zed)
+    
+    -- Test that struct functions are available
+    assert.equal('function', type(utility:struct().clone))
+    assert.equal('function', type(utility:struct().walk))
+    assert.equal('function', type(utility:struct().transform))
   end)
 end)
