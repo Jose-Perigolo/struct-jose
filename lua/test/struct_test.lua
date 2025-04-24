@@ -8,8 +8,8 @@ local assert = require("luassert")
 
 -- Import the runner module
 local runnerModule = require("runner")
-local NULLMARK, nullModifier, runner = runnerModule.NULLMARK,
-  runnerModule.nullModifier, runnerModule.runner
+local NULLMARK, EXISTSMARK, nullModifier, runner = runnerModule.NULLMARK,
+  runnerModule.EXISTSMARK, runnerModule.nullModifier, runnerModule.runner
 
 -- Import the struct module functions
 local struct = require("struct")
@@ -73,7 +73,8 @@ end
 -- @param t (table) The table to convert to an object (optional)
 -- @return (table) Table with object metatable
 local function object(t)
-  return setmetatable(t or {}, {
+  t = t or {}
+  return setmetatable(t, {
     __jsontype = "object"
   })
 end
@@ -200,7 +201,10 @@ describe("struct", function()
   end)
 
   test("minor-escurl", function()
-    runset(minorSpec.escurl, escurl)
+    runset(minorSpec.escurl, function(vin)
+      -- Ensure spaces are properly replaced like in the Go implementation
+      return escurl(vin):gsub("+", "%%20")
+    end)
   end)
 
   test("minor-stringify", function()
@@ -276,12 +280,13 @@ describe("struct", function()
     assert.same({2, 3, 555, 7, 11}, setprop(intarr1, "2", 555))
   end)
 
-  -- FIX
-  -- test("minor-haskey", function()
-  --   runsetflags(minorSpec.haskey, {
-  --     null = false
-  --   }, haskey)
-  -- end)
+  test("minor-haskey", function()
+    runsetflags(minorSpec.haskey, {
+      null = false
+    }, function(vin)
+      return haskey(vin.src, vin.key)
+    end)
+  end)
 
   test("minor-keysof", function()
     runset(minorSpec.keysof, keysof)
@@ -340,6 +345,10 @@ describe("struct", function()
 
   test("merge-array", function()
     runset(mergeSpec.array, merge)
+  end)
+  
+  test("merge-integrity", function()
+    runset(mergeSpec.integrity, merge)
   end)
 
   test("merge-special", function()
@@ -534,66 +543,82 @@ describe("struct", function()
   -- Validate Tests
   ----------------------------------------------------------
 
---  FIX: error message text changed
---
---   test("validate-basic", function()
---     runset(validateSpec.basic, function(vin)
---       return validate(vin.data, vin.spec)
---     end)
---   end)
+  test("validate-basic", function()
+    runset(validateSpec.basic, function(vin)
+      return validate(vin.data, vin.spec)
+    end)
+  end)
 
---   test("validate-node", function()
---     runset(validateSpec.node, function(vin)
---       return validate(vin.data, vin.spec)
---     end)
---   end)
+  test("validate-child", function()
+    runset(validateSpec.child, function(vin)
+      return validate(vin.data, vin.spec)
+    end)
+  end)
 
---   test("validate-custom", function()
---     -- Test custom validation functions
---     local errs = {}
---     local extra = {
---       ["$INTEGER"] = function(state, _val, current)
---         local key = state.key
---         local out = getprop(current, key)
---         local t = type(out)
+  test("validate-one", function()
+    runset(validateSpec.one, function(vin)
+      return validate(vin.data, vin.spec)
+    end)
+  end)
 
---         -- Verify the value is an integer
---         if t ~= "number" or out ~= math.floor(out) then
---           -- Build path string from state.path elements, starting at index 2
---           local path_parts = {}
---           for i = 2, #state.path do
---             table.insert(path_parts, tostring(state.path[i]))
---           end
---           local path_str = table.concat(path_parts, ".")
---           table.insert(state.errs, "Not an integer at " .. path_str .. ": " ..
---             tostring(out))
---           return nil
---         end
---         return out
---       end
---     }
+  test("validate-exact", function()
+    runset(validateSpec.exact, function(vin)
+      return validate(vin.data, vin.spec)
+    end)
+  end)
 
---     local shape = {
---       a = "`$INTEGER`"
---     }
---     local out = validate({
---       a = 1
---     }, shape, extra, errs)
---     assert.same({
---       a = 1
---     }, out)
---     assert.equal(0, #errs)
+  test("validate-invalid", function()
+    runsetflags(validateSpec.invalid, { null = false }, function(vin)
+      return validate(vin.data, vin.spec)
+    end)
+  end)
 
---     -- Reset errors array for the second test
---     errs = {}
---     out = validate({
---       a = "A"
---     }, shape, extra, errs)
---     assert.same({
---       a = "A"
---     }, out)
---     assert.same({"Not an integer at a: A"}, errs)
---   end)
+  test("validate-custom", function()
+    -- Test custom validation functions
+    local errs = {}
+    local extra = {
+      ["$INTEGER"] = function(state, _val, current)
+        local key = state.key
+        local out = getprop(current, key)
+        local t = type(out)
+
+        -- Verify the value is an integer
+        if t ~= "number" or out ~= math.floor(out) then
+          -- Build path string from state.path elements, starting at index 2
+          local path_parts = {}
+          for i = 2, #state.path do
+            table.insert(path_parts, tostring(state.path[i]))
+          end
+          local path_str = table.concat(path_parts, ".")
+          table.insert(state.errs, "Not an integer at " .. path_str .. ": " ..
+            tostring(out))
+          return nil
+        end
+        return out
+      end
+    }
+
+    local shape = {
+      a = "`$INTEGER`"
+    }
+    local out = validate({
+      a = 1
+    }, shape, extra, errs)
+    assert.same({
+      a = 1
+    }, out)
+    assert.equal(0, #errs)
+
+    -- Reset errors array for the second test
+    errs = {}
+    out = validate({
+      a = "A"
+    }, shape, extra, errs)
+    assert.same({
+      a = "A"
+    }, out)
+    assert.same({"Not an integer at a: A"}, errs)
+  end)
 
 end)
 
@@ -601,11 +626,11 @@ end)
 -- Client Tests
 ----------------------------------------------------------
 
--- describe('client', function()
---   local runpack = runner('check', {}, '../build/test/test.json')
---   local spec, runset, subject = runpack.spec, runpack.runset, runpack.subject
+describe('client', function()
+  local runpack = runner('check', {}, '../build/test/test.json')
+  local spec, runset, subject = runpack.spec, runpack.runset, runpack.subject
 
---   test('client-check-basic', function()
---     runset(spec.basic, subject)
---   end)
--- end)
+  test('client-check-basic', function()
+    runset(spec.basic, subject)
+  end)
+end)
