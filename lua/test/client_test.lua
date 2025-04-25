@@ -25,8 +25,8 @@ local TEST_JSON_FILE = "../build/test/test.json"
 describe('client', function()
   -- This test matches the TypeScript implementation in client.test.ts
   local runner = makeRunner(TEST_JSON_FILE, SDK:test())
-  local runpack = runner('check')
-  local spec, runset, subject = runpack.spec, runpack.runset, runpack.subject
+  local runnerCheck = runner('check')
+  local spec, runset, subject = runnerCheck.spec, runnerCheck.runset, runnerCheck.subject
 
   test('client-check-basic', function()
     runset(spec.basic, subject)
