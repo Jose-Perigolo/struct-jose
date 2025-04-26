@@ -2259,7 +2259,7 @@ _validation = function(pval, key, parent, state, current, _store)
 
       -- Closed object, so reject extra keys not in shape.
       if #badkeys > 0 then
-        local msg = 'Unexpected keys at ' .. pathify(state.path, 1) .. ': ' ..
+        local msg = 'Unexpected keys at field ' .. pathify(state.path, 1) .. ': ' ..
                       table.concat(badkeys, ', ')
         table.insert(state.errs, msg)
       end
