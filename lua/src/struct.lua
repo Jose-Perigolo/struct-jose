@@ -2042,9 +2042,9 @@ local function validate_ONE(state, _val, current, _ref, store)
   -- Only operate in val mode, since parent is a list.
   if S_MVAL == mode then
     if not islist(parent) or 0 ~= keyI then
-      table.insert(state.errs, 'The $ONE validator at field ' ..
-        pathify(state.path, 1, 1) ..
-        ' must be the first element of an array.')
+      table.insert(state.errs,
+        'The $ONE validator at field ' .. pathify(state.path, 1, 1) ..
+          ' must be the first element of an array.')
       return
     end
 
@@ -2058,11 +2058,16 @@ local function validate_ONE(state, _val, current, _ref, store)
     state.path = {table.unpack(state.path, 1, #state.path - 1)}
     state.key = state.path[#state.path]
 
-    local tvals = parent.slice(1)
+    -- Create tvals array from parent elements starting at index 2
+    local tvals = {}
+    for i = 2, #parent do
+      table.insert(tvals, parent[i])
+    end
+
     if 0 == #tvals then
-      table.insert(state.errs, 'The $ONE validator at field ' ..
-        pathify(state.path, 1, 1) ..
-        ' must have at least one argument.')
+      table.insert(state.errs,
+        'The $ONE validator at field ' .. pathify(state.path, 1, 1) ..
+          ' must have at least one argument.')
       return
     end
 
@@ -2076,16 +2081,22 @@ local function validate_ONE(state, _val, current, _ref, store)
         }
       })
 
-      local vstore = { }
+      -- Create a separate validation store to isolate the validation
+      local vstore = {}
       for k, v in pairs(store) do
         vstore[k] = v
       end
       vstore["$TOP"] = current
-      local vcurrent = validate(current, tval, vstore, terrs)
-      setprop(grandparent, grandkey, vcurrent)
+      vstore["$ERRS"] = terrs -- Ensure errors go to terrs
 
-      -- Accept current value if there was a match
-      if 0 == #terrs then
+      -- Try to validate against this alternative
+      local vcurrent = validate(current, tval, vstore, terrs)
+
+      -- If validation succeeds (no errors), accept this result and return
+      if #terrs == 0 then
+        -- Important: Update the grandparent directly with the value
+        -- Don't rely on the previous setprop call
+        setprop(grandparent, grandkey, current)
         return
       end
     end
@@ -2102,15 +2113,11 @@ local function validate_ONE(state, _val, current, _ref, store)
       return string.lower(p1)
     end)
 
-    -- Create path slice
-    local path_slice = {}
-    for i = 1, #state.path do
-      table.insert(path_slice, state.path[i - 1])
-
-    end
-
-    table.insert(state.errs, _invalidTypeMsg(path_slice,
-      'one of ' .. valdesc_str, typify(current), current, 'V0210'))
+    -- Add error message for "no match found"
+    table.insert(state.errs,
+      _invalidTypeMsg(state.path,
+        (#tvals > 1 and 'one of ' or '') .. valdesc_str, typify(current),
+        current, 'V0210'))
   end
 end
 
@@ -2297,57 +2304,6 @@ end
 -- @param extra (any) Additional custom checks
 -- @param collecterrs (table) Optional array to collect error messages
 -- @return (any) The validated data
-validate = function(data, spec, extra, collecterrs)
-  local errs = collecterrs or {}
-
-  -- Create the store with validation functions and commands
-  local store = {
-    -- A special top level value to collect errors.
-    ["$ERRS"] = errs,
-
-    -- Remove the transform commands.
-    ["$DELETE"] = nil,
-    ["$COPY"] = nil,
-    ["$KEY"] = nil,
-    ["$META"] = nil,
-    ["$MERGE"] = nil,
-    ["$EACH"] = nil,
-    ["$PACK"] = nil,
-
-    -- Validation functions
-    ["$STRING"] = validate_STRING,
-    ["$NUMBER"] = validate_NUMBER,
-    ["$BOOLEAN"] = validate_BOOLEAN,
-    ["$OBJECT"] = validate_OBJECT,
-    ["$ARRAY"] = validate_ARRAY,
-    ["$FUNCTION"] = validate_FUNCTION,
-    ["$ANY"] = validate_ANY,
-    ["$CHILD"] = validate_CHILD,
-    ["$ONE"] = validate_ONE,
-    ["$EXACT"] = validate_EXACT
-  }
-
-  -- Merge in any extra validators/commands
-  if extra then
-    -- Check if extra is a table; if not, assume it's a string from a test
-    if type(extra) == "table" then
-      for k, v in pairs(extra) do
-        store[k] = v
-      end
-    end
-    -- If extra is not a table, simply ignore it
-  end
-
-  local out = transform(data, spec, store, _validation)
-
-  if #errs > 0 and not collecterrs then
-    error('Invalid data: ' .. table.concat(errs, ' | '))
-  end
-
-  return out
-end
-
-
 validate = function(data, spec, extra, collecterrs)
   local errs = collecterrs or {}
 
