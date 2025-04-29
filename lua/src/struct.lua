@@ -211,29 +211,20 @@ end
 -- @return (string) The type as a string
 local function typify(value)
   if value == nil or value == "null" then
-    return "null"
+    return S_null
   end
 
-  local basicType = type(value)
+  local type = type(value)
 
-  -- Handle basic types that map directly
-  if basicType == "string" then
-    return "string"
-  elseif basicType == "number" then
-    return "number"
-  elseif basicType == "boolean" then
-    return "boolean"
-  elseif basicType == "function" then
-    return "function"
-  elseif basicType == "table" then
-    if islist(value) then
-      return "array"
-    else
-      return "object"
-    end
+  if islist(value) then
+    return S_array
   end
 
-  return "object"
+  if ismap(value) then
+    return S_object
+  end
+
+  return type
 end
 
 ----------------------------------------------------------
@@ -313,11 +304,7 @@ local function strkey(key)
   end
 
   if type(key) == S_number then
-    if key % 1 == 0 then
-      return tostring(key)
-    else
-      return tostring(math.floor(key))
-    end
+    return key % 1 == 0 and tostring(key) or tostring(math.floor(key))
   end
 
   return S_MT
@@ -1214,7 +1201,7 @@ local function inject(val, store, modify, current, state)
       ["$TOP"] = store
     }
   else
-    local parentkey = #state.path > 1 and state.path[#state.path - 1] or nil
+    local parentkey = getprop(state.path, #state.path - 2)
     current = parentkey == nil and current or getprop(current, parentkey)
   end
 
@@ -1318,6 +1305,7 @@ local function inject(val, store, modify, current, state)
     -- Inject paths into string scalars
     state.mode = S_MVAL
     val = _injectstr(val, store, current, state)
+
     setprop(state.parent, state.key, val)
   end
 
@@ -1749,18 +1737,14 @@ local function transform(data, spec, extra, modify)
     end
   end
 
-  -- Clone both extraData and data, then merge them
-  -- The nil checks mirror the TypeScript UNDEF checks
-  -- This creates our data source for transforms
-  local extraDataClone = clone(extraData or {})
-  local dataClone = clone(data or {})
-  local mergedData = merge({ extraDataClone, dataClone })
+  local dataClone = merge({ isempty(data) and UNDEF or clone(extraData),
+    clone(data) })
 
   -- Define a top level store that provides transform operations
   local store = {
     -- The inject function recognises this special location for the root of the source data.
     -- This exactly matches TypeScript and Go
-    [S_DTOP] = mergedData,
+    [S_DTOP] = dataClone,
 
     -- Escape backtick (works inside backticks too)
     [S_DS .. 'BT'] = function()
@@ -2041,6 +2025,7 @@ local validate
 local function validate_ONE(state, _val, current, _ref, store)
   local mode, parent, path, keyI, nodes = state.mode, state.parent, state.path,
       state.keyI, state.nodes
+
   -- Only operate in val mode, since parent is a list.
   if S_MVAL == mode then
     if not islist(parent) or 0 ~= keyI then
@@ -2087,7 +2072,6 @@ local function validate_ONE(state, _val, current, _ref, store)
         vstore[k] = v
       end
       vstore["$TOP"] = current
-
       local vcurrent = validate(current, tval, vstore, terrs)
       setprop(grandparent, grandkey, vcurrent)
 
