@@ -12,11 +12,6 @@ local NULLMARK = "__NULL__"
 local UNDEFMARK = "__UNDEF__"   -- Value is not present (thus, undefined)
 local EXISTSMARK = "__EXISTS__" -- Value exists (not undefined)
 
--- Forward declarations to avoid interdependencies
-local fixJSON, resolveFlags, resolveEntry, resolveSpec, resolveClients
-local resolveSubject, resolveTestPack, resolveArgs, match, matchval
-local checkResult, handleError, nullModifier
-
 ----------------------------------------------------------
 -- Utility Functions
 ----------------------------------------------------------
@@ -170,22 +165,7 @@ end
 -- @param base (any) The base value to check against
 -- @param structUtils (table) Structure utility functions
 -- @return (boolean) Whether the value matches
-function matchval(check, base, structUtils)
-  -- Handle special markers
-  if check == NULLMARK then
-    check = nil
-  end
-
-  -- Handle UNDEFMARK - expected base to be undefined/nil
-  if check == UNDEFMARK then
-    return base == nil
-  end
-
-  -- Handle EXISTSMARK - expected base to exist and not be nil
-  if check == EXISTSMARK then
-    return base ~= nil
-  end
-
+local function matchval(check, base, structUtils)
   local pass = check == base
 
   if not pass then
@@ -219,13 +199,12 @@ end
 -- @param check (table) The check structure with patterns
 -- @param base (table) The base structure to validate against
 -- @param structUtils (table) Structure utility functions
-function match(check, base, structUtils)
+local function match(check, base, structUtils)
   -- Clone the base to avoid modifying the original
   base = structUtils.clone(base)
 
   structUtils.walk(check, function(_key, val, _parent, path)
-    local scalar = type(val) ~= "table"
-    if scalar then
+    if not structUtils.isnode(val) then
       local baseval = structUtils.getpath(path, base)
 
       -- Direct match check
@@ -258,39 +237,18 @@ end
 -- @param val (any) The value to process
 -- @param flags (table) Processing flags including null handling
 -- @return (any) The processed value
-function fixJSON(val, flags)
-  if flags == nil then
-    flags = { null = true }
-  end
-
+local function fixJSON(val, flags)
   if val == nil or val == "null" then
     return flags.null and NULLMARK or val
   end
 
-  -- Handle error objects specially
-  if type(val) == "table" and val.message ~= nil then
-    return {
-      name = val.name or "Error",
-      message = val.message,
-    }
-  end
-
-  -- Deep clone and preserve metatables
-  local function deepClone(v)
+  local function replacer(v)
     if (v == nil or v == "null") and flags.null then
       return NULLMARK
     elseif type(v) == "table" then
-      -- Special handling for error objects
-      if v.message ~= nil then
-        return {
-          name = v.name or "Error",
-          message = v.message,
-        }
-      end
-
       local result = {}
       for k, value in pairs(v) do
-        result[k] = deepClone(value)
+        result[k] = replacer(value)
       end
 
       -- Preserve the metatable if it exists
@@ -305,22 +263,16 @@ function fixJSON(val, flags)
     end
   end
 
-  return deepClone(val)
+  return replacer(val)
 end
 
 -- Process null marker values
 -- @param val (any) The value to check
 -- @param key (any) The key in the parent
 -- @param parent (table) The parent table
-function nullModifier(val, key, parent)
+local function nullModifier(val, key, parent)
   if val == NULLMARK then
     parent[key] = nil -- In Lua, nil represents null
-  elseif val == UNDEFMARK then
-    -- Handle undefined values - in Lua, we also set to nil
-    parent[key] = nil
-  elseif val == EXISTSMARK then
-    -- For EXISTSMARK, we don't need to do anything special in the modifier
-    -- since this is a marker used during matching, not a value to be transformed
   elseif type(val) == "string" then
     parent[key] = val:gsub(NULLMARK, "null")
   end
@@ -329,7 +281,7 @@ end
 -- Resolve test flags with defaults
 -- @param flags (table) Input flags
 -- @return (table) Resolved flags with defaults applied
-function resolveFlags(flags)
+local function resolveFlags(flags)
   if flags == nil then
     flags = {}
   end
@@ -345,8 +297,8 @@ end
 -- @param entry (table) The test entry
 -- @param flags (table) Processing flags
 -- @return (table) The processed entry
-function resolveEntry(entry, flags)
-  entry.out = entry.out == nil and flags.null and NULLMARK or entry.out
+local function resolveEntry(entry, flags)
+  entry.out = (entry.out == nil and flags.null) and NULLMARK or entry.out
   return entry
 end
 
@@ -354,19 +306,8 @@ end
 -- @param name (string) The name of the subject to resolve
 -- @param container (table) The container object (Utility)
 -- @return (function) The resolved subject function
-function resolveSubject(name, container)
-  -- Try to get the subject directly from the utility
-  local subject = container[name]
-
-  -- If not found, try to get it from the struct
-  if subject == nil then
-    -- Call struct() as a method
-    local struct_util = container:struct()
-    if struct_util then
-      subject = struct_util[name]
-    end
-  end
-
+local function resolveSubject(name, container)
+  local subject = container[name] or container.struct[name]
   return subject
 end
 
@@ -374,7 +315,7 @@ end
 -- @param name (string) The name of the test specification
 -- @param testfile (string) The path to the test file
 -- @return (table) The resolved test specification
-function resolveSpec(name, testfile)
+local function resolveSpec(name, testfile)
   local alltests = json.decode(readFileSync(join(lfs.currentdir(), testfile)),
     1, "null")
   local spec =
@@ -387,25 +328,27 @@ end
 -- @param entry (table) The test entry
 -- @param testpack (table) The test pack with client and utility
 -- @return (table) Array of arguments for the test
-function resolveArgs(entry, testpack)
-  local structUtils = testpack.utility:struct()
-  local args = { structUtils.clone(entry["in"]) }
+local function resolveArgs(entry, testpack, utility, structUtils)
+  local args = {}
 
   if entry.ctx then
     args = { entry.ctx }
   elseif entry.args then
     args = entry.args
+  else
+    args = { structUtils.clone(entry["in"]) }
   end
 
   if entry.ctx or entry.args then
     local first = args[1]
-    if type(first) == "table" and first ~= nil then
-      local cloned_value = structUtils.clone(args[1])
-      args[1] = testpack.utility:contextify(cloned_value)
-      entry.ctx = args[1]
+    if structUtils.ismap(first) then
+      first = structUtils.clone(first)
+      first = utility.contextify(first)
+      args[1] = first
+      entry.ctx = first
 
-      args[1].client = testpack.client
-      args[1].utility = testpack.utility
+      first.client = testpack.client
+      first.utility = testpack.utility
     end
   end
 
@@ -418,18 +361,19 @@ end
 -- @param structUtils (table) Structure utility functions
 -- @param baseClient (table) The base client instance
 -- @return (table) Table of resolved client instances
-function resolveClients(spec, store, structUtils, baseClient)
+local function resolveClients(client, spec, store, structUtils)
   local clients = {}
 
   if spec.DEF and spec.DEF.client then
-    for clientName, clientDef in pairs(spec.DEF.client) do
-      local copts = clientDef.test.options or {}
-      if type(store) == "table" and structUtils.inject then
+    for cn in pairs(spec.DEF.client) do
+      local cdef = spec.DEF.client[cn]
+      local copts = cdef.test.opts or {}
+      if structUtils.ismap(store) and structUtils.inject then
         structUtils.inject(copts, store)
       end
 
       -- Use the tester method on the base client to create new test clients
-      clients[clientName] = baseClient:tester(copts)
+      clients[cn] = client:tester(copts)
     end
   end
   return clients
@@ -442,8 +386,8 @@ end
 -- @param client (table) The default client
 -- @param clients (table) Table of available clients
 -- @return (table) The resolved test pack
-function resolveTestPack(name, entry, subject, client, clients)
-  local pack = {
+local function resolveTestPack(name, entry, subject, client, clients)
+  local testpack = {
     name = name,
     client = client,
     subject = subject,
@@ -451,46 +395,25 @@ function resolveTestPack(name, entry, subject, client, clients)
   }
 
   if entry.client then
-    pack.client = clients[entry.client]
-    if pack.client then
-      pack.utility = pack.client:utility()
-      pack.subject = resolveSubject(name, pack.utility)
-    end
+    testpack.client = clients[entry.client]
+    testpack.utility = testpack.client:utility()
+    testpack.subject = resolveSubject(name, testpack.utility)
   end
 
-  return pack
+  return testpack
 end
 
 -- Handle errors during test execution
 -- @param entry (table) The test entry
 -- @param err (any) The error that occurred
 -- @param structUtils (table) Structure utility functions
-function handleError(entry, err, structUtils)
+local function handleError(entry, err, structUtils)
   entry.thrown = err
 
   local entry_err = entry.err
   local err_message = (type(err) == "table" and err.message) or tostring(err)
 
-  -- Special handling for validation tests with null errors
-  if entry_err == nil and entry.out ~= nil then
-    -- Check if this is a validation test with q arrays
-    if type(err_message) == "string" and
-        err_message:find("null:", 1, true) and
-        structUtils.stringify(entry["in"]):find("q:[", 1, true) then
-      -- Similar to Go implementation - this is likely a validation test for empty arrays
-      return
-    end
-  end
-
-  -- Handle expected errors
   if entry_err ~= nil then
-    -- Special case for matching null errors
-    if type(entry_err) == "string" and type(err_message) == "string" and
-        entry_err:find("null:", 1, true) and err_message:find("null:", 1, true) then
-      -- Both errors talk about null values - consider it a match
-      return
-    end
-
     if entry_err == true or matchval(entry_err, err_message, structUtils) then
       if entry.match then
         -- Process the error with fixJSON before matching
@@ -529,7 +452,7 @@ end
 -- @param entry (table) The test entry
 -- @param res (any) The test result
 -- @param structUtils (table) Structure utility functions
-function checkResult(entry, res, structUtils)
+local function checkResult(entry, res, structUtils)
   local matched = false
 
   -- If there's a match pattern, verify it first
@@ -578,14 +501,14 @@ local function makeRunner(testfile, client)
   -- @param name (string) The name of the test
   -- @param store (table) Store with configuration values
   -- @return (table) The runner pack with test functions
-  return function(name, store)
+  local function runner(name, store)
     store = store or {}
 
     local utility = client:utility()
     local structUtils = utility:struct()
 
     local spec = resolveSpec(name, testfile)
-    local clients = resolveClients(spec, store, structUtils, client)
+    local clients = resolveClients(client, spec, store, structUtils)
     local subject = resolveSubject(name, utility)
 
     -- Run test set with flags
@@ -597,12 +520,13 @@ local function makeRunner(testfile, client)
       flags = resolveFlags(flags)
       local testspecmap = fixJSON(testspec, flags)
 
-      for _, entry in ipairs(testspecmap.set) do
+      local testset = testspecmap.set
+      for _, entry in ipairs(testset) do
         local success, err = pcall(function()
           entry = resolveEntry(entry, flags)
 
           local testpack = resolveTestPack(name, entry, subject, client, clients)
-          local args = resolveArgs(entry, testpack)
+          local args = resolveArgs(entry, testpack, utility, structUtils)
 
           local res = testpack.subject(table.unpack(args))
           res = fixJSON(res, flags)
@@ -634,16 +558,8 @@ local function makeRunner(testfile, client)
 
     return runpack
   end
-end
 
--- Convenience function for backward compatibility
-local function runner(name, store, testfile)
-  -- Create a new client instance
-  local client = Client.new()
-  -- Create the runner function
-  local runnerFn = makeRunner(testfile, client)
-  -- Run the test
-  return runnerFn(name, store)
+  return runner
 end
 
 -- Module exports

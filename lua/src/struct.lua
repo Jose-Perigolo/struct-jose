@@ -2308,9 +2308,6 @@ validate = function(data, spec, extra, collecterrs)
 
   -- Create the store with validation functions and commands
   local store = {
-    -- A special top level value to collect errors.
-    ["$ERRS"] = errs,
-
     -- Remove the transform commands.
     ["$DELETE"] = nil,
     ["$COPY"] = nil,
