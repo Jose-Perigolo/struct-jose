@@ -1,3 +1,4 @@
+local inspect = require 'inspect'
 -- Copyright (c) 2025 Voxgig Ltd. MIT LICENSE.
 --[[
   Voxgig Struct
@@ -576,34 +577,36 @@ end
 
 -- Build a human friendly path string.
 -- @param val (any) The path as array or string
--- @param from (number) Optional start index
+-- @param startin (number) Optional start index
+-- @param endin (number) Optional end index
 -- @return (string) Formatted path string
-local function pathify(val, from)
+local function pathify(val, startin, endin)
   local pathstr = UNDEF
   local path = UNDEF
 
+  -- Convert input to path array
   if islist(val) then
     path = val
-  elseif type(val) == 'string' then
+  elseif type(val) == S_string then
     path = { val }
-  elseif type(val) == 'number' then
+    setmetatable(path, {
+      __jsontype = "array"
+    })
+  elseif type(val) == S_number then
     path = { val }
+    setmetatable(path, {
+      __jsontype = "array"
+    })
   end
 
-  -- Calculate start index
-  local start
-  if from == nil then
-    start = 0
-  elseif from >= 0 then
-    start = from
-  else
-    start = 0
-  end
+  -- Calculate start and end indices
+  local start = startin == nil and 0 or startin >= 0 and startin or 0
+  local endidx = endin == nil and 0 or endin >= 0 and endin or 0
 
   if path ~= UNDEF and start >= 0 then
-    -- Slice path array from start
+    -- Slice path array from start to end
     local sliced = {}
-    for i = start + 1, #path do
+    for i = start + 1, #path - endidx do
       table.insert(sliced, path[i])
     end
     path = sliced
@@ -822,10 +825,10 @@ end
 -- @param parent (table) Current parent (for recursive calls)
 -- @param path (table) Current path (for recursive calls)
 -- @return (any) The transformed value
-local function walk(val, apply, -- These arguments are the public interface.
+local function walk(val, apply,       -- These arguments are the public interface.
                     key, parent, path -- These arguments are used for recursive state.
 )
-  path = path or {}             -- Initialize path as empty table for root level
+  path = path or {}                   -- Initialize path as empty table for root level
   setmetatable(path, {
     __jsontype = "array"
   })
@@ -1825,13 +1828,14 @@ end
 -- @param val (any) The value to validate
 -- @param current (any) The current context
 -- @return (string|nil) The validated string or nil
-local function validate_STRING(state, val, current)
+local function validate_STRING(state, _val, current)
   local out = getprop(current, state.key)
 
   local t = typify(out)
   if S_string ~= t then
     local msg = _invalidTypeMsg(state.path, S_string, t, out, 'V1010')
     table.insert(state.errs, msg)
+    print('validate_STRING ERROR - NOT A STRING', msg)
     return UNDEF
   end
 
@@ -1850,6 +1854,7 @@ end
 -- @param current (any) The current context
 -- @return (number|nil) The validated number or nil
 local function validate_NUMBER(state, _val, current)
+  print('validate_NUMBER', state.key, current)
   local out = getprop(current, state.key)
 
   local t = typify(out)
@@ -2038,7 +2043,7 @@ local validate
 local function validate_ONE(state, _val, current, _ref, store)
   local mode, parent, path, keyI, nodes = state.mode, state.parent, state.path,
       state.keyI, state.nodes
-
+  print("KEY I ", keyI)
   -- Only operate in val mode, since parent is a list.
   if S_MVAL == mode then
     if not islist(parent) or 0 ~= keyI then
@@ -2339,6 +2344,9 @@ validate = function(data, spec, extra, collecterrs)
   end
 
   local out = transform(data, spec, store, _validation)
+  print("OUT")
+  print(out)
+  inspect(out)
 
   if #errs > 0 and not collecterrs then
     error('Invalid data: ' .. table.concat(errs, ' | '))
