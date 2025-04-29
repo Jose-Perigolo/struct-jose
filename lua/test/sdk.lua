@@ -13,12 +13,12 @@ StructUtility.__index = StructUtility
 function StructUtility:new()
   local instance = {}
   setmetatable(instance, StructUtility)
-  
+
   -- Add all struct functions to the utility
   for k, v in pairs(struct) do
     instance[k] = v
   end
-  
+
   return instance
 end
 
@@ -29,10 +29,10 @@ Utility.__index = Utility
 function Utility:new(opts)
   local instance = {}
   setmetatable(instance, Utility)
-  
+
   instance._opts = opts or {}
   instance._struct = StructUtility:new()
-  
+
   return instance
 end
 
@@ -42,10 +42,10 @@ end
 
 function Utility:check(ctx)
   return {
-    zed = "ZED" .. 
-      (self._opts == nil and "" or self._opts.foo == nil and "" or self._opts.foo) ..
-      "_" ..
-      (ctx.meta == nil or ctx.meta.bar == nil and "0" or ctx.meta.bar)
+    zed = "ZED" ..
+        (self._opts == nil and "" or self._opts.foo == nil and "" or self._opts.foo) ..
+        "_" ..
+        (ctx.meta == nil or ctx.meta.bar == nil and "0" or ctx.meta.bar)
   }
 end
 
@@ -61,10 +61,10 @@ SDK.__index = SDK
 function SDK:new(opts)
   local instance = {}
   setmetatable(instance, SDK)
-  
+
   instance._opts = opts or {}
   instance._utility = Utility:new(opts)
-  
+
   return instance
 end
 
@@ -83,4 +83,4 @@ function SDK:utility()
   return self._utility
 end
 
-return SDK 
+return SDK

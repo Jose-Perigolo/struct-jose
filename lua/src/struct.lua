@@ -101,14 +101,14 @@ local _validation
 local function islist(val)
   -- First check metatable indicators (preferred approach)
   if getmetatable(val) and ((getmetatable(val).__jsontype == "array") or
-    (getmetatable(val).__jsontype and getmetatable(val).__jsontype.type ==
-      "array")) then
+        (getmetatable(val).__jsontype and getmetatable(val).__jsontype.type ==
+          "array")) then
     return true
   end
 
   -- Check if it's a table
   if type(val) ~= "table" or
-    (getmetatable(val) and getmetatable(val).__jsontype == "object") then
+      (getmetatable(val) and getmetatable(val).__jsontype == "object") then
     return false
   end
 
@@ -134,7 +134,7 @@ end
 local function ismap(val)
   -- Check if the value is a table
   if type(val) ~= "table" or
-    (getmetatable(val) and getmetatable(val).__jsontype == "array") then
+      (getmetatable(val) and getmetatable(val).__jsontype == "array") then
     return false
   end
 
@@ -170,7 +170,7 @@ end
 local function iskey(key)
   local keytype = type(key)
   return (keytype == S_string and key ~= S_MT and key ~= S_null) or keytype ==
-           S_number
+      S_number
 end
 
 -- Check for an "empty" value - nil, empty string, array, object.
@@ -383,13 +383,13 @@ local function items(val)
     -- Handle array-like tables
     for i, v in ipairs(val) do
       -- Lua is 1-indexed, so we need to adjust the index
-      table.insert(result, {i - 1, v})
+      table.insert(result, { i - 1, v })
     end
   else
     -- Handle map-like tables
     local keys = getKeys(val)
     for _, k in ipairs(keys) do
-      table.insert(result, {k, val[k]})
+      table.insert(result, { k, val[k] })
     end
   end
 
@@ -585,9 +585,9 @@ local function pathify(val, from)
   if islist(val) then
     path = val
   elseif type(val) == 'string' then
-    path = {val}
+    path = { val }
   elseif type(val) == 'number' then
-    path = {val}
+    path = { val }
   end
 
   -- Calculate start index
@@ -823,9 +823,9 @@ end
 -- @param path (table) Current path (for recursive calls)
 -- @return (any) The transformed value
 local function walk(val, apply, -- These arguments are the public interface.
-key, parent, path -- These arguments are used for recursive state.
+                    key, parent, path -- These arguments are used for recursive state.
 )
-  path = path or {} -- Initialize path as empty table for root level
+  path = path or {}             -- Initialize path as empty table for root level
   setmetatable(path, {
     __jsontype = "array"
   })
@@ -888,7 +888,7 @@ local function merge(val)
     else
       -- Nodes win, also over nodes of a different kind
       if (not isnode(out) or (ismap(obj) and islist(out)) or
-        (islist(obj) and ismap(out))) then
+            (islist(obj) and ismap(out))) then
         out = obj
       else
         -- Node stack walking down the current obj
@@ -972,7 +972,7 @@ getpath = function(path, store, current, state)
       table.insert(parts, part)
     end
     if path == "" then
-      parts = {S_MT}
+      parts = { S_MT }
     end
   else
     return nil
@@ -1135,7 +1135,7 @@ _injectstr = function(val, store, current, state)
       if mt and mt.__jsontype then
         -- Use the existing jsontype from metatable
       elseif islist(found) then
-        -- Set array jsontype for list-like tables 
+        -- Set array jsontype for list-like tables
         setmetatable(found, {
           __jsontype = "array"
         })
@@ -1191,12 +1191,12 @@ local function inject(val, store, modify, current, state)
       mode = S_MVAL,
       full = false,
       keyI = 0,
-      keys = {S_DTOP},
+      keys = { S_DTOP },
       key = S_DTOP,
       val = val,
       parent = parent,
-      path = {S_DTOP},
-      nodes = {parent},
+      path = { S_DTOP },
+      nodes = { parent },
       handler = _injecthandler,
       base = S_DTOP,
       modify = modify,
@@ -1256,10 +1256,10 @@ local function inject(val, store, modify, current, state)
     while nkI < #nodekeys do
       local nodekey = nodekeys[nkI + 1]
 
-      local childpath = {table.unpack(state.path)}
+      local childpath = { table.unpack(state.path) }
       table.insert(childpath, nodekey)
 
-      local childnodes = {table.unpack(state.nodes)}
+      local childnodes = { table.unpack(state.nodes) }
       table.insert(childnodes, val)
 
       local childval = getprop(val, nodekey)
@@ -1427,9 +1427,9 @@ local function transform_META(state)
   return UNDEF
 end
 
--- Merge a list of objects into the current object. 
+-- Merge a list of objects into the current object.
 -- Must be a key in an object. The value is merged over the current object.
--- If the value is an array, the elements are first merged using `merge`. 
+-- If the value is an array, the elements are first merged using `merge`.
 -- If the value is the empty string, merge the top level store.
 -- Format: { '`$MERGE`': '`source-path`' | ['`source-paths`', ...] }
 -- @param state (table) The injection state
@@ -1448,16 +1448,16 @@ local function transform_MERGE(state, _val, current)
     local args = getprop(parent, key)
 
     if args == S_MT then
-      args = {current["$TOP"]}
+      args = { current["$TOP"] }
     else
       if islist(args) then
         -- Keep args as a list
       else
-        args = {args}
+        args = { args }
       end
     end
 
-    -- Add metadata for array 
+    -- Add metadata for array
     if islist(args) then
       setmetatable(args, {
         __jsontype = "array"
@@ -1468,7 +1468,7 @@ local function transform_MERGE(state, _val, current)
     setprop(parent, key, UNDEF)
 
     -- Build the mergelist explicitly
-    local mergelist = {parent} -- Start with parent
+    local mergelist = { parent } -- Start with parent
 
     -- Add all items from args
     if islist(args) then
@@ -1505,7 +1505,7 @@ end
 -- @return (any) The first item or nil
 local function transform_EACH(state, _val, current, _ref, store)
   local mode, keys, path, parent, nodes = state.mode, state.keys, state.path,
-    state.parent, state.nodes
+      state.parent, state.nodes
 
   -- Remove arguments to avoid spurious processing.
   if keys then
@@ -1530,7 +1530,7 @@ local function transform_EACH(state, _val, current, _ref, store)
   local target = nodes[#nodes - 1]
 
   -- Create parallel arrays for templates and source values
-  local tval = {} -- Templates 
+  local tval = {} -- Templates
   setmetatable(tval, {
     __jsontype = "array"
   })
@@ -1622,7 +1622,7 @@ end
 -- @return (nil) Always returns nil
 local function transform_PACK(state, _val, current, _ref, store)
   local mode, key, path, parent, nodes = state.mode, state.key, state.path,
-    state.parent, state.nodes
+      state.parent, state.nodes
 
   -- Defensive context checks
   if S_MKEYPRE ~= mode or type(key) ~= S_string or path == nil or nodes == nil then
@@ -1631,7 +1631,7 @@ local function transform_PACK(state, _val, current, _ref, store)
 
   -- Get arguments
   local args = parent[key]
-  local srcpath = args[1] -- Path to source data
+  local srcpath = args[1]      -- Path to source data
   local child = clone(args[2]) -- Child template
 
   -- Find key and target node
@@ -1751,7 +1751,7 @@ local function transform(data, spec, extra, modify)
   -- This creates our data source for transforms
   local extraDataClone = clone(extraData or {})
   local dataClone = clone(data or {})
-  local mergedData = merge({extraDataClone, dataClone})
+  local mergedData = merge({ extraDataClone, dataClone })
 
   -- Define a top level store that provides transform operations
   local store = {
@@ -1810,8 +1810,8 @@ end
 -- @return (string) Formatted error message
 _invalidTypeMsg = function(path, needtype, vt, v, whence)
   local vs = nil == v and 'no value' or stringify(v)
-  local msg = 'Expected ' .. (1 < #path and ('field ' .. pathify(path, 1) 
-  .. ' to be ') or '') .. needtype .. ', but found ' .. (nil ~= v and (vt .. ': ') or '') .. vs
+  local msg = 'Expected ' .. (1 < #path and ('field ' .. pathify(path, 1)
+    .. ' to be ') or '') .. needtype .. ', but found ' .. (nil ~= v and (vt .. ': ') or '') .. vs
 
   -- Uncomment to help debug validation errors.
   -- msg = msg .. ' [' .. whence .. ']'
@@ -1947,7 +1947,7 @@ end
 -- @return (any) Depends on context
 local function validate_CHILD(state, _val, current)
   local mode, key, parent, keys, path = state.mode, state.key, state.parent,
-    state.keys, state.path
+      state.keys, state.path
 
   -- Map syntax.
   if S_MKEYPRE == mode then
@@ -2028,7 +2028,7 @@ end
 local validate
 
 -- Match at least one of the specified shapes.
--- Syntax: ['`$ONE`', alt0, alt1, ...] 
+-- Syntax: ['`$ONE`', alt0, alt1, ...]
 -- @param state (table) The validation state
 -- @param _val (any) The value to validate (unused)
 -- @param current (any) The current context
@@ -2037,17 +2037,18 @@ local validate
 -- @return (nil) Does not return a value directly
 local function validate_ONE(state, _val, current, _ref, store)
   local mode, parent, path, keyI, nodes = state.mode, state.parent, state.path,
-    state.keyI, state.nodes
+      state.keyI, state.nodes
 
   -- Only operate in val mode, since parent is a list.
   if S_MVAL == mode then
     if not islist(parent) or 0 ~= keyI then
       table.insert(state.errs,
         'The $ONE validator at field ' .. pathify(state.path, 1, 1) ..
-          ' must be the first element of an array.')
+        ' must be the first element of an array.')
       return
     end
 
+    -- Skip further iteration in the validator
     state.keyI = #state.keys
 
     local grandparent = nodes[#nodes - 1]
@@ -2055,7 +2056,7 @@ local function validate_ONE(state, _val, current, _ref, store)
 
     -- Clean up structure, replacing [$ONE, ...] with current
     setprop(grandparent, grandkey, current)
-    state.path = {table.unpack(state.path, 1, #state.path - 1)}
+    state.path = { table.unpack(state.path, 1, #state.path - 1) }
     state.key = state.path[#state.path]
 
     -- Create tvals array from parent elements starting at index 2
@@ -2067,7 +2068,7 @@ local function validate_ONE(state, _val, current, _ref, store)
     if 0 == #tvals then
       table.insert(state.errs,
         'The $ONE validator at field ' .. pathify(state.path, 1, 1) ..
-          ' must have at least one argument.')
+        ' must have at least one argument.')
       return
     end
 
@@ -2076,27 +2077,19 @@ local function validate_ONE(state, _val, current, _ref, store)
       -- If match, then errs.length = 0
       local terrs = {}
       setmetatable(terrs, {
-        __jsontype = {
-          type = 'array'
-        }
+        __jsontype = "array"
       })
 
-      -- Create a separate validation store to isolate the validation
       local vstore = {}
       for k, v in pairs(store) do
         vstore[k] = v
       end
       vstore["$TOP"] = current
-      vstore["$ERRS"] = terrs -- Ensure errors go to terrs
 
-      -- Try to validate against this alternative
       local vcurrent = validate(current, tval, vstore, terrs)
 
-      -- If validation succeeds (no errors), accept this result and return
+      -- Important: Only set the parent if validation succeeds
       if #terrs == 0 then
-        -- Important: Update the grandparent directly with the value
-        -- Don't rely on the previous setprop call
-        setprop(grandparent, grandkey, current)
         return
       end
     end
@@ -2113,7 +2106,7 @@ local function validate_ONE(state, _val, current, _ref, store)
       return string.lower(p1)
     end)
 
-    -- Add error message for "no match found"
+    -- Add error message
     table.insert(state.errs,
       _invalidTypeMsg(state.path,
         (#tvals > 1 and 'one of ' or '') .. valdesc_str, typify(current),
@@ -2148,7 +2141,7 @@ local function validate_EXACT(state, _val, current, _ref, _store)
 
     -- Clean up structure, replacing [$EXACT, ...] with current
     setprop(grandparent, grandkey, current)
-    state.path = {table.unpack(state.path, 1, #state.path - 1)}
+    state.path = { table.unpack(state.path, 1, #state.path - 1) }
     state.key = state.path[#state.path]
 
     -- Create tvals array from parent elements starting at index 2
@@ -2167,7 +2160,7 @@ local function validate_EXACT(state, _val, current, _ref, _store)
     -- See if we can find an exact value match.
     local currentstr
     local found_match = false
-    
+
     for _, tval in ipairs(tvals) do
       local exactmatch = tval == current
 
@@ -2192,7 +2185,7 @@ local function validate_EXACT(state, _val, current, _ref, _store)
         table.insert(valdesc, stringify(v))
       end
       local valdesc_str = table.concat(valdesc, ', ')
-      
+
       table.insert(state.errs, _invalidTypeMsg(
         state.path,
         (#state.path > 1 and '' or 'value ') ..
@@ -2267,12 +2260,12 @@ _validation = function(pval, key, parent, state, current, _store)
       -- Closed object, so reject extra keys not in shape.
       if #badkeys > 0 then
         local msg = 'Unexpected keys at field ' .. pathify(state.path, 1) .. ': ' ..
-                      table.concat(badkeys, ', ')
+            table.concat(badkeys, ', ')
         table.insert(state.errs, msg)
       end
     else
       -- Object is open, so merge in extra keys.
-      merge({pval, cval})
+      merge({ pval, cval })
       if isnode(pval) then
         setprop(pval, '`$OPEN`', UNDEF)
       end

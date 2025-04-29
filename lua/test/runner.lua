@@ -1,14 +1,15 @@
 --[[
   Runner utility module for executing JSON-specified tests.
   This is a Lua implementation matching the TypeScript version in runner.ts.
-]] local json = require("dkjson")
+]]
+local json = require("dkjson")
 local lfs = require("lfs")
 local luassert = require("luassert")
 local struct = require("src.struct")
 
 -- Constants
 local NULLMARK = "__NULL__"
-local UNDEFMARK = "__UNDEF__"  -- Value is not present (thus, undefined)
+local UNDEFMARK = "__UNDEF__"   -- Value is not present (thus, undefined)
 local EXISTSMARK = "__EXISTS__" -- Value exists (not undefined)
 
 -- Forward declarations to avoid interdependencies
@@ -37,7 +38,7 @@ end
 -- @param ... (string) Path segments to join
 -- @return (string) Joined path
 local function join(...)
-  return table.concat({...}, "/")
+  return table.concat({ ... }, "/")
 end
 
 -- Assert failure with message
@@ -94,8 +95,8 @@ end
 function Utility:check(ctx)
   return {
     zed = "ZED" ..
-      ((self._opts.foo == nil) and "" or self._opts.foo) ..
-      "_" .. ((ctx.bar == nil) and "0" or ctx.bar)
+        ((self._opts.foo == nil) and "" or self._opts.foo) ..
+        "_" .. ((ctx.bar == nil) and "0" or ctx.bar)
   }
 end
 
@@ -109,7 +110,7 @@ Client.__index = Client
 -- @return (table) New Client instance
 function Client.new(opts)
   local instance = setmetatable({}, Client)
-  
+
   -- Initialize struct utilities
   local structUtil = {
     clone = struct.clone,
@@ -120,11 +121,11 @@ function Client.new(opts)
     walk = struct.walk,
     isnode = function(val) return type(val) == "table" end
   }
-  
+
   -- Create utility instance
   instance._utility = Utility.new(structUtil, opts)
   instance._opts = opts or {}
-  
+
   return instance
 end
 
@@ -143,13 +144,13 @@ function Client:tester(opts)
   for k, v in pairs(self._opts) do
     mergedOpts[k] = v
   end
-  
+
   if opts then
     for k, v in pairs(opts) do
       mergedOpts[k] = v
     end
   end
-  
+
   return Client.new(mergedOpts)
 end
 
@@ -174,12 +175,12 @@ function matchval(check, base, structUtils)
   if check == NULLMARK then
     check = nil
   end
-  
+
   -- Handle UNDEFMARK - expected base to be undefined/nil
   if check == UNDEFMARK then
     return base == nil
   end
-  
+
   -- Handle EXISTSMARK - expected base to exist and not be nil
   if check == EXISTSMARK then
     return base ~= nil
@@ -197,9 +198,9 @@ function matchval(check, base, structUtils)
         -- Convert JS RegExp to Lua pattern when possible
         -- This is a simplification and might need adjustments for complex patterns
         local lua_pattern = rem:gsub("%%", "%%%%"):gsub("%.", "%%."):gsub("%+",
-          "%%+"):gsub("%-", "%%-"):gsub("%*", "%%*"):gsub("%?", "%%?"):gsub(
-          "%[", "%%["):gsub("%]", "%%]"):gsub("%^", "%%^"):gsub("%$", "%%$")
-          :gsub("%(", "%%("):gsub("%)", "%%)")
+              "%%+"):gsub("%-", "%%-"):gsub("%*", "%%*"):gsub("%?", "%%?"):gsub(
+              "%[", "%%["):gsub("%]", "%%]"):gsub("%^", "%%^"):gsub("%$", "%%$")
+            :gsub("%(", "%%("):gsub("%)", "%%)")
         pass = basestr:match(lua_pattern) ~= nil
       else
         -- Convert both strings to lowercase and check if one contains the other
@@ -231,12 +232,12 @@ function match(check, base, structUtils)
       if baseval == val then
         return val
       end
-      
+
       -- Explicit undefined expected
       if val == UNDEFMARK and baseval == nil then
         return val
       end
-      
+
       -- Explicit defined expected
       if val == EXISTSMARK and baseval ~= nil then
         return val
@@ -244,11 +245,11 @@ function match(check, base, structUtils)
 
       if not matchval(val, baseval, structUtils) then
         fail("MATCH: " .. table.concat(path, ".") .. ": [" ..
-               structUtils.stringify(val) .. "] <=> [" ..
-               structUtils.stringify(baseval) .. "]")
+          structUtils.stringify(val) .. "] <=> [" ..
+          structUtils.stringify(baseval) .. "]")
       end
     end
-    
+
     return val
   end)
 end
@@ -261,11 +262,11 @@ function fixJSON(val, flags)
   if flags == nil then
     flags = { null = true }
   end
-  
+
   if val == nil or val == "null" then
     return flags.null and NULLMARK or val
   end
-  
+
   -- Handle error objects specially
   if type(val) == "table" and val.message ~= nil then
     return {
@@ -286,7 +287,7 @@ function fixJSON(val, flags)
           message = v.message,
         }
       end
-      
+
       local result = {}
       for k, value in pairs(v) do
         result[k] = deepClone(value)
@@ -356,7 +357,7 @@ end
 function resolveSubject(name, container)
   -- Try to get the subject directly from the utility
   local subject = container[name]
-  
+
   -- If not found, try to get it from the struct
   if subject == nil then
     -- Call struct() as a method
@@ -365,7 +366,7 @@ function resolveSubject(name, container)
       subject = struct_util[name]
     end
   end
-  
+
   return subject
 end
 
@@ -377,7 +378,7 @@ function resolveSpec(name, testfile)
   local alltests = json.decode(readFileSync(join(lfs.currentdir(), testfile)),
     1, "null")
   local spec =
-    (alltests.primary and alltests.primary[name]) or (alltests[name]) or
+      (alltests.primary and alltests.primary[name]) or (alltests[name]) or
       alltests
   return spec
 end
@@ -388,10 +389,10 @@ end
 -- @return (table) Array of arguments for the test
 function resolveArgs(entry, testpack)
   local structUtils = testpack.utility:struct()
-  local args = {structUtils.clone(entry["in"])}
+  local args = { structUtils.clone(entry["in"]) }
 
   if entry.ctx then
-    args = {entry.ctx}
+    args = { entry.ctx }
   elseif entry.args then
     args = entry.args
   end
@@ -473,9 +474,9 @@ function handleError(entry, err, structUtils)
   -- Special handling for validation tests with null errors
   if entry_err == nil and entry.out ~= nil then
     -- Check if this is a validation test with q arrays
-    if type(err_message) == "string" and 
-       err_message:find("null:", 1, true) and
-       structUtils.stringify(entry["in"]):find("q:[", 1, true) then
+    if type(err_message) == "string" and
+        err_message:find("null:", 1, true) and
+        structUtils.stringify(entry["in"]):find("q:[", 1, true) then
       -- Similar to Go implementation - this is likely a validation test for empty arrays
       return
     end
@@ -485,11 +486,11 @@ function handleError(entry, err, structUtils)
   if entry_err ~= nil then
     -- Special case for matching null errors
     if type(entry_err) == "string" and type(err_message) == "string" and
-       entry_err:find("null:", 1, true) and err_message:find("null:", 1, true) then
+        entry_err:find("null:", 1, true) and err_message:find("null:", 1, true) then
       -- Both errors talk about null values - consider it a match
       return
     end
-    
+
     if entry_err == true or matchval(entry_err, err_message, structUtils) then
       if entry.match then
         -- Process the error with fixJSON before matching
@@ -509,7 +510,7 @@ function handleError(entry, err, structUtils)
     end
 
     fail("ERROR MATCH: [" .. structUtils.stringify(entry_err) .. "] <=> [" ..
-           err_message .. "]")
+      err_message .. "]")
   else
     -- Unexpected error (test didn't specify an error expectation)
     if type(err) == "table" and err.name == "AssertionError" then
@@ -533,10 +534,10 @@ function checkResult(entry, res, structUtils)
 
   -- If there's a match pattern, verify it first
   if entry.match then
-    local result = { 
-      ["in"] = entry["in"], 
-      out = entry.res, 
-      ctx = entry.ctx 
+    local result = {
+      ["in"] = entry["in"],
+      out = entry.res,
+      ctx = entry.ctx
     }
     match(entry.match, result, structUtils)
     matched = true
@@ -573,14 +574,13 @@ end
 -- @param client (table) The client instance to use
 -- @return (function) A runner function
 local function makeRunner(testfile, client)
-
   -- Main test runner function
   -- @param name (string) The name of the test
   -- @param store (table) Store with configuration values
   -- @return (table) The runner pack with test functions
   return function(name, store)
     store = store or {}
-    
+
     local utility = client:utility()
     local structUtils = utility:struct()
 
