@@ -1835,7 +1835,6 @@ local function validate_STRING(state, _val, current)
   if S_string ~= t then
     local msg = _invalidTypeMsg(state.path, S_string, t, out, 'V1010')
     table.insert(state.errs, msg)
-    print('validate_STRING ERROR - NOT A STRING', msg)
     return UNDEF
   end
 
@@ -1854,7 +1853,6 @@ end
 -- @param current (any) The current context
 -- @return (number|nil) The validated number or nil
 local function validate_NUMBER(state, _val, current)
-  print('validate_NUMBER', state.key, current)
   local out = getprop(current, state.key)
 
   local t = typify(out)
@@ -2043,7 +2041,6 @@ local validate
 local function validate_ONE(state, _val, current, _ref, store)
   local mode, parent, path, keyI, nodes = state.mode, state.parent, state.path,
       state.keyI, state.nodes
-  print("KEY I ", keyI)
   -- Only operate in val mode, since parent is a list.
   if S_MVAL == mode then
     if not islist(parent) or 0 ~= keyI then
@@ -2092,6 +2089,7 @@ local function validate_ONE(state, _val, current, _ref, store)
       vstore["$TOP"] = current
 
       local vcurrent = validate(current, tval, vstore, terrs)
+      setprop(grandparent, grandkey, vcurrent)
 
       -- Important: Only set the parent if validation succeeds
       if #terrs == 0 then
@@ -2304,6 +2302,9 @@ end
 -- @return (any) The validated data
 validate = function(data, spec, extra, collecterrs)
   local errs = collecterrs or {}
+  setmetatable(errs, {
+    __jsontype = "array"
+  })
 
   -- Create the store with validation functions and commands
   local store = {
@@ -2343,12 +2344,15 @@ validate = function(data, spec, extra, collecterrs)
     -- If extra is not a table, simply ignore it
   end
 
-  local out = transform(data, spec, store, _validation)
-  print("OUT")
-  print(out)
-  inspect(out)
+  if errs then
+    store["$ERRS"] = errs
+  end
 
-  if #errs > 0 and not collecterrs then
+  local out = transform(data, spec, store, _validation)
+
+  local generr = #errs > 0 and collecterrs == nil
+
+  if generr then
     error('Invalid data: ' .. table.concat(errs, ' | '))
   end
 
