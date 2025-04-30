@@ -1805,9 +1805,10 @@ end
 -- @param whence (string) The source of the error
 -- @return (string) Formatted error message
 _invalidTypeMsg = function(path, needtype, vt, v, whence)
-  local vs = nil == v and 'no value' or stringify(v)
+  local vs = (v == nil or v == "null") and 'no value' or stringify(v)
   local msg = 'Expected ' .. (1 < #path and ('field ' .. pathify(path, 1)
-    .. ' to be ') or '') .. needtype .. ', but found ' .. (nil ~= v and (vt .. ': ') or '') .. vs
+    .. ' to be ') or '') .. needtype .. ', but found ' .. ((v ~= nil and v ~= "null")
+    and (vt .. ': ') or '') .. vs
 
   -- Uncomment to help debug validation errors.
   -- msg = msg .. ' [' .. whence .. ']'

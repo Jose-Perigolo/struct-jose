@@ -568,11 +568,11 @@ describe("struct", function()
     end)
   end)
 
-  -- test("validate-invalid", function()
-  --   runsetflags(validateSpec.invalid, { null = false }, function(vin)
-  --     return validate(vin.data, vin.spec)
-  --   end)
-  -- end)
+  test("validate-invalid", function()
+    runsetflags(validateSpec.invalid, { null = false }, function(vin)
+      return validate(vin.data, vin.spec)
+    end)
+  end)
 
   -- test("validate-custom", function()
   --   -- Test custom validation functions
