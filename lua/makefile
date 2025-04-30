@@ -9,7 +9,7 @@ setup:
 
 # Run tests
 test:
-	busted ./test/struct_test.lua
+	find ./test/ -name "*test.lua" | xargs busted
 
 # Clean artifacts
 clean:
