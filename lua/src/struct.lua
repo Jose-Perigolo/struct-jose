@@ -1737,8 +1737,17 @@ local function transform(data, spec, extra, modify)
     end
   end
 
-  local dataClone = merge({ isempty(data) and UNDEF or clone(extraData),
-    clone(data) })
+  local merge_first_item = nil
+  if not isempty(extraData) then
+    merge_first_item = clone(extraData)
+  end
+
+  local merge_data = { merge_first_item, clone(data) }
+  setmetatable(merge_data, {
+    __jsontype = "array"
+  })
+
+  local dataClone = merge(merge_data)
 
   -- Define a top level store that provides transform operations
   local store = {
