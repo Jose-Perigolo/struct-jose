@@ -9,7 +9,7 @@ package.path = package.path .. ";./test/?.lua"
 local runnerModule = require("runner")
 local makeRunner = runnerModule.makeRunner
 
-local SDK = require("sdk")
+local SDK = require("sdk").SDK
 
 local TEST_JSON_FILE = "../build/test/test.json"
 

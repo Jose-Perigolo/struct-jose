@@ -328,16 +328,9 @@ local function handleError(entry, err, structUtils)
     fail("ERROR MATCH: [" .. structUtils.stringify(entry_err) .. "] <=> [" ..
       err_message .. "]")
   else
-    -- Unexpected error (test didn't specify an error expectation)
-    if type(err) == "table" and err.name == "AssertionError" then
-      fail(err_message .. "\n\nENTRY: " .. json.encode(entry, {
-        indent = true
-      }))
-    else
-      fail((err.stack or err_message) .. "\n\nENTRY: " .. json.encode(entry, {
-        indent = true
-      }))
-    end
+    fail((err.stack or err_message) .. "\n\nENTRY: " .. json.encode(entry, {
+      indent = true
+    }))
   end
 end
 
