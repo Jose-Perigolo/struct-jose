@@ -1,86 +1,52 @@
---[[
-  SDK utility for the Lua implementation of the struct module.
-  This matches the structure found in ts/test/sdk.ts.
-]]
+-- Import the StructUtility equivalent
+local StructUtility = require("src.struct").StructUtility
 
--- Update to use the correct path for the struct module
-local struct = require("src.struct")
-
--- StructUtility class - wrapper for struct functions
-local StructUtility = {}
-StructUtility.__index = StructUtility
-
-function StructUtility:new()
-  local instance = {}
-  setmetatable(instance, StructUtility)
-
-  -- Add all struct functions to the utility
-  for k, v in pairs(struct) do
-    instance[k] = v
-  end
-
-  return instance
-end
-
--- Utility class
-local Utility = {}
-Utility.__index = Utility
-
-function Utility:new(opts)
-  local instance = {}
-  setmetatable(instance, Utility)
-
-  instance._opts = opts or {}
-  instance._struct = StructUtility:new()
-
-  return instance
-end
-
-function Utility:contextify(ctxmap)
-  return ctxmap
-end
-
-function Utility:check(ctx)
-  return {
-    zed = "ZED" ..
-        (self._opts == nil and "" or self._opts.foo == nil and "" or self._opts.foo) ..
-        "_" ..
-        (ctx.meta == nil or ctx.meta.bar == nil and "0" or ctx.meta.bar)
-  }
-end
-
-function Utility:struct()
-  return self._struct
-end
-
--- SDK class
+-- Define the SDK "class"
 local SDK = {}
 SDK.__index = SDK
 
--- Create a new SDK instance
+-- Constructor
 function SDK:new(opts)
-  local instance = {}
-  setmetatable(instance, SDK)
+  -- Create a new instance (object)
+  local instance = setmetatable({}, SDK)
 
+  -- Initialize private fields
   instance._opts = opts or {}
-  instance._utility = Utility:new(opts)
+  instance._utility = {
+    struct = StructUtility:new(),
+    contextify = function(ctxmap)
+      return ctxmap
+    end,
+    check = function(ctx)
+      return {
+        zed = "ZED" ..
+            (instance._opts == nil and "" or (instance._opts.foo == nil and "" or instance._opts.foo)) ..
+            "_" ..
+            (ctx.meta and ctx.meta.bar or "0")
+      }
+    end
+  }
 
   return instance
 end
 
--- Static test function
+-- Static method: test
 function SDK.test(opts)
-  return SDK:new(opts)
+  local sdkInstance = SDK:new(opts)
+  return sdkInstance
 end
 
--- Tester method
+-- Instance method: tester
 function SDK:tester(opts)
   return SDK:new(opts or self._opts)
 end
 
--- Get the utility
+-- Instance method: utility
 function SDK:utility()
   return self._utility
 end
 
-return SDK
+-- Return the SDK class
+return {
+  SDK = SDK
+}

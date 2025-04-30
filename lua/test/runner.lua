@@ -1,3 +1,4 @@
+local inspect = require("inspect")
 --[[
   Runner utility module for executing JSON-specified tests.
   This is a Lua implementation matching the TypeScript version in runner.ts.
@@ -5,7 +6,6 @@
 local json = require("dkjson")
 local lfs = require("lfs")
 local luassert = require("luassert")
-local struct = require("src.struct")
 
 -- Constants
 local NULLMARK = "__NULL__"
@@ -47,113 +47,6 @@ end
 -- @param expected (any) The expected value
 local function deepEqual(actual, expected)
   luassert.same(expected, actual)
-end
-
-----------------------------------------------------------
--- Client Interface
-----------------------------------------------------------
-
--- Utility interface that contains struct utilities and contextify function
--- @class Utility
-local Utility = {}
-Utility.__index = Utility
-
--- Create a new utility instance
--- @param structUtil (table) The struct utility functions
--- @param opts (table) Optional configuration
--- @return (table) New Utility instance
-function Utility.new(structUtil, opts)
-  local instance = setmetatable({}, Utility)
-  instance._struct = structUtil or {}
-  instance._opts = opts or {}
-  return instance
-end
-
--- Get the struct utility
--- @return (table) The struct utility
-function Utility:struct()
-  return self._struct
-end
-
--- Contextify a context map with additional properties
--- @param ctx (table) The context map to enrich
--- @return (table) The enriched context
-function Utility:contextify(ctx)
-  ctx = ctx or {}
-  -- Implement any context enrichment needed
-  return ctx
-end
-
--- Check function for testing
--- @param ctx (table) The context to check
--- @return (table) Result with additional properties for testing
-function Utility:check(ctx)
-  return {
-    zed = "ZED" ..
-        ((self._opts.foo == nil) and "" or self._opts.foo) ..
-        "_" .. ((ctx.bar == nil) and "0" or ctx.bar)
-  }
-end
-
--- Client interface for testing
--- @class Client
-local Client = {}
-Client.__index = Client
-
--- Create a new client instance
--- @param opts (table) Optional configuration
--- @return (table) New Client instance
-function Client.new(opts)
-  local instance = setmetatable({}, Client)
-
-  -- Initialize struct utilities
-  local structUtil = {
-    clone = struct.clone,
-    getpath = struct.getpath,
-    inject = struct.inject,
-    items = struct.items,
-    stringify = struct.stringify,
-    walk = struct.walk,
-    isnode = function(val) return type(val) == "table" end
-  }
-
-  -- Create utility instance
-  instance._utility = Utility.new(structUtil, opts)
-  instance._opts = opts or {}
-
-  return instance
-end
-
--- Get the utility instance
--- @return (table) The utility instance
-function Client:utility()
-  return self._utility
-end
-
--- Create a new tester client with given options
--- @param opts (table) Options for the tester
--- @return (table) New Client instance for testing
-function Client:tester(opts)
-  -- Merge options from parent with new options
-  local mergedOpts = {}
-  for k, v in pairs(self._opts) do
-    mergedOpts[k] = v
-  end
-
-  if opts then
-    for k, v in pairs(opts) do
-      mergedOpts[k] = v
-    end
-  end
-
-  return Client.new(mergedOpts)
-end
-
--- Static test function for backward compatibility
--- @param opts (table) Options for the client
--- @return (table) New Client instance
-function Client.test(opts)
-  return Client.new(opts)
 end
 
 ----------------------------------------------------------
@@ -505,7 +398,7 @@ local function makeRunner(testfile, client)
     store = store or {}
 
     local utility = client:utility()
-    local structUtils = utility:struct()
+    local structUtils = utility.struct
 
     local spec = resolveSpec(name, testfile)
     local clients = resolveClients(client, spec, store, structUtils)

@@ -2346,11 +2346,48 @@ validate = function(data, spec, extra, collecterrs)
   return out
 end
 
+-- Define the StructUtility "class"
+local StructUtility = {}
+StructUtility.__index = StructUtility
+
+-- Constructor for StructUtility
+function StructUtility:new()
+  local instance = setmetatable({}, StructUtility)
+  return instance
+end
+
+StructUtility.clone = clone
+StructUtility.escre = escre
+StructUtility.escurl = escurl
+StructUtility.getpath = getpath
+StructUtility.getprop = getprop
+StructUtility.haskey = haskey
+StructUtility.inject = inject
+StructUtility.isempty = isempty
+StructUtility.isfunc = isfunc
+StructUtility.iskey = iskey
+StructUtility.islist = islist
+StructUtility.ismap = ismap
+StructUtility.isnode = isnode
+StructUtility.items = items
+StructUtility.joinurl = joinurl
+StructUtility.keysof = keysof
+StructUtility.merge = merge
+StructUtility.pathify = pathify
+StructUtility.setprop = setprop
+StructUtility.strkey = strkey
+StructUtility.stringify = stringify
+StructUtility.transform = transform
+StructUtility.typify = typify
+StructUtility.validate = validate
+StructUtility.walk = walk
+
 ----------------------------------------------------------
 -- Module Export
 ----------------------------------------------------------
 
 return {
+  StructUtility = StructUtility,
   clone = clone,
   escre = escre,
   escurl = escurl,

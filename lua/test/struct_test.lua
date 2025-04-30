@@ -1,3 +1,4 @@
+local inspect = require("inspect")
 --[[
   Test suite for the struct module.
   This matches the structure and tests found in struct.test.ts.
@@ -14,7 +15,7 @@ local makeRunner, nullModifier, NULLMARK = runnerModule.makeRunner,
     runnerModule.nullModifier, runnerModule.NULLMARK
 
 -- Import the SDK module
-local SDK = require("sdk")
+local SDK = require("sdk").SDK
 
 -- Fix the path to the test JSON file
 local TEST_JSON_FILE = "../build/test/test.json"
@@ -54,7 +55,7 @@ describe("struct", function()
   local spec, runset, runsetflags, client = runnerStruct.spec,
       runnerStruct.runset, runnerStruct.runsetflags, runnerStruct.client
 
-  local struct_util = client:utility():struct()
+  local struct_util = client:utility().struct
   -- Extract test specifications for different function groups
   local clone = struct_util.clone
   local escre = struct_util.escre
