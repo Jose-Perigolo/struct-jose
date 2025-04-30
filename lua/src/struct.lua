@@ -2119,7 +2119,8 @@ end
 -- @param _store (table) The data store
 -- @return (nil) Does not return a value directly
 local function validate_EXACT(state, _val, current, _ref, _store)
-  local mode, parent, path, keyI, nodes = state.mode, state.parent, state.path, state.keyI, state.nodes
+  local mode, parent, path, key, keyI, nodes = state.mode, state.parent, state.path,
+      state.key, state.keyI, state.nodes
 
   -- Only operate in val mode, since parent is a list.
   if S_MVAL == mode then
@@ -2154,8 +2155,7 @@ local function validate_EXACT(state, _val, current, _ref, _store)
     end
 
     -- See if we can find an exact value match.
-    local currentstr
-    local found_match = false
+    local currentstr = nil
 
     for _, tval in ipairs(tvals) do
       local exactmatch = tval == current
@@ -2169,27 +2169,24 @@ local function validate_EXACT(state, _val, current, _ref, _store)
       end
 
       if exactmatch then
-        found_match = true
-        break
+        return
       end
     end
 
     -- If no match was found, report the error
-    if not found_match then
-      local valdesc = {}
-      for _, v in ipairs(tvals) do
-        table.insert(valdesc, stringify(v))
-      end
-      local valdesc_str = table.concat(valdesc, ', ')
-
-      table.insert(state.errs, _invalidTypeMsg(
-        state.path,
-        (#state.path > 1 and '' or 'value ') ..
-        'exactly equal to ' .. (#tvals == 1 and '' or 'one of ') .. valdesc_str,
-        typify(current), current, 'V0110'))
+    local valdesc = {}
+    for _, v in ipairs(tvals) do
+      table.insert(valdesc, stringify(v))
     end
+    local valdesc_str = table.concat(valdesc, ', ')
+
+    table.insert(state.errs, _invalidTypeMsg(
+      state.path,
+      (#state.path > 1 and '' or 'value ') ..
+      'exactly equal to ' .. (#tvals == 1 and '' or 'one of ') .. valdesc_str,
+      typify(current), current, 'V0110'))
   else
-    setprop(parent, state.key, UNDEF)
+    setprop(parent, key, UNDEF)
   end
 end
 
