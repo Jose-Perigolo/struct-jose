@@ -65,14 +65,11 @@ local S_DERRS = '$ERRS'
 local S_array = 'array'
 local S_base = 'base'
 local S_boolean = 'boolean'
-
 local S_function = 'function'
 local S_number = 'number'
 local S_object = 'object'
 local S_string = 'string'
 local S_null = 'null'
-local S_key = 'key'
-local S_parent = 'parent'
 local S_MT = ''
 local S_BT = '`'
 local S_DS = '$'
@@ -84,21 +81,60 @@ local S_KEY = 'KEY'
 local UNDEF = nil
 
 ----------------------------------------------------------
--- Forward declarations for internal functions
+-- Forward declarations to work around the lack of function hoisting
 ----------------------------------------------------------
 local _injectstr
 local _injecthandler
 local _invalidTypeMsg
+local _setparentprop
+local _updateAncestors
 local _validation
+local ismap
+local islist
+local getpath
 
-----------------------------------------------------------
--- Core Type Detection Functions
-----------------------------------------------------------
+-- Value is a node - defined, and a map (hash) or list (array).
+-- @param val (any) The value to check
+-- @return (boolean) True if value is a node
+local function isnode(val)
+  if val == nil then
+    return false
+  end
+
+  return ismap(val) or islist(val)
+end
+
+
+-- Value is a defined map (hash) with string keys.
+-- @param val (any) The value to check
+-- @return (boolean) True if value is a map
+ismap = function(val)
+  -- Check if the value is a table
+  if type(val) ~= "table" or
+      (getmetatable(val) and getmetatable(val).__jsontype == "array") then
+    return false
+  end
+
+  -- Check for explicit object metatable
+  if getmetatable(val) and getmetatable(val).__jsontype == "object" then
+    return true
+  end
+
+  -- Iterate over the table to check if it has string keys
+  for k, _ in pairs(val) do
+    if type(k) ~= "string" then
+      return false
+    end
+  end
+
+  return true
+end
+
 
 -- Value is a defined list (array) with integer keys (indexes).
 -- @param val (any) The value to check
 -- @return (boolean) True if value is a list
-local function islist(val)
+islist = function(val)
   -- First check metatable indicators (preferred approach)
   if getmetatable(val) and ((getmetatable(val).__jsontype == "array") or
         (getmetatable(val).__jsontype and getmetatable(val).__jsontype.type ==
@@ -128,41 +164,6 @@ local function islist(val)
   return count > 0 and max == count
 end
 
--- Value is a defined map (hash) with string keys.
--- @param val (any) The value to check
--- @return (boolean) True if value is a map
-local function ismap(val)
-  -- Check if the value is a table
-  if type(val) ~= "table" or
-      (getmetatable(val) and getmetatable(val).__jsontype == "array") then
-    return false
-  end
-
-  -- Check for explicit object metatable
-  if getmetatable(val) and getmetatable(val).__jsontype == "object" then
-    return true
-  end
-
-  -- Iterate over the table to check if it has string keys
-  for k, _ in pairs(val) do
-    if type(k) ~= "string" then
-      return false
-    end
-  end
-
-  return true
-end
-
--- Value is a node - defined, and a map (hash) or list (array).
--- @param val (any) The value to check
--- @return (boolean) True if value is a node
-local function isnode(val)
-  if val == nil then
-    return false
-  end
-
-  return ismap(val) or islist(val)
-end
 
 -- Value is a defined string (non-empty) or integer key.
 -- @param key (any) The key to check
@@ -172,6 +173,7 @@ local function iskey(key)
   return (keytype == S_string and key ~= S_MT and key ~= S_null) or keytype ==
       S_number
 end
+
 
 -- Check for an "empty" value - nil, empty string, array, object.
 -- @param val (any) The value to check
@@ -196,12 +198,14 @@ local function isempty(val)
   return false
 end
 
+
 -- Value is a function.
 -- @param val (any) The value to check
 -- @return (boolean) True if value is a function
 local function isfunc(val)
   return type(val) == 'function'
 end
+
 
 -- Determine the type of a value as a string.
 -- Returns one of: 'null', 'string', 'number', 'boolean', 'function', 'array', 'object'
@@ -226,14 +230,6 @@ local function typify(value)
   return type
 end
 
-----------------------------------------------------------
--- Forward Declarations for Circular References
-----------------------------------------------------------
-local getpath
-
-----------------------------------------------------------
--- Property Access and Manipulation
-----------------------------------------------------------
 
 -- Safely get a property of a node. Nil arguments return nil.
 -- If the key is not found, return the alternative value, if any.
@@ -282,6 +278,7 @@ local function getprop(val, key, alt)
   return out
 end
 
+
 -- Convert different types of keys to string representation.
 -- String keys are returned as is.
 -- Number keys are converted to strings.
@@ -308,6 +305,7 @@ local function strkey(key)
 
   return S_MT
 end
+
 
 -- Sorted keys of a map, or indexes of a list.
 -- @param val (any) The object or array to get keys from
@@ -336,6 +334,7 @@ local function keysof(val)
   end
 end
 
+
 -- Value of property with name key in node val is defined.
 -- @param val (any) The object to check
 -- @param key (any) The key to check
@@ -344,17 +343,6 @@ local function haskey(val, key)
   return getprop(val, key) ~= UNDEF
 end
 
--- Helper function to get sorted keys from a table
--- @param t (table) The table to get keys from
--- @return (table) Array of sorted keys
-local function getKeys(t)
-  local keys = {}
-  for k in pairs(t) do
-    table.insert(keys, k)
-  end
-  table.sort(keys)
-  return keys
-end
 
 -- List the sorted keys of a map or list as an array of tuples of the form {key, value}
 -- @param val (any) The object or array to convert to key-value pairs
@@ -373,8 +361,12 @@ local function items(val)
       table.insert(result, { i - 1, v })
     end
   else
-    -- Handle map-like tables
-    local keys = getKeys(val)
+    local keys = {}
+    for k in pairs(val) do
+      table.insert(keys, k)
+    end
+    table.sort(keys)
+
     for _, k in ipairs(keys) do
       table.insert(result, { k, val[k] })
     end
@@ -383,9 +375,6 @@ local function items(val)
   return result
 end
 
-----------------------------------------------------------
--- String and URL Handling
-----------------------------------------------------------
 
 -- Escape regular expression.
 -- @param s (string) The string to escape
@@ -395,6 +384,7 @@ local function escre(s)
   local result, _ = s:gsub("([.*+?^${}%(%)%[%]\\|])", "\\%1")
   return result
 end
+
 
 -- Escape URLs.
 -- @param s (string) The string to escape
@@ -407,6 +397,7 @@ local function escurl(s)
   end)
   return result
 end
+
 
 -- Concatenate url part strings, merging forward slashes as needed.
 -- @param sarr (table) Array of URL parts to join
@@ -462,6 +453,7 @@ local function joinurl(sarr)
   -- Join the parts with single slashes
   return table.concat(finalParts, "/")
 end
+
 
 -- Safely stringify a value for humans (NOT JSON!)
 -- @param val (any) The value to stringify
@@ -561,6 +553,7 @@ local function stringify(val, maxlen)
   return str
 end
 
+
 -- Build a human friendly path string.
 -- @param val (any) The path as array or string
 -- @param startin (number) Optional start index
@@ -639,6 +632,7 @@ local function pathify(val, startin, endin)
 
   return pathstr
 end
+
 
 -- Clone a JSON-like data structure.
 -- NOTE: function value references are copied, *not* cloned.
@@ -727,6 +721,7 @@ local function clone(val, flags)
   return val
 end
 
+
 -- Safely set a property. Undefined arguments and invalid keys are ignored.
 -- Returns the (possible modified) parent.
 -- If the value is undefined it the key will be deleted from the parent.
@@ -800,9 +795,6 @@ local function setprop(parent, key, val)
   return parent
 end
 
-----------------------------------------------------------
--- Complex Data Structure Operations
-----------------------------------------------------------
 
 -- Walk a data structure depth first, applying a function to each value.
 -- @param val (any) The value to walk
@@ -841,6 +833,7 @@ local function walk(val, apply,       -- These arguments are the public interfac
   -- Nodes are applied *after* their children.
   return apply(key, val, parent, path)
 end
+
 
 -- Merge a list of values into each other. Later values have
 -- precedence. Nodes override scalars. Node kinds (list or map)
@@ -936,6 +929,7 @@ local function merge(val)
   return out
 end
 
+
 -- Get a value deep inside a node using a key path.  For example the
 -- path `a.b` gets the value 1 from {a={b=1}}.  The path can specified
 -- as a dotted string, or a string array.  If the path starts with a
@@ -1011,151 +1005,6 @@ getpath = function(path, store, current, state)
   return val
 end
 
--- Set  state.key property of state.parent node, ensuring reference consistency
--- when needed by implementation language.
--- @param state (table) The injection state
--- @param val (any) The value to set
--- @return (any) The modified parent
-_setparentprop = function(state, val)
-  setprop(state.parent, state.key, val)
-end
-
-
--- Default inject handler for transforms. If the path resolves to a function,
--- call the function passing the injection state. This is how transforms operate.
--- @param state (table) The injection state
--- @param val (any) The value being injected
--- @param current (any) The current context
--- @param ref (string) The reference string
--- @param store (table) The data store
--- @return (any) The processed value
-_injecthandler = function(state, val, current, ref, store)
-  -- Check if it's a command by checking if it's a function and starts with $
-  local iscmd = isfunc(val) and (UNDEF == ref or ref:sub(1, 1) == S_DS)
-
-  -- Handle commands with numeric suffixes (e.g., $COPY2, $MERGE3)
-  if ref and not iscmd then
-    -- Extract the base command name without numeric suffix
-    local base_command = ref:match("^(%$[A-Z]+)%d*$")
-
-    if base_command and store[base_command] then
-      val = store[base_command]
-      iscmd = true
-    end
-  end
-
-  -- Only call val function if it is a special command ($NAME format).
-  if iscmd then
-    -- Execute the command function
-    val = val(state, val, current, ref, store)
-
-    -- Update parent with value. Ensures references remain in node tree.
-  elseif S_MVAL == state.mode and state.full then
-    setprop(state.parent, state.key, val)
-  end
-
-  return val
-end
-
--- Inject store values into a string. Not a public utility - used by
--- `inject`.  Inject are marked with `path` where path is resolved
--- with getpath against the store or current (if defined)
--- arguments. See `getpath`.  Custom injection handling can be
--- provided by state.handler (this is used for transform functions).
--- The path can also have the special syntax $NAME999 where NAME is
--- upper case letters only, and 999 is any digits, which are
--- discarded. This syntax specifies the name of a transform, and
--- optionally allows transforms to be ordered by alphanumeric sorting.
--- @param val (string) The string to inject into
--- @param store (table) The data store
--- @param current (any) Current context
--- @param state (table) The injection state
--- @return (any) The injected result
-_injectstr = function(val, store, current, state)
-  -- Can't inject into non-strings
-  if type(val) ~= S_string then
-    return S_MT
-  end
-
-  -- Pattern examples: "`a.b.c`", "`$NAME`", "`$NAME1`"
-  -- Match for full value wrapped in backticks
-  local full_match = val:match("^`([^`]+)`$")
-
-  -- Full string of the val is an injection.
-  if full_match then
-    if state then
-      state.full = true
-    end
-
-    local pathref = full_match
-
-    -- Special escapes inside injection.
-    if #pathref > 3 then
-      pathref = pathref:gsub("%$BT", S_BT):gsub("%$DS", S_DS)
-    end
-
-    -- Get the extracted path reference.
-    local out = getpath(pathref, store, current, state)
-    return out
-  end
-
-  -- Handle partial injections in the string
-  local out = val:gsub("`([^`]+)`", function(ref)
-    -- Special escapes inside injection.
-    if #ref > 3 then
-      ref = ref:gsub("%$BT", S_BT):gsub("%$DS", S_DS)
-    end
-
-    if state then
-      state.full = false
-    end
-
-    local found = getpath(ref, store, current, state)
-
-    -- Ensure inject value is a string.
-    if found == UNDEF then
-      return S_MT
-    elseif type(found) == "table" then
-      -- Handle maps and arrays (tables in Lua) by converting to JSON
-      local dkjson = require("dkjson")
-
-      -- Ensure proper encoding based on the table type
-      local mt = getmetatable(found)
-      if mt and mt.__jsontype then
-        -- Use the existing jsontype from metatable
-      elseif islist(found) then
-        -- Set array jsontype for list-like tables
-        setmetatable(found, {
-          __jsontype = "array"
-        })
-      elseif ismap(found) then
-        -- Set object jsontype for map-like tables
-        setmetatable(found, {
-          __jsontype = "object"
-        })
-      end
-
-      -- Convert to JSON
-      local ok, result = pcall(dkjson.encode, found)
-      if ok and result then
-        return result
-      else
-        -- More graceful fallback
-        return (islist(found) and "[...]" or "{...}")
-      end
-    else
-      return tostring(found)
-    end
-  end)
-
-  -- Also call the state handler on the entire string
-  if state ~= nil and isfunc(state.handler) then
-    state.full = true
-    out = state.handler(state, out, current, val, store)
-  end
-
-  return out
-end
 
 -- Inject values from a data store into a node recursively, resolving
 -- paths against the store, or current if they are local. THe modify
@@ -1320,9 +1169,6 @@ local function inject(val, store, modify, current, state)
   return getprop(state.parent, S_DTOP)
 end
 
-----------------------------------------------------------
--- Transform Functions
-----------------------------------------------------------
 
 -- Delete a key from a map or list.
 -- @param state (table) The injection state
@@ -1349,6 +1195,7 @@ local function transform_COPY(state, _val, current)
 
   return out
 end
+
 
 -- As a value, inject the key of the parent node.
 -- As a key, defined the name of the key property in the source object.
@@ -1407,6 +1254,7 @@ local function transform_KEY(state, _val, current)
   return getprop(getprop(parent, S_DMETA), S_KEY, getprop(path, #path - 2))
 end
 
+
 -- Store meta data about a node.  Does nothing itself, just used by
 -- other injectors, and is removed when called.
 -- @param state (table) The injection state
@@ -1416,6 +1264,7 @@ local function transform_META(state)
   setprop(parent, S_DMETA, UNDEF)
   return UNDEF
 end
+
 
 -- Merge a list of objects into the current object.
 -- Must be a key in an object. The value is merged over the current object.
@@ -1484,6 +1333,7 @@ local function transform_MERGE(state, _val, current)
 
   return UNDEF
 end
+
 
 -- Convert a node to a list.
 -- Format: ['`$EACH`', '`source-path-of-node`', child-template]
@@ -1591,8 +1441,7 @@ local function transform_EACH(state, _val, current, _ref, store)
   -- Process templates with source values
   tval = inject(tval, store, state.modify, tcur)
 
-  -- Update the parent with the result
-  setprop(target, tkey, tval)
+  _updateAncestors(state, target, tkey, tval)
 
   -- Return first entry if available
   if #tval > 0 then
@@ -1601,6 +1450,7 @@ local function transform_EACH(state, _val, current, _ref, store)
     return nil
   end
 end
+
 
 -- Convert a node to a map
 -- Format: { '`$PACK`':['`source-path`', child-template]}
@@ -1702,12 +1552,12 @@ local function transform_PACK(state, _val, current, _ref, store)
   -- Process the structure
   tval = inject(tval, store, state.modify, tcurrent)
 
-  -- Update target
-  setprop(target, tkey, tval)
+  _updateAncestors(state, target, tkey, tval)
 
   -- Drop transform key
   return UNDEF
 end
+
 
 -- Transform data using spec.
 -- Only operates on static JSON-like data.
@@ -1792,29 +1642,6 @@ local function transform(data, spec, extra, modify)
   return out
 end
 
-----------------------------------------------------------
--- Validation Functions
-----------------------------------------------------------
-
--- Build a type validation error message.
--- @param path (any) Path to the invalid value
--- @param needtype (string) Expected type
--- @param vt (string) Actual type
--- @param v (any) The invalid value
--- @param whence (string) The source of the error
--- @return (string) Formatted error message
-_invalidTypeMsg = function(path, needtype, vt, v, whence)
-  local vs = (v == nil or v == "null") and 'no value' or stringify(v)
-  local msg = 'Expected ' .. (1 < #path and ('field ' .. pathify(path, 1)
-    .. ' to be ') or '') .. needtype .. ', but found ' .. ((v ~= nil and v ~= "null")
-    and (vt .. ': ') or '') .. vs
-
-  -- Uncomment to help debug validation errors.
-  -- msg = msg .. ' [' .. whence .. ']'
-  msg = msg .. '.'
-
-  return msg
-end
 
 -- A required string value. NOTE: Rejects empty strings.
 -- @param state (table) The validation state
@@ -1840,6 +1667,7 @@ local function validate_STRING(state, _val, current)
   return out
 end
 
+
 -- A required number value (int or float).
 -- @param state (table) The validation state
 -- @param _val (any) The value to validate (unused)
@@ -1856,6 +1684,7 @@ local function validate_NUMBER(state, _val, current)
 
   return out
 end
+
 
 -- A required boolean value.
 -- @param state (table) The validation state
@@ -1874,6 +1703,7 @@ local function validate_BOOLEAN(state, _val, current)
   return out
 end
 
+
 -- A required object (map) value (contents not validated).
 -- @param state (table) The validation state
 -- @param _val (any) The value to validate (unused)
@@ -1890,6 +1720,7 @@ local function validate_OBJECT(state, _val, current)
 
   return out
 end
+
 
 -- A required array (list) value (contents not validated).
 -- @param state (table) The validation state
@@ -1908,6 +1739,7 @@ local function validate_ARRAY(state, _val, current)
   return out
 end
 
+
 -- A required function value.
 -- @param state (table) The validation state
 -- @param _val (any) The value to validate (unused)
@@ -1925,6 +1757,7 @@ local function validate_FUNCTION(state, _val, current)
   return out
 end
 
+
 -- Allow any value.
 -- @param state (table) The validation state
 -- @param _val (any) The value to validate (unused)
@@ -1933,6 +1766,7 @@ end
 local function validate_ANY(state, _val, current)
   return getprop(current, state.key)
 end
+
 
 -- Specify child values for map or list.
 -- Map syntax: {'`$CHILD`': child-template }
@@ -2018,10 +1852,12 @@ local function validate_CHILD(state, _val, current)
   return UNDEF
 end
 
+
 ----------------------------------------------------------
--- Forward declaration for validate to resolve circular dependency
+-- Forward declaration for validate to resolve lack of function hoisting
 ----------------------------------------------------------
 local validate
+
 
 -- Match at least one of the specified shapes.
 -- Syntax: ['`$ONE`', alt0, alt1, ...]
@@ -2109,6 +1945,7 @@ local function validate_ONE(state, _val, current, _ref, store)
         current, 'V0210'))
   end
 end
+
 
 -- Match exactly one of the specified values.
 -- Syntax: ['`$EXACT`', val1, val2, ...]
@@ -2273,6 +2110,7 @@ _validation = function(pval, key, parent, state, current, _store)
   end
 end
 
+
 -- Validate a data structure against a shape specification.  The shape
 -- specification follows the "by example" principle.  Plain data in
 -- the shape is treated as default values that also specify the
@@ -2344,6 +2182,192 @@ validate = function(data, spec, extra, collecterrs)
   return out
 end
 
+
+-- Internal utilities
+-- ==================
+
+
+-- Set  state.key property of state.parent node, ensuring reference consistency
+-- when needed by implementation language.
+-- @param state (table) The injection state
+-- @param val (any) The value to set
+-- @return (any) The modified parent
+_setparentprop = function(state, val)
+  setprop(state.parent, state.key, val)
+end
+
+
+-- Update all references to target in state.nodes.
+-- @param state (table) The injection state
+-- @param target (any) The target node to update
+-- @param tkey (string) The key to set in the target
+-- @param tval (any) The value to set in the target
+_updateAncestors = function(_state, target, tkey, tval)
+  -- SetProp is sufficient in Lua as target reference remains consistent 
+  -- even for lists.
+  setprop(target, tkey, tval)
+end
+
+
+-- Build a type validation error message.
+-- @param path (any) Path to the invalid value
+-- @param needtype (string) Expected type
+-- @param vt (string) Actual type
+-- @param v (any) The invalid value
+-- @param whence (string) The source of the error
+-- @return (string) Formatted error message
+_invalidTypeMsg = function(path, needtype, vt, v, whence)
+  local vs = (v == nil or v == "null") and 'no value' or stringify(v)
+  local msg = 'Expected ' .. (1 < #path and ('field ' .. pathify(path, 1)
+    .. ' to be ') or '') .. needtype .. ', but found ' .. ((v ~= nil and v ~= "null")
+    and (vt .. ': ') or '') .. vs
+
+  -- Uncomment to help debug validation errors.
+  -- msg = msg .. ' [' .. whence .. ']'
+  msg = msg .. '.'
+
+  return msg
+end
+
+
+-- Default inject handler for transforms. If the path resolves to a function,
+-- call the function passing the injection state. This is how transforms operate.
+-- @param state (table) The injection state
+-- @param val (any) The value being injected
+-- @param current (any) The current context
+-- @param ref (string) The reference string
+-- @param store (table) The data store
+-- @return (any) The processed value
+_injecthandler = function(state, val, current, ref, store)
+  -- Check if it's a command by checking if it's a function and starts with $
+  local iscmd = isfunc(val) and (UNDEF == ref or ref:sub(1, 1) == S_DS)
+
+  -- Handle commands with numeric suffixes (e.g., $COPY2, $MERGE3)
+  if ref and not iscmd then
+    -- Extract the base command name without numeric suffix
+    local base_command = ref:match("^(%$[A-Z]+)%d*$")
+
+    if base_command and store[base_command] then
+      val = store[base_command]
+      iscmd = true
+    end
+  end
+
+  -- Only call val function if it is a special command ($NAME format).
+  if iscmd then
+    -- Execute the command function
+    val = val(state, val, current, ref, store)
+
+    -- Update parent with value. Ensures references remain in node tree.
+  elseif S_MVAL == state.mode and state.full then
+    setprop(state.parent, state.key, val)
+  end
+
+  return val
+end
+
+
+-- Inject store values into a string. Not a public utility - used by
+-- `inject`.  Inject are marked with `path` where path is resolved
+-- with getpath against the store or current (if defined)
+-- arguments. See `getpath`.  Custom injection handling can be
+-- provided by state.handler (this is used for transform functions).
+-- The path can also have the special syntax $NAME999 where NAME is
+-- upper case letters only, and 999 is any digits, which are
+-- discarded. This syntax specifies the name of a transform, and
+-- optionally allows transforms to be ordered by alphanumeric sorting.
+-- @param val (string) The string to inject into
+-- @param store (table) The data store
+-- @param current (any) Current context
+-- @param state (table) The injection state
+-- @return (any) The injected result
+_injectstr = function(val, store, current, state)
+  -- Can't inject into non-strings
+  if type(val) ~= S_string then
+    return S_MT
+  end
+
+  -- Pattern examples: "`a.b.c`", "`$NAME`", "`$NAME1`"
+  -- Match for full value wrapped in backticks
+  local full_match = val:match("^`([^`]+)`$")
+
+  -- Full string of the val is an injection.
+  if full_match then
+    if state then
+      state.full = true
+    end
+
+    local pathref = full_match
+
+    -- Special escapes inside injection.
+    if #pathref > 3 then
+      pathref = pathref:gsub("%$BT", S_BT):gsub("%$DS", S_DS)
+    end
+
+    -- Get the extracted path reference.
+    local out = getpath(pathref, store, current, state)
+    return out
+  end
+
+  -- Handle partial injections in the string
+  local out = val:gsub("`([^`]+)`", function(ref)
+    -- Special escapes inside injection.
+    if #ref > 3 then
+      ref = ref:gsub("%$BT", S_BT):gsub("%$DS", S_DS)
+    end
+
+    if state then
+      state.full = false
+    end
+
+    local found = getpath(ref, store, current, state)
+
+    -- Ensure inject value is a string.
+    if found == UNDEF then
+      return S_MT
+    elseif type(found) == "table" then
+      -- Handle maps and arrays (tables in Lua) by converting to JSON
+      local dkjson = require("dkjson")
+
+      -- Ensure proper encoding based on the table type
+      local mt = getmetatable(found)
+      if mt and mt.__jsontype then
+        -- Use the existing jsontype from metatable
+      elseif islist(found) then
+        -- Set array jsontype for list-like tables
+        setmetatable(found, {
+          __jsontype = "array"
+        })
+      elseif ismap(found) then
+        -- Set object jsontype for map-like tables
+        setmetatable(found, {
+          __jsontype = "object"
+        })
+      end
+
+      -- Convert to JSON
+      local ok, result = pcall(dkjson.encode, found)
+      if ok and result then
+        return result
+      else
+        -- More graceful fallback
+        return (islist(found) and "[...]" or "{...}")
+      end
+    else
+      return tostring(found)
+    end
+  end)
+
+  -- Also call the state handler on the entire string
+  if state ~= nil and isfunc(state.handler) then
+    state.full = true
+    out = state.handler(state, out, current, val, store)
+  end
+
+  return out
+end
+
+
 -- Define the StructUtility "class"
 local StructUtility = {}
 StructUtility.__index = StructUtility
@@ -2380,10 +2404,6 @@ StructUtility.typify = typify
 StructUtility.validate = validate
 StructUtility.walk = walk
 
-----------------------------------------------------------
--- Module Export
-----------------------------------------------------------
-
 return {
   StructUtility = StructUtility,
   clone = clone,
@@ -2391,7 +2411,6 @@ return {
   escurl = escurl,
   getpath = getpath,
   getprop = getprop,
-  strkey = strkey,
   haskey = haskey,
   inject = inject,
   isempty = isempty,
@@ -2404,11 +2423,12 @@ return {
   joinurl = joinurl,
   keysof = keysof,
   merge = merge,
+  pathify = pathify,
   setprop = setprop,
+  strkey = strkey,
   stringify = stringify,
   transform = transform,
-  validate = validate,
   typify = typify,
+  validate = validate,
   walk = walk,
-  pathify = pathify
 }
