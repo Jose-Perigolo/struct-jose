@@ -20,7 +20,8 @@ function SDK:new(opts)
     check = function(ctx)
       return {
         zed = "ZED" ..
-            (instance._opts == nil and "" or (instance._opts.foo == nil and "" or instance._opts.foo)) ..
+            (instance._opts == nil and "" or
+              (instance._opts.foo == nil and "" or instance._opts.foo)) ..
             "_" ..
             (ctx.meta and ctx.meta.bar or "0")
       }

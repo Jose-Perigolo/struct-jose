@@ -1,4 +1,3 @@
-local inspect = require("inspect")
 --[[
   Runner utility module for executing JSON-specified tests.
   This is a Lua implementation matching the TypeScript version in runner.ts.
@@ -6,6 +5,7 @@ local inspect = require("inspect")
 local json = require("dkjson")
 local lfs = require("lfs")
 local luassert = require("luassert")
+local inspect = require("inspect")
 
 -- Constants
 local NULLMARK = "__NULL__"
@@ -260,11 +260,10 @@ local function resolveClients(client, spec, store, structUtils)
   if spec.DEF and spec.DEF.client then
     for cn in pairs(spec.DEF.client) do
       local cdef = spec.DEF.client[cn]
-      local copts = cdef.test.opts or {}
+      local copts = cdef.test.options or {}
       if structUtils.ismap(store) and structUtils.inject then
         structUtils.inject(copts, store)
       end
-
       -- Use the tester method on the base client to create new test clients
       clients[cn] = client:tester(copts)
     end
@@ -328,6 +327,12 @@ local function handleError(entry, err, structUtils)
     fail("ERROR MATCH: [" .. structUtils.stringify(entry_err) .. "] <=> [" ..
       err_message .. "]")
   else
+    -- json enconde does not support type functions, which the client might
+    -- methods
+    if entry.ctx.client then
+      fail((err.stack or err_message) .. "\n\nENTRY: " .. inspect(entry))
+      return
+    end
     fail((err.stack or err_message) .. "\n\nENTRY: " .. json.encode(entry, {
       indent = true
     }))
