@@ -126,13 +126,16 @@ describe("struct", function()
     runset(minorSpec.isnode, isnode)
   end)
 
+
   test("minor-ismap", function()
     runset(minorSpec.ismap, ismap)
   end)
 
+
   test("minor-islist", function()
     runset(minorSpec.islist, islist)
   end)
+
 
   test("minor-iskey", function()
     runsetflags(minorSpec.iskey, {
@@ -140,17 +143,20 @@ describe("struct", function()
     }, iskey)
   end)
 
+
   test("minor-strkey", function()
     runsetflags(minorSpec.strkey, {
       null = false
     }, strkey)
   end)
 
+
   test("minor-isempty", function()
     runsetflags(minorSpec.isempty, {
       null = false
     }, isempty)
   end)
+
 
   test("minor-isfunc", function()
     runset(minorSpec.isfunc, isfunc)
@@ -165,6 +171,7 @@ describe("struct", function()
       return nil
     end), true)
   end)
+
 
   test("minor-clone", function()
     runsetflags(minorSpec.clone, {
@@ -183,9 +190,11 @@ describe("struct", function()
     assert.are.same(original, copied)
   end)
 
+
   test("minor-escre", function()
     runset(minorSpec.escre, escre)
   end)
+
 
   test("minor-escurl", function()
     runset(minorSpec.escurl, function(vin)
@@ -193,6 +202,7 @@ describe("struct", function()
       return escurl(vin):gsub("+", "%%20")
     end)
   end)
+
 
   test("minor-stringify", function()
     runset(minorSpec.stringify, function(vin)
@@ -203,6 +213,7 @@ describe("struct", function()
       end
     end)
   end)
+
 
   test('minor-pathify', function()
     runsetflags(minorSpec.pathify, {
@@ -221,9 +232,11 @@ describe("struct", function()
     end)
   end)
 
+
   test("minor-items", function()
     runset(minorSpec.items, items)
   end)
+
 
   test("minor-getprop", function()
     runsetflags(minorSpec.getprop, {
@@ -237,6 +250,7 @@ describe("struct", function()
     end)
   end)
 
+
   test("minor-edge-getprop", function()
     local strarr = { "a", "b", "c", "d", "e" }
     assert.same(getprop(strarr, 2), "c")
@@ -247,11 +261,13 @@ describe("struct", function()
     assert.same(getprop(intarr, "2"), 5)
   end)
 
+
   test("minor-setprop", function()
     runset(minorSpec.setprop, function(vin)
       return setprop(vin.parent, vin.key, vin.val)
     end)
   end)
+
 
   test("minor-edge-setprop", function()
     local strarr0 = { "a", "b", "c", "d", "e" }
@@ -265,6 +281,7 @@ describe("struct", function()
     assert.same({ 2, 3, 555, 7, 11 }, setprop(intarr1, "2", 555))
   end)
 
+
   test("minor-haskey", function()
     runsetflags(minorSpec.haskey, {
       null = false
@@ -273,9 +290,11 @@ describe("struct", function()
     end)
   end)
 
+
   test("minor-keysof", function()
     runset(minorSpec.keysof, keysof)
   end)
+
 
   test("minor-joinurl", function()
     runsetflags(minorSpec.joinurl, {
@@ -283,11 +302,13 @@ describe("struct", function()
     }, joinurl)
   end)
 
+
   test("minor-typify", function()
     runsetflags(minorSpec.typify, {
       null = false
     }, typify)
   end)
+
 
   ----------------------------------------------------------
   -- Walk Tests
@@ -309,6 +330,7 @@ describe("struct", function()
     assert.same(log, test.out)
   end)
 
+
   test("walk-basic", function()
     local function walkpath(_key, val, _parent, path)
       if type(val) == "string" then
@@ -322,6 +344,7 @@ describe("struct", function()
     end)
   end)
 
+
   ----------------------------------------------------------
   -- Merge Tests
   ----------------------------------------------------------
@@ -331,17 +354,21 @@ describe("struct", function()
     assert.same(test.out, merge(test['in']))
   end)
 
+
   test("merge-cases", function()
     runset(mergeSpec.cases, merge)
   end)
+
 
   test("merge-array", function()
     runset(mergeSpec.array, merge)
   end)
 
+
   test("merge-integrity", function()
     runset(mergeSpec.integrity, merge)
   end)
+
 
   test("merge-special", function()
     local f0 = function()
@@ -366,6 +393,7 @@ describe("struct", function()
     }))))
   end)
 
+
   ----------------------------------------------------------
   -- GetPath Tests
   ----------------------------------------------------------
@@ -376,11 +404,13 @@ describe("struct", function()
     end)
   end)
 
+
   test("getpath-current", function()
     runset(getpathSpec.current, function(vin)
       return getpath(vin.path, vin.store, vin.current)
     end)
   end)
+
 
   test("getpath-state", function()
     -- Create state object for getpath testing
@@ -410,6 +440,7 @@ describe("struct", function()
     end)
   end)
 
+
   ----------------------------------------------------------
   -- Inject Tests
   ----------------------------------------------------------
@@ -419,6 +450,7 @@ describe("struct", function()
     assert.same(test.out, inject(test['in'].val, test['in'].store))
   end)
 
+
   test("inject-string", function()
     runset(injectSpec.string, function(vin)
       local result = inject(vin.val, vin.store, nullModifier, vin.current)
@@ -426,11 +458,13 @@ describe("struct", function()
     end)
   end)
 
+
   test("inject-deep", function()
     runset(injectSpec.deep, function(vin)
       return inject(vin.val, vin.store)
     end)
   end)
+
 
   ----------------------------------------------------------
   -- Transform Tests
@@ -442,11 +476,13 @@ describe("struct", function()
       test.out)
   end)
 
+
   test("transform-paths", function()
     runset(transformSpec.paths, function(vin)
       return transform(vin.data, vin.spec, vin.store)
     end)
   end)
+
 
   test("transform-cmds", function()
     runset(transformSpec.cmds, function(vin)
@@ -454,17 +490,20 @@ describe("struct", function()
     end)
   end)
 
+
   test("transform-each", function()
     runset(transformSpec.each, function(vin)
       return transform(vin.data, vin.spec, vin.store)
     end)
   end)
 
+
   test("transform-pack", function()
     runset(transformSpec.pack, function(vin)
       return transform(vin.data, vin.spec, vin.store)
     end)
   end)
+
 
   test("transform-modify", function()
     runset(transformSpec.modify, function(vin)
@@ -477,6 +516,7 @@ describe("struct", function()
       end)
     end)
   end)
+
 
   test("transform-extra", function()
     -- Test advanced transform functionality
@@ -498,6 +538,7 @@ describe("struct", function()
       c = 'C'
     })
   end)
+
 
   test("transform-funcval", function()
     -- Test function handling in transform
@@ -531,6 +572,7 @@ describe("struct", function()
     })
   end)
 
+
   ----------------------------------------------------------
   -- Validate Tests
   ----------------------------------------------------------
@@ -541,11 +583,13 @@ describe("struct", function()
     end)
   end)
 
+
   test("validate-child", function()
     runset(validateSpec.child, function(vin)
       return validate(vin.data, vin.spec)
     end)
   end)
+
 
   test("validate-one", function()
     runset(validateSpec.one, function(vin)
@@ -553,17 +597,20 @@ describe("struct", function()
     end)
   end)
 
+
   test("validate-exact", function()
     runset(validateSpec.exact, function(vin)
       return validate(vin.data, vin.spec)
     end)
   end)
 
+
   test("validate-invalid", function()
     runsetflags(validateSpec.invalid, { null = false }, function(vin)
       return validate(vin.data, vin.spec)
     end)
   end)
+
 
   test("validate-custom", function()
     -- Test custom validation functions
