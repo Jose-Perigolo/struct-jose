@@ -1,9 +1,3 @@
---[[
-  Client test suite for the struct module.
-  This matches the structure and tests found in client.test.ts.
-  Run with: busted client_test.lua
-]]
-
 package.path = package.path .. ";./test/?.lua"
 
 local runnerModule = require("runner")

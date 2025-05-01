@@ -1,16 +1,11 @@
---[[
-  Runner utility module for executing JSON-specified tests.
-  This is a Lua implementation matching the TypeScript version in runner.ts.
-]]
 local json = require("dkjson")
 local lfs = require("lfs")
 local luassert = require("luassert")
 local inspect = require("inspect")
 
--- Constants
 local NULLMARK = "__NULL__"
-local UNDEFMARK = "__UNDEF__"   -- Value is not present (thus, undefined)
-local EXISTSMARK = "__EXISTS__" -- Value exists (not undefined)
+local UNDEFMARK = "__UNDEF__"
+local EXISTSMARK = "__EXISTS__"
 
 ----------------------------------------------------------
 -- Utility Functions

@@ -1,4 +1,3 @@
--- Import the StructUtility equivalent
 local StructUtility = require("src.struct").StructUtility
 
 -- Define the SDK "class"
@@ -10,7 +9,10 @@ function SDK:new(opts)
   -- Create a new instance (object)
   local instance = setmetatable({}, SDK)
 
-  -- Initialize private fields
+  -- Initialize fields
+  -- Lua does not have a built-in way to define private variables,
+  -- but we can use a convention of prefixing with an underscore
+  -- to indicate that these are intended to be private
   instance._opts = opts or {}
   instance._utility = {
     struct = StructUtility:new(),
@@ -31,23 +33,19 @@ function SDK:new(opts)
   return instance
 end
 
--- Static method: test
-function SDK.test(opts)
+function SDK:test(opts)
   local sdkInstance = SDK:new(opts)
   return sdkInstance
 end
 
--- Instance method: tester
 function SDK:tester(opts)
   return SDK:new(opts or self._opts)
 end
 
--- Instance method: utility
 function SDK:utility()
   return self._utility
 end
 
--- Return the SDK class
 return {
   SDK = SDK
 }

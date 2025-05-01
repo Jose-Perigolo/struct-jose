@@ -2271,8 +2271,6 @@ _validation = function(pval, key, parent, state, current, _store)
     -- Spec value was a default, copy over data
     setprop(parent, key, cval)
   end
-
-  return
 end
 
 -- Validate a data structure against a shape specification.  The shape

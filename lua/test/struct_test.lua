@@ -1,23 +1,13 @@
-local inspect = require("inspect")
---[[
-  Test suite for the struct module.
-  This matches the structure and tests found in struct.test.ts.
-  Run with: busted struct_test.lua
-]]
--- Update package.path to include the current directory for module loading
 package.path = package.path .. ";./test/?.lua"
 
 local assert = require("luassert")
 
--- Import the runner module
 local runnerModule = require("runner")
 local makeRunner, nullModifier, NULLMARK = runnerModule.makeRunner,
     runnerModule.nullModifier, runnerModule.NULLMARK
 
--- Import the SDK module
 local SDK = require("sdk").SDK
 
--- Fix the path to the test JSON file
 local TEST_JSON_FILE = "../build/test/test.json"
 
 ----------------------------------------------------------
