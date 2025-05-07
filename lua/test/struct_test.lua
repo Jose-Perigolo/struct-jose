@@ -1,69 +1,24 @@
---[[
-  Test suite for the struct module.
-  This matches the structure and tests found in struct.test.ts.
-  Run with: busted struct_test.lua
-]] package.path = package.path .. ";./test/?.lua"
+package.path = package.path .. ";./test/?.lua"
 
 local assert = require("luassert")
 
--- Import the runner module
 local runnerModule = require("runner")
-local NULLMARK, nullModifier, runner = runnerModule.NULLMARK,
-  runnerModule.nullModifier, runnerModule.runner
+local makeRunner, nullModifier, NULLMARK = runnerModule.makeRunner,
+    runnerModule.nullModifier, runnerModule.NULLMARK
 
--- Import the struct module functions
-local struct = require("struct")
+local SDK = require("sdk").SDK
 
--- Extract functions from the struct module for testing
-local clone = struct.clone
-local escre = struct.escre
-local escurl = struct.escurl
-local getpath = struct.getpath
-local getprop = struct.getprop
-local strkey = struct.strkey
-local inject = struct.inject
-local isempty = struct.isempty
-local isfunc = struct.isfunc
-local iskey = struct.iskey
-local islist = struct.islist
-local ismap = struct.ismap
-local isnode = struct.isnode
-local items = struct.items
-local haskey = struct.haskey
-local keysof = struct.keysof
-local merge = struct.merge
-local setprop = struct.setprop
-local stringify = struct.stringify
-local transform = struct.transform
-local typify = struct.typify
-local walk = struct.walk
-local validate = struct.validate
-local joinurl = struct.joinurl
-local pathify = struct.pathify
+local TEST_JSON_FILE = "../build/test/test.json"
 
 ----------------------------------------------------------
 -- Helper Functions
 ----------------------------------------------------------
 
--- Modifier function for walk tests (appends path to string values)
--- @param _key (any) The current key (unused)
--- @param val (any) The current value
--- @param _parent (any) The parent object (unused)
--- @param path (table) The current path
--- @return (any) Modified value or original value
-local function walkpath(_key, val, _parent, path)
-  if type(val) == "string" then
-    return val .. "~" .. table.concat(path, ".")
-  else
-    return val
-  end
-end
-
 -- Helper function to create an array-like table with metatable
 -- @param ... (any) Variable arguments to include in array
 -- @return (table) Table with array metatable
 local function array(...)
-  local t = {...}
+  local t = { ... }
   return setmetatable(t, {
     __jsontype = "array"
   })
@@ -73,7 +28,8 @@ end
 -- @param t (table) The table to convert to an object (optional)
 -- @return (table) Table with object metatable
 local function object(t)
-  return setmetatable(t or {}, {
+  t = t or {}
+  return setmetatable(t, {
     __jsontype = "object"
   })
 end
@@ -83,12 +39,44 @@ end
 ----------------------------------------------------------
 
 describe("struct", function()
-  -- Initialize test runner with the struct specs
-  local runpack = runner("struct", {}, "../build/test/test.json")
-  local spec, runset, runsetflags = runpack.spec, runpack.runset,
-    runpack.runsetflags
+  local runner = makeRunner(TEST_JSON_FILE, SDK:test())
 
+  local runnerStruct = runner('struct')
+  local spec, runset, runsetflags, client = runnerStruct.spec,
+      runnerStruct.runset, runnerStruct.runsetflags, runnerStruct.client
+
+  local struct_util = client:utility().struct
   -- Extract test specifications for different function groups
+  local clone = struct_util.clone
+  local escre = struct_util.escre
+  local escurl = struct_util.escurl
+  local getpath = struct_util.getpath
+  local getprop = struct_util.getprop
+
+  local haskey = struct_util.haskey
+  local inject = struct_util.inject
+  local isempty = struct_util.isempty
+  local isfunc = struct_util.isfunc
+  local iskey = struct_util.iskey
+
+  local islist = struct_util.islist
+  local ismap = struct_util.ismap
+  local isnode = struct_util.isnode
+  local items = struct_util.items
+  local joinurl = struct_util.joinurl
+
+  local keysof = struct_util.keysof
+  local merge = struct_util.merge
+  local pathify = struct_util.pathify
+  local setprop = struct_util.setprop
+  local strkey = struct_util.strkey
+
+  local stringify = struct_util.stringify
+  local transform = struct_util.transform
+  local typify = struct_util.typify
+  local validate = struct_util.validate
+  local walk = struct_util.walk
+
   local minorSpec = spec.minor
   local walkSpec = spec.walk
   local mergeSpec = spec.merge
@@ -138,13 +126,16 @@ describe("struct", function()
     runset(minorSpec.isnode, isnode)
   end)
 
+
   test("minor-ismap", function()
     runset(minorSpec.ismap, ismap)
   end)
 
+
   test("minor-islist", function()
     runset(minorSpec.islist, islist)
   end)
+
 
   test("minor-iskey", function()
     runsetflags(minorSpec.iskey, {
@@ -152,17 +143,20 @@ describe("struct", function()
     }, iskey)
   end)
 
+
   test("minor-strkey", function()
     runsetflags(minorSpec.strkey, {
       null = false
     }, strkey)
   end)
 
+
   test("minor-isempty", function()
     runsetflags(minorSpec.isempty, {
       null = false
     }, isempty)
   end)
+
 
   test("minor-isfunc", function()
     runset(minorSpec.isfunc, isfunc)
@@ -177,6 +171,7 @@ describe("struct", function()
       return nil
     end), true)
   end)
+
 
   test("minor-clone", function()
     runsetflags(minorSpec.clone, {
@@ -195,13 +190,19 @@ describe("struct", function()
     assert.are.same(original, copied)
   end)
 
+
   test("minor-escre", function()
     runset(minorSpec.escre, escre)
   end)
 
+
   test("minor-escurl", function()
-    runset(minorSpec.escurl, escurl)
+    runset(minorSpec.escurl, function(vin)
+      -- Ensure spaces are properly replaced like in the Go implementation
+      return escurl(vin):gsub("+", "%%20")
+    end)
   end)
+
 
   test("minor-stringify", function()
     runset(minorSpec.stringify, function(vin)
@@ -212,6 +213,7 @@ describe("struct", function()
       end
     end)
   end)
+
 
   test('minor-pathify', function()
     runsetflags(minorSpec.pathify, {
@@ -230,9 +232,11 @@ describe("struct", function()
     end)
   end)
 
+
   test("minor-items", function()
     runset(minorSpec.items, items)
   end)
+
 
   test("minor-getprop", function()
     runsetflags(minorSpec.getprop, {
@@ -246,46 +250,51 @@ describe("struct", function()
     end)
   end)
 
+
   test("minor-edge-getprop", function()
-    local strarr = {"a", "b", "c", "d", "e"}
+    local strarr = { "a", "b", "c", "d", "e" }
     assert.same(getprop(strarr, 2), "c")
     assert.same(getprop(strarr, "2"), "c")
 
-    local intarr = {2, 3, 5, 7, 11}
+    local intarr = { 2, 3, 5, 7, 11 }
     assert.same(getprop(intarr, 2), 5)
     assert.same(getprop(intarr, "2"), 5)
   end)
 
+
   test("minor-setprop", function()
-    runsetflags(minorSpec.setprop, {
-      null = false
-    }, function(vin)
+    runset(minorSpec.setprop, function(vin)
       return setprop(vin.parent, vin.key, vin.val)
     end)
   end)
 
-  test("minor-edge-setprop", function()
-    local strarr0 = {"a", "b", "c", "d", "e"}
-    local strarr1 = {"a", "b", "c", "d", "e"}
-    assert.same({"a", "b", "C", "d", "e"}, setprop(strarr0, 2, "C"))
-    assert.same({"a", "b", "CC", "d", "e"}, setprop(strarr1, "2", "CC"))
 
-    local intarr0 = {2, 3, 5, 7, 11}
-    local intarr1 = {2, 3, 5, 7, 11}
-    assert.same({2, 3, 55, 7, 11}, setprop(intarr0, 2, 55))
-    assert.same({2, 3, 555, 7, 11}, setprop(intarr1, "2", 555))
+  test("minor-edge-setprop", function()
+    local strarr0 = { "a", "b", "c", "d", "e" }
+    local strarr1 = { "a", "b", "c", "d", "e" }
+    assert.same({ "a", "b", "C", "d", "e" }, setprop(strarr0, 2, "C"))
+    assert.same({ "a", "b", "CC", "d", "e" }, setprop(strarr1, "2", "CC"))
+
+    local intarr0 = { 2, 3, 5, 7, 11 }
+    local intarr1 = { 2, 3, 5, 7, 11 }
+    assert.same({ 2, 3, 55, 7, 11 }, setprop(intarr0, 2, 55))
+    assert.same({ 2, 3, 555, 7, 11 }, setprop(intarr1, "2", 555))
   end)
 
-  -- FIX
-  -- test("minor-haskey", function()
-  --   runsetflags(minorSpec.haskey, {
-  --     null = false
-  --   }, haskey)
-  -- end)
+
+  test("minor-haskey", function()
+    runsetflags(minorSpec.haskey, {
+      null = false
+    }, function(vin)
+      return haskey(vin.src, vin.key)
+    end)
+  end)
+
 
   test("minor-keysof", function()
     runset(minorSpec.keysof, keysof)
   end)
+
 
   test("minor-joinurl", function()
     runsetflags(minorSpec.joinurl, {
@@ -293,11 +302,13 @@ describe("struct", function()
     }, joinurl)
   end)
 
+
   test("minor-typify", function()
     runsetflags(minorSpec.typify, {
       null = false
     }, typify)
   end)
+
 
   ----------------------------------------------------------
   -- Walk Tests
@@ -311,7 +322,7 @@ describe("struct", function()
     local function walklog(key, val, parent, path)
       table.insert(log,
         "k=" .. stringify(key) .. ", v=" .. stringify(val) .. ", p=" ..
-          stringify(parent) .. ", t=" .. pathify(path))
+        stringify(parent) .. ", t=" .. pathify(path))
       return val
     end
 
@@ -319,11 +330,20 @@ describe("struct", function()
     assert.same(log, test.out)
   end)
 
+
   test("walk-basic", function()
+    local function walkpath(_key, val, _parent, path)
+      if type(val) == "string" then
+        return val .. "~" .. table.concat(path, ".")
+      else
+        return val
+      end
+    end
     runset(walkSpec.basic, function(vin)
       return walk(vin, walkpath)
     end)
   end)
+
 
   ----------------------------------------------------------
   -- Merge Tests
@@ -334,13 +354,21 @@ describe("struct", function()
     assert.same(test.out, merge(test['in']))
   end)
 
+
   test("merge-cases", function()
     runset(mergeSpec.cases, merge)
   end)
 
+
   test("merge-array", function()
     runset(mergeSpec.array, merge)
   end)
+
+
+  test("merge-integrity", function()
+    runset(mergeSpec.integrity, merge)
+  end)
+
 
   test("merge-special", function()
     local f0 = function()
@@ -365,6 +393,7 @@ describe("struct", function()
     }))))
   end)
 
+
   ----------------------------------------------------------
   -- GetPath Tests
   ----------------------------------------------------------
@@ -375,11 +404,13 @@ describe("struct", function()
     end)
   end)
 
+
   test("getpath-current", function()
     runset(getpathSpec.current, function(vin)
       return getpath(vin.path, vin.store, vin.current)
     end)
   end)
+
 
   test("getpath-state", function()
     -- Create state object for getpath testing
@@ -395,19 +426,20 @@ describe("struct", function()
       mode = 'val',
       full = false,
       keyI = 0,
-      keys = {'$TOP'},
+      keys = { '$TOP' },
       key = '$TOP',
       val = '',
       parent = {},
-      path = {'$TOP'},
-      nodes = {{}},
+      path = array('$TOP'),
+      nodes = array({}),
       base = '$TOP',
-      errs = {}
+      errs = array()
     }
     runset(spec.getpath.state, function(vin)
       return getpath(vin.path, vin.store, vin.current, state)
     end)
   end)
+
 
   ----------------------------------------------------------
   -- Inject Tests
@@ -418,6 +450,7 @@ describe("struct", function()
     assert.same(test.out, inject(test['in'].val, test['in'].store))
   end)
 
+
   test("inject-string", function()
     runset(injectSpec.string, function(vin)
       local result = inject(vin.val, vin.store, nullModifier, vin.current)
@@ -425,11 +458,13 @@ describe("struct", function()
     end)
   end)
 
+
   test("inject-deep", function()
     runset(injectSpec.deep, function(vin)
       return inject(vin.val, vin.store)
     end)
   end)
+
 
   ----------------------------------------------------------
   -- Transform Tests
@@ -441,11 +476,13 @@ describe("struct", function()
       test.out)
   end)
 
+
   test("transform-paths", function()
     runset(transformSpec.paths, function(vin)
       return transform(vin.data, vin.spec, vin.store)
     end)
   end)
+
 
   test("transform-cmds", function()
     runset(transformSpec.cmds, function(vin)
@@ -453,17 +490,20 @@ describe("struct", function()
     end)
   end)
 
+
   test("transform-each", function()
     runset(transformSpec.each, function(vin)
       return transform(vin.data, vin.spec, vin.store)
     end)
   end)
 
+
   test("transform-pack", function()
     runset(transformSpec.pack, function(vin)
       return transform(vin.data, vin.spec, vin.store)
     end)
   end)
+
 
   test("transform-modify", function()
     runset(transformSpec.modify, function(vin)
@@ -476,6 +516,7 @@ describe("struct", function()
       end)
     end)
   end)
+
 
   test("transform-extra", function()
     -- Test advanced transform functionality
@@ -497,6 +538,7 @@ describe("struct", function()
       c = 'C'
     })
   end)
+
 
   test("transform-funcval", function()
     -- Test function handling in transform
@@ -530,82 +572,85 @@ describe("struct", function()
     })
   end)
 
+
   ----------------------------------------------------------
   -- Validate Tests
   ----------------------------------------------------------
 
---  FIX: error message text changed
---
---   test("validate-basic", function()
---     runset(validateSpec.basic, function(vin)
---       return validate(vin.data, vin.spec)
---     end)
---   end)
+  test("validate-basic", function()
+    runset(validateSpec.basic, function(vin)
+      return validate(vin.data, vin.spec)
+    end)
+  end)
 
---   test("validate-node", function()
---     runset(validateSpec.node, function(vin)
---       return validate(vin.data, vin.spec)
---     end)
---   end)
 
---   test("validate-custom", function()
---     -- Test custom validation functions
---     local errs = {}
---     local extra = {
---       ["$INTEGER"] = function(state, _val, current)
---         local key = state.key
---         local out = getprop(current, key)
---         local t = type(out)
+  test("validate-child", function()
+    runset(validateSpec.child, function(vin)
+      return validate(vin.data, vin.spec)
+    end)
+  end)
 
---         -- Verify the value is an integer
---         if t ~= "number" or out ~= math.floor(out) then
---           -- Build path string from state.path elements, starting at index 2
---           local path_parts = {}
---           for i = 2, #state.path do
---             table.insert(path_parts, tostring(state.path[i]))
---           end
---           local path_str = table.concat(path_parts, ".")
---           table.insert(state.errs, "Not an integer at " .. path_str .. ": " ..
---             tostring(out))
---           return nil
---         end
---         return out
---       end
---     }
 
---     local shape = {
---       a = "`$INTEGER`"
---     }
---     local out = validate({
---       a = 1
---     }, shape, extra, errs)
---     assert.same({
---       a = 1
---     }, out)
---     assert.equal(0, #errs)
+  test("validate-one", function()
+    runset(validateSpec.one, function(vin)
+      return validate(vin.data, vin.spec)
+    end)
+  end)
 
---     -- Reset errors array for the second test
---     errs = {}
---     out = validate({
---       a = "A"
---     }, shape, extra, errs)
---     assert.same({
---       a = "A"
---     }, out)
---     assert.same({"Not an integer at a: A"}, errs)
---   end)
 
+  test("validate-exact", function()
+    runset(validateSpec.exact, function(vin)
+      return validate(vin.data, vin.spec)
+    end)
+  end)
+
+
+  test("validate-invalid", function()
+    runsetflags(validateSpec.invalid, { null = false }, function(vin)
+      return validate(vin.data, vin.spec)
+    end)
+  end)
+
+
+  test("validate-custom", function()
+    -- Test custom validation functions
+    local errs = array()
+    local extra = {
+      ["$INTEGER"] = function(state, _val, current)
+        local key = state.key
+        local out = getprop(current, key)
+
+        local t = type(out)
+        -- Verify the value is an integer
+        if (t ~= "number") and (math.type(out) ~= "integer") then
+          -- Build path string from state.path elements, starting at index 2
+          local path_parts = {}
+          for i = 2, #state.path do
+            table.insert(path_parts, tostring(state.path[i]))
+          end
+          local path_str = table.concat(path_parts, ".")
+          table.insert(state.errs, "Not an integer at " .. path_str .. ": " ..
+            tostring(out))
+          return nil
+        end
+        return out
+      end
+    }
+
+    local shape = {
+      a = "`$INTEGER`"
+    }
+
+    local out = validate({
+      a = 1
+    }, shape, extra, errs)
+    assert.same({
+      a = 1
+    }, out)
+    assert.equal(0, #errs)
+
+    out = validate({ a = "A" }, shape, extra, errs)
+    assert.same({ a = "A" }, out)
+    assert.same(array("Not an integer at a: A"), errs)
+  end)
 end)
-
-----------------------------------------------------------
--- Client Tests
-----------------------------------------------------------
-
--- describe('client', function()
---   local runpack = runner('check', {}, '../build/test/test.json')
---   local spec, runset, subject = runpack.spec, runpack.runset, runpack.subject
-
---   test('client-check-basic', function()
---     runset(spec.basic, subject)
---   end)
--- end)
