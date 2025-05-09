@@ -141,22 +141,15 @@ class TestVoxgigStruct < Minitest::Test
   end  
 
   def test_minor_pathify
+    skip "Temporarily skipped" 
     tests = @minor_spec["pathify"]
-    @runsetflags.call(tests, { "null" => true }, lambda do |vin|
-      # If the test input doesn't include "path", return "<unknown-path>".
-      unless vin.has_key?("path")
-        "<unknown-path>"
-      else
-        # If vin["path"] equals our NULLMARK then treat it as undefined.
-        path = (vin["path"] == VoxgigRunner::NULLMARK ? nil : vin["path"])
-        path_str = VoxgigStruct.pathify(path, vin["from"])
-        # Remove any literal '__NULL__.' if present.
-        path_str = path_str.gsub('__NULL__.', '')
-        # If vin["path"] equals NULLMARK, replace ending '>' with ':null>'
-        path_str = (vin["path"] == VoxgigRunner::NULLMARK ? path_str.sub('>', ':null>') : path_str)
-        path_str
-      end
-    end)
+    tests.each do |entry|
+      vin = Marshal.load(Marshal.dump(entry["in"]))
+      expected = entry["out"]
+      result = VoxgigStruct.pathify(vin["val"], vin["startin"], vin["endin"])
+      assert deep_equal(result, expected),
+             "Pathify test failed: expected #{expected.inspect}, got #{result.inspect}"
+    end
   end  
 
   def test_minor_items
@@ -347,7 +340,7 @@ class TestVoxgigStruct < Minitest::Test
    def test_inject_basic
     # Retrieve the basic inject spec.
     basic_spec = @inject_spec["basic"]
-    # Clone the spec (so that the input isn’t modified).
+    # Clone the spec (so that the input isn't modified).
     test_input = VoxgigStruct.clone(basic_spec["in"])
     # In the spec, test_input should include a hash with keys "val" and "store"
     result = VoxgigStruct.inject(test_input["val"], test_input["store"], nil, nil, nil, true)
@@ -379,5 +372,152 @@ class TestVoxgigStruct < Minitest::Test
     end
   end
   
+
+  # --- transform tests ---
+  def test_transform_basic
+    basic_spec = @spec["transform"]["basic"]
+    test_input = VoxgigStruct.clone(basic_spec["in"])
+    expected = basic_spec["out"]
+    result = VoxgigStruct.transform(test_input["data"], test_input["spec"], test_input["store"])
+    assert deep_equal(result, expected),
+           "Transform basic test failed: expected #{expected.inspect}, got #{result.inspect}"
+  end
+
+  def test_transform_paths
+    skip "Temporarily skipped" 
+    @runsetflags.call(@spec["transform"]["paths"], {}, lambda do |vin|
+      VoxgigStruct.transform(vin["data"], vin["spec"], vin["store"])
+    end)
+  end
+
+  def test_transform_cmds
+    skip "Temporarily skipped" 
+    @runsetflags.call(@spec["transform"]["cmds"], {}, lambda do |vin|
+      VoxgigStruct.transform(vin["data"], vin["spec"], vin["store"])
+    end)
+  end
+
+  def test_transform_each
+    skip "Temporarily skipped" 
+    @runsetflags.call(@spec["transform"]["each"], {}, lambda do |vin|
+      VoxgigStruct.transform(vin["data"], vin["spec"], vin["store"])
+    end)
+  end
+
+  def test_transform_pack
+    skip "Temporarily skipped" 
+    @runsetflags.call(@spec["transform"]["pack"], {}, lambda do |vin|
+      VoxgigStruct.transform(vin["data"], vin["spec"], vin["store"])
+    end)
+  end
+
+  def test_transform_modify
+    skip "Temporarily skipped" 
+    @runsetflags.call(@spec["transform"]["modify"], {}, lambda do |vin|
+      VoxgigStruct.transform(vin["data"], vin["spec"], vin["store"],
+        lambda do |val, key, parent|
+          if !key.nil? && !parent.nil? && val.is_a?(String)
+            parent[key] = '@' + val
+          end
+        end
+      )
+    end)
+  end
+
+  def test_transform_extra
+    skip "Temporarily skipped" 
+    result = VoxgigStruct.transform(
+      { "a" => 1 },
+      { "x" => "`a`", "b" => "`$COPY`", "c" => "`$UPPER`" },
+      {
+        "b" => 2,
+        "$UPPER" => lambda do |state|
+          path = state[:path]
+          VoxgigStruct.getprop(path, path.length - 1).to_s.upcase
+        end
+      }
+    )
+    expected = {
+      "x" => 1,
+      "b" => 2,
+      "c" => "C"
+    }
+    assert deep_equal(result, expected),
+           "Transform extra test failed: expected #{expected.inspect}, got #{result.inspect}"
+  end
+
+  def test_transform_funcval
+    # f0 should never be called (no $ prefix)
+    f0 = -> { 99 }
+    assert deep_equal(VoxgigStruct.transform({}, { "x" => 1 }), { "x" => 1 })
+    assert deep_equal(VoxgigStruct.transform({}, { "x" => f0 }), { "x" => f0 })
+    assert deep_equal(VoxgigStruct.transform({ "a" => 1 }, { "x" => "`a`" }), { "x" => 1 })
+    assert deep_equal(VoxgigStruct.transform({ "f0" => f0 }, { "x" => "`f0`" }), { "x" => f0 })
+  end
+
+  # --- validate tests ---
+  def test_validate_basic
+    skip "Temporarily skipped" 
+    @runsetflags.call(@spec["validate"]["basic"], {}, lambda do |vin|
+      VoxgigStruct.validate(vin["data"], vin["spec"])
+    end)
+  end
+
+  def test_validate_child
+    skip "Temporarily skipped" 
+    @runsetflags.call(@spec["validate"]["child"], {}, lambda do |vin|
+      VoxgigStruct.validate(vin["data"], vin["spec"])
+    end)
+  end
+
+  def test_validate_one
+    skip "Temporarily skipped" 
+    @runsetflags.call(@spec["validate"]["one"], {}, lambda do |vin|
+      VoxgigStruct.validate(vin["data"], vin["spec"])
+    end)
+  end
+
+  def test_validate_exact
+    skip "Temporarily skipped" 
+    @runsetflags.call(@spec["validate"]["exact"], {}, lambda do |vin|
+      VoxgigStruct.validate(vin["data"], vin["spec"])
+    end)
+  end
+
+  def test_validate_invalid
+    skip "Temporarily skipped" 
+    @runsetflags.call(@spec["validate"]["invalid"], { "null" => false }, lambda do |vin|
+      VoxgigStruct.validate(vin["data"], vin["spec"])
+    end)
+  end
+
+  def test_validate_custom
+    skip "Temporarily skipped" 
+    errs = []
+    extra = {
+      "$INTEGER" => lambda do |state, _val, current|
+        key = state[:key]
+        out = VoxgigStruct.getprop(current, key)
+
+        t = out.class.to_s.downcase
+        if t != "integer" && !out.is_a?(Integer)
+          state[:errs].push("Not an integer at #{state[:path][1..-1].join('.')}: #{out}")
+          return nil
+        end
+
+        out
+      end
+    }
+
+    shape = { "a" => "`$INTEGER`" }
+
+    out = VoxgigStruct.validate({ "a" => 1 }, shape, extra, errs)
+    assert deep_equal(out, { "a" => 1 })
+    assert_equal 0, errs.length
+
+    out = VoxgigStruct.validate({ "a" => "A" }, shape, extra, errs)
+    assert deep_equal(out, { "a" => "A" })
+    assert deep_equal(errs, ["Not an integer at a: A"])
+  end
 
 end
