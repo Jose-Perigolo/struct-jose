@@ -203,26 +203,45 @@ module VoxgigStruct
     json
   end
 
-  def self.pathify(val, from = 0)
-    s_dt = S_DT
-    path = if islist(val)
-             val
-           elsif val.is_a?(String) || val.is_a?(Numeric)
-             [val]
-           end
+  def self.pathify(val, startin = nil, endin = nil)
+    pathstr = nil
 
-    start = (from.nil? || from < 0) ? 0 : from
-    if path
-      path = path[start..-1] || []
-      if path.empty?
-        "<root>"
-      else
-        valid_keys = path.select { |p| iskey(p) }
-        valid_keys.map { |p| p.is_a?(Numeric) ? p.floor.to_s : p.to_s.gsub('.', S_MT) }.join(s_dt)
-      end
+    path = if islist(val)
+      val
+    elsif val.is_a?(String)
+      [val]
+    elsif val.is_a?(Numeric)
+      [val]
     else
-      "<unknown-path#{S_CN}#{stringify(val,47)}>"
+      nil
     end
+
+    start = startin.nil? ? 0 : startin < 0 ? 0 : startin
+    end_idx = endin.nil? ? 0 : endin < 0 ? 0 : endin
+
+    if path && start >= 0
+      path = path[start..-end_idx-1]
+      if path.empty?
+        pathstr = '<root>'
+      else
+        pathstr = path
+          .select { |p| iskey(p) }
+          .map { |p|
+            if p.is_a?(Numeric)
+              S_MT + p.floor.to_s
+            else
+              p.gsub('.', S_MT)
+            end
+          }
+          .join(S_DT)
+      end
+    end
+
+    if pathstr.nil?
+      pathstr = '<unknown-path' + (val.nil? ? S_MT + 'null' : S_CN + stringify(val, 47)) + '>'
+    end
+
+    pathstr
   end
 
   def self.strkey(key = nil)
@@ -294,7 +313,7 @@ module VoxgigStruct
   #
   # deep_merge recursively combines two nodes.
   # For hashes, keys in b override those in a.
-  # For arrays, merge index-by-index; b’s element overrides a’s at that position,
+  # For arrays, merge index-by-index; b's element overrides a's at that position,
   # while preserving items that b does not provide.
   def self.deep_merge(a, b)
     if ismap(a) && ismap(b)
@@ -559,6 +578,602 @@ module VoxgigStruct
   def self._setparentprop(state, val)
     log("(_setparentprop) writing #{val.inspect} to #{state[:key]} in #{state[:parent].inspect}")
     setprop(state[:parent], state[:key], val)
+  end
+
+  # The transform_* functions are special command inject handlers (see Injector).
+
+  # Delete a key from a map or list.
+  def self.transform_delete(state, _val = nil, _current = nil, _ref = nil, _store = nil)
+    _setparentprop(state, nil)
+    nil
+  end
+
+  # Copy value from source data.
+  def self.transform_copy(state, _val = nil, current = nil, _ref = nil, _store = nil)
+    mode = state[:mode]
+    key = state[:key]
+
+    out = key
+    unless mode.start_with?('key')
+      out = getprop(current, key)
+      _setparentprop(state, out)
+    end
+
+    out
+  end
+
+  # As a value, inject the key of the parent node.
+  # As a key, defined the name of the key property in the source object.
+  def self.transform_key(state, _val = nil, current = nil, _ref = nil, _store = nil)
+    mode = state[:mode]
+    path = state[:path]
+    parent = state[:parent]
+
+    # Do nothing in val mode.
+    return nil unless mode == 'val'
+
+    # Key is defined by $KEY meta property.
+    keyspec = getprop(parent, '`$KEY`')
+    if keyspec != nil
+      setprop(parent, '`$KEY`', nil)
+      return getprop(current, keyspec)
+    end
+
+    # Key is defined within general purpose $META object.
+    getprop(getprop(parent, '`$META`'), 'KEY', getprop(path, path.length - 2))
+  end
+
+  # Store meta data about a node. Does nothing itself, just used by
+  # other injectors, and is removed when called.
+  def self.transform_meta(state, _val = nil, _current = nil, _ref = nil, _store = nil)
+    parent = state[:parent]
+    setprop(parent, '`$META`', nil)
+    nil
+  end
+
+  # Merge a list of objects into the current object.
+  # Must be a key in an object. The value is merged over the current object.
+  # If the value is an array, the elements are first merged using `merge`.
+  # If the value is the empty string, merge the top level store.
+  # Format: { '`$MERGE`': '`source-path`' | ['`source-paths`', ...] }
+  def self.transform_merge(state, _val = nil, current = nil, _ref = nil, _store = nil)
+    mode = state[:mode]
+    key = state[:key]
+    parent = state[:parent]
+
+    return key if mode == 'key:pre'
+
+    # Operate after child values have been transformed.
+    if mode == 'key:post'
+      args = getprop(parent, key)
+      args = args == '' ? [current['$TOP']] : args.is_a?(Array) ? args : [args]
+
+      # Remove the $MERGE command from a parent map.
+      _setparentprop(state, nil)
+
+      # Literals in the parent have precedence, but we still merge onto
+      # the parent object, so that node tree references are not changed.
+      mergelist = [parent, *args, clone(parent)]
+
+      merge(mergelist)
+
+      return key
+    end
+
+    # Ensures $MERGE is removed from parent list.
+    nil
+  end
+
+  # Convert a node to a list.
+  def self.transform_each(state, val, current, ref, store)
+    out = nil
+    if ismap(val)
+      out = val.values
+    elsif islist(val)
+      out = val
+    end
+    out
+  end
+
+  # Convert a node to a map.
+  def self.transform_pack(state, val, current, ref, store)
+    out = nil
+    if islist(val)
+      out = {}
+      val.each_with_index do |v, i|
+        k = v[S_KEY]
+        if k.nil?
+          k = i.to_s
+        end
+        out[k] = v
+      end
+    end
+    out
+  end
+
+  # Transform data using spec.
+  def self.transform(data, spec, extra = nil, modify = nil)
+    # Clone the spec so that the clone can be modified in place as the transform result.
+    spec = clone(spec)
+
+    extra_transforms = {}
+    extra_data = if extra.nil?
+      nil
+    else
+      items(extra).reduce({}) do |a, n|
+        if n[0].start_with?(S_DS)
+          extra_transforms[n[0]] = n[1]
+        else
+          a[n[0]] = n[1]
+        end
+        a
+      end
+    end
+
+    data_clone = merge([
+      isempty(extra_data) ? nil : clone(extra_data),
+      clone(data)
+    ])
+
+    # Define a top level store that provides transform operations.
+    store = {
+      # The inject function recognises this special location for the root of the source data.
+      # NOTE: to escape data that contains "`$FOO`" keys at the top level,
+      # place that data inside a holding map: { myholder: mydata }.
+      '$TOP' => data_clone,
+
+      # Escape backtick (this also works inside backticks).
+      '$BT' => -> { S_BT },
+
+      # Escape dollar sign (this also works inside backticks).
+      '$DS' => -> { S_DS },
+
+      # Insert current date and time as an ISO string.
+      '$WHEN' => -> { Time.now.iso8601 },
+
+      '$DELETE' => method(:transform_delete),
+      '$COPY' => method(:transform_copy),
+      '$KEY' => method(:transform_key),
+      '$META' => method(:transform_meta),
+      '$MERGE' => method(:transform_merge),
+      '$EACH' => method(:transform_each),
+      '$PACK' => method(:transform_pack),
+
+      # Custom extra transforms, if any.
+      **extra_transforms
+    }
+
+    out = inject(spec, store, modify, store)
+    out
+  end
+
+  # Update all references to target in state.nodes.
+  def self._update_ancestors(_state, target, tkey, tval)
+    # SetProp is sufficient in Ruby as target reference remains consistent even for lists.
+    setprop(target, tkey, tval)
+  end
+
+  # Build a type validation error message.
+  def self._invalid_type_msg(path, needtype, vt, v, _whence = nil)
+    vs = v.nil? ? 'no value' : stringify(v)
+
+    'Expected ' +
+      (path.length > 1 ? ('field ' + pathify(path, 1) + ' to be ') : '') +
+      needtype + ', but found ' +
+      (v.nil? ? '' : vt + ': ') + vs +
+      # Uncomment to help debug validation errors.
+      # ' [' + _whence + ']' +
+      '.'
+  end
+
+  # A required string value. NOTE: Rejects empty strings.
+  def self.validate_string(state, _val = nil, current = nil, _ref = nil, _store = nil)
+    out = getprop(current, state[:key])
+
+    t = typify(out)
+    if t != S_string
+      msg = _invalid_type_msg(state[:path], S_string, t, out, 'V1010')
+      state[:errs].push(msg)
+      return nil
+    end
+
+    if out == S_MT
+      msg = 'Empty string at ' + pathify(state[:path], 1)
+      state[:errs].push(msg)
+      return nil
+    end
+
+    out
+  end
+
+  # A required number value (int or float).
+  def self.validate_number(state, _val = nil, current = nil, _ref = nil, _store = nil)
+    out = getprop(current, state[:key])
+
+    t = typify(out)
+    if t != S_number
+      state[:errs].push(_invalid_type_msg(state[:path], S_number, t, out, 'V1020'))
+      return nil
+    end
+
+    out
+  end
+
+  # A required boolean value.
+  def self.validate_boolean(state, _val = nil, current = nil, _ref = nil, _store = nil)
+    out = getprop(current, state[:key])
+
+    t = typify(out)
+    if t != S_boolean
+      state[:errs].push(_invalid_type_msg(state[:path], S_boolean, t, out, 'V1030'))
+      return nil
+    end
+
+    out
+  end
+
+  # A required object (map) value (contents not validated).
+  def self.validate_object(state, _val = nil, current = nil, _ref = nil, _store = nil)
+    out = getprop(current, state[:key])
+
+    t = typify(out)
+    if t != S_object
+      state[:errs].push(_invalid_type_msg(state[:path], S_object, t, out, 'V1040'))
+      return nil
+    end
+
+    out
+  end
+
+  # A required array (list) value (contents not validated).
+  def self.validate_array(state, _val = nil, current = nil, _ref = nil, _store = nil)
+    out = getprop(current, state[:key])
+
+    t = typify(out)
+    if t != S_array
+      state[:errs].push(_invalid_type_msg(state[:path], S_array, t, out, 'V1050'))
+      return nil
+    end
+
+    out
+  end
+
+  # A required function value.
+  def self.validate_function(state, _val = nil, current = nil, _ref = nil, _store = nil)
+    out = getprop(current, state[:key])
+
+    t = typify(out)
+    if t != S_function
+      state[:errs].push(_invalid_type_msg(state[:path], S_function, t, out, 'V1060'))
+      return nil
+    end
+
+    out
+  end
+
+  # Allow any value.
+  def self.validate_any(state, _val = nil, current = nil, _ref = nil, _store = nil)
+    getprop(current, state[:key])
+  end
+
+  # Specify child values for map or list.
+  # Map syntax: {'`$CHILD`': child-template }
+  # List syntax: ['`$CHILD`', child-template ]
+  def self.validate_child(state, _val = nil, current = nil, _ref = nil, _store = nil)
+    mode = state[:mode]
+    key = state[:key]
+    parent = state[:parent]
+    keys = state[:keys]
+    path = state[:path]
+
+    # Map syntax.
+    if mode == S_MKEYPRE
+      childtm = getprop(parent, key)
+
+      # Get corresponding current object.
+      pkey = getprop(path, path.length - 2)
+      tval = getprop(current, pkey)
+
+      if tval.nil?
+        tval = {}
+      elsif !ismap(tval)
+        state[:errs].push(_invalid_type_msg(
+          state[:path][0..-2], S_object, typify(tval), tval, 'V0220'))
+        return nil
+      end
+
+      ckeys = keysof(tval)
+      ckeys.each do |ckey|
+        setprop(parent, ckey, clone(childtm))
+
+        # NOTE: modifying state! This extends the child value loop in inject.
+        keys.push(ckey)
+      end
+
+      # Remove $CHILD to cleanup output.
+      _setparentprop(state, nil)
+      return nil
+    end
+
+    # List syntax.
+    if mode == S_MVAL
+      if !islist(parent)
+        # $CHILD was not inside a list.
+        state[:errs].push('Invalid $CHILD as value')
+        return nil
+      end
+
+      childtm = getprop(parent, 1)
+
+      if current.nil?
+        # Empty list as default.
+        parent.clear
+        return nil
+      end
+
+      if !islist(current)
+        msg = _invalid_type_msg(
+          state[:path][0..-2], S_array, typify(current), current, 'V0230')
+        state[:errs].push(msg)
+        state[:keyI] = parent.length
+        return current
+      end
+
+      # Clone children and reset state key index.
+      # The inject child loop will now iterate over the cloned children,
+      # validating them against the current list values.
+      current.each_with_index { |_n, i| parent[i] = clone(childtm) }
+      parent.replace(current.map { |_n| clone(childtm) })
+      state[:keyI] = 0
+      out = getprop(current, 0)
+      return out
+    end
+
+    nil
+  end
+
+  # Match at least one of the specified shapes.
+  # Syntax: ['`$ONE`', alt0, alt1, ...]
+  def self.validate_one(state, _val = nil, current = nil, _ref = nil, store = nil)
+    mode = state[:mode]
+    parent = state[:parent]
+    path = state[:path]
+    keyI = state[:keyI]
+    nodes = state[:nodes]
+
+    # Only operate in val mode, since parent is a list.
+    if mode == S_MVAL
+      if !islist(parent) || keyI != 0
+        state[:errs].push('The $ONE validator at field ' +
+          pathify(state[:path], 1) +
+          ' must be the first element of an array.')
+        return
+      end
+
+      state[:keyI] = state[:keys].length
+
+      grandparent = nodes[nodes.length - 2]
+      grandkey = path[path.length - 2]
+
+      # Clean up structure, replacing [$ONE, ...] with current
+      setprop(grandparent, grandkey, current)
+      state[:path] = state[:path][0..-2]
+      state[:key] = state[:path][state[:path].length - 1]
+
+      tvals = parent[1..-1]
+      if tvals.empty?
+        state[:errs].push('The $ONE validator at field ' +
+          pathify(state[:path], 1) +
+          ' must have at least one argument.')
+        return
+      end
+
+      # See if we can find a match.
+      tvals.each do |tval|
+        # If match, then errs.length = 0
+        terrs = []
+
+        vstore = store.dup
+        vstore['$TOP'] = current
+        vcurrent = validate(current, tval, vstore, terrs)
+        setprop(grandparent, grandkey, vcurrent)
+
+        # Accept current value if there was a match
+        return if terrs.empty?
+      end
+
+      # There was no match.
+      valdesc = tvals
+        .map { |v| stringify(v) }
+        .join(', ')
+        .gsub(/`\$([A-Z]+)`/, &:downcase)
+
+      state[:errs].push(_invalid_type_msg(
+        state[:path],
+        (tvals.length > 1 ? 'one of ' : '') + valdesc,
+        typify(current), current, 'V0210'))
+    end
+  end
+
+  def self.validate_exact(state, _val = nil, current = nil, _ref = nil, _store = nil)
+    mode = state[:mode]
+    parent = state[:parent]
+    key = state[:key]
+    keyI = state[:keyI]
+    path = state[:path]
+    nodes = state[:nodes]
+
+    # Only operate in val mode, since parent is a list.
+    if mode == S_MVAL
+      if !islist(parent) || keyI != 0
+        state[:errs].push('The $EXACT validator at field ' +
+          pathify(state[:path], 1) +
+          ' must be the first element of an array.')
+        return
+      end
+
+      state[:keyI] = state[:keys].length
+
+      grandparent = nodes[nodes.length - 2]
+      grandkey = path[path.length - 2]
+
+      # Clean up structure, replacing [$EXACT, ...] with current
+      setprop(grandparent, grandkey, current)
+      state[:path] = state[:path][0..-2]
+      state[:key] = state[:path][state[:path].length - 1]
+
+      tvals = parent[1..-1]
+      if tvals.empty?
+        state[:errs].push('The $EXACT validator at field ' +
+          pathify(state[:path], 1) +
+          ' must have at least one argument.')
+        return
+      end
+
+      # See if we can find an exact value match.
+      currentstr = nil
+      tvals.each do |tval|
+        exactmatch = tval == current
+
+        if !exactmatch && isnode(tval)
+          currentstr ||= stringify(current)
+          tvalstr = stringify(tval)
+          exactmatch = tvalstr == currentstr
+        end
+
+        return if exactmatch
+      end
+
+      valdesc = tvals
+        .map { |v| stringify(v) }
+        .join(', ')
+        .gsub(/`\$([A-Z]+)`/, &:downcase)
+
+      state[:errs].push(_invalid_type_msg(
+        state[:path],
+        (state[:path].length > 1 ? '' : 'value ') +
+        'exactly equal to ' + (tvals.length == 1 ? '' : 'one of ') + valdesc,
+        typify(current), current, 'V0110'))
+    else
+      setprop(parent, key, nil)
+    end
+  end
+
+  # This is the "modify" argument to inject. Use this to perform
+  # generic validation. Runs *after* any special commands.
+  def self._validation(pval, key = nil, parent = nil, state = nil, current = nil, _store = nil)
+    return if state.nil?
+
+    # Current val to verify.
+    cval = getprop(current, key)
+
+    return if cval.nil? || state.nil?
+
+    ptype = typify(pval)
+
+    # Delete any special commands remaining.
+    return if ptype == S_string && pval.include?(S_DS)
+
+    ctype = typify(cval)
+
+    # Type mismatch.
+    if ptype != ctype && !pval.nil?
+      state[:errs].push(_invalid_type_msg(state[:path], ptype, ctype, cval, 'V0010'))
+      return
+    end
+
+    if ismap(cval)
+      if !ismap(pval)
+        state[:errs].push(_invalid_type_msg(state[:path], ptype, ctype, cval, 'V0020'))
+        return
+      end
+
+      ckeys = keysof(cval)
+      pkeys = keysof(pval)
+
+      # Empty spec object {} means object can be open (any keys).
+      if !pkeys.empty? && getprop(pval, '`$OPEN`') != true
+        badkeys = []
+        ckeys.each do |ckey|
+          badkeys.push(ckey) unless haskey(pval, ckey)
+        end
+
+        # Closed object, so reject extra keys not in shape.
+        if !badkeys.empty?
+          msg = 'Unexpected keys at field ' + pathify(state[:path], 1) + ': ' + badkeys.join(', ')
+          state[:errs].push(msg)
+        end
+      else
+        # Object is open, so merge in extra keys.
+        merge([pval, cval])
+        setprop(pval, '`$OPEN`', nil) if isnode(pval)
+      end
+    elsif islist(cval)
+      if !islist(pval)
+        state[:errs].push(_invalid_type_msg(state[:path], ptype, ctype, cval, 'V0030'))
+      end
+    else
+      # Spec value was a default, copy over data
+      setprop(parent, key, cval)
+    end
+  end
+
+  # Validate a data structure against a shape specification.
+  def self.validate(data, spec, extra = nil, collecterrs = nil)
+    errs = collecterrs.nil? ? [] : collecterrs
+
+    store = {
+      # Remove the transform commands.
+      '$DELETE' => nil,
+      '$COPY' => nil,
+      '$KEY' => nil,
+      '$META' => nil,
+      '$MERGE' => nil,
+      '$EACH' => nil,
+      '$PACK' => nil,
+
+      '$STRING' => method(:validate_string),
+      '$NUMBER' => method(:validate_number),
+      '$BOOLEAN' => method(:validate_boolean),
+      '$OBJECT' => method(:validate_object),
+      '$ARRAY' => method(:validate_array),
+      '$FUNCTION' => method(:validate_function),
+      '$ANY' => method(:validate_any),
+      '$CHILD' => method(:validate_child),
+      '$ONE' => method(:validate_one),
+      '$EXACT' => method(:validate_exact),
+
+      **(extra || {}),
+
+      # A special top level value to collect errors.
+      # NOTE: collecterrs parameter always wins.
+      '$ERRS' => errs
+    }
+
+    out = transform(data, spec, store, method(:_validation))
+
+    generr = !errs.empty? && collecterrs.nil?
+    raise "Invalid data: #{errs.join(' | ')}" if generr
+
+    out
+  end
+
+  # Transform commands.
+  def self.transform_cmds(state, val, current, ref, store)
+    out = val
+    if ismap(val)
+      out = {}
+      val.each do |k, v|
+        if k.start_with?(S_DS)
+          out[k] = v
+        else
+          out[k] = transform_cmds(state, v, current, ref, store)
+        end
+      end
+    elsif islist(val)
+      out = val.map { |v| transform_cmds(state, v, current, ref, store) }
+    end
+    out
   end
 
 end
