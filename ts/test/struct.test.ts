@@ -32,31 +32,33 @@ describe('struct', async () => {
     clone,
     escre,
     escurl,
+    getelem,
     getpath,
-    getprop,
 
+    getprop,
     haskey,
     inject,
     isempty,
     isfunc,
-    iskey,
 
+    iskey,
     islist,
     ismap,
     isnode,
     items,
-    joinurl,
 
+    joinurl,
     keysof,
     merge,
     pathify,
     setprop,
-    strkey,
 
+    strkey,
     stringify,
     transform,
     typify,
     validate,
+
     walk,
 
   } = client.utility().struct
@@ -74,31 +76,33 @@ describe('struct', async () => {
     equal('function', typeof clone)
     equal('function', typeof escre)
     equal('function', typeof escurl)
+    equal('function', typeof getelem)
     equal('function', typeof getprop)
-    equal('function', typeof getpath)
 
+    equal('function', typeof getpath)
     equal('function', typeof haskey)
     equal('function', typeof inject)
     equal('function', typeof isempty)
     equal('function', typeof isfunc)
-    equal('function', typeof iskey)
 
+    equal('function', typeof iskey)
     equal('function', typeof islist)
     equal('function', typeof ismap)
     equal('function', typeof isnode)
     equal('function', typeof items)
-    equal('function', typeof joinurl)
 
+    equal('function', typeof joinurl)
     equal('function', typeof keysof)
     equal('function', typeof merge)
     equal('function', typeof pathify)
     equal('function', typeof setprop)
-    equal('function', typeof strkey)
 
+    equal('function', typeof strkey)
     equal('function', typeof stringify)
     equal('function', typeof transform)
     equal('function', typeof typify)
     equal('function', typeof validate)
+
     equal('function', typeof walk)
   })
 
@@ -181,6 +185,12 @@ describe('struct', async () => {
 
   test('minor-items', async () => {
     await runset(minorSpec.items, items)
+  })
+
+
+  test('minor-getelem', async () => {
+    await runsetflags(minorSpec.getelem, { null: false }, (vin: any) =>
+      null == vin.alt ? getelem(vin.val, vin.key) : getelem(vin.val, vin.key, vin.alt))
   })
 
 
@@ -398,6 +408,12 @@ describe('struct', async () => {
 
   test('transform-pack', async () => {
     await runset(transformSpec.pack, (vin: any) =>
+      transform(vin.data, vin.spec, vin.store))
+  })
+
+
+  test('transform-ref', async () => {
+    await runset(transformSpec.ref, (vin: any) =>
       transform(vin.data, vin.spec, vin.store))
   })
 

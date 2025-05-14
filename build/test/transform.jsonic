@@ -275,3 +275,21 @@ modify: {
     { in: { data: {x:'X'}, spec: {z:'`x`'} }, out: { z: '@X' } }
   ]
 }
+
+
+
+ref: {
+  set: [
+    { in: { data: {z:{n:1}},
+      spec: {z:{s:0,n:'`$COPY`',p:['`$REF`','z']}} },
+      out: {z:{s:0,n:1}} }
+
+    { in: { data: {z:{n:1,p:{n:2}}},
+      spec: {z:{s:0,n:'`$COPY`',p:['`$REF`','z']}} },
+      out: {z:{s:0,n:1,p:{s:0,n:2}}} }
+
+    { in: { data: {z:{n:1,p:{n:2,p:{n:3}}}},
+      spec: {z:{s:0,n:'`$COPY`',p:['`$REF`','z']}} },
+      out: {z:{s:0,n:1,p:{s:0,n:2,p:{s:0,n:3}}}} }
+  ]
+}

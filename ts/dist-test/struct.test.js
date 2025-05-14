@@ -11,7 +11,7 @@ const TEST_JSON_FILE = '../../build/test/test.json';
 (0, node_test_1.describe)('struct', async () => {
     const runner = await (0, runner_1.makeRunner)(TEST_JSON_FILE, await sdk_js_1.SDK.test());
     const { spec, runset, runsetflags, client } = await runner('struct');
-    const { clone, escre, escurl, getpath, getprop, haskey, inject, isempty, isfunc, iskey, islist, ismap, isnode, items, joinurl, keysof, merge, pathify, setprop, strkey, stringify, transform, typify, validate, walk, } = client.utility().struct;
+    const { clone, escre, escurl, getelem, getpath, getprop, haskey, inject, isempty, isfunc, iskey, islist, ismap, isnode, items, joinurl, keysof, merge, pathify, setprop, strkey, stringify, transform, typify, validate, walk, } = client.utility().struct;
     const minorSpec = spec.minor;
     const walkSpec = spec.walk;
     const mergeSpec = spec.merge;
@@ -23,6 +23,7 @@ const TEST_JSON_FILE = '../../build/test/test.json';
         (0, node_assert_1.equal)('function', typeof clone);
         (0, node_assert_1.equal)('function', typeof escre);
         (0, node_assert_1.equal)('function', typeof escurl);
+        (0, node_assert_1.equal)('function', typeof getelem);
         (0, node_assert_1.equal)('function', typeof getprop);
         (0, node_assert_1.equal)('function', typeof getpath);
         (0, node_assert_1.equal)('function', typeof haskey);
@@ -96,6 +97,9 @@ const TEST_JSON_FILE = '../../build/test/test.json';
     });
     (0, node_test_1.test)('minor-items', async () => {
         await runset(minorSpec.items, items);
+    });
+    (0, node_test_1.test)('minor-getelem', async () => {
+        await runsetflags(minorSpec.getelem, { null: false }, (vin) => null == vin.alt ? getelem(vin.val, vin.key) : getelem(vin.val, vin.key, vin.alt));
     });
     (0, node_test_1.test)('minor-getprop', async () => {
         await runsetflags(minorSpec.getprop, { null: false }, (vin) => null == vin.alt ? getprop(vin.val, vin.key) : getprop(vin.val, vin.key, vin.alt));
@@ -240,6 +244,9 @@ const TEST_JSON_FILE = '../../build/test/test.json';
     });
     (0, node_test_1.test)('transform-pack', async () => {
         await runset(transformSpec.pack, (vin) => transform(vin.data, vin.spec, vin.store));
+    });
+    (0, node_test_1.test)('transform-ref', async () => {
+        await runset(transformSpec.ref, (vin) => transform(vin.data, vin.spec, vin.store));
     });
     (0, node_test_1.test)('transform-modify', async () => {
         await runset(transformSpec.modify, (vin) => transform(vin.data, vin.spec, vin.store, (val, key, parent) => {
