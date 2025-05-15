@@ -599,6 +599,8 @@ function getpath(path: string | string[], store: any, current?: any, state?: Inj
   // Operate on a string array.
   const parts = islist(path) ? path : S_string === typeof path ? path.split(S_DT) : UNDEF
 
+  // console.log('GP-PARTS', parts)
+
   if (UNDEF === parts) {
     return UNDEF
   }
@@ -622,16 +624,21 @@ function getpath(path: string | string[], store: any, current?: any, state?: Inj
     }
 
     let part = pI < parts.length ? parts[pI] : UNDEF
-    let first: any = getprop(root, part)
+    let first: any = S_MT === part ? current : getprop(root, part)
 
     // At top level, check state.base, if provided
     val = (UNDEF === first && 0 === pI) ?
       getprop(getprop(root, base), part) :
       first
 
+    // console.log('GP-FIRST', val)
+
     // Move along the path, trying to descend into the store.
     for (pI++; UNDEF !== val && pI < parts.length; pI++) {
-      val = getprop(val, parts[pI])
+      part = parts[pI]
+      if (S_MT !== part) {
+        val = getprop(val, parts[pI])
+      }
     }
   }
 
@@ -916,6 +923,8 @@ const transform_EACH: Injector = (
   const srcstore = getprop(store, state.base, store)
   const src = getpath(srcpath, srcstore, current)
 
+  // console.log('EACH-SRC', srcpath, src, srcstore, current)
+
   // Create parallel data structures:
   // source entries :: child templates
   let tcur: any = []
@@ -942,8 +951,16 @@ const transform_EACH: Injector = (
   // Parent structure.
   tcur = { $TOP: tcur }
 
+  console.log('EACH-INJECT', 'tval=', tval, 'tcur=', tcur)
+  console.dir(state, { depth: null })
+
   // Build the substructure.
-  tval = inject(tval, store, state.modify, tcur)
+  // tval = inject(tval, store, state.modify, tcur)
+  const cstate = { ...state }
+  cstate.path = cstate.path.slice(0, cstate.path.length - 1)
+  inject(tval, store, state.modify, tcur, cstate)
+
+  console.log('EACH-INJECT-AFTER', tval)
 
   _updateAncestors(state, target, tkey, tval)
 
@@ -1019,7 +1036,9 @@ const transform_PACK: Injector = (
   tcurrent = { $TOP: tcurrent }
 
   // Build substructure.
-  tval = inject(
+  // tval =
+
+  inject(
     tval,
     store,
     state.modify,
@@ -1055,6 +1074,8 @@ const transform_REF: Injector = (
   const spec = getprop(store, '$SPEC')
   const ref = getpath(refpath, spec)
 
+  console.log('REF-START', refpath, ref, state, store)
+
   const tpath = state.path.slice(0, state.path.length - 3)
   let tref = clone(ref)
   // tref.i = ++refI
@@ -1062,7 +1083,7 @@ const transform_REF: Injector = (
   let tcur = getpath(tpath, store)
   let tval = getpath(state.path.slice(0, state.path.length - 1), store)
 
-  // console.log('REF', refpath, tref, 'T=', tpath, tcur)
+  console.log('REF', refpath, tref, 'T=', tpath, tcur, tval)
 
   // TODO: this end condition means $REF only works for recursion
   if (undefined != tval) {
@@ -1095,8 +1116,8 @@ const transform_REF: Injector = (
   state.path = state.path.slice(0, state.path.length - 1)
   state.key = getelem(state.path, -1)
 
-  // console.log('REF-DONE')
-  // console.dir(state, { depth: null })
+  console.log('REF-DONE')
+  console.dir(state, { depth: null })
 
   return UNDEF
 }

@@ -217,6 +217,15 @@ each: {
     { in: { data: {x:{a2:{y:0}}}, spec: {r2:[[[['`$EACH`','x',{y:'`$COPY`',q:'T2'}]]]]} },
       out: {r2:[[[[{y:0,q:T2}]]]]} }
 
+      
+    { in: { data: {a0:[{i:0},{i:1}]},
+            spec: {b0:['`$EACH`','a0',{i:'`$COPY`',j:'`.i`'}]} }
+      out: {b0:[{i:0,j:0},{i:1,j:1}]} }
+
+    { in: { data: {a1:[{i:0},{i:1}]},
+            spec: {b1:['`$EACH`','a1',{'`$MERGE`':'`.`',k:'`.i`'}]} }
+      out: {b1:[{i:0,k:0},{i:1,k:1}]} }
+
   ]
 }
 
@@ -280,16 +289,57 @@ modify: {
 
 ref: {
   set: [
-    { in: { data: {z:{n:1}},
-      spec: {z:{s:0,n:'`$COPY`',p:['`$REF`','z']}} },
-      out: {z:{s:0,n:1}} }
+    # { in: { data: {z:{n:1}},
+    #   spec: {z:{s:0,n:'`$COPY`',p:['`$REF`','z']}} },
+    #   out: {z:{s:0,n:1}} }
 
-    { in: { data: {z:{n:1,p:{n:2}}},
-      spec: {z:{s:0,n:'`$COPY`',p:['`$REF`','z']}} },
-      out: {z:{s:0,n:1,p:{s:0,n:2}}} }
+    # { in: { data: {z:{n:1,p:{n:2}}},
+    #   spec: {z:{s:0,n:'`$COPY`',p:['`$REF`','z']}} },
+    #   out: {z:{s:0,n:1,p:{s:0,n:2}}} }
 
-    { in: { data: {z:{n:1,p:{n:2,p:{n:3}}}},
-      spec: {z:{s:0,n:'`$COPY`',p:['`$REF`','z']}} },
-      out: {z:{s:0,n:1,p:{s:0,n:2,p:{s:0,n:3}}}} }
+    # { in: { data: {z:{n:1,p:{n:2,p:{n:3}}}},
+    #   spec: {z:{s:0,n:'`$COPY`',p:['`$REF`','z']}} },
+    #   out: {z:{s:0,n:1,p:{s:0,n:2,p:{s:0,n:3}}}} }
+
+    { in: {
+        data: { z: { x: 0, p:[{x:1}] } }
+        spec: { z: { x: '`$COPY`', p:[['`$REF`','z']] } }
+      }
+      out: {z:{x:0,p:[{x:1,p:[]}]}}
+    }
+
+    { in: {
+        data: { z: { x: 0, p:[{x:1},{x:2}] } }
+        spec: { z: { x: '`$COPY`', p:[['`$REF`','z'],['`$REF`','z']] } }
+      }
+      out: {}
+    }
+
+    
+
+    # { in: {
+    #     data: {
+    #       t:{
+    #         n:'red', a:1, p:[
+    #           {n:'green', a:2},
+    #           {n:'blue', a:3, p:[
+    #             {n:'cyan', a:4},
+    #           ]},
+    #         ]
+    #       }
+    #     }
+    #     spec: {
+    #       t:{
+    #         k: '`.n`'
+    #         b:'`.a`'
+    #         p:['`$EACH`', '.',
+    #           # {n:'`$COPY`',b:'`.a`'}
+    #           ['`$REF`','t']
+    #         ]
+    #       }
+    #     }
+    #   }
+    #   out: {} }
+
   ]
 }
