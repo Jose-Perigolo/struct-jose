@@ -63,6 +63,7 @@ const S_DKEY = '`$KEY`'
 const S_DMETA = '`$META`'
 const S_DTOP = '$TOP'
 const S_DERRS = '$ERRS'
+const S_DSPEC = '$SPEC'
 
 // General strings.
 const S_array = 'array'
@@ -123,6 +124,7 @@ type Injection = {
   meta: Record<string, any> // Custom meta data.
   base?: string             // Base key for data in store, if any. 
   modify?: Modify           // Modify injection output.
+  prior?: Injection
 }
 
 
@@ -599,8 +601,6 @@ function getpath(path: string | string[], store: any, current?: any, state?: Inj
   // Operate on a string array.
   const parts = islist(path) ? path : S_string === typeof path ? path.split(S_DT) : UNDEF
 
-  // console.log('GP-PARTS', parts)
-
   if (UNDEF === parts) {
     return UNDEF
   }
@@ -631,8 +631,6 @@ function getpath(path: string | string[], store: any, current?: any, state?: Inj
       getprop(getprop(root, base), part) :
       first
 
-    // console.log('GP-FIRST', val)
-
     // Move along the path, trying to descend into the store.
     for (pI++; UNDEF !== val && pI < parts.length; pI++) {
       part = parts[pI]
@@ -651,6 +649,7 @@ function getpath(path: string | string[], store: any, current?: any, state?: Inj
   return val
 }
 
+let cI = 0
 
 // Inject values from a data store into a node recursively, resolving
 // paths against the store, or current if they are local. THe modify
@@ -668,6 +667,10 @@ function inject(
   // Create state if at root of injection.  The input value is placed
   // inside a virtual parent holder to simplify edge cases.
   if (UNDEF === state) {
+
+    // console.log('INJ ==================')
+    cI = 0
+
     const parent = { [S_DTOP]: val }
 
     // Set up state assuming we are starting in the virtual parent.
@@ -691,16 +694,24 @@ function inject(
 
   // Resolve current node in store for local paths.
   if (UNDEF === current) {
+    // TODO: check store base prop ($TOP)
     current = { $TOP: store }
   }
   else {
     // A provided current is expected to be the containing node of the associated
     // store value.
     const parentkey = getprop(state.path, state.path.length - 2)
-    // console.log('INJECT-CURRENT', parentkey, current)
     current = null == parentkey ? current : getprop(current, parentkey)
-    // console.log('INJECT-VAL', val, current)
   }
+
+  // ++cI
+  // const lcI = ('' + cI).padStart(3)
+  // console.log(
+  //   'INJ-<', lcI, ' '.repeat(state.path.length),
+  //   ['kI=' + state.keyI, 'k=' + state.key, 'ks=' + state.keys.join(','),
+  //   'p=' + state.path.join('.')].join(' ').padEnd(44 - state.path.length),
+  //   '  v=' + jdc(val), '  c=' + jdc(current?.$WHEN ? '<root>' : current),
+  //   '  o=' + jdc(state.nodes[0].$TOP))
 
   // Descend into node.
   if (isnode(val)) {
@@ -741,6 +752,7 @@ function inject(
         base: state.base,
         errs: state.errs,
         meta: state.meta,
+        prior: state,
       }
 
       // Peform the key:pre mode injection on the child key.
@@ -749,21 +761,23 @@ function inject(
       // The injection may modify child processing.
       nkI = childstate.keyI
       nodekeys = childstate.keys
-      val = childstate.parent
+      // val = childstate.parent
 
       // Prevent further processing by returning an undefined prekey
       if (UNDEF !== prekey) {
         childstate.val = childval = getprop(val, prekey)
         childstate.mode = S_MVAL as InjectMode
 
+
         // Perform the val mode injection on the child value.
         // NOTE: return value is not used.
+        // console.log('CALL-INJECT', childval, current)
         inject(childval, store, modify, current, childstate)
 
         // The injection may modify child processing.
         nkI = childstate.keyI
         nodekeys = childstate.keys
-        val = childstate.parent
+        // val = childstate.parent
 
         // Peform the key:post mode injection on the child key.
         childstate.mode = S_MKEYPOST as InjectMode
@@ -772,7 +786,7 @@ function inject(
         // The injection may modify child processing.
         nkI = childstate.keyI
         nodekeys = childstate.keys
-        val = childstate.parent
+        // val = childstate.parent
       }
     }
   }
@@ -784,6 +798,9 @@ function inject(
 
     setprop(state.parent, state.key, val)
   }
+
+
+  // console.log('INJ-VAL', val, valtype, state.parent)
 
   // Custom modification.
   if (modify) {
@@ -799,6 +816,15 @@ function inject(
       store
     )
   }
+
+  state.val = val
+
+  // console.log(
+  //   'INJ> ', lcI, ' '.repeat(state.path.length),
+  //   ['kI=' + state.keyI, 'k=' + state.key, 'ks=' + state.keys.join(','),
+  //   'p=' + state.path.join('.')].join(' ').padEnd(44 - state.path.length),
+  //   '  v=' + jdc(val), '  c=' + jdc(current?.$WHEN ? '<root>' : current),
+  //   '  o=' + jdc(state.nodes[0].$TOP))
 
   // Original val reference may no longer be correct.
   // This return value is only used as the top level result.
@@ -822,7 +848,6 @@ const transform_COPY: Injector = (state: Injection, _val: any, current: any) => 
   let out = key
   if (!mode.startsWith(S_MKEY)) {
     out = getprop(current, key)
-    // console.log('COPY', key, out, current, state.parent)
     _setparentprop(state, out)
   }
 
@@ -922,8 +947,7 @@ const transform_EACH: Injector = (
   // const src = getpath(srcpath, store, current, state)
   const srcstore = getprop(store, state.base, store)
   const src = getpath(srcpath, srcstore, current)
-
-  // console.log('EACH-SRC', srcpath, src, srcstore, current)
+  // console.log('EACH-SRC', srcpath, src, '|', srcstore, '|', current)
 
   // Create parallel data structures:
   // source entries :: child templates
@@ -951,16 +975,13 @@ const transform_EACH: Injector = (
   // Parent structure.
   tcur = { $TOP: tcur }
 
-  console.log('EACH-INJECT', 'tval=', tval, 'tcur=', tcur)
-  console.dir(state, { depth: null })
-
   // Build the substructure.
-  // tval = inject(tval, store, state.modify, tcur)
-  const cstate = { ...state }
-  cstate.path = cstate.path.slice(0, cstate.path.length - 1)
-  inject(tval, store, state.modify, tcur, cstate)
-
-  console.log('EACH-INJECT-AFTER', tval)
+  // console.log('EACH-INJ', tval, tcur)
+  tval = inject(tval, store, state.modify, tcur)
+  // const cstate = { ...state }
+  // cstate.path = cstate.path.slice(0, cstate.path.length - 1)
+  // inject(tval, store, state.modify, tcur, cstate)
+  // inject(tval, store, state.modify, tcur, state)
 
   _updateAncestors(state, target, tkey, tval)
 
@@ -1056,7 +1077,7 @@ const transform_PACK: Injector = (
 // Format: ['`$REF`', '`spec-path`']
 const transform_REF: Injector = (
   state: Injection,
-  _val: any,
+  val: any,
   _current: any,
   _ref: string,
   store: any
@@ -1067,59 +1088,105 @@ const transform_REF: Injector = (
     return UNDEF
   }
 
+  // console.log('REF-SP', state.path)
+
+
   // Get arguments: ['`$EACH`', 'spec-path'].
   const refpath = getprop(state.parent, 1)
+  state.keyI = state.keys.length
 
   // Spec reference.
-  const spec = getprop(store, '$SPEC')
+  const spec = getprop(store, S_DSPEC)()
   const ref = getpath(refpath, spec)
+  let tref = clone(ref)
 
-  console.log('REF-START', refpath, ref, state, store)
+  // console.log('GETREF', refpath, tref)
 
   const tpath = state.path.slice(0, state.path.length - 3)
-  let tref = clone(ref)
+  // let tref = UNDEF
   // tref.i = ++refI
 
   let tcur = getpath(tpath, store)
   let tval = getpath(state.path.slice(0, state.path.length - 1), store)
+  let rval = UNDEF
 
-  console.log('REF', refpath, tref, 'T=', tpath, tcur, tval)
+  // console.log(
+  //   '  REF',
+  //   'kI=' + state.keyI, 'k=' + state.key, 'ks=' + state.keys.join(','),
+  //   'p=' + state.path.join('.'),
+  //   'r=', jdc(tref), 'c=', jdc(tcur), 'v=', jdc(tval))
+
 
   // TODO: this end condition means $REF only works for recursion
-  if (undefined != tval) {
-    const tstate = { ...state }
-    tstate.path = state.path.slice(0, state.path.length - 1)
+  // if (undefined != tval) {
+  const tstate = { ...state }
+  tstate.path = state.path.slice(0, state.path.length - 1)
+  tstate.keyI = 0
+  tstate.key = getelem(tstate.path, -1)
+  tstate.keys = [tstate.key]
+  tstate.parent = getelem(nodes, -2)
+  tstate.val = tref
 
-    // console.log('REF-TS-BEFORE')
-    // console.dir(tstate, { depth: null })
+  // console.dir(tstate, { depth: null })
+
+  // console.log(
+  //   '  REFINJ<',
+  //   'kI=' + tstate.keyI, 'k=' + tstate.key, 'ks=' + tstate.keys.join(','),
+  //   'p=' + tstate.path.join('.'),
+  //   'r=', jdc(tref), 'c=', jdc(tcur))
+
+  let pathstr = state.path.join('.')
+  console.log('pathstr', pathstr)
+
+
+  if (pathstr !== state.meta.REF_lastpath) {
+    state.meta.REF_lastpath = pathstr
 
     inject(
       tref,
       store,
-      state.modify,
+      modify,
       tcur,
       tstate
     )
 
-    // console.log('REF-TS-AFTER', tref)
+    // console.log(
+    //   '  REFINJ>',
+    //   'kI=' + tstate.keyI, 'k=' + tstate.key, 'ks=' + tstate.keys.join(','),
+    //   'p=' + tstate.path.join('.'),
+    //   'r=', jdc(tref), 'c=', jdc(tcur), 'sv=', jdc(tstate.val))
+
     // console.dir(tstate, { depth: null })
+    rval = tstate.val
+
   }
   else {
-    tref = undefined
+    rval = UNDEF
+    state.meta.REF_stoppath = pathstr
+  }
+
+
+  // Recursion stops one level too deep because repeating paths need to be compared.
+  if (pathstr === tstate.meta.REF_stoppath) {
+    rval = UNDEF
   }
 
   const grandparent = getelem(nodes, -2)
   const grandkey = getelem(path, -2)
 
-  // console.log('REF-SETGP', grandparent, grandkey, tref)
-  setprop(grandparent, grandkey, tref)
-  state.path = state.path.slice(0, state.path.length - 1)
-  state.key = getelem(state.path, -1)
+  // console.log('  REF-SG', grandkey, 'rval=', jdc(rval), 'gp=', jdc(grandparent),
+  //   'tref=', jdc(tref), 'tcur=', jdc(tcur))
+  setprop(grandparent, grandkey, rval)
 
-  console.log('REF-DONE')
-  console.dir(state, { depth: null })
+  if (islist(grandparent) && state.prior) {
+    state.prior.keyI--
+  }
 
-  return UNDEF
+  // state.path = state.path.slice(0, state.path.length - 1)
+  // state.key = getelem(state.path, -1)
+
+  // return UNDEF
+  return val
 }
 
 
@@ -1154,7 +1221,7 @@ function transform(
     // place that data inside a holding map: { myholder: mydata }.
     $TOP: dataClone,
 
-    $SPEC: origspec,
+    $SPEC: () => origspec,
 
     // Escape backtick (this also works inside backticks).
     $BT: () => S_BT,
@@ -1773,6 +1840,26 @@ function _injectstr(
 
   return out
 }
+
+
+function jdc(x: any): string {
+  let s = stringify(x),
+    c = [81, 118, 213, 39, 208, 201, 45, 190, 129, 51, 160, 121, 226, 33, 207, 69]
+      .map(n => `\x1b[38;5;${n}m`),
+    r = '\x1b[0m', d = 0, o = c[0], t = o
+  for (const ch of s) {
+    if (ch === '{' || ch === '[') {
+      d++; o = c[d % c.length]; t += o + ch
+    } else if (ch === '}' || ch === ']') {
+      t += o + ch; d--; o = c[d % c.length]
+    } else {
+      t += o + ch
+    }
+  }
+  return t + r
+}
+
+
 
 
 // Define a class to mirror the JavaScript implementation
