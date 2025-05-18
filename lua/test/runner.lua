@@ -48,32 +48,6 @@ local function deepEqual(actual, expected)
   luassert.same(expected, actual)
 end
 
-
--- Remove functions from a table for JSON encodings
--- @param table (table) The table to process
--- @return (table) The processed table with functions replaced
-local function removeFunctionForJsonEncode(table)
-  local parsedTable = table
-
-  for key, value in pairs(parsedTable) do
-    if type(value) == "table" then
-      removeFunctionForJsonEncode(value)
-    elseif type(value) == "function" then
-      parsedTable[key] = "function"
-    else
-      parsedTable[key] = value
-    end
-  end
-
-  local original_mt = getmetatable(table)
-  if original_mt then
-    setmetatable(parsedTable, nil)
-  end
-
-  return parsedTable
-end
-
-
 ----------------------------------------------------------
 -- foward declarations
 ----------------------------------------------------------
@@ -311,14 +285,8 @@ handleError = function(entry, err, structUtils)
     fail("ERROR MATCH: [" .. structUtils.stringify(entry_err) .. "] <=> [" ..
       err_message .. "]")
   else
-    -- json enconde does not support type functions
-    if entry.ctx.client then
-      entry = removeFunctionForJsonEncode(entry)
-    end
-
-    fail((err.stack or err_message) .. "\n\nENTRY: " .. json.encode(entry, {
-      indent = true
-    }))
+    -- fail((err.stack or err_message) .. "\n\nENTRY: " .. inspect(entry))
+    fail((err.stack or err_message))
   end
 end
 
