@@ -51,6 +51,9 @@ describe('struct', async () => {
     keysof,
     merge,
     pathify,
+
+    size,
+    slice,
     setprop,
 
     strkey,
@@ -95,6 +98,9 @@ describe('struct', async () => {
     equal('function', typeof keysof)
     equal('function', typeof merge)
     equal('function', typeof pathify)
+
+    equal('function', typeof size)
+    equal('function', typeof slice)
     equal('function', typeof setprop)
 
     equal('function', typeof strkey)
@@ -249,6 +255,18 @@ describe('struct', async () => {
   test('minor-typify', async () => {
     await runsetflags(minorSpec.typify, { null: false }, typify)
   })
+
+
+  test('minor-size', async () => {
+    await runsetflags(minorSpec.size, { null: false }, size)
+  })
+
+
+  test('minor-slice', async () => {
+    await runsetflags(minorSpec.slice, { null: false },
+      (vin: any) => slice(vin.val, vin.start, vin.end))
+  })
+
 
 
   // walk tests

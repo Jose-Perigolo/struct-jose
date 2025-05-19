@@ -11,7 +11,7 @@ const TEST_JSON_FILE = '../../build/test/test.json';
 (0, node_test_1.describe)('struct', async () => {
     const runner = await (0, runner_1.makeRunner)(TEST_JSON_FILE, await sdk_js_1.SDK.test());
     const { spec, runset, runsetflags, client } = await runner('struct');
-    const { clone, escre, escurl, getelem, getpath, getprop, haskey, inject, isempty, isfunc, iskey, islist, ismap, isnode, items, joinurl, keysof, merge, pathify, setprop, strkey, stringify, transform, typify, validate, walk, } = client.utility().struct;
+    const { clone, escre, escurl, getelem, getpath, getprop, haskey, inject, isempty, isfunc, iskey, islist, ismap, isnode, items, joinurl, keysof, merge, pathify, size, slice, setprop, strkey, stringify, transform, typify, validate, walk, } = client.utility().struct;
     const minorSpec = spec.minor;
     const walkSpec = spec.walk;
     const mergeSpec = spec.merge;
@@ -39,6 +39,8 @@ const TEST_JSON_FILE = '../../build/test/test.json';
         (0, node_assert_1.equal)('function', typeof keysof);
         (0, node_assert_1.equal)('function', typeof merge);
         (0, node_assert_1.equal)('function', typeof pathify);
+        (0, node_assert_1.equal)('function', typeof size);
+        (0, node_assert_1.equal)('function', typeof slice);
         (0, node_assert_1.equal)('function', typeof setprop);
         (0, node_assert_1.equal)('function', typeof strkey);
         (0, node_assert_1.equal)('function', typeof stringify);
@@ -136,6 +138,12 @@ const TEST_JSON_FILE = '../../build/test/test.json';
     });
     (0, node_test_1.test)('minor-typify', async () => {
         await runsetflags(minorSpec.typify, { null: false }, typify);
+    });
+    (0, node_test_1.test)('minor-size', async () => {
+        await runsetflags(minorSpec.size, { null: false }, size);
+    });
+    (0, node_test_1.test)('minor-slice', async () => {
+        await runsetflags(minorSpec.slice, { null: false }, (vin) => slice(vin.val, vin.start, vin.end));
     });
     // walk tests
     // ==========

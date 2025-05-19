@@ -190,6 +190,73 @@ function isfunc(val: any) {
 }
 
 
+function size(val: any): number {
+  if (islist(val)) {
+    return val.length
+  }
+  else if (ismap(val)) {
+    return Object.keys(val).length
+  }
+
+  const valtype = typeof val
+
+  if (S_string == valtype) {
+    return val.length
+  }
+  else if (S_number == typeof val) {
+    return Math.floor(val)
+  }
+  else if (S_boolean == typeof val) {
+    return true === val ? 1 : 0
+  }
+  else {
+    return 0
+  }
+}
+
+
+function slice<V extends any>(val: V, start: number, end?: number): V {
+  if (islist(val)) {
+    const vlen = size(val)
+    if (null != start) {
+      if (start < 0) {
+        end = vlen + start
+        if (end < 0) {
+          end = 0
+        }
+        start = 0
+      }
+
+      else if (null != end) {
+        if (end < 0) {
+          end = vlen + end
+          if (end < 0) {
+            end = 0
+          }
+        }
+        else if (vlen < end) {
+          end = val.length
+        }
+      }
+
+      else {
+        end = val.length
+      }
+
+      if (vlen < start) {
+        start = vlen
+      }
+
+      if (-1 < start && start <= end && end <= vlen) {
+        return val.slice(start, end) as V
+      }
+    }
+  }
+
+  return val
+}
+
+
 // Determine the type of a value as a string.
 // Returns one of: 'null', 'string', 'number', 'boolean', 'function', 'array', 'object'
 // Normalizes and simplifies JavaScript's type system for consistency.
@@ -385,7 +452,7 @@ function pathify(val: any, startin?: number, endin?: number) {
   const end = null == endin ? 0 : -1 < endin ? endin : 0
 
   if (UNDEF != path && 0 <= start) {
-    path = path.slice(start, path.length - end)
+    path = slice(path, start, path.length - end)
     if (0 === path.length) {
       pathstr = '<root>'
     }
@@ -556,7 +623,7 @@ function merge(val: any): any {
           let lenpath = path.length
           cI = lenpath - 1
           if (UNDEF === cur[cI]) {
-            cur[cI] = getpath(path.slice(0, lenpath - 1), out)
+            cur[cI] = getpath(slice(path, 0, lenpath - 1), out)
           }
 
           // Create node if needed.
@@ -596,6 +663,7 @@ function merge(val: any): any {
 // resolved against the `current` argument, if defined.  Integer path
 // parts are used as array indexes.  The state argument allows for
 // custom handling when called from `inject` or `transform`.
+// TODO: change sig to be consistent with getprop
 function getpath(path: string | string[], store: any, current?: any, state?: Injection) {
 
   // Operate on a string array.
@@ -961,7 +1029,6 @@ const transform_EACH: Injector = (
   let tval: any = []
 
   const tkey = state.path[state.path.length - 2]
-  // const target = state.nodes[state.path.length - 2] || state.nodes[state.path.length - 1]
   const target = state.nodes[state.nodes.length - 2] || state.nodes[state.nodes.length - 1]
 
   // Create clones of the child template for each value of the current soruce.
@@ -994,8 +1061,8 @@ const transform_EACH: Injector = (
     // console.log('EACH-tcur', stringify(tcur))
 
     const tstate = { ...state }
-    tstate.path = state.path.slice(0, state.path.length - 1)
-    tstate.nodes = state.nodes.slice(0, state.nodes.length - 1)
+    tstate.path = slice(state.path, -1)
+    tstate.nodes = slice(state.nodes, -1)
     tstate.keyI = 0
     tstate.key = ckey
     tstate.keys = [ckey]
@@ -1157,8 +1224,8 @@ const transform_REF: Injector = (
 
   let tref = clone(ref)
 
-  const cpath = state.path.slice(0, state.path.length - 3)
-  const tpath = state.path.slice(0, state.path.length - 1)
+  const cpath = slice(state.path, -3)
+  const tpath = slice(state.path, -1)
   let tcur = getpath(cpath, store)
   let tval = getpath(tpath, store)
   let rval = UNDEF
@@ -1176,7 +1243,7 @@ const transform_REF: Injector = (
 
     const tstate = { ...state }
     tstate.path = tpath
-    tstate.nodes = state.nodes.slice(0, state.nodes.length - 1)
+    tstate.nodes = slice(state.nodes, -1)
     tstate.keyI = 0
     tstate.key = getelem(tstate.path, -1)
     tstate.keys = [tstate.key]
@@ -1408,7 +1475,7 @@ const validate_CHILD: Injector = (state: Injection, _val: any, current: any) => 
     }
     else if (!ismap(tval)) {
       state.errs.push(_invalidTypeMsg(
-        state.path.slice(0, state.path.length - 1), S_object, typify(tval), tval), 'V0220')
+        slice(state.path, -1), S_object, typify(tval), tval), 'V0220')
       return UNDEF
     }
 
@@ -1444,7 +1511,7 @@ const validate_CHILD: Injector = (state: Injection, _val: any, current: any) => 
 
     if (!islist(current)) {
       const msg = _invalidTypeMsg(
-        state.path.slice(0, state.path.length - 1), S_array, typify(current), current, 'V0230')
+        slice(state.path, -1), S_array, typify(current), current, 'V0230')
       state.errs.push(msg)
       state.keyI = parent.length
       return current
@@ -1492,11 +1559,10 @@ const validate_ONE: Injector = (
     // Clean up structure, replacing [$ONE, ...] with current
     setprop(grandparent, grandkey, current)
 
-    // TODO: need a slice util: slice(state.path,0,-1)
-    state.path = state.path.slice(0, state.path.length - 1)
+    state.path = slice(state.path, -1)
     state.key = getelem(state.path, -1)
 
-    let tvals = parent.slice(1)
+    let tvals = slice(parent, 1)
     if (0 === tvals.length) {
       state.errs.push('The $ONE validator at field ' +
         pathify(state.path, 1, 1) +
@@ -1561,10 +1627,10 @@ const validate_EXACT: Injector = (
 
     // Clean up structure, replacing [$EXACT, ...] with current
     setprop(grandparent, grandkey, current)
-    state.path = state.path.slice(0, state.path.length - 1)
+    state.path = slice(state.path, 0, state.path.length - 1)
     state.key = getelem(state.path, -1)
 
-    let tvals = parent.slice(1)
+    let tvals = slice(parent, 1)
     if (0 === tvals.length) {
       state.errs.push('The $EXACT validator at field ' +
         pathify(state.path, 1, 1) +
@@ -1923,6 +1989,8 @@ class StructUtility {
   merge = merge
   pathify = pathify
   setprop = setprop
+  size = size
+  slice = slice
   strkey = strkey
   stringify = stringify
   transform = transform
@@ -1953,6 +2021,8 @@ export {
   merge,
   pathify,
   setprop,
+  size,
+  slice,
   strkey,
   stringify,
   transform,
