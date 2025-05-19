@@ -63,6 +63,7 @@ const S_DKEY = '`$KEY`'
 const S_DMETA = '`$META`'
 const S_DTOP = '$TOP'
 const S_DERRS = '$ERRS'
+const S_DSPEC = '$SPEC'
 
 // General strings.
 const S_array = 'array'
@@ -123,6 +124,7 @@ type Injection = {
   meta: Record<string, any> // Custom meta data.
   base?: string             // Base key for data in store, if any. 
   modify?: Modify           // Modify injection output.
+  prior?: Injection
 }
 
 
@@ -210,8 +212,36 @@ function typify(value: any): string {
 }
 
 
+// Get a list element. The key should be an integer, or a string
+// that can parse to an integer only. Negative integers count from the end of the list.
+function getelem(val: any, key: any, alt?: any) {
+  let out = UNDEF
+
+  if (UNDEF === val || UNDEF === key) {
+    return alt
+  }
+
+  if (islist(val)) {
+    let nkey = parseInt(key)
+    if (Number.isInteger(nkey) && ('' + key).match(/^[-0-9]+$/)) {
+      if (nkey < 0) {
+        key = val.length + nkey
+      }
+      out = val[key]
+    }
+  }
+
+  if (UNDEF === out) {
+    return alt
+  }
+
+  return out
+}
+
+
 // Safely get a property of a node. Undefined arguments return undefined.
 // If the key is not found, return the alternative value, if any.
+// TODO: for arrays. make -i work, such that -1 => last element
 function getprop(val: any, key: any, alt?: any) {
   let out = alt
 
@@ -594,7 +624,7 @@ function getpath(path: string | string[], store: any, current?: any, state?: Inj
     }
 
     let part = pI < parts.length ? parts[pI] : UNDEF
-    let first: any = getprop(root, part)
+    let first: any = S_MT === part ? current : getprop(root, part)
 
     // At top level, check state.base, if provided
     val = (UNDEF === first && 0 === pI) ?
@@ -603,7 +633,10 @@ function getpath(path: string | string[], store: any, current?: any, state?: Inj
 
     // Move along the path, trying to descend into the store.
     for (pI++; UNDEF !== val && pI < parts.length; pI++) {
-      val = getprop(val, parts[pI])
+      part = parts[pI]
+      if (S_MT !== part) {
+        val = getprop(val, parts[pI])
+      }
     }
   }
 
@@ -616,6 +649,7 @@ function getpath(path: string | string[], store: any, current?: any, state?: Inj
   return val
 }
 
+// let cI = 0
 
 // Inject values from a data store into a node recursively, resolving
 // paths against the store, or current if they are local. THe modify
@@ -633,6 +667,10 @@ function inject(
   // Create state if at root of injection.  The input value is placed
   // inside a virtual parent holder to simplify edge cases.
   if (UNDEF === state) {
+
+    // console.log('INJ ----------------')
+    // cI = 0
+
     const parent = { [S_DTOP]: val }
 
     // Set up state assuming we are starting in the virtual parent.
@@ -656,12 +694,31 @@ function inject(
 
   // Resolve current node in store for local paths.
   if (UNDEF === current) {
+    // TODO: check store base prop ($TOP)
     current = { $TOP: store }
   }
   else {
-    const parentkey = getprop(state.path, state.path.length - 2)
+    if (state.nodes.length !== state.path.length) {
+      console.dir(state, { depth: null })
+      throw new Error('NL=' + state.nodes.length + ' PL=' + state.path.length)
+    }
+
+    // A provided current is expected to be the containing node of the associated
+    // store value.
+    // const parentkey = getprop(state.path, state.path.length - 2)
+    const parentkey = getelem(state.path, -2)
+    // console.log('PKEY', parentkey, state.path)
     current = null == parentkey ? current : getprop(current, parentkey)
   }
+
+  // ++cI
+  // const lcI = ('' + cI).padStart(3)
+  // console.log(
+  //   'INJ-<', lcI, ' '.repeat(state.path.length),
+  //   ['kI=' + state.keyI, 'k=' + state.key, 'ks=' + state.keys.join(','),
+  //   'p=' + state.path.join('.')].join(' ').padEnd(44 - state.path.length),
+  //   '  v=' + jdc(val), '  c=' + jdc(current?.$WHEN ? '<root>' : current),
+  //   '  o=' + jdc(state.nodes[0].$TOP))
 
   // Descend into node.
   if (isnode(val)) {
@@ -702,6 +759,7 @@ function inject(
         base: state.base,
         errs: state.errs,
         meta: state.meta,
+        prior: state,
       }
 
       // Peform the key:pre mode injection on the child key.
@@ -710,19 +768,23 @@ function inject(
       // The injection may modify child processing.
       nkI = childstate.keyI
       nodekeys = childstate.keys
+      // val = childstate.parent
 
       // Prevent further processing by returning an undefined prekey
       if (UNDEF !== prekey) {
         childstate.val = childval = getprop(val, prekey)
         childstate.mode = S_MVAL as InjectMode
 
+
         // Perform the val mode injection on the child value.
         // NOTE: return value is not used.
+        // console.log('CALL-INJECT', childval, current)
         inject(childval, store, modify, current, childstate)
 
         // The injection may modify child processing.
         nkI = childstate.keyI
         nodekeys = childstate.keys
+        // val = childstate.parent
 
         // Peform the key:post mode injection on the child key.
         childstate.mode = S_MKEYPOST as InjectMode
@@ -731,6 +793,7 @@ function inject(
         // The injection may modify child processing.
         nkI = childstate.keyI
         nodekeys = childstate.keys
+        // val = childstate.parent
       }
     }
   }
@@ -742,6 +805,9 @@ function inject(
 
     setprop(state.parent, state.key, val)
   }
+
+
+  // console.log('INJ-VAL', val, valtype, state.parent)
 
   // Custom modification.
   if (modify) {
@@ -757,6 +823,15 @@ function inject(
       store
     )
   }
+
+  state.val = val
+
+  // console.log(
+  //   'INJ> ', lcI, ' '.repeat(state.path.length),
+  //   ['kI=' + state.keyI, 'k=' + state.key, 'ks=' + state.keys.join(','),
+  //   'p=' + state.path.join('.')].join(' ').padEnd(44 - state.path.length),
+  //   '  v=' + jdc(val), '  c=' + jdc(current?.$WHEN ? '<root>' : current),
+  //   '  o=' + jdc(state.nodes[0].$TOP))
 
   // Original val reference may no longer be correct.
   // This return value is only used as the top level result.
@@ -862,6 +937,7 @@ const transform_EACH: Injector = (
   _ref: string,
   store: any
 ) => {
+
   // Remove arguments to avoid spurious processing.
   if (null != state.keys) {
     state.keys.length = 1
@@ -876,7 +952,6 @@ const transform_EACH: Injector = (
   const child = clone(getprop(state.parent, 2))
 
   // Source data.
-  // const src = getpath(srcpath, store, current, state)
   const srcstore = getprop(store, state.base, store)
   const src = getpath(srcpath, srcstore, current)
 
@@ -886,7 +961,8 @@ const transform_EACH: Injector = (
   let tval: any = []
 
   const tkey = state.path[state.path.length - 2]
-  const target = state.nodes[state.path.length - 2] || state.nodes[state.path.length - 1]
+  // const target = state.nodes[state.path.length - 2] || state.nodes[state.path.length - 1]
+  const target = state.nodes[state.nodes.length - 2] || state.nodes[state.nodes.length - 1]
 
   // Create clones of the child template for each value of the current soruce.
   if (islist(src)) {
@@ -901,20 +977,66 @@ const transform_EACH: Injector = (
     }))
   }
 
-  tcur = null == src ? UNDEF : Object.values(src)
+  let rval = []
 
-  // Parent structure.
-  tcur = { $TOP: tcur }
+  // console.log('  EACH TVAL', state.path, tkey, tval, 'target=', target)
+  // console.dir(state.nodes, { depth: null })
 
-  // Build the substructure.
-  tval = inject(tval, store, state.modify, tcur)
+  if (0 < tval.length) {
 
-  _updateAncestors(state, target, tkey, tval)
+    tcur = null == src ? UNDEF : Object.values(src)
+
+    // Parent structure.
+    const ckey = getelem(state.path, -2)
+    const pkey = getelem(state.path, -3, S_DTOP)
+    tcur = { [pkey]: { [ckey]: tcur } }
+
+    // console.log('EACH-tcur', stringify(tcur))
+
+    const tstate = { ...state }
+    tstate.path = state.path.slice(0, state.path.length - 1)
+    tstate.nodes = state.nodes.slice(0, state.nodes.length - 1)
+    tstate.keyI = 0
+    tstate.key = ckey
+    tstate.keys = [ckey]
+    tstate.parent = tcur
+    tstate.val = tval
+
+    if (tstate.path.length < 2) {
+      tstate.path.unshift(S_DTOP)
+      tstate.nodes.unshift(tstate.nodes[0])
+    }
+
+    // console.dir(tstate, { depth: null })
+
+    // console.log(
+    //   '  EACHINJ<',
+    //   'kI=' + tstate.keyI, 'k=' + tstate.key, 'ks=' + tstate.keys.join(','),
+    //   'p=' + tstate.path.join('.'),
+    //   't=', jdc(tval), 'c=', jdc(tcur))
+
+
+    // Build the substructure.
+    inject(
+      tval,
+      store,
+      state.modify,
+      tcur,
+      tstate
+    )
+
+    rval = tstate.val
+
+  }
+
+  // console.log('  EACH RVAL', 'kI=', state.keyI, 'keys=', state.keys, 'p=', state.path,
+  //   'tkey=', tkey, 'rval=', rval, 't=', target)
+
+  _updateAncestors(state, target, tkey, rval)
 
   // Prevent callee from damaging first list entry (since we are in `val` mode).
-  return tval[0]
+  return rval[0]
 }
-
 
 
 // Convert a node to a map.
@@ -940,14 +1062,12 @@ const transform_PACK: Injector = (
 
   // Find key and target node.
   const keyprop = child[S_DKEY]
-  const tkey = path[path.length - 2]
+  const tkey = getelem(path, -2)
   const target = nodes[path.length - 2] || nodes[path.length - 1]
 
   // Source data
-  // const srcstore = getprop(store, getprop(state, S_base), store)
   const srcstore = getprop(store, state.base, store)
   let src = getpath(srcpath, srcstore, current)
-  // let src = getpath(srcpath, store, current, state)
 
   // Prepare source as a list.
   src = islist(src) ? src :
@@ -986,7 +1106,9 @@ const transform_PACK: Injector = (
   tcurrent = { $TOP: tcurrent }
 
   // Build substructure.
-  tval = inject(
+  // tval =
+
+  inject(
     tval,
     store,
     state.modify,
@@ -1000,6 +1122,113 @@ const transform_PACK: Injector = (
 }
 
 
+// Reference original spec (enables recursice transformations)
+// Format: ['`$REF`', '`spec-path`']
+const transform_REF: Injector = (
+  state: Injection,
+  val: any,
+  _current: any,
+  _ref: string,
+  store: any
+) => {
+  const { nodes, path, modify } = state
+
+  if (S_MVAL !== state.mode) {
+    return UNDEF
+  }
+
+  // Get arguments: ['`$REF`', 'ref-path'].
+  const refpath = getprop(state.parent, 1)
+  state.keyI = state.keys.length
+
+  // Spec reference.
+  const spec = getprop(store, S_DSPEC)()
+  const ref = getpath(refpath, spec)
+
+  let hasSubRef = false
+  if (isnode(ref)) {
+    walk(ref, (_k: any, v: any) => {
+      if ('`$REF`' === v) {
+        hasSubRef = true
+      }
+      return v
+    })
+  }
+
+  let tref = clone(ref)
+
+  const cpath = state.path.slice(0, state.path.length - 3)
+  const tpath = state.path.slice(0, state.path.length - 1)
+  let tcur = getpath(cpath, store)
+  let tval = getpath(tpath, store)
+  let rval = UNDEF
+
+  // console.log(
+  //   '  REF',
+  //   'kI=' + state.keyI, 'k=' + state.key, 'ks=' + state.keys.join(','),
+  //   'p=' + state.path.join('.'), 'hsr=', hasSubRef,
+  //   'pr=', refpath, jdc(tref), 'pc=', cpath, jdc(tcur), 'pv=', tpath, jdc(tval))
+
+  // console.log('REF-STORE')
+  // console.dir(store, { depth: null })
+
+  if (!hasSubRef || UNDEF !== tval) {
+
+    const tstate = { ...state }
+    tstate.path = tpath
+    tstate.nodes = state.nodes.slice(0, state.nodes.length - 1)
+    tstate.keyI = 0
+    tstate.key = getelem(tstate.path, -1)
+    tstate.keys = [tstate.key]
+    tstate.parent = getelem(nodes, -2)
+    tstate.val = tref
+
+    // console.dir(tstate, { depth: null })
+
+    // console.log(
+    //   '  REFINJ<',
+    //   'kI=' + tstate.keyI, 'k=' + tstate.key, 'ks=' + tstate.keys.join(','),
+    //   'p=' + tstate.path.join('.'),
+    //   'r=', jdc(tref), 'c=', jdc(tcur))
+
+    inject(
+      tref,
+      store,
+      modify,
+      tcur,
+      tstate
+    )
+
+    // console.log(
+    //   '  REFINJ>',
+    //   'kI=' + tstate.keyI, 'k=' + tstate.key, 'ks=' + tstate.keys.join(','),
+    //   'p=' + tstate.path.join('.'),
+    //   'r=', jdc(tref), 'c=', jdc(tcur), 'sv=', jdc(tstate.val))
+
+    // console.dir(tstate, { depth: null })
+    rval = tstate.val
+
+  }
+  else {
+    // console.log('  REF-STOP')
+    rval = UNDEF
+  }
+
+  const grandparent = getelem(nodes, -2)
+  const grandkey = getelem(path, -2)
+
+  // console.log('  REF-SG', grandkey, 'rval=', jdc(rval), 'gp=', jdc(grandparent),
+  //   'tref=', jdc(tref), 'tcur=', jdc(tcur))
+  setprop(grandparent, grandkey, rval)
+
+  if (islist(grandparent) && state.prior) {
+    state.prior.keyI--
+  }
+
+  return val
+}
+
+
 // Transform data using spec.
 // Only operates on static JSON-like data.
 // Arrays are treated as if they are objects with indices as keys.
@@ -1010,7 +1239,8 @@ function transform(
   modify?: Modify // Optionally modify individual values.
 ) {
   // Clone the spec so that the clone can be modified in place as the transform result.
-  spec = clone(spec)
+  const origspec = spec
+  spec = clone(origspec)
 
   const extraTransforms: any = {}
   const extraData = null == extra ? UNDEF : items(extra)
@@ -1018,9 +1248,7 @@ function transform(
       (n[0].startsWith(S_DS) ? extraTransforms[n[0]] = n[1] : (a[n[0]] = n[1]), a), {})
 
   const dataClone = merge([
-    // clone(UNDEF === extraData ? {} : extraData),
     isempty(extraData) ? UNDEF : clone(extraData),
-    // clone(UNDEF === data ? {} : data),
     clone(data),
   ])
 
@@ -1031,6 +1259,8 @@ function transform(
     // NOTE: to escape data that contains "`$FOO`" keys at the top level,
     // place that data inside a holding map: { myholder: mydata }.
     $TOP: dataClone,
+
+    $SPEC: () => origspec,
 
     // Escape backtick (this also works inside backticks).
     $BT: () => S_BT,
@@ -1048,6 +1278,7 @@ function transform(
     $MERGE: transform_MERGE,
     $EACH: transform_EACH,
     $PACK: transform_PACK,
+    $REF: transform_REF,
 
     // Custom extra transforms, if any.
     ...extraTransforms,
@@ -1255,13 +1486,15 @@ const validate_ONE: Injector = (
 
     state.keyI = state.keys.length
 
-    const grandparent = nodes[nodes.length - 2]
-    const grandkey = path[path.length - 2]
+    const grandparent = getelem(nodes, -2)
+    const grandkey = getelem(path, -2)
 
     // Clean up structure, replacing [$ONE, ...] with current
     setprop(grandparent, grandkey, current)
+
+    // TODO: need a slice util: slice(state.path,0,-1)
     state.path = state.path.slice(0, state.path.length - 1)
-    state.key = state.path[state.path.length - 1]
+    state.key = getelem(state.path, -1)
 
     let tvals = parent.slice(1)
     if (0 === tvals.length) {
@@ -1323,13 +1556,13 @@ const validate_EXACT: Injector = (
 
     state.keyI = state.keys.length
 
-    const grandparent = nodes[nodes.length - 2]
-    const grandkey = path[path.length - 2]
+    const grandparent = getelem(nodes, -2)
+    const grandkey = getelem(path, -2)
 
     // Clean up structure, replacing [$EXACT, ...] with current
     setprop(grandparent, grandkey, current)
     state.path = state.path.slice(0, state.path.length - 1)
-    state.key = state.path[state.path.length - 1]
+    state.key = getelem(state.path, -1)
 
     let tvals = parent.slice(1)
     if (0 === tvals.length) {
@@ -1648,33 +1881,54 @@ function _injectstr(
 }
 
 
+function jdc(x: any): string {
+  let s = UNDEF === x ? '<>' : stringify(x),
+    c = [81, 118, 213, 39, 208, 201, 45, 190, 129, 51, 160, 121, 226, 33, 207, 69]
+      .map(n => `\x1b[38;5;${n}m`),
+    r = '\x1b[0m', d = 0, o = c[0], t = o
+  for (const ch of s) {
+    if (ch === '{' || ch === '[') {
+      d++; o = c[d % c.length]; t += o + ch
+    } else if (ch === '}' || ch === ']') {
+      t += o + ch; d--; o = c[d % c.length]
+    } else {
+      t += o + ch
+    }
+  }
+  return t + r
+}
+
+
+
+
 // Define a class to mirror the JavaScript implementation
 class StructUtility {
-  clone = clone;
-  escre = escre;
-  escurl = escurl;
-  getpath = getpath;
-  getprop = getprop;
-  haskey = haskey;
-  inject = inject;
-  isempty = isempty;
-  isfunc = isfunc;
-  iskey = iskey;
-  islist = islist;
-  ismap = ismap;
-  isnode = isnode;
-  items = items;
-  joinurl = joinurl;
-  keysof = keysof;
-  merge = merge;
-  pathify = pathify;
-  setprop = setprop;
-  strkey = strkey;
-  stringify = stringify;
-  transform = transform;
-  typify = typify;
-  validate = validate;
-  walk = walk;
+  clone = clone
+  escre = escre
+  escurl = escurl
+  getelem = getelem
+  getpath = getpath
+  getprop = getprop
+  haskey = haskey
+  inject = inject
+  isempty = isempty
+  isfunc = isfunc
+  iskey = iskey
+  islist = islist
+  ismap = ismap
+  isnode = isnode
+  items = items
+  joinurl = joinurl
+  keysof = keysof
+  merge = merge
+  pathify = pathify
+  setprop = setprop
+  strkey = strkey
+  stringify = stringify
+  transform = transform
+  typify = typify
+  validate = validate
+  walk = walk
 }
 
 export {
@@ -1682,6 +1936,7 @@ export {
   clone,
   escre,
   escurl,
+  getelem,
   getpath,
   getprop,
   haskey,

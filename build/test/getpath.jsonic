@@ -73,6 +73,8 @@ basic: {
 
 current: {
   set: [
+    { in: { path: '.', store: {a:{b:1}}, current: {b:1} }, out: {b:1} }
+      
     { in: { path: '.b', store: {a:{b:1}}, current: {b:1} }, out: 1 }
     { in: { path: 'a.b', store: {a:{b:1}}, current: {b:1} }, out: 1 }
     { in: { path: 'a', store: {a:{b:1}}, current: {b:1} }, out: {b:1} }
