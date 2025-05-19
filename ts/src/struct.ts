@@ -649,7 +649,7 @@ function getpath(path: string | string[], store: any, current?: any, state?: Inj
   return val
 }
 
-let cI = 0
+// let cI = 0
 
 // Inject values from a data store into a node recursively, resolving
 // paths against the store, or current if they are local. THe modify
@@ -668,8 +668,8 @@ function inject(
   // inside a virtual parent holder to simplify edge cases.
   if (UNDEF === state) {
 
-    // console.log('INJ ==================')
-    cI = 0
+    // console.log('INJ ----------------')
+    // cI = 0
 
     const parent = { [S_DTOP]: val }
 
@@ -698,9 +698,16 @@ function inject(
     current = { $TOP: store }
   }
   else {
+    if (state.nodes.length !== state.path.length) {
+      console.dir(state, { depth: null })
+      throw new Error('NL=' + state.nodes.length + ' PL=' + state.path.length)
+    }
+
     // A provided current is expected to be the containing node of the associated
     // store value.
-    const parentkey = getprop(state.path, state.path.length - 2)
+    // const parentkey = getprop(state.path, state.path.length - 2)
+    const parentkey = getelem(state.path, -2)
+    // console.log('PKEY', parentkey, state.path)
     current = null == parentkey ? current : getprop(current, parentkey)
   }
 
@@ -930,6 +937,7 @@ const transform_EACH: Injector = (
   _ref: string,
   store: any
 ) => {
+
   // Remove arguments to avoid spurious processing.
   if (null != state.keys) {
     state.keys.length = 1
@@ -944,10 +952,8 @@ const transform_EACH: Injector = (
   const child = clone(getprop(state.parent, 2))
 
   // Source data.
-  // const src = getpath(srcpath, store, current, state)
   const srcstore = getprop(store, state.base, store)
   const src = getpath(srcpath, srcstore, current)
-  // console.log('EACH-SRC', srcpath, src, '|', srcstore, '|', current)
 
   // Create parallel data structures:
   // source entries :: child templates
@@ -955,7 +961,8 @@ const transform_EACH: Injector = (
   let tval: any = []
 
   const tkey = state.path[state.path.length - 2]
-  const target = state.nodes[state.path.length - 2] || state.nodes[state.path.length - 1]
+  // const target = state.nodes[state.path.length - 2] || state.nodes[state.path.length - 1]
+  const target = state.nodes[state.nodes.length - 2] || state.nodes[state.nodes.length - 1]
 
   // Create clones of the child template for each value of the current soruce.
   if (islist(src)) {
@@ -970,23 +977,65 @@ const transform_EACH: Injector = (
     }))
   }
 
-  tcur = null == src ? UNDEF : Object.values(src)
+  let rval = []
 
-  // Parent structure.
-  tcur = { $TOP: tcur }
+  // console.log('  EACH TVAL', state.path, tkey, tval, 'target=', target)
+  // console.dir(state.nodes, { depth: null })
 
-  // Build the substructure.
-  // console.log('EACH-INJ', tval, tcur)
-  tval = inject(tval, store, state.modify, tcur)
-  // const cstate = { ...state }
-  // cstate.path = cstate.path.slice(0, cstate.path.length - 1)
-  // inject(tval, store, state.modify, tcur, cstate)
-  // inject(tval, store, state.modify, tcur, state)
+  if (0 < tval.length) {
 
-  _updateAncestors(state, target, tkey, tval)
+    tcur = null == src ? UNDEF : Object.values(src)
+
+    // Parent structure.
+    const ckey = getelem(state.path, -2)
+    const pkey = getelem(state.path, -3, S_DTOP)
+    tcur = { [pkey]: { [ckey]: tcur } }
+
+    // console.log('EACH-tcur', stringify(tcur))
+
+    const tstate = { ...state }
+    tstate.path = state.path.slice(0, state.path.length - 1)
+    tstate.nodes = state.nodes.slice(0, state.nodes.length - 1)
+    tstate.keyI = 0
+    tstate.key = ckey
+    tstate.keys = [ckey]
+    tstate.parent = tcur
+    tstate.val = tval
+
+    if (tstate.path.length < 2) {
+      tstate.path.unshift(S_DTOP)
+      tstate.nodes.unshift(tstate.nodes[0])
+    }
+
+    // console.dir(tstate, { depth: null })
+
+    // console.log(
+    //   '  EACHINJ<',
+    //   'kI=' + tstate.keyI, 'k=' + tstate.key, 'ks=' + tstate.keys.join(','),
+    //   'p=' + tstate.path.join('.'),
+    //   't=', jdc(tval), 'c=', jdc(tcur))
+
+
+    // Build the substructure.
+    inject(
+      tval,
+      store,
+      state.modify,
+      tcur,
+      tstate
+    )
+
+    rval = tstate.val
+
+  }
+
+  // console.log('  EACH RVAL', 'kI=', state.keyI, 'keys=', state.keys, 'p=', state.path,
+  //   'tkey=', tkey, 'rval=', rval, 't=', target)
+
+  _updateAncestors(state, target, tkey, rval)
 
   // Prevent callee from damaging first list entry (since we are in `val` mode).
-  return tval[0]
+  return rval[0]
 }
 
 
@@ -1088,59 +1137,59 @@ const transform_REF: Injector = (
     return UNDEF
   }
 
-  // console.log('REF-SP', state.path)
-
-
-  // Get arguments: ['`$EACH`', 'spec-path'].
+  // Get arguments: ['`$REF`', 'ref-path'].
   const refpath = getprop(state.parent, 1)
   state.keyI = state.keys.length
 
   // Spec reference.
   const spec = getprop(store, S_DSPEC)()
   const ref = getpath(refpath, spec)
+
+  let hasSubRef = false
+  if (isnode(ref)) {
+    walk(ref, (_k: any, v: any) => {
+      if ('`$REF`' === v) {
+        hasSubRef = true
+      }
+      return v
+    })
+  }
+
   let tref = clone(ref)
 
-  // console.log('GETREF', refpath, tref)
-
-  const tpath = state.path.slice(0, state.path.length - 3)
-  // let tref = UNDEF
-  // tref.i = ++refI
-
-  let tcur = getpath(tpath, store)
-  let tval = getpath(state.path.slice(0, state.path.length - 1), store)
+  const cpath = state.path.slice(0, state.path.length - 3)
+  const tpath = state.path.slice(0, state.path.length - 1)
+  let tcur = getpath(cpath, store)
+  let tval = getpath(tpath, store)
   let rval = UNDEF
 
   // console.log(
   //   '  REF',
   //   'kI=' + state.keyI, 'k=' + state.key, 'ks=' + state.keys.join(','),
-  //   'p=' + state.path.join('.'),
-  //   'r=', jdc(tref), 'c=', jdc(tcur), 'v=', jdc(tval))
+  //   'p=' + state.path.join('.'), 'hsr=', hasSubRef,
+  //   'pr=', refpath, jdc(tref), 'pc=', cpath, jdc(tcur), 'pv=', tpath, jdc(tval))
 
+  // console.log('REF-STORE')
+  // console.dir(store, { depth: null })
 
-  // TODO: this end condition means $REF only works for recursion
-  // if (undefined != tval) {
-  const tstate = { ...state }
-  tstate.path = state.path.slice(0, state.path.length - 1)
-  tstate.keyI = 0
-  tstate.key = getelem(tstate.path, -1)
-  tstate.keys = [tstate.key]
-  tstate.parent = getelem(nodes, -2)
-  tstate.val = tref
+  if (!hasSubRef || UNDEF !== tval) {
 
-  // console.dir(tstate, { depth: null })
+    const tstate = { ...state }
+    tstate.path = tpath
+    tstate.nodes = state.nodes.slice(0, state.nodes.length - 1)
+    tstate.keyI = 0
+    tstate.key = getelem(tstate.path, -1)
+    tstate.keys = [tstate.key]
+    tstate.parent = getelem(nodes, -2)
+    tstate.val = tref
 
-  // console.log(
-  //   '  REFINJ<',
-  //   'kI=' + tstate.keyI, 'k=' + tstate.key, 'ks=' + tstate.keys.join(','),
-  //   'p=' + tstate.path.join('.'),
-  //   'r=', jdc(tref), 'c=', jdc(tcur))
+    // console.dir(tstate, { depth: null })
 
-  let pathstr = state.path.join('.')
-  console.log('pathstr', pathstr)
-
-
-  if (pathstr !== state.meta.REF_lastpath) {
-    state.meta.REF_lastpath = pathstr
+    // console.log(
+    //   '  REFINJ<',
+    //   'kI=' + tstate.keyI, 'k=' + tstate.key, 'ks=' + tstate.keys.join(','),
+    //   'p=' + tstate.path.join('.'),
+    //   'r=', jdc(tref), 'c=', jdc(tcur))
 
     inject(
       tref,
@@ -1161,13 +1210,7 @@ const transform_REF: Injector = (
 
   }
   else {
-    rval = UNDEF
-    state.meta.REF_stoppath = pathstr
-  }
-
-
-  // Recursion stops one level too deep because repeating paths need to be compared.
-  if (pathstr === tstate.meta.REF_stoppath) {
+    // console.log('  REF-STOP')
     rval = UNDEF
   }
 
@@ -1182,10 +1225,6 @@ const transform_REF: Injector = (
     state.prior.keyI--
   }
 
-  // state.path = state.path.slice(0, state.path.length - 1)
-  // state.key = getelem(state.path, -1)
-
-  // return UNDEF
   return val
 }
 
@@ -1843,7 +1882,7 @@ function _injectstr(
 
 
 function jdc(x: any): string {
-  let s = stringify(x),
+  let s = UNDEF === x ? '<>' : stringify(x),
     c = [81, 118, 213, 39, 208, 201, 45, 190, 129, 51, 160, 121, 226, 33, 207, 69]
       .map(n => `\x1b[38;5;${n}m`),
     r = '\x1b[0m', d = 0, o = c[0], t = o
