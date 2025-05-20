@@ -3298,6 +3298,272 @@
           }
         ]
       },
+      "pad": {
+        "set": [
+          {
+            "in": {
+              "val": "a",
+              "pad": 0
+            },
+            "out": "a"
+          },
+          {
+            "in": {
+              "val": "a",
+              "pad": 1
+            },
+            "out": "a"
+          },
+          {
+            "in": {
+              "val": "a",
+              "pad": 2
+            },
+            "out": "a "
+          },
+          {
+            "in": {
+              "val": "a",
+              "pad": 3
+            },
+            "out": "a  "
+          },
+          {
+            "in": {
+              "val": "a",
+              "pad": 4
+            },
+            "out": "a   "
+          },
+          {
+            "in": {
+              "val": "a"
+            },
+            "out": "a                                           "
+          },
+          {
+            "in": {
+              "val": "a",
+              "pad": -1
+            },
+            "out": "a"
+          },
+          {
+            "in": {
+              "val": "a",
+              "pad": -2
+            },
+            "out": " a"
+          },
+          {
+            "in": {
+              "val": "a",
+              "pad": -3
+            },
+            "out": "  a"
+          },
+          {
+            "in": {
+              "val": "a",
+              "pad": -4
+            },
+            "out": "   a"
+          },
+          {
+            "in": {
+              "val": "qq",
+              "pad": 0
+            },
+            "out": "qq"
+          },
+          {
+            "in": {
+              "val": "qq",
+              "pad": 1
+            },
+            "out": "qq"
+          },
+          {
+            "in": {
+              "val": "qq",
+              "pad": 2
+            },
+            "out": "qq"
+          },
+          {
+            "in": {
+              "val": "qq",
+              "pad": 3
+            },
+            "out": "qq "
+          },
+          {
+            "in": {
+              "val": "qq",
+              "pad": 4
+            },
+            "out": "qq  "
+          },
+          {
+            "in": {
+              "val": "qq"
+            },
+            "out": "qq                                          "
+          },
+          {
+            "in": {
+              "val": "qq",
+              "pad": -1
+            },
+            "out": "qq"
+          },
+          {
+            "in": {
+              "val": "qq",
+              "pad": -2
+            },
+            "out": "qq"
+          },
+          {
+            "in": {
+              "val": "qq",
+              "pad": -3
+            },
+            "out": " qq"
+          },
+          {
+            "in": {
+              "val": "qq",
+              "pad": -4
+            },
+            "out": "  qq"
+          },
+          {
+            "in": {
+              "val": "",
+              "pad": 0
+            },
+            "out": ""
+          },
+          {
+            "in": {
+              "val": "",
+              "pad": 1
+            },
+            "out": " "
+          },
+          {
+            "in": {
+              "val": "",
+              "pad": 2
+            },
+            "out": "  "
+          },
+          {
+            "in": {
+              "val": "",
+              "pad": 3
+            },
+            "out": "   "
+          },
+          {
+            "in": {
+              "val": "",
+              "pad": 4
+            },
+            "out": "    "
+          },
+          {
+            "in": {
+              "val": ""
+            },
+            "out": "                                            "
+          },
+          {
+            "in": {
+              "val": "",
+              "pad": -1
+            },
+            "out": " "
+          },
+          {
+            "in": {
+              "val": "",
+              "pad": -2
+            },
+            "out": "  "
+          },
+          {
+            "in": {
+              "val": "",
+              "pad": -3
+            },
+            "out": "   "
+          },
+          {
+            "in": {
+              "val": "",
+              "pad": -4
+            },
+            "out": "    "
+          },
+          {
+            "in": {
+              "val": "",
+              "pad": 4,
+              "char": "i"
+            },
+            "out": "iiii"
+          },
+          {
+            "in": {
+              "val": "",
+              "pad": -4,
+              "char": "v"
+            },
+            "out": "vvvv"
+          },
+          {
+            "in": {
+              "val": "",
+              "pad": 0,
+              "char": "jk"
+            },
+            "out": ""
+          },
+          {
+            "in": {
+              "val": "",
+              "char": "jk"
+            },
+            "out": "jjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjj"
+          },
+          {
+            "in": {
+              "val": "",
+              "pad": 1,
+              "char": "jk"
+            },
+            "out": "j"
+          },
+          {
+            "in": {
+              "val": "",
+              "pad": 2,
+              "char": "jk"
+            },
+            "out": "jj"
+          },
+          {
+            "in": {
+              "val": "",
+              "pad": 3,
+              "char": "jk"
+            },
+            "out": "jjj"
+          }
+        ]
+      },
       "name": "minor",
       "set": []
     },

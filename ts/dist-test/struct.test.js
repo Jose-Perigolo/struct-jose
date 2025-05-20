@@ -11,7 +11,7 @@ const TEST_JSON_FILE = '../../build/test/test.json';
 (0, node_test_1.describe)('struct', async () => {
     const runner = await (0, runner_1.makeRunner)(TEST_JSON_FILE, await sdk_js_1.SDK.test());
     const { spec, runset, runsetflags, client } = await runner('struct');
-    const { clone, escre, escurl, getelem, getpath, getprop, haskey, inject, isempty, isfunc, iskey, islist, ismap, isnode, items, joinurl, keysof, merge, pathify, size, slice, setprop, strkey, stringify, transform, typify, validate, walk, } = client.utility().struct;
+    const { clone, escre, escurl, getelem, getpath, getprop, haskey, inject, isempty, isfunc, iskey, islist, ismap, isnode, items, joinurl, keysof, merge, pad, pathify, size, slice, setprop, strkey, stringify, transform, typify, validate, walk, } = client.utility().struct;
     const minorSpec = spec.minor;
     const walkSpec = spec.walk;
     const mergeSpec = spec.merge;
@@ -38,6 +38,7 @@ const TEST_JSON_FILE = '../../build/test/test.json';
         (0, node_assert_1.equal)('function', typeof joinurl);
         (0, node_assert_1.equal)('function', typeof keysof);
         (0, node_assert_1.equal)('function', typeof merge);
+        (0, node_assert_1.equal)('function', typeof pad);
         (0, node_assert_1.equal)('function', typeof pathify);
         (0, node_assert_1.equal)('function', typeof size);
         (0, node_assert_1.equal)('function', typeof slice);
@@ -145,6 +146,9 @@ const TEST_JSON_FILE = '../../build/test/test.json';
     (0, node_test_1.test)('minor-slice', async () => {
         await runsetflags(minorSpec.slice, { null: false }, (vin) => slice(vin.val, vin.start, vin.end));
     });
+    (0, node_test_1.test)('minor-pad', async () => {
+        await runsetflags(minorSpec.pad, { null: false }, (vin) => pad(vin.val, vin.pad, vin.char));
+    });
     // walk tests
     // ==========
     (0, node_test_1.test)('walk-log', async () => {
@@ -202,7 +206,7 @@ const TEST_JSON_FILE = '../../build/test/test.json';
         await runset(getpathSpec.current, (vin) => getpath(vin.path, vin.store, vin.current));
     });
     (0, node_test_1.test)('getpath-state', async () => {
-        const state = {
+        const inj = {
             handler: (state, val, _current, _ref, _store) => {
                 let out = state.meta.step + ':' + val;
                 state.meta.step++;
@@ -221,7 +225,7 @@ const TEST_JSON_FILE = '../../build/test/test.json';
             base: '$TOP',
             errs: [],
         };
-        await runset(getpathSpec.state, (vin) => getpath(vin.path, vin.store, vin.current, state));
+        await runset(getpathSpec.state, (vin) => getpath(vin.path, vin.store, vin.current, inj));
     });
     // inject tests
     // ============
