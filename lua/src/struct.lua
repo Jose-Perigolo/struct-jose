@@ -695,23 +695,7 @@ local function clone(val, flags)
 
     -- Restore the original metatable if it existed
     if mt then
-      -- Make sure to deep copy the __metadata field to keep it intact
-      if mt.__metadata then
-        local new_mt = {}
-        for k, v in pairs(mt) do
-          if k == "__metadata" then
-            new_mt[k] = {}
-            for mk, mv in pairs(v) do
-              new_mt[k][mk] = mv
-            end
-          else
-            new_mt[k] = v
-          end
-        end
-        setmetatable(new_table, new_mt)
-      else
-        setmetatable(new_table, mt)
-      end
+      setmetatable(new_table, mt)
     end
 
     return new_table
@@ -2203,7 +2187,7 @@ end
 -- @param tkey (string) The key to set in the target
 -- @param tval (any) The value to set in the target
 _updateAncestors = function(_state, target, tkey, tval)
-  -- SetProp is sufficient in Lua as target reference remains consistent 
+  -- SetProp is sufficient in Lua as target reference remains consistent
   -- even for lists.
   setprop(target, tkey, tval)
 end
@@ -2369,40 +2353,41 @@ end
 
 
 -- Define the StructUtility "class"
-local StructUtility = {}
+local StructUtility = {
+  clone = clone,
+  escre = escre,
+  escurl = escurl,
+  getpath = getpath,
+  getprop = getprop,
+  haskey = haskey,
+  inject = inject,
+  isempty = isempty,
+  isfunc = isfunc,
+  iskey = iskey,
+  islist = islist,
+  ismap = ismap,
+  isnode = isnode,
+  items = items,
+  joinurl = joinurl,
+  keysof = keysof,
+  merge = merge,
+  pathify = pathify,
+  setprop = setprop,
+  strkey = strkey,
+  stringify = stringify,
+  transform = transform,
+  typify = typify,
+  validate = validate,
+  walk = walk,
+}
 StructUtility.__index = StructUtility
 
 -- Constructor for StructUtility
-function StructUtility:new()
-  local instance = setmetatable({}, StructUtility)
-  return instance
+function StructUtility:new(o)
+  o = o or {}
+  setmetatable(o, self)
+  return o
 end
-
-StructUtility.clone = clone
-StructUtility.escre = escre
-StructUtility.escurl = escurl
-StructUtility.getpath = getpath
-StructUtility.getprop = getprop
-StructUtility.haskey = haskey
-StructUtility.inject = inject
-StructUtility.isempty = isempty
-StructUtility.isfunc = isfunc
-StructUtility.iskey = iskey
-StructUtility.islist = islist
-StructUtility.ismap = ismap
-StructUtility.isnode = isnode
-StructUtility.items = items
-StructUtility.joinurl = joinurl
-StructUtility.keysof = keysof
-StructUtility.merge = merge
-StructUtility.pathify = pathify
-StructUtility.setprop = setprop
-StructUtility.strkey = strkey
-StructUtility.stringify = stringify
-StructUtility.transform = transform
-StructUtility.typify = typify
-StructUtility.validate = validate
-StructUtility.walk = walk
 
 return {
   StructUtility = StructUtility,
