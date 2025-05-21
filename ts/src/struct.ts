@@ -845,6 +845,8 @@ function inject(
     current = null == parentkey ? current : getprop(current, parentkey)
   }
 
+  // console.log('' + inj + ' c=' + stringify(current, -1, 1))
+
   // Descend into node.
   if (isnode(val)) {
 
@@ -1071,34 +1073,27 @@ const transform_EACH: Injector = (
 
   let rval = []
 
-  if (0 < tval.length) {
+  if (0 < size(tval)) {
     tcur = null == src ? UNDEF : Object.values(src)
+
+    const tpath = slice(inj.path, -1)
 
     // Parent structure.
     const ckey = getelem(inj.path, -2)
-    const pkey = getelem(inj.path, -3, S_DTOP)
-    tcur = { [pkey]: { [ckey]: tcur } }
+    tcur = { [ckey]: tcur }
+
+    if (1 < tpath.length) {
+      const pkey = getelem(inj.path, -3, S_DTOP)
+      tcur = { [pkey]: tcur }
+    }
 
     const tinj = inj.child(0, [ckey])
-    tinj.path = slice(inj.path, -1)
+    tinj.path = tpath
     tinj.nodes = slice(inj.nodes, -1)
     tinj.parent = tcur
     tinj.val = tval
 
-    if (tinj.path.length < 2) {
-      tinj.path.unshift(S_DTOP)
-      tinj.nodes.unshift(tinj.nodes[0])
-    }
-
-    // Build the substructure.
-    inject(
-      tval,
-      store,
-      inj.modify,
-      tcur,
-      tinj
-    )
-
+    inject(tval, store, inj.modify, tcur, tinj)
     rval = tinj.val
   }
 
@@ -1165,26 +1160,39 @@ const transform_PACK: Injector = (
     return a
   }, tval)
 
-  // Build parallel source object.
-  let tcurrent: any = {}
-  src.reduce((a: any, n: any) => {
-    let kn = getprop(n, keyname)
-    setprop(a, kn, n)
-    return a
-  }, tcurrent)
+  let rval = {}
 
-  tcurrent = { $TOP: tcurrent }
+  if (0 < size(tval)) {
 
-  // Build substructure.
-  // TODO: should use chlild Injection like EACH
-  inject(
-    tval,
-    store,
-    inj.modify,
-    tcurrent,
-  )
+    // Build parallel source object.
+    let tcur: any = {}
+    src.reduce((a: any, n: any) => {
+      let kn = getprop(n, keyname)
+      setprop(a, kn, n)
+      return a
+    }, tcur)
 
-  _updateAncestors(inj, target, tkey, tval)
+    const tpath = slice(inj.path, -1)
+
+    const ckey = getelem(inj.path, -2)
+    tcur = { [ckey]: tcur }
+
+    if (1 < tpath.length) {
+      const pkey = getelem(inj.path, -3, S_DTOP)
+      tcur = { [pkey]: tcur }
+    }
+
+    const tinj = inj.child(0, [ckey])
+    tinj.path = tpath
+    tinj.nodes = slice(inj.nodes, -1)
+    tinj.parent = tcur
+    tinj.val = tval
+
+    inject(tval, store, inj.modify, tcur, tinj)
+    rval = tinj.val
+  }
+
+  _updateAncestors(inj, target, tkey, rval)
 
   // Drop transform key.
   return UNDEF
@@ -1233,7 +1241,6 @@ const transform_REF: Injector = (
   let rval = UNDEF
 
   if (!hasSubRef || UNDEF !== tval) {
-
     const tinj = inj.child(0, [getelem(tpath, -1)])
 
     tinj.path = tpath
@@ -1241,16 +1248,9 @@ const transform_REF: Injector = (
     tinj.parent = getelem(nodes, -2)
     tinj.val = tref
 
-    inject(
-      tref,
-      store,
-      modify,
-      tcur,
-      tinj
-    )
+    inject(tref, store, modify, tcur, tinj)
 
     rval = tinj.val
-
   }
   else {
     rval = UNDEF
