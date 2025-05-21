@@ -948,7 +948,6 @@ const transform_COPY: Injector = (inj: Injection, _val: any, current: any) => {
   let out = key
   if (!mode.startsWith(S_MKEY)) {
     out = getprop(current, key)
-    // _setparentprop(inj, out)
     inj.setval(out)
   }
 
@@ -1006,7 +1005,6 @@ const transform_MERGE: Injector = (
     args = S_MT === args ? [current.$TOP] : Array.isArray(args) ? args : [args]
 
     // Remove the $MERGE command from a parent map.
-    // _setparentprop(inj, UNDEF)
     inj.setval(UNDEF)
 
     // Literals in the parent have precedence, but we still merge onto
