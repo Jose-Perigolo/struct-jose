@@ -113,6 +113,36 @@ class InjectState:
         self.meta = meta
         self.base = base
         self.modify = modify
+        self.prior = None
+
+    def child(self, keyI: int, keys: List[str]) -> 'InjectState':
+        """Create a child state object with the given key index and keys."""
+        return InjectState(
+            mode=self.mode,
+            full=self.full,
+            keyI=keyI,
+            keys=keys,
+            key=self.key,
+            val=self.val,
+            parent=self.parent,
+            path=self.path,
+            nodes=self.nodes,
+            handler=self.handler,
+            errs=self.errs,
+            meta=self.meta,
+            base=self.base,
+            modify=self.modify
+        )
+
+    def setval(self, val: Any, depth: int = 1) -> Any:
+        """Set the value in the parent node at the specified depth."""
+        if depth <= 0:
+            return val
+        if len(self.nodes) < depth:
+            return val
+        parent = self.nodes[-depth]
+        setprop(parent, self.key, val)
+        return parent
 
 
 def isnode(val: Any = UNDEF) -> bool:
@@ -637,6 +667,7 @@ def merge(objs: List[Any] = None) -> Any:
 
 
 def getpath(path, store, current=UNDEF, state=UNDEF):
+    # Operate on a string array.
     if isinstance(path, str):
         parts = path.split(S_DT)
     elif islist(path):
@@ -648,35 +679,33 @@ def getpath(path, store, current=UNDEF, state=UNDEF):
     val = store
     base = UNDEF if UNDEF == state else state.base
     
-    # If path or store is UNDEF or empty, return store or store[state.base].
-    if path is UNDEF or store is UNDEF or (1==len(parts) and parts[0] == S_MT):
+    # An empty path (incl empty string) just finds the store.
+    if path is UNDEF or store is UNDEF or (1 == len(parts) and parts[0] == S_MT):
+        # The actual store data may be in a store sub property, defined by state.base.
         val = getprop(store, base, store)
-
     elif len(parts) > 0:
         pI = 0
             
-        # Relative path uses `current` argument
+        # Relative path uses `current` argument.
         if parts[0] == S_MT:
-            if len(parts) == 1:
-                return getprop(store, base, store)
             pI = 1
             root = current
 
         part = parts[pI] if pI < len(parts) else UNDEF
-        first = getprop(root, part)
+        first = current if part == S_MT else getprop(root, part)
 
-        val = first
-        if UNDEF == first and 0 == pI: 
-            val = getprop(getprop(root, base), part)
+        # At top level, check state.base, if provided
+        val = getprop(getprop(root, base), part) if UNDEF == first and 0 == pI else first
 
+        # Move along the path, trying to descend into the store.
         pI += 1
-        
-        while pI < len(parts) and UNDEF != val:
+        while UNDEF != val and pI < len(parts):
             part = parts[pI]
-            val = getprop(val, part)
+            if part != S_MT:
+                val = getprop(val, parts[pI])
             pI += 1
             
-    # If a custom handler is specified, apply it.
+    # State may provide a custom handler to modify found value.
     if UNDEF != state and isfunc(state.handler):
         ref = pathify(path)
         val = state.handler(state, val, current, ref, store)
