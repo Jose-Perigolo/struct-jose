@@ -23,7 +23,11 @@
 # - clone: create a copy of a JSON-like data structure.
 # - items: list entries of a map or list as [key, value] pairs.
 # - getprop: safely get a property value by key.
+# - getelem: safely get a list element value by key/index.
 # - setprop: safely set a property value by key.
+# - size: get the size of a value (length for lists, strings; count for maps).
+# - slice: return a part of a list or other value.
+# - pad: pad a string to a specified length.
 # - stringify: human-friendly string version of a value.
 # - escre: escape a regular expresion string.
 # - escurl: escape a url.
@@ -35,6 +39,7 @@ from datetime import datetime
 import urllib.parse
 import json
 import re
+import math
 
 # Mode value for inject step.
 S_MKEYPRE =  'key:pre'
@@ -47,6 +52,7 @@ S_DKEY =  '`$KEY`'
 S_DMETA =  '`$META`'
 S_DTOP =  '$TOP'
 S_DERRS =  '$ERRS'
+S_DSPEC =  '$SPEC'
 
 # General strings.
 S_array =  'array'
@@ -64,6 +70,7 @@ S_BT =  '`'
 S_DS =  '$'
 S_DT =  '.'
 S_CN =  ':'
+S_FS =  '/'
 S_KEY =  'KEY'
 
 
@@ -137,6 +144,64 @@ def iskey(key: Any = UNDEF) -> bool:
     return False
 
 
+def size(val: Any) -> int:
+    """Determine the size of a value (length for lists/strings, count for maps)"""
+    if islist(val):
+        return len(val)
+    elif ismap(val):
+        return len(val.keys())
+    
+    if isinstance(val, str):
+        return len(val)
+    elif isinstance(val, (int, float)):
+        return math.floor(val)
+    elif isinstance(val, bool):
+        return 1 if val else 0
+    else:
+        return 0
+
+
+def slice(val: Any, start: int, end: int = UNDEF) -> Any:
+    """Return a part of a list or other value"""
+    if islist(val):
+        vlen = size(val)
+        if start is not None:
+            if start < 0:
+                end = vlen + start
+                if end < 0:
+                    end = 0
+                start = 0
+            elif end is not None:
+                if end < 0:
+                    end = vlen + end
+                    if end < 0:
+                        end = 0
+                elif vlen < end:
+                    end = len(val)
+            else:
+                end = len(val)
+
+            if vlen < start:
+                start = vlen
+
+            if -1 < start and start <= end and end <= vlen:
+                return val[start:end]
+
+    return val
+
+
+def pad(s: Any, padding: int = UNDEF, padchar: str = UNDEF) -> str:
+    """Pad a string to a specified length"""
+    s = stringify(s)
+    padding = 44 if padding is UNDEF else padding
+    padchar = ' ' if padchar is UNDEF else (padchar + ' ')[0]
+    
+    if padding > -1:
+        return s.ljust(padding, padchar)
+    else:
+        return s.rjust(-padding, padchar)
+
+
 def strkey(key: Any = UNDEF) -> str:
     if UNDEF == key:
         return S_MT
@@ -194,6 +259,32 @@ def typify(value: Any = UNDEF) -> str:
     return S_object
 
 
+def getelem(val: Any, key: Any, alt: Any = UNDEF) -> Any:
+    """
+    Get a list element. The key should be an integer, or a string
+    that can parse to an integer only. Negative integers count from the end of the list.
+    """
+    out = UNDEF
+
+    if UNDEF == val or UNDEF == key:
+        return alt
+
+    if islist(val):
+        try:
+            nkey = int(key)
+            if isinstance(nkey, int) and str(key).strip('-').isdigit():
+                if nkey < 0:
+                    key = len(val) + nkey
+                out = val[key] if 0 <= key < len(val) else UNDEF
+        except (ValueError, IndexError):
+            pass
+
+    if UNDEF == out:
+        return alt
+
+    return out
+
+
 def getprop(val: Any = UNDEF, key: Any = UNDEF, alt: Any = UNDEF) -> Any:
     """
     Safely get a property of a node. Undefined arguments return undefined.
@@ -222,7 +313,7 @@ def getprop(val: Any = UNDEF, key: Any = UNDEF, alt: Any = UNDEF) -> Any:
             return alt
 
     if UNDEF == out:
-        out = alt
+        return alt
         
     return out
 
@@ -646,7 +737,7 @@ def inject(val, store, modify=UNDEF, current=UNDEF, state=UNDEF):
             childnodes = state.nodes + [val]
             childval = getprop(val, nodekey)
 
-            # Phase 1: key-pre
+            # Create child state for key-pre phase
             childstate = InjectState(
                 mode = S_MKEYPRE,
                 full = False,
@@ -971,6 +1062,71 @@ def transform_PACK(state, val, current, ref, store):
     return UNDEF
 
 
+def transform_REF(state, val, _current, _ref, store):
+    """
+    Reference original spec (enables recursive transformations)
+    Format: ['`$REF`', '`spec-path`']
+    """
+    nodes = state.nodes
+    modify = state.modify
+
+    if state.mode != S_MVAL:
+        return UNDEF
+
+    # Get arguments: ['`$REF`', 'ref-path']
+    refpath = getprop(state.parent, 1)
+    state.keyI = len(state.keys)
+
+    # Spec reference
+    spec_func = getprop(store, S_DSPEC)
+    if not callable(spec_func):
+        return UNDEF
+    spec = spec_func()
+    ref = getpath(refpath, spec)
+
+    # Check if ref has another $REF inside
+    hasSubRef = False
+    if isnode(ref):
+        def check_subref(k, v, parent, path):
+            nonlocal hasSubRef
+            if v == '`$REF`':
+                hasSubRef = True
+            return v
+
+        walk(ref, check_subref)
+
+    tref = clone(ref)
+
+    cpath = slice(state.path, 0, len(state.path)-3)
+    tpath = slice(state.path, 0, len(state.path)-1)
+    tcur = getpath(cpath, store)
+    tval = getpath(tpath, store)
+    rval = UNDEF
+
+    if not hasSubRef or tval is not UNDEF:
+        # Create child state for the next level
+        tinj = state.child(0, [getelem(tpath, -1)])
+        tinj.path = tpath
+        tinj.nodes = slice(state.nodes, 0, len(state.nodes)-1)
+        tinj.parent = getelem(nodes, -2)
+        tinj.val = tref
+
+        # Inject with child state
+        inject(tref, store, modify, tcur, tinj)
+        rval = tinj.val
+    else:
+        rval = UNDEF
+
+    # Set the value in grandparent, using setval
+    grandparent = state.setval(rval, 2)
+    
+    # Handle lists by decrementing keyI
+    if islist(grandparent) and state.prior:
+        state.prior.keyI -= 1
+
+    return val
+
+
 # Transform data using spec.
 # Only operates on static JSON-like data.
 # Arrays are treated as if they are objects with indices as keys.
@@ -1022,6 +1178,7 @@ def transform(
         '$MERGE': transform_MERGE,
         '$EACH': transform_EACH,
         '$PACK': transform_PACK,
+        '$REF': transform_REF,
 
         # Custom extra transforms, if any.
         **extraTransforms,
@@ -1532,6 +1689,7 @@ class StructUtility:
         self.clone = clone
         self.escre = escre
         self.escurl = escurl
+        self.getelem = getelem
         self.getpath = getpath
         self.getprop = getprop
         self.haskey = haskey
@@ -1546,8 +1704,11 @@ class StructUtility:
         self.joinurl = joinurl
         self.keysof = keysof
         self.merge = merge
+        self.pad = pad
         self.pathify = pathify
         self.setprop = setprop
+        self.size = size
+        self.slice = slice
         self.stringify = stringify
         self.strkey = strkey
         self.transform = transform
@@ -1562,6 +1723,7 @@ __all__ = [
     'clone',
     'escre',
     'escurl',
+    'getelem',
     'getpath',
     'getprop',
     'haskey',
@@ -1576,8 +1738,11 @@ __all__ = [
     'joinurl',
     'keysof',
     'merge',
+    'pad',
     'pathify',
     'setprop',
+    'size',
+    'slice',
     'stringify',
     'strkey',
     'transform',
