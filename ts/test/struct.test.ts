@@ -50,7 +50,11 @@ describe('struct', async () => {
     joinurl,
     keysof,
     merge,
+    pad,
     pathify,
+
+    size,
+    slice,
     setprop,
 
     strkey,
@@ -94,7 +98,11 @@ describe('struct', async () => {
     equal('function', typeof joinurl)
     equal('function', typeof keysof)
     equal('function', typeof merge)
+    equal('function', typeof pad)
     equal('function', typeof pathify)
+
+    equal('function', typeof size)
+    equal('function', typeof slice)
     equal('function', typeof setprop)
 
     equal('function', typeof strkey)
@@ -251,6 +259,24 @@ describe('struct', async () => {
   })
 
 
+  test('minor-size', async () => {
+    await runsetflags(minorSpec.size, { null: false }, size)
+  })
+
+
+  test('minor-slice', async () => {
+    await runsetflags(minorSpec.slice, { null: false },
+      (vin: any) => slice(vin.val, vin.start, vin.end))
+  })
+
+
+  test('minor-pad', async () => {
+    await runsetflags(minorSpec.pad, { null: false },
+      (vin: any) => pad(vin.val, vin.pad, vin.char))
+  })
+
+
+
   // walk tests
   // ==========
 
@@ -335,7 +361,7 @@ describe('struct', async () => {
 
 
   test('getpath-state', async () => {
-    const state: Injection = {
+    const inj = {
       handler: (state: any, val: any, _current: any, _ref: any, _store: any) => {
         let out = state.meta.step + ':' + val
         state.meta.step++
@@ -353,9 +379,9 @@ describe('struct', async () => {
       nodes: [{}],
       base: '$TOP',
       errs: [],
-    }
+    } as unknown as Injection
     await runset(getpathSpec.state, (vin: any) =>
-      getpath(vin.path, vin.store, vin.current, state))
+      getpath(vin.path, vin.store, vin.current, inj))
   })
 
 
