@@ -40,11 +40,6 @@ import urllib.parse
 import json
 import re
 import math
-import logging
-
-# Configure logging
-logging.basicConfig(level=logging.DEBUG)
-logger = logging.getLogger('voxgig_struct')
 
 # Mode value for inject step.
 S_MKEYPRE =  'key:pre'
@@ -534,36 +529,26 @@ def setprop(parent: Any, key: Any, val: Any):
     - For lists, key > len(list) -> append.
     - For lists, UNDEF value -> remove and shift down.
     """
-    logger.debug(f"setprop: Input - parent={type(parent).__name__}, key={key}, val={val}")
-    logger.debug(f"setprop: Parent before - {parent}")
-
     if not iskey(key):
-        logger.debug(f"setprop: Invalid key - {key}")
         return parent
 
     if ismap(parent):
         key = str(key)
-        logger.debug(f"setprop: Map key after conversion - {key}")
         if UNDEF == val:
-            logger.debug(f"setprop: Deleting key {key} from map")
             parent.pop(key, UNDEF)
         else:
-            logger.debug(f"setprop: Setting map key {key} to {val}")
             parent[key] = val
 
     elif islist(parent):
         # Convert key to int
         try:
             key_i = int(key)
-            logger.debug(f"setprop: List key converted to int - {key_i}")
         except ValueError:
-            logger.debug(f"setprop: Invalid list key - {key}")
             return parent
 
         # Delete an element
         if UNDEF == val:
             if 0 <= key_i < len(parent):
-                logger.debug(f"setprop: Deleting list element at index {key_i}")
                 # Shift items left
                 for pI in range(key_i, len(parent) - 1):
                     parent[pI] = parent[pI + 1]
@@ -573,17 +558,13 @@ def setprop(parent: Any, key: Any, val: Any):
             if key_i >= 0:
                 if key_i >= len(parent):
                     # Append if out of range
-                    logger.debug(f"setprop: Appending {val} to list")
                     parent.append(val)
                 else:
-                    logger.debug(f"setprop: Setting list index {key_i} to {val}")
                     parent[key_i] = val
             else:
                 # Prepend if negative
-                logger.debug(f"setprop: Prepending {val} to list")
                 parent.insert(0, val)
 
-    logger.debug(f"setprop: Parent after - {parent}")
     return parent
 
 
@@ -881,25 +862,17 @@ def transform_COPY(state, val, current, ref, store):
     """
     Injection handler to copy a value from source data under the same key.
     """
-    logger.debug(f"transform_COPY: Input - mode={state.mode}, key={state.key}")
-    logger.debug(f"transform_COPY: Current - {current}")
-    logger.debug(f"transform_COPY: Parent - {state.parent}")
-
     mode = state.mode
     key = state.key
     parent = state.parent
 
     out = UNDEF
     if mode.startswith('key'):
-        logger.debug(f"transform_COPY: Key mode, returning key - {key}")
         out = key
     else:
         out = getprop(current, key)
-        logger.debug(f"transform_COPY: Value mode, got value from current - {out}")
         state.setval(out)
-        logger.debug(f"transform_COPY: Set value in parent using setval")
 
-    logger.debug(f"transform_COPY: Returning - {out}")
     return out
 
 
@@ -1004,6 +977,8 @@ def transform_EACH(state, val, current, ref, store):
             # Convert dict to a list of child templates
             tval = []
             for k, v in src.items():
+                # Create child state for each key
+                child_state = state.child(0, [k])
                 # Keep key in meta for usage by `$KEY`
                 copy_child = clone(child_template)
                 copy_child[S_DMETA] = {S_KEY: k}
@@ -1087,6 +1062,8 @@ def transform_PACK(state, val, current, ref, store):
             kn = getprop(meta, S_KEY, UNDEF)
 
         if kn is not UNDEF:
+            # Create child state for each key
+            child_state = state.child(0, [kn])
             tval[kn] = clone(child_template)
             # Transfer meta if present
             tmeta = getprop(elem, S_DMETA)
