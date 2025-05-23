@@ -80,6 +80,8 @@ const S_DS = '$'
 const S_DT = '.'
 const S_CN = ':'
 const S_FS = '/'
+const S_OS = '['
+const S_CS = ']'
 const S_KEY = 'KEY'
 
 
@@ -120,16 +122,21 @@ class Injection {
   parent: any               // Current parent (in transform specification).
   path: string[]            // Path to current node.
   nodes: any[]              // Stack of ancestor nodes.
-  handler: Injector    // Custom handler for injections.
+  handler: Injector         // Custom handler for injections.
   errs: any[]               // Error collector.  
   meta: Record<string, any> // Custom meta data.
   base?: string             // Base key for data in store, if any. 
   modify?: Modify           // Modify injection output.
-  prior?: Injection
+  prior?: Injection         // Parent (aka prior) injection.
+  dparent: any              // Current data parent node (contains current data value).
+  dpath: string[]           // Current data value path
 
   constructor(val: any, parent: any, modify?: Modify, errs?: any[]) {
     this.val = val
     this.parent = parent
+
+    this.dparent = UNDEF
+    this.dpath = [S_DTOP]
 
     this.mode = S_MVAL as InjectMode
     this.full = false
@@ -145,15 +152,43 @@ class Injection {
     this.meta = {}
   }
 
+
   toString(prefix?: string) {
     return 'INJ' + (null == prefix ? '' : S_FS + prefix) + S_CN +
-      pad(pathify(this.path)) +
+      pad(pathify(this.path, 1)) +
       this.mode + (this.full ? '/full' : '') + S_CN +
-      'key=' + this.keyI + S_FS + this.key + S_FS + this.keys +
+      'key=' + this.keyI + S_FS + this.key + S_FS + S_OS + this.keys + S_CS +
       '  p=' + stringify(this.parent, -1, 1) +
       '  m=' + stringify(this.meta, -1, 1) +
+      '  d/' + pathify(this.dpath, 1) + '=' + stringify(this.dparent, -1, 1) +
       '  r=' + stringify(this.nodes[0]?.[S_DTOP], -1, 1)
   }
+
+
+  current(store: any) {
+    // Resolve current node in store for local paths.
+    if (UNDEF === this.dparent) {
+      this.dparent = setprop({}, this.base, store)
+    }
+    else {
+      // this.dparent is the containing node of the current store value.
+      const parentkey = getelem(this.path, -2)
+      if (null != parentkey) {
+        this.dparent = getprop(this.dparent, parentkey)
+
+        let lastpart = getelem(this.dpath, -1)
+        if (lastpart === '$:' + parentkey) {
+          this.dpath = slice(this.dpath, -1)
+        }
+        else {
+          this.dpath = [...this.dpath, parentkey]
+        }
+      }
+    }
+
+    return this.dparent
+  }
+
 
   child(keyI: number, keys: string[]) {
     const key = strkey(keys[keyI])
@@ -177,6 +212,9 @@ class Injection {
     cinj.base = this.base
     cinj.meta = this.meta
     cinj.prior = this
+
+    cinj.dpath = [...this.dpath]
+    cinj.dparent = this.dparent
 
     return cinj
   }
@@ -746,57 +784,113 @@ function merge(val: any): any {
 }
 
 
-// Get a value deep inside a node using a key path.  For example the
-// path `a.b` gets the value 1 from {a:{b:1}}.  The path can specified
-// as a dotted string, or a string array.  If the path starts with a
-// dot (or the first element is ''), the path is considered local, and
-// resolved against the `current` argument, if defined.  Integer path
-// parts are used as array indexes.  The inj argument allows for
-// custom handling when called from `inject` or `transform`.
-// TODO: change sig to be consistent with getprop
 function getpath(path: string | string[], store: any, current?: any, inj?: Injection) {
 
   // Operate on a string array.
   const parts = islist(path) ? path : S_string === typeof path ? path.split(S_DT) : UNDEF
 
+  // const print = console.log // '...v' === path ? console.log : () => null
+
+  // print('GETPATH', path, parts, stringify(current, -1, 1))
+
   if (UNDEF === parts) {
     return UNDEF
   }
 
-  let root = store
+  // let root = store
   let val = store
   const base = getprop(inj, S_base)
+  const src = getprop(store, base, store)
+  const numparts = size(parts)
 
   // An empty path (incl empty string) just finds the store.
-  if (null == path || null == store || (1 === parts.length && S_MT === parts[0])) {
+  if (null == path || null == store || (1 === numparts && S_MT === parts[0])) {
     // The actual store data may be in a store sub property, defined by inj.base.
-    val = getprop(store, base, store)
+    // val = getprop(store, base, store)
+    val = src
   }
-  else if (0 < parts.length) {
-    let pI = 0
-
-    // Relative path uses `current` argument.
-    if (S_MT === parts[0]) {
-      pI = 1
-      root = current
+  else if (0 < numparts) {
+    if (1 === numparts) {
+      val = getprop(store, parts[0])
     }
 
-    let part = pI < parts.length ? parts[pI] : UNDEF
-    let first: any = S_MT === part ? current : getprop(root, part)
+    if (!isfunc(val)) {
+      val = src
 
-    // At top level, check inj.base, if provided
-    val = (UNDEF === first && 0 === pI) ?
-      getprop(getprop(root, base), part) :
-      first
+      // if (UNDEF === val) {
+      // Move along the path, trying to descend into the store.
+      // for (pI++; UNDEF !== val && pI < parts.length; pI++) {
+      for (let pI = 0; UNDEF !== val && pI < parts.length; pI++) {
+        let part = parts[pI]
 
-    // Move along the path, trying to descend into the store.
-    for (pI++; UNDEF !== val && pI < parts.length; pI++) {
-      part = parts[pI]
-      if (S_MT !== part) {
-        val = getprop(val, parts[pI])
+        // print('PART', pI, '<' + part + '>')
+
+        if (inj && '$KEY' === part) {
+          part = inj.key
+        }
+        else if (inj && part.startsWith('$GET:')) {
+          // $GET:path$ -> getpath(path, store).toString
+          part = stringify(getpath(part.substring(5, part.length - 1), src, S_MT))
+        }
+        else if (inj && part.startsWith('$REF:')) {
+          // $REF:refpath$ -> getpath(spec, store.$SPEC).toString
+          part = stringify(getpath(part.substring(5, part.length - 1), store.$SPEC, S_MT))
+        }
+        else if (inj && part.startsWith('$META:')) {
+          // $META:metapath$ -> getpath(metapath, inj.meta).toString
+          part = stringify(getpath(part.substring(6, part.length - 1), inj.meta, S_MT))
+        }
+
+        // $$ escapes $
+        part = part.replace(/\$\$/g, '$')
+
+        if (S_MT === part) {
+
+          let ascends = 0
+          while (S_MT === parts[1 + pI]) {
+            ascends++
+            pI++
+          }
+
+          if (inj && inj.dpath && 0 < ascends) {
+            if (pI === parts.length - 1) {
+              ascends--
+            }
+
+            if (0 === ascends) {
+              val = current
+              // console.log('PART-avc', pI, current)
+            }
+            else {
+              // const dpath = inj.dpath.filter(p => !p.startsWith('$:'))
+              let dpath = slice(inj.dpath, 0 - ascends).concat(parts.slice(pI + 1))
+              // print('ASCENDS', ascends, inj.dpath.join('.'), dpath.join('.'), '' + inj, stringify(store))
+
+              if (ascends <= size(inj.dpath)) {
+                // if (0 < size(dpath)) {
+                val = getpath(dpath, store)
+                // console.log('AVAL', val)
+              }
+              else {
+                val = UNDEF
+              }
+              break
+            }
+          }
+          else {
+            val = current
+            // console.log('PART-vc', pI, current)
+          }
+        }
+        else {
+          val = getprop(val, part)
+          // console.log('PART-gp', pI, parts[pI], val)
+        }
       }
     }
   }
+
+  // console.log('FINAL-VAL', val)
 
   // Inj may provide a custom handler to modify found value.
   if (null != inj && isfunc(inj.handler)) {
@@ -807,7 +901,7 @@ function getpath(path: string | string[], store: any, current?: any, inj?: Injec
   return val
 }
 
-// let cI = 0
+
 
 // Inject values from a data store into a node recursively, resolving
 // paths against the store, or current if they are local. THe modify
@@ -833,17 +927,21 @@ function inject(
 
   inj.meta.d++
 
-  // Resolve current node in store for local paths.
-  if (UNDEF === current) {
-    // TODO: check store base prop ($TOP)
-    current = { $TOP: store }
-  }
-  else {
-    // A provided current is expected to be the containing node of the associated
-    // store value.
-    const parentkey = getelem(inj.path, -2)
-    current = null == parentkey ? current : getprop(current, parentkey)
-  }
+  inj.dparent = current
+  current = inj.current(store)
+
+  // // Resolve current node in store for local paths.
+  // if (UNDEF === current) {
+  //   // TODO: check store base prop ($TOP)
+  //   // current = { $TOP: store }
+  //   current = setprop({}, inj.base, store)
+  // }
+  // else {
+  //   // A provided current is expected to be the containing node of the associated
+  //   // store value.
+  //   const parentkey = getelem(inj.path, -2)
+  //   current = null == parentkey ? current : getprop(current, parentkey)
+  // }
 
   // console.log('' + inj + ' c=' + stringify(current, -1, 1))
 
@@ -996,10 +1094,16 @@ const transform_MERGE: Injector = (
 ) => {
   const { mode, key, parent } = inj
 
-  if (S_MKEYPRE === mode) { return key }
+  // Ensures $MERGE is removed from parent list (val mode).
+  let out: any = UNDEF
+
+  if (S_MKEYPRE === mode) {
+    out = key
+  }
 
   // Operate after child values have been transformed.
-  if (S_MKEYPOST === mode) {
+  else if (S_MKEYPOST === mode) {
+    out = key
 
     let args = getprop(parent, key)
     args = S_MT === args ? [current.$TOP] : Array.isArray(args) ? args : [args]
@@ -1013,11 +1117,10 @@ const transform_MERGE: Injector = (
 
     merge(mergelist)
 
-    return key
+    // return key
   }
 
-  // Ensures $MERGE is removed from parent list.
-  return UNDEF
+  return out
 }
 
 
@@ -1074,23 +1177,40 @@ const transform_EACH: Injector = (
   if (0 < size(tval)) {
     tcur = null == src ? UNDEF : Object.values(src)
 
+    const ckey = getelem(inj.path, -2)
+
     const tpath = slice(inj.path, -1)
+    const dpath = [S_DTOP, ...srcpath.split(S_DT), '$:' + ckey]
+
 
     // Parent structure.
-    const ckey = getelem(inj.path, -2)
+
+    // const ckey = getelem(cpath, -1)
     tcur = { [ckey]: tcur }
 
     if (1 < tpath.length) {
       const pkey = getelem(inj.path, -3, S_DTOP)
+      // const pkey = getelem(cpath, -2, S_DTOP)
       tcur = { [pkey]: tcur }
+      dpath.push('$:' + pkey)
     }
+
+    // console.log('CPATH', srcpath, dpath)
 
     const tinj = inj.child(0, [ckey])
     tinj.path = tpath
     tinj.nodes = slice(inj.nodes, -1)
-    tinj.parent = tcur
+
+    // tinj.parent = tcur
+    tinj.parent = getelem(tinj.nodes, -1)
+    setprop(tinj.parent, ckey, tval)
+
     tinj.val = tval
 
+    tinj.dpath = dpath
+    tinj.dparent = tcur
+
+    // console.log('\nEACH:' + tinj)
     inject(tval, store, inj.modify, tcur, tinj)
     rval = tinj.val
   }
@@ -1173,18 +1293,26 @@ const transform_PACK: Injector = (
     const tpath = slice(inj.path, -1)
 
     const ckey = getelem(inj.path, -2)
+    const dpath = [S_DTOP, ...srcpath.split(S_DT), '$:' + ckey]
+
     tcur = { [ckey]: tcur }
 
     if (1 < tpath.length) {
       const pkey = getelem(inj.path, -3, S_DTOP)
       tcur = { [pkey]: tcur }
+      dpath.push('$:' + pkey)
     }
 
     const tinj = inj.child(0, [ckey])
     tinj.path = tpath
     tinj.nodes = slice(inj.nodes, -1)
-    tinj.parent = tcur
+
+    // tinj.parent = tcur
+    tinj.parent = getelem(tinj.nodes, -1)
     tinj.val = tval
+
+    tinj.dpath = dpath
+    tinj.dparent = tcur
 
     inject(tval, store, inj.modify, tcur, tinj)
     rval = tinj.val
