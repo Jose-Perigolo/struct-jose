@@ -394,7 +394,8 @@ describe('struct', async () => {
 
   test('inject-string', async () => {
     await runset(injectSpec.string, (vin: any) =>
-      inject(vin.val, vin.store, nullModifier, vin.current))
+      // inject(vin.val, vin.store, nullModifier, vin.current))
+      inject(vin.val, vin.store, nullModifier))
   })
 
 
@@ -514,13 +515,15 @@ describe('struct', async () => {
   test('validate-custom', async () => {
     const errs: any[] = []
     const extra = {
-      $INTEGER: (state: any, _val: any, current: any) => {
-        const { key } = state
-        let out = getprop(current, key)
+      // $INTEGER: (state: any, _val: any, current: any) => {
+      $INTEGER: (inj: Injection) => {
+        const { key } = inj
+        // let out = getprop(current, key)
+        let out = getprop(inj.dparent, key)
 
         let t = typeof out
         if ('number' !== t && !Number.isInteger(out)) {
-          state.errs.push('Not an integer at ' + state.path.slice(1).join('.') + ': ' + out)
+          inj.errs.push('Not an integer at ' + inj.path.slice(1).join('.') + ': ' + out)
           return
         }
 

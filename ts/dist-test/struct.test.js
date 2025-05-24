@@ -225,7 +225,9 @@ const TEST_JSON_FILE = '../../build/test/test.json';
         (0, node_assert_1.deepEqual)(inject(test.in.val, test.in.store), test.out);
     });
     (0, node_test_1.test)('inject-string', async () => {
-        await runset(injectSpec.string, (vin) => inject(vin.val, vin.store, runner_1.nullModifier, vin.current));
+        await runset(injectSpec.string, (vin) => 
+        // inject(vin.val, vin.store, nullModifier, vin.current))
+        inject(vin.val, vin.store, runner_1.nullModifier));
     });
     (0, node_test_1.test)('inject-deep', async () => {
         await runset(injectSpec.deep, (vin) => inject(vin.val, vin.store));
@@ -298,12 +300,14 @@ const TEST_JSON_FILE = '../../build/test/test.json';
     (0, node_test_1.test)('validate-custom', async () => {
         const errs = [];
         const extra = {
-            $INTEGER: (state, _val, current) => {
-                const { key } = state;
-                let out = getprop(current, key);
+            // $INTEGER: (state: any, _val: any, current: any) => {
+            $INTEGER: (inj) => {
+                const { key } = inj;
+                // let out = getprop(current, key)
+                let out = getprop(inj.dparent, key);
                 let t = typeof out;
                 if ('number' !== t && !Number.isInteger(out)) {
-                    state.errs.push('Not an integer at ' + state.path.slice(1).join('.') + ': ' + out);
+                    inj.errs.push('Not an integer at ' + inj.path.slice(1).join('.') + ': ' + out);
                     return;
                 }
                 return out;
