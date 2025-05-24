@@ -166,7 +166,7 @@ function match(check, base, structUtils) {
     base = structUtils.clone(base);
     structUtils.walk(check, (_key, val, _parent, path) => {
         if (!structUtils.isnode(val)) {
-            let baseval = structUtils.getpath(path, base);
+            let baseval = structUtils.getpath(base, path);
             if (baseval === val) {
                 return val;
             }

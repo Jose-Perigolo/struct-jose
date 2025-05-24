@@ -350,61 +350,37 @@ describe('struct', async () => {
   // =============
 
   test('getpath-basic', async () => {
-    await runset(getpathSpec.basic, (vin: any) => getpath(vin.path, vin.store))
+    await runset(getpathSpec.basic, (vin: any) => getpath(vin.store, vin.path))
   })
 
 
-  test('getpath-current', async () => {
-    await runset(getpathSpec.current, (vin: any) =>
-      getpath(vin.path, vin.store, vin.current, { dpath: vin.dpath?.split('.') }))
+  test('getpath-relative', async () => {
+    await runset(getpathSpec.relative, (vin: any) =>
+      getpath(vin.store, vin.path, { dparent: vin.dparent, dpath: vin.dpath?.split('.') }))
   })
 
 
   test('getpath-special', async () => {
     await runset(getpathSpec.special, (vin: any) =>
-      getpath(vin.path, vin.store, vin.current, vin.inj))
+      getpath(vin.store, vin.path, vin.inj))
   })
-
 
 
   test('getpath-handler', async () => {
     await runset(getpathSpec.handler, (vin: any) =>
-      getpath(vin.path, {
-        $TOP: vin.store,
-        $FOO: () => 'foo',
-      }, vin.current, {
-        handler: (_inj: any, val: any, _cur: any, _ref: any) => {
-          // console.log('HANDLER', ref, val)
-          return val()
+      getpath(
+        {
+          $TOP: vin.store,
+          $FOO: () => 'foo',
+        },
+        vin.path,
+        {
+          handler: (_inj: any, val: any, _cur: any, _ref: any) => {
+            return val()
+          }
         }
-      }))
+      ))
   })
-
-
-
-  // test('getpath-state', async () => {
-  //   const inj = {
-  //     handler: (state: any, val: any, _current: any, _ref: any, _store: any) => {
-  //       let out = state.meta.step + ':' + val
-  //       state.meta.step++
-  //       return out
-  //     },
-  //     meta: { step: 0 },
-  //     mode: ('val' as any),
-  //     full: false,
-  //     keyI: 0,
-  //     keys: ['$TOP'],
-  //     key: '$TOP',
-  //     val: '',
-  //     parent: {},
-  //     path: ['$TOP'],
-  //     nodes: [{}],
-  //     base: '$TOP',
-  //     errs: [],
-  //   } as unknown as Injection
-  //   await runset(getpathSpec.state, (vin: any) =>
-  //     getpath(vin.path, vin.store, vin.current, inj))
-  // })
 
 
   // inject tests

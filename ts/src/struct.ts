@@ -751,7 +751,7 @@ function merge(val: any): any {
           let lenpath = path.length
           cI = lenpath - 1
           if (UNDEF === cur[cI]) {
-            cur[cI] = getpath(slice(path, 0, lenpath - 1), out)
+            cur[cI] = getpath(out, slice(path, 0, lenpath - 1))
           }
 
           // Create node if needed.
@@ -784,14 +784,22 @@ function merge(val: any): any {
 }
 
 
-function getpath(path: string | string[], store: any, current?: any, inj?: Injection) {
+// TODO: remove current arg, use inj.dparent
+// function getpath(path: string | string[], store: any, current?: any, inj?: Injection) {
+function getpath(store: any, path: string | string[], inj?: {
+  key?: string
+  dparent?: any,
+  dpath?: string[]
+  meta?: any
+  handler?: any
+}) {
 
   // Operate on a string array.
   const parts = islist(path) ? path : S_string === typeof path ? path.split(S_DT) : UNDEF
 
   // const print = console.log // '...v' === path ? console.log : () => null
 
-  // print('GETPATH', path, parts, stringify(current, -1, 1))
+  // print('GETPATH', path, parts, parts?.length, '' + inj)
 
   if (UNDEF === parts) {
     return UNDEF
@@ -802,11 +810,10 @@ function getpath(path: string | string[], store: any, current?: any, inj?: Injec
   const base = getprop(inj, S_base)
   const src = getprop(store, base, store)
   const numparts = size(parts)
+  const dparent = getprop(inj, 'dparent')
 
   // An empty path (incl empty string) just finds the store.
   if (null == path || null == store || (1 === numparts && S_MT === parts[0])) {
-    // The actual store data may be in a store sub property, defined by inj.base.
-    // val = getprop(store, base, store)
     val = src
   }
   else if (0 < numparts) {
@@ -817,6 +824,8 @@ function getpath(path: string | string[], store: any, current?: any, inj?: Injec
     if (!isfunc(val)) {
       val = src
 
+      const dpath = getprop(inj, 'dpath')
+
       // if (UNDEF === val) {
       // Move along the path, trying to descend into the store.
       // for (pI++; UNDEF !== val && pI < parts.length; pI++) {
@@ -826,19 +835,19 @@ function getpath(path: string | string[], store: any, current?: any, inj?: Injec
         // print('PART', pI, '<' + part + '>')
 
         if (inj && '$KEY' === part) {
-          part = inj.key
+          part = getprop(inj, 'key')
         }
         else if (inj && part.startsWith('$GET:')) {
-          // $GET:path$ -> getpath(path, store).toString
-          part = stringify(getpath(part.substring(5, part.length - 1), src, S_MT))
+          // $GET:path$ -> get store value, use as path part (string)
+          part = stringify(getpath(src, part.substring(5, part.length - 1)))
         }
         else if (inj && part.startsWith('$REF:')) {
-          // $REF:refpath$ -> getpath(spec, store.$SPEC).toString
-          part = stringify(getpath(part.substring(5, part.length - 1), store.$SPEC, S_MT))
+          // $REF:refpath$ -> get spec value, use as path part (string)
+          part = stringify(getpath(getprop(store, S_DSPEC), part.substring(5, part.length - 1)))
         }
         else if (inj && part.startsWith('$META:')) {
-          // $META:metapath$ -> getpath(metapath, inj.meta).toString
-          part = stringify(getpath(part.substring(6, part.length - 1), inj.meta, S_MT))
+          // $META:metapath$ -> get meta value, use as path part (string)
+          part = stringify(getpath(getprop(inj, 'meta'), part.substring(6, part.length - 1)))
         }
 
         // $$ escapes $
@@ -852,23 +861,24 @@ function getpath(path: string | string[], store: any, current?: any, inj?: Injec
             pI++
           }
 
-          if (inj && inj.dpath && 0 < ascends) {
+          if (inj && 0 < ascends) {
             if (pI === parts.length - 1) {
               ascends--
             }
 
             if (0 === ascends) {
-              val = current
+              val = dparent
+              // val = current
               // console.log('PART-avc', pI, current)
             }
             else {
               // const dpath = inj.dpath.filter(p => !p.startsWith('$:'))
-              let dpath = slice(inj.dpath, 0 - ascends).concat(parts.slice(pI + 1))
+              const fullpath = slice(dpath, 0 - ascends).concat(parts.slice(pI + 1))
               // print('ASCENDS', ascends, inj.dpath.join('.'), dpath.join('.'), '' + inj, stringify(store))
 
-              if (ascends <= size(inj.dpath)) {
+              if (ascends <= size(dpath)) {
                 // if (0 < size(dpath)) {
-                val = getpath(dpath, store)
+                val = getpath(store, fullpath)
                 // console.log('AVAL', val)
               }
               else {
@@ -878,7 +888,8 @@ function getpath(path: string | string[], store: any, current?: any, inj?: Injec
             }
           }
           else {
-            val = current
+            val = dparent
+            // val = current
             // console.log('PART-vc', pI, current)
           }
         }
@@ -893,9 +904,10 @@ function getpath(path: string | string[], store: any, current?: any, inj?: Injec
   // console.log('FINAL-VAL', val)
 
   // Inj may provide a custom handler to modify found value.
-  if (null != inj && isfunc(inj.handler)) {
+  const handler = getprop(inj, 'handler')
+  if (null != inj && isfunc(handler)) {
     const ref = pathify(path)
-    val = inj.handler(inj, val, current, ref, store)
+    val = handler(inj, val, dparent, ref, store)
   }
 
   return val
@@ -919,7 +931,6 @@ function inject(
   // Create state if at root of injection.  The input value is placed
   // inside a virtual parent holder to simplify edge cases.
   if (UNDEF === inj) {
-
     // Set up state assuming we are starting in the virtual parent.
     inj = new Injection(val, { [S_DTOP]: val }, modify, getprop(store, S_DERRS))
     inj.meta.d = 0
@@ -929,19 +940,6 @@ function inject(
 
   inj.dparent = current
   current = inj.current(store)
-
-  // // Resolve current node in store for local paths.
-  // if (UNDEF === current) {
-  //   // TODO: check store base prop ($TOP)
-  //   // current = { $TOP: store }
-  //   current = setprop({}, inj.base, store)
-  // }
-  // else {
-  //   // A provided current is expected to be the containing node of the associated
-  //   // store value.
-  //   const parentkey = getelem(inj.path, -2)
-  //   current = null == parentkey ? current : getprop(current, parentkey)
-  // }
 
   // console.log('' + inj + ' c=' + stringify(current, -1, 1))
 
@@ -1149,7 +1147,9 @@ const transform_EACH: Injector = (
 
   // Source data.
   const srcstore = getprop(store, inj.base, store)
-  const src = getpath(srcpath, srcstore, current)
+
+  // const src = getpath(srcpath, srcstore, current)
+  const src = getpath(srcstore, srcpath, inj)
 
   // Create parallel data structures:
   // source entries :: child templates
@@ -1250,7 +1250,9 @@ const transform_PACK: Injector = (
 
   // Source data
   const srcstore = getprop(store, inj.base, store)
-  let src = getpath(srcpath, srcstore, current)
+
+  // let src = getpath(srcpath, srcstore, current)
+  let src = getpath(srcstore, srcpath, inj)
 
   // Prepare source as a list.
   src = islist(src) ? src :
@@ -1346,7 +1348,12 @@ const transform_REF: Injector = (
 
   // Spec reference.
   const spec = getprop(store, S_DSPEC)()
-  const ref = getpath(refpath, spec)
+
+  const ref = getpath(spec, refpath, {
+    // TODO: test relative refs
+    dpath: inj.path.slice(1),
+    dparent: getpath(spec, inj.path.slice(1))
+  })
 
   let hasSubRef = false
   if (isnode(ref)) {
@@ -1362,8 +1369,8 @@ const transform_REF: Injector = (
 
   const cpath = slice(inj.path, -3)
   const tpath = slice(inj.path, -1)
-  let tcur = getpath(cpath, store)
-  let tval = getpath(tpath, store)
+  let tcur = getpath(store, cpath)
+  let tval = getpath(store, tpath)
   let rval = UNDEF
 
   if (!hasSubRef || UNDEF !== tval) {
@@ -1993,7 +2000,10 @@ function _injectstr(
   let out: any = val
 
   // Pattern examples: "`a.b.c`", "`$NAME`", "`$NAME1`"
-  const m = val.match(/^`(\$[A-Z]+|[^`]+)[0-9]*`$/)
+  // const m = val.match(/^`(\$[A-Z]+|[^`]+)[0-9]*`$/)
+  const m = val.match(/^`(\$[A-Z]+|[^`]*)[0-9]*`$/)
+
+  // console.log('INJSTR', '<' + val + '>', m)
 
   // Full string of the val is an injection.
   if (m) {
@@ -2007,7 +2017,9 @@ function _injectstr(
       3 < pathref.length ? pathref.replace(/\$BT/g, S_BT).replace(/\$DS/g, S_DS) : pathref
 
     // Get the extracted path reference.
-    out = getpath(pathref, store, current, inj)
+    // out = getpath(pathref, store, current, inj)
+    out = getpath(store, pathref, inj)
+    // console.log('INJSTR-MOUT', '<' + pathref + '>', pathref, store)
   }
 
   else {
@@ -2018,7 +2030,8 @@ function _injectstr(
       if (inj) {
         inj.full = false
       }
-      const found = getpath(ref, store, current, inj)
+      // const found = getpath(ref, store, current, inj)
+      const found = getpath(store, ref, inj)
 
       // Ensure inject value is a string.
       return UNDEF === found ? S_MT : S_string === typeof found ? found : JSON.stringify(found)
