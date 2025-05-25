@@ -1597,7 +1597,13 @@ const validate_ONE: Injector = (
       // vstore.$TOP = current
       vstore.$TOP = inj.dparent
       // const vcurrent = validate(current, tval, vstore, terrs)
-      const vcurrent = validate(inj.dparent, tval, vstore, terrs)
+      // const vcurrent = validate(inj.dparent, tval, vstore, terrs)
+
+      const vcurrent = validate(inj.dparent, tval, {
+        extra: vstore,
+        errs: terrs,
+        meta: inj.meta,
+      })
 
       setprop(grandparent, getelem(path, -2), vcurrent)
 
@@ -1793,12 +1799,19 @@ function validate(
   data: any, // Source data to transform into new data (original not mutated)
   spec: any, // Transform specification; output follows this shape
 
-  extra?: any, // Additional custom checks
+  injdef?: Partial<Injection>
 
+  // extra?: any, // Additional custom checks
   // Optionally modify individual values.
-  collecterrs?: any,
+  // collecterrs?: any,
 ) {
-  const errs = null == collecterrs ? [] : collecterrs
+  const extra = injdef?.extra
+
+  const collect = null != injdef?.errs
+  const errs = injdef?.errs || []
+
+
+  // const errs = null == collecterrs ? [] : collecterrs
 
   const store = {
     // Remove the transform commands.
@@ -1829,9 +1842,18 @@ function validate(
   }
 
   // const out = transform(data, spec, store, _validation)
-  const out = transform(data, spec, { extra: store, modify: _validation })
+  // const out = transform(data, spec, { extra: store, modify: _validation })
 
-  const generr = (0 < errs.length && null == collecterrs)
+  const out = transform(data, spec, {
+    meta: injdef?.meta,
+    extra: store,
+    modify: _validation,
+    // handler: _validatehandler
+  })
+
+
+  // const generr = (0 < errs.length && null == collecterrs)
+  const generr = (0 < errs.length && !collect)
   if (generr) {
     throw new Error('Invalid data: ' + errs.join(' | '))
   }

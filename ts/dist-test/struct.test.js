@@ -299,6 +299,9 @@ const TEST_JSON_FILE = '../../build/test/test.json';
     (0, node_test_1.test)('validate-invalid', async () => {
         await runsetflags(validateSpec.invalid, { null: false }, (vin) => validate(vin.data, vin.spec));
     });
+    (0, node_test_1.test)('validate-special', async () => {
+        await runset(validateSpec.special, (vin) => validate(vin.data, vin.spec, vin.inj));
+    });
     (0, node_test_1.test)('validate-custom', async () => {
         const errs = [];
         const extra = {
@@ -316,10 +319,10 @@ const TEST_JSON_FILE = '../../build/test/test.json';
             },
         };
         const shape = { a: '`$INTEGER`' };
-        let out = validate({ a: 1 }, shape, extra, errs);
+        let out = validate({ a: 1 }, shape, { extra, errs });
         (0, node_assert_1.deepEqual)(out, { a: 1 });
         (0, node_assert_1.equal)(errs.length, 0);
-        out = validate({ a: 'A' }, shape, extra, errs);
+        out = validate({ a: 'A' }, shape, { extra, errs });
         (0, node_assert_1.deepEqual)(out, { a: 'A' });
         (0, node_assert_1.deepEqual)(errs, ['Not an integer at a: A']);
     });

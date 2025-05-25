@@ -517,6 +517,11 @@ describe('struct', async () => {
   })
 
 
+  test('validate-special', async () => {
+    await runset(validateSpec.special, (vin: any) => validate(vin.data, vin.spec, vin.inj))
+  })
+
+
   test('validate-custom', async () => {
     const errs: any[] = []
     const extra = {
@@ -538,11 +543,11 @@ describe('struct', async () => {
 
     const shape = { a: '`$INTEGER`' }
 
-    let out = validate({ a: 1 }, shape, extra, errs)
+    let out = validate({ a: 1 }, shape, { extra, errs })
     deepEqual(out, { a: 1 })
     equal(errs.length, 0)
 
-    out = validate({ a: 'A' }, shape, extra, errs)
+    out = validate({ a: 'A' }, shape, { extra, errs })
     deepEqual(out, { a: 'A' })
     deepEqual(errs, ['Not an integer at a: A'])
   })

@@ -228,3 +228,20 @@ invalid: set: [
     err: 'Expected field a0 to be number, but found string: a. | '+
          'Expected field b0 to be string, but found number: 1.' }
 ]
+
+
+special: set: [
+  # { in: { data: {x0:1}, spec:{x0:'`$NUMBER`', y0:'`x0`'} }, out: {x0:1,y0:1} }
+
+  # { in: { data: {x0:2}, spec:{x0:'`q0$:x1`' }, inj:meta:q0:x1:2 }, out: {x0:2} }
+
+  # {x0:'a'}
+  # { in: { data: {x0:3}, spec:{x0:['`$ONE`','`q0$:x1`'] }, inj:meta:q0:x1:2 },
+
+  # { in: { data: {x0:'a'}, spec:{x0:'`q0$:x1`' }, inj:meta:q0:x1:2 },
+
+  # { in: { data: {x0:'a'}, spec:{x0:['`$EXACT`', 2] }, inj:meta:q0:x1:2 },
+  # { in: { data: {}, spec:{x0:2 }, inj:meta:q0:x1:2 },
+
+  # err: 'Invalid data: Expected field x0 to be exactly equal to 2, but found string: a.'}
+]
