@@ -103,9 +103,8 @@ type InjectMode = 'key:pre' | 'key:post' | 'val'
 // - `a.b.c`: insert value at {a:{b:{c:1}}}
 // - `$FOO`: apply transform FOO
 type Injector = (
-  inj: Injection,  // Injection state.
+  inj: Injection,      // Injection state.
   val: any,            // Injection value specification.
-  // current: any,        // Current source parent value.
   ref: string,         // Original injection reference string.
   store: any,          // Current source root value.
 ) => any
@@ -116,8 +115,7 @@ type Modify = (
   val: any,            // Value.
   key?: PropKey,       // Value key, if any,
   parent?: any,        // Parent node, if any.
-  inj?: Injection,   // Injection state, if any.
-  // current?: any,       // Current value in store (matches path).
+  inj?: Injection,     // Injection state, if any.
   store?: any,         // Store, if any
 ) => void
 
@@ -806,19 +804,26 @@ function getpath(store: any, path: string | string[], inj?: {
 function inject(
   val: any,
   store: any,
-  modify?: Modify,
-  // current?: any,
-  inj?: Injection,
+  injdef?: Partial<Injection>,
 ) {
+  // console.log('INJECT', arguments)
+
   const valtype = typeof val
+  let inj: Injection = injdef as Injection
 
   // Create state if at root of injection.  The input value is placed
   // inside a virtual parent holder to simplify edge cases.
-  if (UNDEF === inj) {
+  if (UNDEF === injdef || null == injdef.mode) {
     // Set up state assuming we are starting in the virtual parent.
-    inj = new Injection(val, { [S_DTOP]: val }, modify, getprop(store, S_DERRS))
+    inj = new Injection(val, { [S_DTOP]: val })
     inj.dparent = store
+    inj.errs = getprop(store, S_DERRS, [])
     inj.meta.d = 0
+
+    if (UNDEF !== injdef) {
+      inj.modify = injdef.modify
+      inj.extra = injdef.extra
+    }
   }
 
   inj.meta.d++
@@ -867,8 +872,7 @@ function inject(
 
         // Perform the val mode injection on the child value.
         // NOTE: return value is not used.
-        // inject(childinj.val, store, modify, current, childinj)
-        inject(childinj.val, store, modify, childinj)
+        inject(childinj.val, store, childinj)
 
         // The injection may modify child processing.
         nkI = childinj.keyI
@@ -895,16 +899,15 @@ function inject(
   }
 
   // Custom modification.
-  if (modify) {
+  if (inj.modify) {
     let mkey = inj.key
     let mparent = inj.parent
     let mval = getprop(mparent, mkey)
-    modify(
+    inj.modify(
       mval,
       mkey,
       mparent,
       inj,
-      // current,
       store
     )
   }
@@ -993,8 +996,6 @@ const transform_MERGE: Injector = (inj: Injection) => {
     out = key
 
     let args = getprop(parent, key)
-    // args = S_MT === args ? [current.$TOP] : Array.isArray(args) ? args : [args]
-    // args = S_MT === args ? [getprop(inj.dparent, S_DTOP)] : Array.isArray(args) ? args : [args]
     args = Array.isArray(args) ? args : [args]
 
     // Remove the $MERGE command from a parent map.
@@ -1102,8 +1103,7 @@ const transform_EACH: Injector = (
     tinj.dparent = tcur
 
     // console.log('\nEACH:' + tinj)
-    // inject(tval, store, inj.modify, tcur, tinj)
-    inject(tval, store, inj.modify, tinj)
+    inject(tval, store, tinj)
     rval = tinj.val
   }
 
@@ -1208,8 +1208,7 @@ const transform_PACK: Injector = (
     tinj.dpath = dpath
     tinj.dparent = tcur
 
-    // inject(tval, store, inj.modify, tcur, tinj)
-    inject(tval, store, inj.modify, tinj)
+    inject(tval, store, tinj)
     rval = tinj.val
   }
 
@@ -1277,8 +1276,7 @@ const transform_REF: Injector = (
     tinj.dpath = [...cpath]
     tinj.dparent = tcur
 
-    // inject(tref, store, modify, tcur, tinj)
-    inject(tref, store, modify, tinj)
+    inject(tref, store, tinj)
 
     rval = tinj.val
   }
@@ -1302,12 +1300,16 @@ const transform_REF: Injector = (
 function transform(
   data: any, // Source data to transform into new data (original not mutated)
   spec: any, // Transform specification; output follows this shape
-  extra?: any, // Additional store of data and transforms.
-  modify?: Modify // Optionally modify individual values.
+  // extra?: any, // Additional store of data and transforms.
+  // modify?: Modify // Optionally modify individual values.
+  injdef: Partial<Injection>
 ) {
   // Clone the spec so that the clone can be modified in place as the transform result.
   const origspec = spec
   spec = clone(origspec)
+
+  const extra = injdef?.extra
+  const modify = injdef?.modify
 
   const extraTransforms: any = {}
   const extraData = null == extra ? UNDEF : items(extra)
@@ -1351,8 +1353,7 @@ function transform(
     ...extraTransforms,
   }
 
-  // const out = inject(spec, store, modify, store)
-  const out = inject(spec, store, modify)
+  const out = inject(spec, store, { modify, extra })
   return out
 }
 
@@ -1628,7 +1629,7 @@ const validate_EXACT: Injector = (
   _ref: string,
   _store: any
 ) => {
-  const { mode, parent, key, keyI, path, nodes } = inj
+  const { mode, parent, key, keyI } = inj
 
   // Only operate in val mode, since parent is a list.
   if (S_MVAL === mode) {
@@ -1827,7 +1828,8 @@ function validate(
     $ERRS: errs,
   }
 
-  const out = transform(data, spec, store, _validation)
+  // const out = transform(data, spec, store, _validation)
+  const out = transform(data, spec, { extra: store, modify: _validation })
 
   const generr = (0 < errs.length && null == collecterrs)
   if (generr) {
@@ -1852,15 +1854,17 @@ class Injection {
   handler: Injector         // Custom handler for injections.
   errs: any[]               // Error collector.  
   meta: Record<string, any> // Custom meta data.
+  dparent: any              // Current data parent node (contains current data value).
+  dpath: string[]           // Current data value path
   base?: string             // Base key for data in store, if any. 
   modify?: Modify           // Modify injection output.
   prior?: Injection         // Parent (aka prior) injection.
-  dparent: any              // Current data parent node (contains current data value).
-  dpath: string[]           // Current data value path
+  extra?: any
 
-  constructor(val: any, parent: any, modify?: Modify, errs?: any[]) {
+  constructor(val: any, parent: any) {
     this.val = val
     this.parent = parent
+    this.errs = []
 
     this.dparent = UNDEF
     this.dpath = [S_DTOP]
@@ -1874,8 +1878,6 @@ class Injection {
     this.nodes = [parent]
     this.handler = _injecthandler
     this.base = S_DTOP
-    this.modify = modify
-    this.errs = errs || []
     this.meta = {}
   }
 
@@ -1921,12 +1923,7 @@ class Injection {
     const key = strkey(keys[keyI])
     const val = this.val
 
-    const cinj = new Injection(
-      getprop(val, key),
-      val,
-      this.modify,
-      this.errs
-    )
+    const cinj = new Injection(getprop(val, key), val)
     cinj.keyI = keyI
     cinj.keys = keys
     cinj.key = key
@@ -1936,8 +1933,10 @@ class Injection {
 
     cinj.mode = this.mode
     cinj.handler = this.handler
+    cinj.modify = this.modify
     cinj.base = this.base
     cinj.meta = this.meta
+    cinj.errs = this.errs
     cinj.prior = this
 
     cinj.dpath = [...this.dpath]
@@ -1945,6 +1944,7 @@ class Injection {
 
     return cinj
   }
+
 
   setval(val: any, ancestor?: number) {
     if (null == ancestor || ancestor < 2) {
@@ -2031,10 +2031,9 @@ const _injecthandler: Injector = (
 function _injectstr(
   val: string,
   store: any,
-  // current?: any,
   inj?: Injection
 ): any {
-  let dparent = inj?.dparent
+  // let dparent = inj?.dparent
 
   // Can't inject into non-strings
   if (S_string !== typeof val || S_MT === val) {

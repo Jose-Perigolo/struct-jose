@@ -225,9 +225,7 @@ const TEST_JSON_FILE = '../../build/test/test.json';
         (0, node_assert_1.deepEqual)(inject(test.in.val, test.in.store), test.out);
     });
     (0, node_test_1.test)('inject-string', async () => {
-        await runset(injectSpec.string, (vin) => 
-        // inject(vin.val, vin.store, nullModifier, vin.current))
-        inject(vin.val, vin.store, runner_1.nullModifier));
+        await runset(injectSpec.string, (vin) => inject(vin.val, vin.store, { modify: runner_1.nullModifier }));
     });
     (0, node_test_1.test)('inject-deep', async () => {
         await runset(injectSpec.deep, (vin) => inject(vin.val, vin.store));
@@ -236,35 +234,39 @@ const TEST_JSON_FILE = '../../build/test/test.json';
     // ===============
     (0, node_test_1.test)('transform-basic', async () => {
         const test = clone(transformSpec.basic);
-        (0, node_assert_1.deepEqual)(transform(test.in.data, test.in.spec, test.in.store), test.out);
+        (0, node_assert_1.deepEqual)(transform(test.in.data, test.in.spec), test.out);
     });
     (0, node_test_1.test)('transform-paths', async () => {
-        await runset(transformSpec.paths, (vin) => transform(vin.data, vin.spec, vin.store));
+        await runset(transformSpec.paths, (vin) => transform(vin.data, vin.spec));
     });
     (0, node_test_1.test)('transform-cmds', async () => {
-        await runset(transformSpec.cmds, (vin) => transform(vin.data, vin.spec, vin.store));
+        await runset(transformSpec.cmds, (vin) => transform(vin.data, vin.spec));
     });
     (0, node_test_1.test)('transform-each', async () => {
-        await runset(transformSpec.each, (vin) => transform(vin.data, vin.spec, vin.store));
+        await runset(transformSpec.each, (vin) => transform(vin.data, vin.spec));
     });
     (0, node_test_1.test)('transform-pack', async () => {
-        await runset(transformSpec.pack, (vin) => transform(vin.data, vin.spec, vin.store));
+        await runset(transformSpec.pack, (vin) => transform(vin.data, vin.spec));
     });
     (0, node_test_1.test)('transform-ref', async () => {
-        await runset(transformSpec.ref, (vin) => transform(vin.data, vin.spec, vin.store));
+        await runset(transformSpec.ref, (vin) => transform(vin.data, vin.spec));
     });
     (0, node_test_1.test)('transform-modify', async () => {
-        await runset(transformSpec.modify, (vin) => transform(vin.data, vin.spec, vin.store, (val, key, parent) => {
-            if (null != key && null != parent && 'string' === typeof val) {
-                val = parent[key] = '@' + val;
+        await runset(transformSpec.modify, (vin) => transform(vin.data, vin.spec, {
+            modify: (val, key, parent) => {
+                if (null != key && null != parent && 'string' === typeof val) {
+                    val = parent[key] = '@' + val;
+                }
             }
         }));
     });
     (0, node_test_1.test)('transform-extra', async () => {
         (0, node_assert_1.deepEqual)(transform({ a: 1 }, { x: '`a`', b: '`$COPY`', c: '`$UPPER`' }, {
-            b: 2, $UPPER: (state) => {
-                const { path } = state;
-                return ('' + getprop(path, path.length - 1)).toUpperCase();
+            extra: {
+                b: 2, $UPPER: (state) => {
+                    const { path } = state;
+                    return ('' + getprop(path, path.length - 1)).toUpperCase();
+                }
             }
         }), {
             x: 1,

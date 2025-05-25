@@ -394,8 +394,7 @@ describe('struct', async () => {
 
   test('inject-string', async () => {
     await runset(injectSpec.string, (vin: any) =>
-      // inject(vin.val, vin.store, nullModifier, vin.current))
-      inject(vin.val, vin.store, nullModifier))
+      inject(vin.val, vin.store, { modify: nullModifier }))
   })
 
 
@@ -409,46 +408,50 @@ describe('struct', async () => {
 
   test('transform-basic', async () => {
     const test = clone(transformSpec.basic)
-    deepEqual(transform(test.in.data, test.in.spec, test.in.store), test.out)
+    deepEqual(transform(test.in.data, test.in.spec), test.out)
   })
 
 
   test('transform-paths', async () => {
     await runset(transformSpec.paths, (vin: any) =>
-      transform(vin.data, vin.spec, vin.store))
+      transform(vin.data, vin.spec))
   })
 
 
   test('transform-cmds', async () => {
     await runset(transformSpec.cmds, (vin: any) =>
-      transform(vin.data, vin.spec, vin.store))
+      transform(vin.data, vin.spec))
   })
 
 
   test('transform-each', async () => {
     await runset(transformSpec.each, (vin: any) =>
-      transform(vin.data, vin.spec, vin.store))
+      transform(vin.data, vin.spec))
   })
 
 
   test('transform-pack', async () => {
     await runset(transformSpec.pack, (vin: any) =>
-      transform(vin.data, vin.spec, vin.store))
+      transform(vin.data, vin.spec))
   })
 
 
   test('transform-ref', async () => {
     await runset(transformSpec.ref, (vin: any) =>
-      transform(vin.data, vin.spec, vin.store))
+      transform(vin.data, vin.spec))
   })
 
 
   test('transform-modify', async () => {
     await runset(transformSpec.modify, (vin: any) =>
-      transform(vin.data, vin.spec, vin.store,
-        (val: any, key: any, parent: any) => {
-          if (null != key && null != parent && 'string' === typeof val) {
-            val = parent[key] = '@' + val
+      transform(
+        vin.data,
+        vin.spec,
+        {
+          modify: (val: any, key: any, parent: any) => {
+            if (null != key && null != parent && 'string' === typeof val) {
+              val = parent[key] = '@' + val
+            }
           }
         }
       ))
@@ -460,9 +463,11 @@ describe('struct', async () => {
       { a: 1 },
       { x: '`a`', b: '`$COPY`', c: '`$UPPER`' },
       {
-        b: 2, $UPPER: (state: any) => {
-          const { path } = state
-          return ('' + getprop(path, path.length - 1)).toUpperCase()
+        extra: {
+          b: 2, $UPPER: (state: any) => {
+            const { path } = state
+            return ('' + getprop(path, path.length - 1)).toUpperCase()
+          }
         }
       }
     ), {
@@ -543,3 +548,4 @@ describe('struct', async () => {
   })
 
 })
+
