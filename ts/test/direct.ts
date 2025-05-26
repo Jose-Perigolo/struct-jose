@@ -69,6 +69,6 @@ out = validate({
   // data: ['`$ONE`', {}, []],
   // state: {},
   // check: {},
-}, undefined, errs)
+}, { errs })
 console.log('OUT', out, errs)
 

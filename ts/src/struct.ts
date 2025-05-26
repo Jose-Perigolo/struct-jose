@@ -96,6 +96,9 @@ const SKIP = {}
 // Keys are strings for maps, or integers for lists.
 type PropKey = string | number
 
+// Type that can be indexed by both string and number keys.
+type Indexable = { [key: string]: any } & { [key: number]: any }
+
 
 // For each key in a node (map or list), perform value injections in
 // three phases: on key value, before child, and then on key value again.
@@ -139,25 +142,25 @@ type WalkApply = (
 // Value is a node - defined, and a map (hash) or list (array).
 // NOTE: typescript
 // things
-function isnode(val: any) {
+function isnode(val: any): val is Indexable {
   return null != val && S_object == typeof val
 }
 
 
 // Value is a defined map (hash) with string keys.
-function ismap(val: any) {
+function ismap(val: any): val is { [key: string]: any } {
   return null != val && S_object == typeof val && !Array.isArray(val)
 }
 
 
 // Value is a defined list (array) with integer keys (indexes).
-function islist(val: any) {
+function islist(val: any): val is any[] {
   return Array.isArray(val)
 }
 
 
 // Value is a defined string (non-empty) or integer key.
-function iskey(key: any) {
+function iskey(key: any): key is string | number {
   const keytype = typeof key
   return (S_string === keytype && S_MT !== key) || S_number === keytype
 }
@@ -172,7 +175,7 @@ function isempty(val: any) {
 
 
 // Value is a function.
-function isfunc(val: any) {
+function isfunc(val: any): val is Function {
   return S_function === typeof val
 }
 
@@ -380,7 +383,7 @@ function strkey(key: any = UNDEF): string {
 // Sorted keys of a map, or indexes of a list.
 function keysof(val: any): string[] {
   return !isnode(val) ? [] :
-    ismap(val) ? Object.keys(val).sort() : val.map((_n: any, i: number) => '' + i)
+    ismap(val) ? Object.keys(val).sort() : (val as any).map((_n: any, i: number) => '' + i)
 }
 
 
@@ -529,27 +532,19 @@ function clone(val: any): any {
 }
 
 
-// TODO: create delprop to delete properties - be explicit
-// Safely set a property. Undefined arguments and invalid keys are ignored.
+// Safely delete a property from an object or array element. 
+// Undefined arguments and invalid keys are ignored.
 // Returns the (possibly modified) parent.
-// If the value is undefined the key will be deleted from the parent.
-// If the parent is a list, and the key is negative, prepend the value.
-// NOTE: If the key is above the list size, append the value; below, prepend.
-// If the value is undefined, remove the list element at index key, and shift the
-// remaining elements down.  These rules avoid "holes" in the list.
-function setprop<PARENT>(parent: PARENT, key: any, val: any): PARENT {
+// For objects, the property is deleted using the delete operator.
+// For arrays, the element at the index is removed and remaining elements are shifted down.
+function delprop<PARENT>(parent: PARENT, key: any): PARENT {
   if (!iskey(key)) {
     return parent
   }
 
   if (ismap(parent)) {
     key = S_MT + key
-    if (UNDEF === val) {
-      delete (parent as any)[key]
-    }
-    else {
-      (parent as any)[key] = val
-    }
+    delete (parent as any)[key]
   }
   else if (islist(parent)) {
     // Ensure key is an integer.
@@ -562,17 +557,48 @@ function setprop<PARENT>(parent: PARENT, key: any, val: any): PARENT {
     keyI = Math.floor(keyI)
 
     // Delete list element at position keyI, shifting later elements down.
-    if (UNDEF === val) {
-      if (0 <= keyI && keyI < parent.length) {
-        for (let pI = keyI; pI < parent.length - 1; pI++) {
-          parent[pI] = parent[pI + 1]
-        }
-        parent.length = parent.length - 1
+    if (0 <= keyI && keyI < parent.length) {
+      for (let pI = keyI; pI < parent.length - 1; pI++) {
+        parent[pI] = parent[pI + 1]
       }
+      parent.length = parent.length - 1
+    }
+  }
+
+  return parent
+}
+
+
+// Safely set a property. Undefined arguments and invalid keys are ignored.
+// Returns the (possibly modified) parent.
+// If the parent is a list, and the key is negative, prepend the value.
+// NOTE: If the key is above the list size, append the value; below, prepend.
+function setprop<PARENT>(parent: PARENT, key: any, val: any): PARENT {
+  // if (UNDEF === val) {
+  //   throw new Error('SETPROP UNDEF')
+  // }
+
+  if (!iskey(key)) {
+    return parent
+  }
+
+  if (ismap(parent)) {
+    key = S_MT + key
+    const pany = parent as any
+    pany[key] = val
+  }
+  else if (islist(parent)) {
+    // Ensure key is an integer.
+    let keyI = +key
+
+    if (isNaN(keyI)) {
+      return parent
     }
 
+    keyI = Math.floor(keyI)
+
     // Set or append value at position keyI, or append if keyI out of bounds.
-    else if (0 <= keyI) {
+    if (0 <= keyI) {
       parent[parent.length < keyI ? parent.length : keyI] = val
     }
 
@@ -648,7 +674,7 @@ function merge(val: any): any {
       }
       else {
         // Node stack. walking down the current obj.
-        let cur = [out]
+        let cur: any[] = [out]
         let cI = 0
 
         function merger(
@@ -892,7 +918,7 @@ function inject(
     let nodekeys = ismap(val) ? [
       ...Object.keys(val).filter(k => !k.includes(S_DS)).sort(),
       ...Object.keys(val).filter(k => k.includes(S_DS)).sort(),
-    ] : val.map((_n: any, i: number) => i)
+    ] : (val as any).map((_n: any, i: number) => i)
 
 
     // Each child key-value pair is processed in three injection phases:
@@ -941,10 +967,10 @@ function inject(
   // Inject paths into string scalars.
   else if (S_string === valtype) {
     inj.mode = S_MVAL as InjectMode
-    // val = _injectstr(val, store, current, inj)
     val = _injectstr(val, store, inj)
     if (SKIP !== val) {
-      setprop(inj.parent, inj.key, val)
+      // setprop(inj.parent, inj.key, val)
+      inj.setval(val)
     }
   }
 
@@ -1007,7 +1033,7 @@ const transform_KEY: Injector = (inj: Injection) => {
   // Key is defined by $KEY meta property.
   const keyspec = getprop(parent, S_DKEY)
   if (UNDEF !== keyspec) {
-    setprop(parent, S_DKEY, UNDEF)
+    delprop(parent, S_DKEY)
     // return getprop(current, keyspec)
     return getprop(inj.dparent, keyspec)
   }
@@ -1021,7 +1047,7 @@ const transform_KEY: Injector = (inj: Injection) => {
 // other injectors, and is removed when called.
 const transform_META: Injector = (inj: Injection) => {
   const { parent } = inj
-  setprop(parent, S_DMETA, UNDEF)
+  delprop(parent, S_DMETA)
   return UNDEF
 }
 
@@ -1210,7 +1236,7 @@ const transform_PACK: Injector = (
   // Get key if specified.
   let childkey: PropKey | undefined = getprop(child, S_DKEY)
   let keyname = UNDEF === childkey ? keyprop : childkey
-  setprop(child, S_DKEY, UNDEF)
+  delprop(child, S_DKEY)
 
   // Build parallel target object.
   let tval: any = {}
@@ -1218,7 +1244,13 @@ const transform_PACK: Injector = (
     let kn = getprop(n, keyname)
     setprop(a, kn, clone(child))
     const nchild = getprop(a, kn)
-    setprop(nchild, S_DMETA, getprop(n, S_DMETA))
+    const mval = getprop(n, S_DMETA)
+    if (UNDEF === mval) {
+      delprop(nchild, S_DMETA)
+    }
+    else {
+      setprop(nchild, S_DMETA, mval)
+    }
     return a
   }, tval)
 
@@ -1551,7 +1583,6 @@ const validate_CHILD: Injector = (inj: Injection) => {
     }
 
     // Remove $CHILD to cleanup ouput.
-    // _setparentprop(inj, UNDEF)
     inj.setval(UNDEF)
     return UNDEF
   }
@@ -1657,7 +1688,8 @@ const validate_ONE: Injector = (
         meta: inj.meta,
       })
 
-      setprop(grandparent, getelem(path, -2), vcurrent)
+      // setprop(grandparent, getelem(path, -2), vcurrent)
+      inj.setval(vcurrent, -2)
 
       // Accept current value if there was a match
       if (0 === terrs.length) {
@@ -1746,7 +1778,7 @@ const validate_EXACT: Injector = (
       typify(inj.dparent), inj.dparent, 'V0110'))
   }
   else {
-    setprop(parent, key, UNDEF)
+    delprop(parent, key)
   }
 }
 
@@ -1822,7 +1854,7 @@ const _validation: Modify = (
       // Object is open, so merge in extra keys.
       merge([pval, cval])
       if (isnode(pval)) {
-        setprop(pval, '`$OPEN`', UNDEF)
+        delprop(pval, '`$OPEN`')
       }
     }
   }
@@ -2036,10 +2068,16 @@ class Injection {
 
   setval(val: any, ancestor?: number) {
     if (null == ancestor || ancestor < 2) {
-      return setprop(this.parent, this.key, val)
+      return UNDEF === val ?
+        delprop(this.parent, this.key) :
+        setprop(this.parent, this.key, val)
     }
     else {
-      return setprop(getelem(this.nodes, 0 - ancestor), getelem(this.path, 0 - ancestor), val)
+      const aval = getelem(this.nodes, 0 - ancestor)
+      const akey = getelem(this.path, 0 - ancestor)
+      return UNDEF === val ?
+        delprop(aval, akey) :
+        setprop(aval, akey, val)
     }
   }
 }
@@ -2214,6 +2252,7 @@ function _injectstr(
 // Define a class to mirror the JavaScript implementation
 class StructUtility {
   clone = clone
+  delprop = delprop
   escre = escre
   escurl = escurl
   getelem = getelem
@@ -2247,6 +2286,7 @@ class StructUtility {
 export {
   StructUtility,
   clone,
+  delprop,
   escre,
   escurl,
   getelem,

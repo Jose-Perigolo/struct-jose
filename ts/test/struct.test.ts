@@ -30,6 +30,7 @@ describe('struct', async () => {
 
   const {
     clone,
+    delprop,
     escre,
     escurl,
     getelem,
@@ -78,6 +79,7 @@ describe('struct', async () => {
 
   test('exists', () => {
     equal('function', typeof clone)
+    equal('function', typeof delprop)
     equal('function', typeof escre)
     equal('function', typeof escurl)
     equal('function', typeof getelem)
@@ -235,6 +237,25 @@ describe('struct', async () => {
     let intarr1 = [2, 3, 5, 7, 11]
     deepEqual(setprop(intarr0, 2, 55), [2, 3, 55, 7, 11])
     deepEqual(setprop(intarr1, '2', 555), [2, 3, 555, 7, 11])
+  })
+
+
+  test('minor-delprop', async () => {
+    await runset(minorSpec.delprop, (vin: any) =>
+      delprop(vin.parent, vin.key))
+  })
+
+
+  test('minor-edge-delprop', async () => {
+    let strarr0 = ['a', 'b', 'c', 'd', 'e']
+    let strarr1 = ['a', 'b', 'c', 'd', 'e']
+    deepEqual(delprop(strarr0, 2), ['a', 'b', 'd', 'e'])
+    deepEqual(delprop(strarr1, '2'), ['a', 'b', 'd', 'e'])
+
+    let intarr0 = [2, 3, 5, 7, 11]
+    let intarr1 = [2, 3, 5, 7, 11]
+    deepEqual(delprop(intarr0, 2), [2, 3, 7, 11])
+    deepEqual(delprop(intarr1, '2'), [2, 3, 7, 11])
   })
 
 

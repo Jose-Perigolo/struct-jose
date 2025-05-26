@@ -11,7 +11,7 @@ const TEST_JSON_FILE = '../../build/test/test.json';
 (0, node_test_1.describe)('struct', async () => {
     const runner = await (0, runner_1.makeRunner)(TEST_JSON_FILE, await sdk_js_1.SDK.test());
     const { spec, runset, runsetflags, client } = await runner('struct');
-    const { clone, escre, escurl, getelem, getpath, getprop, haskey, inject, isempty, isfunc, iskey, islist, ismap, isnode, items, joinurl, keysof, merge, pad, pathify, size, slice, setprop, strkey, stringify, transform, typify, validate, walk, } = client.utility().struct;
+    const { clone, delprop, escre, escurl, getelem, getpath, getprop, haskey, inject, isempty, isfunc, iskey, islist, ismap, isnode, items, joinurl, keysof, merge, pad, pathify, size, slice, setprop, strkey, stringify, transform, typify, validate, walk, } = client.utility().struct;
     const minorSpec = spec.minor;
     const walkSpec = spec.walk;
     const mergeSpec = spec.merge;
@@ -21,6 +21,7 @@ const TEST_JSON_FILE = '../../build/test/test.json';
     const validateSpec = spec.validate;
     (0, node_test_1.test)('exists', () => {
         (0, node_assert_1.equal)('function', typeof clone);
+        (0, node_assert_1.equal)('function', typeof delprop);
         (0, node_assert_1.equal)('function', typeof escre);
         (0, node_assert_1.equal)('function', typeof escurl);
         (0, node_assert_1.equal)('function', typeof getelem);
@@ -127,6 +128,19 @@ const TEST_JSON_FILE = '../../build/test/test.json';
         let intarr1 = [2, 3, 5, 7, 11];
         (0, node_assert_1.deepEqual)(setprop(intarr0, 2, 55), [2, 3, 55, 7, 11]);
         (0, node_assert_1.deepEqual)(setprop(intarr1, '2', 555), [2, 3, 555, 7, 11]);
+    });
+    (0, node_test_1.test)('minor-delprop', async () => {
+        await runset(minorSpec.delprop, (vin) => delprop(vin.parent, vin.key));
+    });
+    (0, node_test_1.test)('minor-edge-delprop', async () => {
+        let strarr0 = ['a', 'b', 'c', 'd', 'e'];
+        let strarr1 = ['a', 'b', 'c', 'd', 'e'];
+        (0, node_assert_1.deepEqual)(delprop(strarr0, 2), ['a', 'b', 'd', 'e']);
+        (0, node_assert_1.deepEqual)(delprop(strarr1, '2'), ['a', 'b', 'd', 'e']);
+        let intarr0 = [2, 3, 5, 7, 11];
+        let intarr1 = [2, 3, 5, 7, 11];
+        (0, node_assert_1.deepEqual)(delprop(intarr0, 2), [2, 3, 7, 11]);
+        (0, node_assert_1.deepEqual)(delprop(intarr1, '2'), [2, 3, 7, 11]);
     });
     (0, node_test_1.test)('minor-haskey', async () => {
         await runsetflags(minorSpec.haskey, { null: false }, (vin) => haskey(vin.src, vin.key));
