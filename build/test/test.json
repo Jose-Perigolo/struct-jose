@@ -11516,7 +11516,175 @@
         ]
       },
       "special": {
-        "set": []
+        "set": [
+          {
+            "in": {
+              "data": {
+                "x0": 1
+              },
+              "spec": {
+                "x0": "`$NUMBER`",
+                "y0": "`x0`"
+              }
+            },
+            "out": {
+              "x0": 1,
+              "y0": 1
+            }
+          },
+          {
+            "in": {
+              "data": {
+                "x1": 1,
+                "y1": 1
+              },
+              "spec": {
+                "x1": "`$NUMBER`",
+                "y1": "`x1`"
+              }
+            },
+            "out": {
+              "x1": 1,
+              "y1": 1
+            }
+          },
+          {
+            "in": {
+              "data": {
+                "x2": 2,
+                "y2": 1
+              },
+              "spec": {
+                "x2": "`$NUMBER`",
+                "y2": "`x2`"
+              }
+            },
+            "out": {
+              "x2": 2,
+              "y2": 1
+            }
+          },
+          {
+            "in": {
+              "data": {
+                "x3": 3,
+                "y3": 3
+              },
+              "spec": {
+                "x3": "`$NUMBER`",
+                "y3": [
+                  "`$REF`",
+                  "x3"
+                ]
+              }
+            },
+            "out": {
+              "x3": 3,
+              "y3": 3
+            }
+          },
+          {
+            "in": {
+              "data": {
+                "x4": 3,
+                "y4": 4
+              },
+              "spec": {
+                "x4": "`$NUMBER`",
+                "y4": [
+                  "`$REF`",
+                  "x4"
+                ]
+              }
+            },
+            "out": {
+              "x4": 3,
+              "y4": 4
+            }
+          },
+          {
+            "in": {
+              "data": {
+                "x10": 100
+              },
+              "spec": {
+                "x10": [
+                  "`$EXACT`",
+                  100
+                ]
+              },
+              "inj": {
+                "meta": {
+                  "q0": {
+                    "x1": 100
+                  }
+                }
+              }
+            },
+            "out": {
+              "x10": 100
+            }
+          },
+          {
+            "in": {
+              "data": {
+                "x11": "s11"
+              },
+              "spec": {
+                "x11": [
+                  "`$EXACT`",
+                  101
+                ]
+              },
+              "inj": {
+                "meta": {
+                  "q0": {
+                    "x1": 101
+                  }
+                }
+              }
+            },
+            "err": "Invalid data: Expected field x11 to be exactly equal to 101, but found string: s11."
+          },
+          {
+            "in": {
+              "data": {
+                "x12": 102
+              },
+              "spec": {
+                "x12": "`q0$:x1`"
+              },
+              "inj": {
+                "meta": {
+                  "q0": {
+                    "x1": 102
+                  }
+                }
+              }
+            },
+            "out": {
+              "x12": 102
+            }
+          },
+          {
+            "in": {
+              "data": {
+                "x13": "s13"
+              },
+              "spec": {
+                "x13": "`q0$:x1`"
+              },
+              "inj": {
+                "meta": {
+                  "q0": {
+                    "x1": 103
+                  }
+                }
+              }
+            },
+            "err": "Invalid data: Expected field x13 to be exactly equal to 103, but found string: s13."
+          }
+        ]
       },
       "name": "validate",
       "set": []

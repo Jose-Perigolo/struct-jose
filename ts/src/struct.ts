@@ -88,6 +88,9 @@ const S_KEY = 'KEY'
 // The standard undefined value for this language.
 const UNDEF = undefined
 
+const SKIP = {}
+
+
 
 // Keys are strings for maps, or integers for lists.
 type PropKey = string | number
@@ -198,6 +201,7 @@ function size(val: any): number {
 }
 
 
+// TODO: slice on strings performs substring, on numbers, bounding
 function slice<V extends any>(val: V, start: number, end?: number): V {
   if (islist(val)) {
     const vlen = size(val)
@@ -496,6 +500,7 @@ function clone(val: any): any {
 }
 
 
+// TODO: create delprop to delete properties - be explicit
 // Safely set a property. Undefined arguments and invalid keys are ignored.
 // Returns the (possibly modified) parent.
 // If the value is undefined the key will be deleted from the parent.
@@ -667,13 +672,18 @@ function merge(val: any): any {
 
 // TODO: remove current arg, use inj.dparent
 // function getpath(path: string | string[], store: any, current?: any, inj?: Injection) {
-function getpath(store: any, path: string | string[], inj?: {
-  key?: string
-  dparent?: any,
-  dpath?: string[]
-  meta?: any
-  handler?: any
-}) {
+function getpath(store: any, path: string | string[],
+  injdef?: Partial<Injection>
+
+  //                inj?: {
+  // key?: string
+  // dparent?: any,
+  // dpath?: string[]
+  // meta?: any
+  // handler?: any
+  //                }
+
+) {
 
   // Operate on a string array.
   const parts = islist(path) ? path : S_string === typeof path ? path.split(S_DT) : UNDEF
@@ -688,16 +698,18 @@ function getpath(store: any, path: string | string[], inj?: {
 
   // let root = store
   let val = store
-  const base = getprop(inj, S_base)
+  const base = getprop(injdef, S_base)
   const src = getprop(store, base, store)
   const numparts = size(parts)
-  const dparent = getprop(inj, 'dparent')
+  const dparent = getprop(injdef, 'dparent')
 
   // An empty path (incl empty string) just finds the store.
   if (null == path || null == store || (1 === numparts && S_MT === parts[0])) {
     val = src
   }
   else if (0 < numparts) {
+
+    // Check for $ACTIONs
     if (1 === numparts) {
       val = getprop(store, parts[0])
     }
@@ -705,7 +717,13 @@ function getpath(store: any, path: string | string[], inj?: {
     if (!isfunc(val)) {
       val = src
 
-      const dpath = getprop(inj, 'dpath')
+      const m = parts[0].match(/^([^$]+)\$:(.+)$/)
+      if (m && injdef && injdef.meta) {
+        val = getprop(injdef.meta, m[1])
+        parts[0] = m[2]
+      }
+
+      const dpath = getprop(injdef, 'dpath')
 
       // if (UNDEF === val) {
       // Move along the path, trying to descend into the store.
@@ -715,20 +733,20 @@ function getpath(store: any, path: string | string[], inj?: {
 
         // print('PART', pI, '<' + part + '>')
 
-        if (inj && '$KEY' === part) {
-          part = getprop(inj, 'key')
+        if (injdef && '$KEY' === part) {
+          part = getprop(injdef, 'key')
         }
-        else if (inj && part.startsWith('$GET:')) {
+        else if (injdef && part.startsWith('$GET:')) {
           // $GET:path$ -> get store value, use as path part (string)
           part = stringify(getpath(src, part.substring(5, part.length - 1)))
         }
-        else if (inj && part.startsWith('$REF:')) {
+        else if (injdef && part.startsWith('$REF:')) {
           // $REF:refpath$ -> get spec value, use as path part (string)
           part = stringify(getpath(getprop(store, S_DSPEC), part.substring(5, part.length - 1)))
         }
-        else if (inj && part.startsWith('$META:')) {
+        else if (injdef && part.startsWith('$META:')) {
           // $META:metapath$ -> get meta value, use as path part (string)
-          part = stringify(getpath(getprop(inj, 'meta'), part.substring(6, part.length - 1)))
+          part = stringify(getpath(getprop(injdef, 'meta'), part.substring(6, part.length - 1)))
         }
 
         // $$ escapes $
@@ -742,7 +760,7 @@ function getpath(store: any, path: string | string[], inj?: {
             pI++
           }
 
-          if (inj && 0 < ascends) {
+          if (injdef && 0 < ascends) {
             if (pI === parts.length - 1) {
               ascends--
             }
@@ -785,11 +803,11 @@ function getpath(store: any, path: string | string[], inj?: {
   // console.log('FINAL-VAL', val)
 
   // Inj may provide a custom handler to modify found value.
-  const handler = getprop(inj, 'handler')
-  if (null != inj && isfunc(handler)) {
+  const handler = getprop(injdef, 'handler')
+  if (null != injdef && isfunc(handler)) {
     const ref = pathify(path)
     // val = handler(inj, val, dparent, ref, store)
-    val = handler(inj, val, ref, store)
+    val = handler(injdef, val, ref, store)
   }
 
   return val
@@ -821,8 +839,10 @@ function inject(
     inj.meta.d = 0
 
     if (UNDEF !== injdef) {
-      inj.modify = injdef.modify
-      inj.extra = injdef.extra
+      inj.modify = null == injdef.modify ? inj.modify : injdef.modify
+      inj.extra = null == injdef.extra ? inj.extra : injdef.extra
+      inj.meta = null == injdef.meta ? inj.meta : injdef.meta
+      inj.handler = null == injdef.handler ? inj.handler : injdef.handler
     }
   }
 
@@ -895,11 +915,13 @@ function inject(
     inj.mode = S_MVAL as InjectMode
     // val = _injectstr(val, store, current, inj)
     val = _injectstr(val, store, inj)
-    setprop(inj.parent, inj.key, val)
+    if (SKIP !== val) {
+      setprop(inj.parent, inj.key, val)
+    }
   }
 
   // Custom modification.
-  if (inj.modify) {
+  if (inj.modify && SKIP !== val) {
     let mkey = inj.key
     let mparent = inj.parent
     let mval = getprop(mparent, mkey)
@@ -1219,6 +1241,7 @@ const transform_PACK: Injector = (
 }
 
 
+// TODO: not found ref should removed key (setprop UNDEF)
 // Reference original spec (enables recursice transformations)
 // Format: ['`$REF`', '`spec-path`']
 const transform_REF: Injector = (
@@ -1228,7 +1251,7 @@ const transform_REF: Injector = (
   _ref: string,
   store: any
 ) => {
-  const { nodes, modify } = inj
+  const { nodes } = inj
 
   if (S_MVAL !== inj.mode) {
     return UNDEF
@@ -1302,14 +1325,14 @@ function transform(
   spec: any, // Transform specification; output follows this shape
   // extra?: any, // Additional store of data and transforms.
   // modify?: Modify // Optionally modify individual values.
-  injdef: Partial<Injection>
+  injdef?: Partial<Injection>
 ) {
   // Clone the spec so that the clone can be modified in place as the transform result.
   const origspec = spec
   spec = clone(origspec)
 
   const extra = injdef?.extra
-  const modify = injdef?.modify
+  // const modify = injdef?.modify
 
   const extraTransforms: any = {}
   const extraData = null == extra ? UNDEF : items(extra)
@@ -1353,7 +1376,8 @@ function transform(
     ...extraTransforms,
   }
 
-  const out = inject(spec, store, { modify, extra })
+  // const out = inject(spec, store, { modify, extra })
+  const out = inject(spec, store, injdef)
   return out
 }
 
@@ -1714,6 +1738,10 @@ const _validation: Modify = (
     return
   }
 
+  if (SKIP === pval) {
+    return
+  }
+
   // Current val to verify.
   // const cval = getprop(current, key)
   const cval = getprop(inj.dparent, key)
@@ -1848,7 +1876,7 @@ function validate(
     meta: injdef?.meta,
     extra: store,
     modify: _validation,
-    // handler: _validatehandler
+    handler: _validatehandler
   })
 
 
@@ -2035,6 +2063,33 @@ const _injecthandler: Injector = (
   else if (S_MVAL === inj.mode && inj.full) {
     // _setparentprop(inj, val)
     inj.setval(val)
+  }
+
+  return out
+}
+
+
+const _validatehandler: Injector = (
+  inj: Injection,
+  val: any,
+  ref: string,
+  store: any
+): any => {
+  let out = val
+
+  const m = ref.match(/^([^$]+)\$:(.+)$/)
+  const ismetapath = null != m
+  // console.log('VH', ismetapath, val, 'ref=', ref, inj + '')
+
+  if (ismetapath) {
+    inj.setval(['`$EXACT`', val])
+    inj.keyI = -1
+
+    // console.log('VH-INJ', inj + '')
+    out = SKIP
+  }
+  else {
+    out = _injecthandler(inj, val, ref, store)
   }
 
   return out
