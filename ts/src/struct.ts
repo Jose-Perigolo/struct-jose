@@ -125,8 +125,7 @@ type Modify = (
 
 
 // Function applied to each node and leaf when walking a node structure depth first.
-// NOTE: For {a:{b:1}} the call sequence args will be:
-// b, 1, {b:1}, [a,b]
+// For {a:{b:1}} the call sequence args will be: b, 1, {b:1}, [a,b].
 type WalkApply = (
   // Map keys are strings, list keys are numbers, top key is UNDEF 
   key: string | number | undefined,
@@ -137,8 +136,9 @@ type WalkApply = (
 
 
 
-
 // Value is a node - defined, and a map (hash) or list (array).
+// NOTE: typescript
+// things
 function isnode(val: any) {
   return null != val && S_object == typeof val
 }
@@ -202,41 +202,62 @@ function size(val: any): number {
 }
 
 
-// TODO: slice on strings performs substring, on numbers, bounding
-function slice<V extends any>(val: V, start: number, end?: number): V {
-  if (islist(val)) {
-    const vlen = size(val)
-    if (null != start) {
-      if (start < 0) {
-        end = vlen + start
+function slice<V extends any>(val: V, start?: number, end?: number): V {
+  if ('number' === typeof val) {
+    start = null == start || 'number' !== typeof start ? Number.MIN_SAFE_INTEGER : start
+    end = (null == end || 'number' !== typeof end ? Number.MAX_SAFE_INTEGER : end) - 1
+    return Math.min(Math.max(val, start), end) as V
+  }
+
+  const vlen = size(val)
+
+  if (null != end && null == start) {
+    start = 0
+  }
+
+  if (null != start) {
+    if (start < 0) {
+      end = vlen + start
+      if (end < 0) {
+        end = 0
+      }
+      start = 0
+    }
+
+    else if (null != end) {
+      if (end < 0) {
+        end = vlen + end
         if (end < 0) {
           end = 0
         }
-        start = 0
       }
-
-      else if (null != end) {
-        if (end < 0) {
-          end = vlen + end
-          if (end < 0) {
-            end = 0
-          }
-        }
-        else if (vlen < end) {
-          end = val.length
-        }
+      else if (vlen < end) {
+        end = vlen
       }
+    }
 
-      else {
-        end = val.length
+    else {
+      end = vlen
+    }
+
+    if (vlen < start) {
+      start = vlen
+    }
+
+    if (-1 < start && start <= end && end <= vlen) {
+      if (islist(val)) {
+        val = val.slice(start, end) as V
       }
-
-      if (vlen < start) {
-        start = vlen
+      else if ('string' === typeof val) {
+        val = val.substring(start, end) as V
       }
-
-      if (-1 < start && start <= end && end <= vlen) {
-        return val.slice(start, end) as V
+    }
+    else {
+      if (islist(val)) {
+        val = [] as V
+      }
+      else if ('string' === typeof val) {
+        val = S_MT as V
       }
     }
   }
@@ -689,9 +710,8 @@ function getpath(store: any, path: string | string[],
   // Operate on a string array.
   const parts = islist(path) ? path : S_string === typeof path ? path.split(S_DT) : UNDEF
 
-  // const print = console.log // '...v' === path ? console.log : () => null
-
-  // print('GETPATH', path, parts, parts?.length, '' + inj)
+  // const print = '.' === path || '..' === path ? console.log : () => null
+  // print('GETPATH', path, parts, parts?.length, injdef?.toString?.() || injdef)
 
   if (UNDEF === parts) {
     return UNDEF
@@ -774,7 +794,7 @@ function getpath(store: any, path: string | string[],
             else {
               // const dpath = inj.dpath.filter(p => !p.startsWith('$:'))
               const fullpath = slice(dpath, 0 - ascends).concat(parts.slice(pI + 1))
-              // print('ASCENDS', ascends, inj.dpath.join('.'), dpath.join('.'), '' + inj, stringify(store))
+              // print('ASCENDS', fullpath, ascends, injdef?.dpath?.join('.'), dpath.join('.'))
 
               if (ascends <= size(dpath)) {
                 // if (0 < size(dpath)) {
@@ -1946,13 +1966,23 @@ class Injection {
 
 
   descend(store: any) {
+    // console.log('DESCEND', UNDEF === this.dparent, this.path, this.dpath)
+    const parentkey = getelem(this.path, -2)
+
     // Resolve current node in store for local paths.
     if (UNDEF === this.dparent) {
       this.dparent = setprop({}, this.base, store)
+      // console.log('PATHS', this.path, this.dpath)
+
+      // Even if there's no data, dpath should continue to match path, so that
+      // relative paths work properly.
+      if (1 < this.dpath.length) {
+        this.dpath = [...this.dpath, parentkey]
+      }
     }
     else {
       // this.dparent is the containing node of the current store value.
-      const parentkey = getelem(this.path, -2)
+      // const parentkey = getelem(this.path, -2)
       if (null != parentkey) {
         this.dparent = getprop(this.dparent, parentkey)
 
