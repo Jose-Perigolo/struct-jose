@@ -52,6 +52,6 @@ out = (0, __1.validate)({
     // data: ['`$ONE`', {}, []],
     // state: {},
     // check: {},
-}, undefined, errs);
+}, { errs });
 console.log('OUT', out, errs);
 //# sourceMappingURL=direct.js.map

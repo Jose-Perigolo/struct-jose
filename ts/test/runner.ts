@@ -289,7 +289,7 @@ function match(
 
   structUtils.walk(check, (_key: any, val: any, _parent: any, path: any) => {
     if (!structUtils.isnode(val)) {
-      let baseval = structUtils.getpath(path, base)
+      let baseval = structUtils.getpath(base, path)
 
       if (baseval === val) {
         return val

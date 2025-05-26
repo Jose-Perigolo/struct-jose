@@ -30,6 +30,7 @@ describe('struct', async () => {
 
   const {
     clone,
+    delprop,
     escre,
     escurl,
     getelem,
@@ -78,6 +79,7 @@ describe('struct', async () => {
 
   test('exists', () => {
     equal('function', typeof clone)
+    equal('function', typeof delprop)
     equal('function', typeof escre)
     equal('function', typeof escurl)
     equal('function', typeof getelem)
@@ -238,6 +240,25 @@ describe('struct', async () => {
   })
 
 
+  test('minor-delprop', async () => {
+    await runset(minorSpec.delprop, (vin: any) =>
+      delprop(vin.parent, vin.key))
+  })
+
+
+  test('minor-edge-delprop', async () => {
+    let strarr0 = ['a', 'b', 'c', 'd', 'e']
+    let strarr1 = ['a', 'b', 'c', 'd', 'e']
+    deepEqual(delprop(strarr0, 2), ['a', 'b', 'd', 'e'])
+    deepEqual(delprop(strarr1, '2'), ['a', 'b', 'd', 'e'])
+
+    let intarr0 = [2, 3, 5, 7, 11]
+    let intarr1 = [2, 3, 5, 7, 11]
+    deepEqual(delprop(intarr0, 2), [2, 3, 7, 11])
+    deepEqual(delprop(intarr1, '2'), [2, 3, 7, 11])
+  })
+
+
   test('minor-haskey', async () => {
     await runsetflags(minorSpec.haskey, { null: false }, (vin: any) =>
       haskey(vin.src, vin.key))
@@ -350,38 +371,36 @@ describe('struct', async () => {
   // =============
 
   test('getpath-basic', async () => {
-    await runset(getpathSpec.basic, (vin: any) => getpath(vin.path, vin.store))
+    await runset(getpathSpec.basic, (vin: any) => getpath(vin.store, vin.path))
   })
 
 
-  test('getpath-current', async () => {
-    await runset(getpathSpec.current, (vin: any) =>
-      getpath(vin.path, vin.store, vin.current))
+  test('getpath-relative', async () => {
+    await runset(getpathSpec.relative, (vin: any) =>
+      getpath(vin.store, vin.path, { dparent: vin.dparent, dpath: vin.dpath?.split('.') }))
   })
 
 
-  test('getpath-state', async () => {
-    const inj = {
-      handler: (state: any, val: any, _current: any, _ref: any, _store: any) => {
-        let out = state.meta.step + ':' + val
-        state.meta.step++
-        return out
-      },
-      meta: { step: 0 },
-      mode: ('val' as any),
-      full: false,
-      keyI: 0,
-      keys: ['$TOP'],
-      key: '$TOP',
-      val: '',
-      parent: {},
-      path: ['$TOP'],
-      nodes: [{}],
-      base: '$TOP',
-      errs: [],
-    } as unknown as Injection
-    await runset(getpathSpec.state, (vin: any) =>
-      getpath(vin.path, vin.store, vin.current, inj))
+  test('getpath-special', async () => {
+    await runset(getpathSpec.special, (vin: any) =>
+      getpath(vin.store, vin.path, vin.inj))
+  })
+
+
+  test('getpath-handler', async () => {
+    await runset(getpathSpec.handler, (vin: any) =>
+      getpath(
+        {
+          $TOP: vin.store,
+          $FOO: () => 'foo',
+        },
+        vin.path,
+        {
+          handler: (_inj: any, val: any, _cur: any, _ref: any) => {
+            return val()
+          }
+        }
+      ))
   })
 
 
@@ -396,7 +415,7 @@ describe('struct', async () => {
 
   test('inject-string', async () => {
     await runset(injectSpec.string, (vin: any) =>
-      inject(vin.val, vin.store, nullModifier, vin.current))
+      inject(vin.val, vin.store, { modify: nullModifier }))
   })
 
 
@@ -410,46 +429,50 @@ describe('struct', async () => {
 
   test('transform-basic', async () => {
     const test = clone(transformSpec.basic)
-    deepEqual(transform(test.in.data, test.in.spec, test.in.store), test.out)
+    deepEqual(transform(test.in.data, test.in.spec), test.out)
   })
 
 
   test('transform-paths', async () => {
     await runset(transformSpec.paths, (vin: any) =>
-      transform(vin.data, vin.spec, vin.store))
+      transform(vin.data, vin.spec))
   })
 
 
   test('transform-cmds', async () => {
     await runset(transformSpec.cmds, (vin: any) =>
-      transform(vin.data, vin.spec, vin.store))
+      transform(vin.data, vin.spec))
   })
 
 
   test('transform-each', async () => {
     await runset(transformSpec.each, (vin: any) =>
-      transform(vin.data, vin.spec, vin.store))
+      transform(vin.data, vin.spec))
   })
 
 
   test('transform-pack', async () => {
     await runset(transformSpec.pack, (vin: any) =>
-      transform(vin.data, vin.spec, vin.store))
+      transform(vin.data, vin.spec))
   })
 
 
   test('transform-ref', async () => {
     await runset(transformSpec.ref, (vin: any) =>
-      transform(vin.data, vin.spec, vin.store))
+      transform(vin.data, vin.spec))
   })
 
 
   test('transform-modify', async () => {
     await runset(transformSpec.modify, (vin: any) =>
-      transform(vin.data, vin.spec, vin.store,
-        (val: any, key: any, parent: any) => {
-          if (null != key && null != parent && 'string' === typeof val) {
-            val = parent[key] = '@' + val
+      transform(
+        vin.data,
+        vin.spec,
+        {
+          modify: (val: any, key: any, parent: any) => {
+            if (null != key && null != parent && 'string' === typeof val) {
+              val = parent[key] = '@' + val
+            }
           }
         }
       ))
@@ -461,9 +484,11 @@ describe('struct', async () => {
       { a: 1 },
       { x: '`a`', b: '`$COPY`', c: '`$UPPER`' },
       {
-        b: 2, $UPPER: (state: any) => {
-          const { path } = state
-          return ('' + getprop(path, path.length - 1)).toUpperCase()
+        extra: {
+          b: 2, $UPPER: (state: any) => {
+            const { path } = state
+            return ('' + getprop(path, path.length - 1)).toUpperCase()
+          }
         }
       }
     ), {
@@ -513,16 +538,23 @@ describe('struct', async () => {
   })
 
 
+  test('validate-special', async () => {
+    await runset(validateSpec.special, (vin: any) => validate(vin.data, vin.spec, vin.inj))
+  })
+
+
   test('validate-custom', async () => {
     const errs: any[] = []
     const extra = {
-      $INTEGER: (state: any, _val: any, current: any) => {
-        const { key } = state
-        let out = getprop(current, key)
+      // $INTEGER: (state: any, _val: any, current: any) => {
+      $INTEGER: (inj: Injection) => {
+        const { key } = inj
+        // let out = getprop(current, key)
+        let out = getprop(inj.dparent, key)
 
         let t = typeof out
         if ('number' !== t && !Number.isInteger(out)) {
-          state.errs.push('Not an integer at ' + state.path.slice(1).join('.') + ': ' + out)
+          inj.errs.push('Not an integer at ' + inj.path.slice(1).join('.') + ': ' + out)
           return
         }
 
@@ -532,13 +564,14 @@ describe('struct', async () => {
 
     const shape = { a: '`$INTEGER`' }
 
-    let out = validate({ a: 1 }, shape, extra, errs)
+    let out = validate({ a: 1 }, shape, { extra, errs })
     deepEqual(out, { a: 1 })
     equal(errs.length, 0)
 
-    out = validate({ a: 'A' }, shape, extra, errs)
+    out = validate({ a: 'A' }, shape, { extra, errs })
     deepEqual(out, { a: 'A' })
     deepEqual(errs, ['Not an integer at a: A'])
   })
 
 })
+

@@ -295,7 +295,6 @@ setprop: {
     { in: { parent: {}, key: x, val: 1,  }, out: {x:1} }
     { in: { key: x, val: 1 } }
     { in: { parent: {}, val: 1 }, out: {} }
-    { in: { parent: {}, key: x }, out: {} }
 
     { in: { parent: {x:11}, key: y, val: 22, }, out: {x:11,y:22} }
     { in: { parent: {x:12}, key: y, val: 'Y' }, out: {x:12,y:'Y'} }
@@ -316,20 +315,47 @@ setprop: {
     { in: { parent: [271], key: -1, val: 281, }, out: [281, 271] }
     { in: { parent: [272], key: -2, val: 282, }, out: [282, 272] }
 
-    { in: { parent: [273], key: 2 }, out: [273] }
-    { in: { parent: [274], key: 1 }, out: [274] }
-    { in: { parent: [275], key: 0 }, out: [] }
-    { in: { parent: [276], key: -1 }, out: [276] }
-    { in: { parent: [277], key: -2 }, out: [277] }
-
     { in: { parent: [28], key: [], val: 29, }, out: [28] }
     { in: { parent: [29], key: {}, val: 30, }, out: [29] }
     { in: { parent: [30], key: true, val: 31, }, out: [30] }
     { in: { parent: [31], key: false, val: 32, }, out: [31] }
 
-    { in: { parent: {x:32}, key: x }, out: {} }
-    { in: { parent: {x:33,y:34}, key: y }, out: {x:33} }
+    { in: { parent: [], key: 'a' }, out: [] }
+  ]
+}
 
+
+delprop: {
+  set: [
+    { in: { parent: {}, key: x }, out: {} }
+    { in: { key: x } }
+    { in: { parent: {} }, out: {} }
+
+    { in: { parent: {x:11}, key: x }, out: {} }
+    { in: { parent: {x:11,y:22}, key: x }, out: {y:22} }
+    { in: { parent: {x:11,y:22}, key: y }, out: {x:11} }
+    { in: { parent: {x:11,y:22,z:33}, key: y }, out: {x:11,z:33} }
+
+    { in: { parent: {x:15}, key: y }, out: {x:15} }
+    { in: { parent: {x:17}, key: 0 }, out: {x:17} }
+
+    { in: { parent: [22], key: 0 }, out: [] }
+    { in: { parent: [23,24], key: 0 }, out: [24] }
+    { in: { parent: [23,24], key: 1 }, out: [23] }
+    { in: { parent: [25,26,27], key: 1 }, out: [25,27] }
+    { in: { parent: [28,29,30], key: 0 }, out: [29,30] }
+    { in: { parent: [31,32,33], key: 2 }, out: [31,32] }
+
+    { in: { parent: [34], key: 1 }, out: [34] }
+    { in: { parent: [35], key: 2 }, out: [35] }
+    { in: { parent: [36], key: -1 }, out: [36] }
+
+    { in: { parent: [37], key: [] }, out: [37] }
+    { in: { parent: [38], key: {} }, out: [38] }
+    { in: { parent: [39], key: true }, out: [39] }
+    { in: { parent: [40], key: false }, out: [40] }
+
+    { in: { parent: {x:41}, key: y }, out: {x:41} }
     { in: { parent: [], key: 'a' }, out: [] }
   ]
 }
@@ -537,8 +563,55 @@ slice: {
     { in: {val:[225], start:-4}, out: [] }
     { in: {val:[226], start:-5}, out: [] }
 
+    { in: {val:[33,34,35], start:2, end:1}, out: [] }
+
+    { in: {val:'abc'}, out: 'abc' }
+    { in: {val:'ABC', start:1}, out: 'BC' }
+    { in: {val:'def', start:-1}, out: 'de' }
+    { in: {val:'DEF', start:0,end:-1}, out: 'DE' }
+    { in: {val:'ghi', start:1,end:2}, out: 'h' }
+    { in: {val:'GHI', start:2,end:1}, out: '' }
+
+    { in: {val:3}, out: 3 }
+    { in: {val:4, start:1}, out: 4 }
+    { in: {val:5, start:7}, out: 7 }
+    { in: {val:6, start:6}, out: 6 }
+
+    # NOTE: end is exclusive!
+    { in: {val:3, end:4}, out: 3 }
+    { in: {val:3, end:3}, out: 2 }
+    { in: {val:3, end:2}, out: 1 }
+
+    { in: {val:5, start:3, end:7}, out: 5 }
+    { in: {val:4, start:3, end:7}, out: 4 }
+    { in: {val:3, start:3, end:7}, out: 3 }
+    { in: {val:2, start:3, end:7}, out: 3 }
+    { in: {val:0, start:3, end:7}, out: 3 }
+    { in: {val:-1, start:3, end:7}, out: 3 }
+    { in: {val:6, start:3, end:7}, out: 6 }
+    { in: {val:7, start:3, end:7}, out: 6 }
+    { in: {val:8, start:3, end:7}, out: 6 }
+
+    { in: {val:-3, start:-5, end:-1}, out: -3 }
+    { in: {val:-5, start:-5, end:-1}, out: -5 }
+    { in: {val:-7, start:-5, end:-1}, out: -5 }
+    { in: {val:-2, start:-5, end:-1}, out: -2 }
+    { in: {val:-1, start:-5, end:-1}, out: -2 }
+    { in: {val:0, start:-5, end:-1}, out: -2 }
+    { in: {val:1, start:-5, end:-1}, out: -2 }
+    
+    
+    { in: {val:true}, out: true }
+    { in: {val:true,start:1}, out: true }
+    { in: {val:true,start:1,end:2}, out: true }
+
+    { in: {val:{x:1}}, out: {x:1} }
+    { in: {val:{x:1},start:1}, out: {x:1} }
+    { in: {val:{x:1},start:1,end:2}, out: {x:1} }
+
   ]
 }
+
 
 pad: {
   set: [

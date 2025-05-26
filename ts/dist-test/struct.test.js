@@ -11,7 +11,7 @@ const TEST_JSON_FILE = '../../build/test/test.json';
 (0, node_test_1.describe)('struct', async () => {
     const runner = await (0, runner_1.makeRunner)(TEST_JSON_FILE, await sdk_js_1.SDK.test());
     const { spec, runset, runsetflags, client } = await runner('struct');
-    const { clone, escre, escurl, getelem, getpath, getprop, haskey, inject, isempty, isfunc, iskey, islist, ismap, isnode, items, joinurl, keysof, merge, pad, pathify, size, slice, setprop, strkey, stringify, transform, typify, validate, walk, } = client.utility().struct;
+    const { clone, delprop, escre, escurl, getelem, getpath, getprop, haskey, inject, isempty, isfunc, iskey, islist, ismap, isnode, items, joinurl, keysof, merge, pad, pathify, size, slice, setprop, strkey, stringify, transform, typify, validate, walk, } = client.utility().struct;
     const minorSpec = spec.minor;
     const walkSpec = spec.walk;
     const mergeSpec = spec.merge;
@@ -21,6 +21,7 @@ const TEST_JSON_FILE = '../../build/test/test.json';
     const validateSpec = spec.validate;
     (0, node_test_1.test)('exists', () => {
         (0, node_assert_1.equal)('function', typeof clone);
+        (0, node_assert_1.equal)('function', typeof delprop);
         (0, node_assert_1.equal)('function', typeof escre);
         (0, node_assert_1.equal)('function', typeof escurl);
         (0, node_assert_1.equal)('function', typeof getelem);
@@ -128,6 +129,19 @@ const TEST_JSON_FILE = '../../build/test/test.json';
         (0, node_assert_1.deepEqual)(setprop(intarr0, 2, 55), [2, 3, 55, 7, 11]);
         (0, node_assert_1.deepEqual)(setprop(intarr1, '2', 555), [2, 3, 555, 7, 11]);
     });
+    (0, node_test_1.test)('minor-delprop', async () => {
+        await runset(minorSpec.delprop, (vin) => delprop(vin.parent, vin.key));
+    });
+    (0, node_test_1.test)('minor-edge-delprop', async () => {
+        let strarr0 = ['a', 'b', 'c', 'd', 'e'];
+        let strarr1 = ['a', 'b', 'c', 'd', 'e'];
+        (0, node_assert_1.deepEqual)(delprop(strarr0, 2), ['a', 'b', 'd', 'e']);
+        (0, node_assert_1.deepEqual)(delprop(strarr1, '2'), ['a', 'b', 'd', 'e']);
+        let intarr0 = [2, 3, 5, 7, 11];
+        let intarr1 = [2, 3, 5, 7, 11];
+        (0, node_assert_1.deepEqual)(delprop(intarr0, 2), [2, 3, 7, 11]);
+        (0, node_assert_1.deepEqual)(delprop(intarr1, '2'), [2, 3, 7, 11]);
+    });
     (0, node_test_1.test)('minor-haskey', async () => {
         await runsetflags(minorSpec.haskey, { null: false }, (vin) => haskey(vin.src, vin.key));
     });
@@ -200,32 +214,23 @@ const TEST_JSON_FILE = '../../build/test/test.json';
     // getpath tests
     // =============
     (0, node_test_1.test)('getpath-basic', async () => {
-        await runset(getpathSpec.basic, (vin) => getpath(vin.path, vin.store));
+        await runset(getpathSpec.basic, (vin) => getpath(vin.store, vin.path));
     });
-    (0, node_test_1.test)('getpath-current', async () => {
-        await runset(getpathSpec.current, (vin) => getpath(vin.path, vin.store, vin.current));
+    (0, node_test_1.test)('getpath-relative', async () => {
+        await runset(getpathSpec.relative, (vin) => getpath(vin.store, vin.path, { dparent: vin.dparent, dpath: vin.dpath?.split('.') }));
     });
-    (0, node_test_1.test)('getpath-state', async () => {
-        const inj = {
-            handler: (state, val, _current, _ref, _store) => {
-                let out = state.meta.step + ':' + val;
-                state.meta.step++;
-                return out;
-            },
-            meta: { step: 0 },
-            mode: 'val',
-            full: false,
-            keyI: 0,
-            keys: ['$TOP'],
-            key: '$TOP',
-            val: '',
-            parent: {},
-            path: ['$TOP'],
-            nodes: [{}],
-            base: '$TOP',
-            errs: [],
-        };
-        await runset(getpathSpec.state, (vin) => getpath(vin.path, vin.store, vin.current, inj));
+    (0, node_test_1.test)('getpath-special', async () => {
+        await runset(getpathSpec.special, (vin) => getpath(vin.store, vin.path, vin.inj));
+    });
+    (0, node_test_1.test)('getpath-handler', async () => {
+        await runset(getpathSpec.handler, (vin) => getpath({
+            $TOP: vin.store,
+            $FOO: () => 'foo',
+        }, vin.path, {
+            handler: (_inj, val, _cur, _ref) => {
+                return val();
+            }
+        }));
     });
     // inject tests
     // ============
@@ -234,7 +239,7 @@ const TEST_JSON_FILE = '../../build/test/test.json';
         (0, node_assert_1.deepEqual)(inject(test.in.val, test.in.store), test.out);
     });
     (0, node_test_1.test)('inject-string', async () => {
-        await runset(injectSpec.string, (vin) => inject(vin.val, vin.store, runner_1.nullModifier, vin.current));
+        await runset(injectSpec.string, (vin) => inject(vin.val, vin.store, { modify: runner_1.nullModifier }));
     });
     (0, node_test_1.test)('inject-deep', async () => {
         await runset(injectSpec.deep, (vin) => inject(vin.val, vin.store));
@@ -243,35 +248,39 @@ const TEST_JSON_FILE = '../../build/test/test.json';
     // ===============
     (0, node_test_1.test)('transform-basic', async () => {
         const test = clone(transformSpec.basic);
-        (0, node_assert_1.deepEqual)(transform(test.in.data, test.in.spec, test.in.store), test.out);
+        (0, node_assert_1.deepEqual)(transform(test.in.data, test.in.spec), test.out);
     });
     (0, node_test_1.test)('transform-paths', async () => {
-        await runset(transformSpec.paths, (vin) => transform(vin.data, vin.spec, vin.store));
+        await runset(transformSpec.paths, (vin) => transform(vin.data, vin.spec));
     });
     (0, node_test_1.test)('transform-cmds', async () => {
-        await runset(transformSpec.cmds, (vin) => transform(vin.data, vin.spec, vin.store));
+        await runset(transformSpec.cmds, (vin) => transform(vin.data, vin.spec));
     });
     (0, node_test_1.test)('transform-each', async () => {
-        await runset(transformSpec.each, (vin) => transform(vin.data, vin.spec, vin.store));
+        await runset(transformSpec.each, (vin) => transform(vin.data, vin.spec));
     });
     (0, node_test_1.test)('transform-pack', async () => {
-        await runset(transformSpec.pack, (vin) => transform(vin.data, vin.spec, vin.store));
+        await runset(transformSpec.pack, (vin) => transform(vin.data, vin.spec));
     });
     (0, node_test_1.test)('transform-ref', async () => {
-        await runset(transformSpec.ref, (vin) => transform(vin.data, vin.spec, vin.store));
+        await runset(transformSpec.ref, (vin) => transform(vin.data, vin.spec));
     });
     (0, node_test_1.test)('transform-modify', async () => {
-        await runset(transformSpec.modify, (vin) => transform(vin.data, vin.spec, vin.store, (val, key, parent) => {
-            if (null != key && null != parent && 'string' === typeof val) {
-                val = parent[key] = '@' + val;
+        await runset(transformSpec.modify, (vin) => transform(vin.data, vin.spec, {
+            modify: (val, key, parent) => {
+                if (null != key && null != parent && 'string' === typeof val) {
+                    val = parent[key] = '@' + val;
+                }
             }
         }));
     });
     (0, node_test_1.test)('transform-extra', async () => {
         (0, node_assert_1.deepEqual)(transform({ a: 1 }, { x: '`a`', b: '`$COPY`', c: '`$UPPER`' }, {
-            b: 2, $UPPER: (state) => {
-                const { path } = state;
-                return ('' + getprop(path, path.length - 1)).toUpperCase();
+            extra: {
+                b: 2, $UPPER: (state) => {
+                    const { path } = state;
+                    return ('' + getprop(path, path.length - 1)).toUpperCase();
+                }
             }
         }), {
             x: 1,
@@ -304,25 +313,30 @@ const TEST_JSON_FILE = '../../build/test/test.json';
     (0, node_test_1.test)('validate-invalid', async () => {
         await runsetflags(validateSpec.invalid, { null: false }, (vin) => validate(vin.data, vin.spec));
     });
+    (0, node_test_1.test)('validate-special', async () => {
+        await runset(validateSpec.special, (vin) => validate(vin.data, vin.spec, vin.inj));
+    });
     (0, node_test_1.test)('validate-custom', async () => {
         const errs = [];
         const extra = {
-            $INTEGER: (state, _val, current) => {
-                const { key } = state;
-                let out = getprop(current, key);
+            // $INTEGER: (state: any, _val: any, current: any) => {
+            $INTEGER: (inj) => {
+                const { key } = inj;
+                // let out = getprop(current, key)
+                let out = getprop(inj.dparent, key);
                 let t = typeof out;
                 if ('number' !== t && !Number.isInteger(out)) {
-                    state.errs.push('Not an integer at ' + state.path.slice(1).join('.') + ': ' + out);
+                    inj.errs.push('Not an integer at ' + inj.path.slice(1).join('.') + ': ' + out);
                     return;
                 }
                 return out;
             },
         };
         const shape = { a: '`$INTEGER`' };
-        let out = validate({ a: 1 }, shape, extra, errs);
+        let out = validate({ a: 1 }, shape, { extra, errs });
         (0, node_assert_1.deepEqual)(out, { a: 1 });
         (0, node_assert_1.equal)(errs.length, 0);
-        out = validate({ a: 'A' }, shape, extra, errs);
+        out = validate({ a: 'A' }, shape, { extra, errs });
         (0, node_assert_1.deepEqual)(out, { a: 'A' });
         (0, node_assert_1.deepEqual)(errs, ['Not an integer at a: A']);
     });
