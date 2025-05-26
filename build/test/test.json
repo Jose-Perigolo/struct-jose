@@ -5100,6 +5100,49 @@
                 }
               }
             }
+          },
+          {
+            "in": {
+              "path": "p0$~a",
+              "store": {},
+              "inj": {
+                "meta": {
+                  "p0": {
+                    "a": 44
+                  }
+                }
+              }
+            },
+            "out": 44
+          },
+          {
+            "in": {
+              "path": "p0$~b",
+              "store": {},
+              "inj": {
+                "meta": {
+                  "p0": {
+                    "a": 45
+                  }
+                }
+              }
+            }
+          },
+          {
+            "in": {
+              "path": "p0$~a.c",
+              "store": {},
+              "inj": {
+                "meta": {
+                  "p0": {
+                    "a": {
+                      "c": 46
+                    }
+                  }
+                }
+              }
+            },
+            "out": 46
           }
         ]
       },
@@ -12184,6 +12227,64 @@
               }
             },
             "err": "Invalid data: Expected field x13 to be exactly equal to 103, but found string: s13."
+          },
+          {
+            "in": {
+              "data": {
+                "x14": 104
+              },
+              "spec": {
+                "x14": "`q0$~x1`"
+              },
+              "inj": {
+                "meta": {
+                  "q0": {
+                    "x1": 104
+                  }
+                }
+              }
+            },
+            "out": {
+              "x14": 104
+            }
+          },
+          {
+            "in": {
+              "data": {
+                "x15": 204
+              },
+              "spec": {
+                "x15": "`q0$~x1`"
+              },
+              "inj": {
+                "meta": {
+                  "q0": {
+                    "x1": 104
+                  }
+                }
+              }
+            },
+            "out": {
+              "x15": 204
+            }
+          },
+          {
+            "in": {
+              "data": {
+                "x16": "s16"
+              },
+              "spec": {
+                "x16": "`q0$~x1`"
+              },
+              "inj": {
+                "meta": {
+                  "q0": {
+                    "x1": 104
+                  }
+                }
+              }
+            },
+            "err": "Invalid data: Expected field x16 to be number, but found string: s16."
           }
         ]
       },
