@@ -134,15 +134,12 @@ class InjectState:
             modify=self.modify
         )
 
-    def setval(self, val: Any, depth: int = 1) -> Any:
-        """Set the value in the parent node at the specified depth."""
-        if depth <= 0:
-            return val
-        if len(self.nodes) < depth:
-            return val
-        parent = self.nodes[-depth]
-        setprop(parent, self.key, val)
-        return parent
+    def setval(self, val: Any, ancestor: Optional[int] = None) -> Any:
+        """Set the value in the parent node at the specified ancestor level."""
+        if ancestor is None or ancestor < 2:
+            return setprop(self.parent, self.key, val)
+        else:
+            return setprop(getelem(self.nodes, 0 - ancestor), getelem(self.path, 0 - ancestor), val)
 
 
 def isnode(val: Any = UNDEF) -> bool:
@@ -844,7 +841,7 @@ def _injecthandler(state, val, current, ref, store):
     # Update parent with value. Ensures references remain in node tree.
     else:
         if state.mode == S_MVAL and state.full:
-            setprop(state.parent, state.key, val)
+            state.setval(val)
 
     return out
 
@@ -857,7 +854,7 @@ def transform_DELETE(state, val, current, ref, store):
     """
     Injection handler to delete a key from a map/list.
     """
-    setprop(state.parent, state.key, UNDEF)
+    state.setval(current, UNDEF)
     return UNDEF
 
 
@@ -874,7 +871,7 @@ def transform_COPY(state, val, current, ref, store):
         out = key
     else:
         out = getprop(current, key)
-        setprop(parent, key, out)
+        state.setval(out)
 
     return out
 
@@ -892,6 +889,8 @@ def transform_KEY(state, val, current, ref, store):
 
     keyspec = getprop(parent, S_DKEY)
     if keyspec is not UNDEF:
+        # Need to use setprop directly here since we're removing a specific key (S_DKEY)
+        # not the current state's key
         setprop(parent, S_DKEY, UNDEF)
         return getprop(current, keyspec)
 
@@ -927,7 +926,7 @@ def transform_MERGE(state, val, current, ref, store):
         elif not islist(args):
             args = [args]
 
-        setprop(parent, key, UNDEF)
+        state.setval(UNDEF)  # Using setval instead of setprop
 
         # Merge them on top of parent
         mergelist = [parent] + args + [clone(parent)]
@@ -978,6 +977,8 @@ def transform_EACH(state, val, current, ref, store):
             # Convert dict to a list of child templates
             tval = []
             for k, v in src.items():
+                # Create child state for each key
+                child_state = state.child(0, [k])
                 # Keep key in meta for usage by `$KEY`
                 copy_child = clone(child_template)
                 copy_child[S_DMETA] = {S_KEY: k}
@@ -1061,6 +1062,8 @@ def transform_PACK(state, val, current, ref, store):
             kn = getprop(meta, S_KEY, UNDEF)
 
         if kn is not UNDEF:
+            # Create child state for each key
+            child_state = state.child(0, [kn])
             tval[kn] = clone(child_template)
             # Transfer meta if present
             tmeta = getprop(elem, S_DMETA)
@@ -1134,23 +1137,23 @@ def transform_REF(state, val, _current, _ref, store):
 
     if not hasSubRef or tval is not UNDEF:
         # Create child state for the next level
-        tinj = state.child(0, [getelem(tpath, -1)])
-        tinj.path = tpath
-        tinj.nodes = slice(state.nodes, 0, len(state.nodes)-1)
-        tinj.parent = getelem(nodes, -2)
-        tinj.val = tref
+        child_state = state.child(0, [getelem(tpath, -1)])
+        child_state.path = tpath
+        child_state.nodes = slice(state.nodes, 0, len(state.nodes)-1)
+        child_state.parent = getelem(nodes, -2)
+        child_state.val = tref
 
         # Inject with child state
-        inject(tref, store, modify, tcur, tinj)
-        rval = tinj.val
+        inject(tref, store, modify, tcur, child_state)
+        rval = child_state.val
     else:
         rval = UNDEF
 
     # Set the value in grandparent, using setval
-    grandparent = state.setval(rval, 2)
+    state.setval(rval, 2)
     
     # Handle lists by decrementing keyI
-    if islist(grandparent) and state.prior:
+    if islist(state.parent) and state.prior:
         state.prior.keyI -= 1
 
     return val
@@ -1333,12 +1336,15 @@ def validate_CHILD(state, _val, current, _ref, store):
         # For each key in tval, clone childtm
         ckeys = keysof(tval)
         for ckey in ckeys:
-            setprop(parent, ckey, clone(childtm))
+            # Create a temporary state for each child key
+            child_state = state.child(0, [ckey])
+            child_state.key = ckey
+            child_state.setval(clone(childtm))
             # Extend state.keys so the injection/validation loop processes them
             keys.append(ckey)
 
         # Remove the `$CHILD` from final output
-        setprop(parent, key, UNDEF)
+        state.setval(UNDEF)
         return UNDEF
 
     # List syntax.
@@ -1363,9 +1369,9 @@ def validate_CHILD(state, _val, current, _ref, store):
             return current
 
     
-        # Clone children abd reset state key index.
+        # Clone children and reset state key index.
         # The inject child loop will now iterate over the cloned children,
-        # validating them againt the current list values.
+        # validating them against the current list values.
         for i in range(len(current)):
             parent[i] = clone(childtm)
 
@@ -1398,11 +1404,9 @@ def validate_ONE(state, _val, current, _ref, store):
             
         state.keyI = len(state.keys)
         
-        grandparent = nodes[-2] if len(nodes) >= 2 else UNDEF
-        grandkey = path[-2] if len(path) >= 2 else UNDEF
-        
         # Clean up structure, replacing [$ONE, ...] with current
-        setprop(grandparent, grandkey, current)
+        grandparent = state.setval(current, 2)
+        
         state.path = state.path[:-1]
         state.key = state.path[-1]
         
@@ -1421,7 +1425,11 @@ def validate_ONE(state, _val, current, _ref, store):
             vstore = {**store}
             vstore[S_DTOP] = current
             vcurrent = validate(current, tval, vstore, terrs)
-            setprop(grandparent, grandkey, vcurrent)
+            
+            # Update the value in the parent structure using a temporary state
+            temp_state = state.child(0, [getelem(path, -2)])
+            temp_state.key = getelem(path, -2)
+            temp_state.setval(vcurrent)
 
             # Accept current value if there was a match
             if 0 == len(terrs):
@@ -1431,12 +1439,20 @@ def validate_ONE(state, _val, current, _ref, store):
         valdesc = ", ".join(stringify(v) for v in tvals)
         valdesc = re.sub(r"`\$([A-Z]+)`", lambda m: m.group(1).lower(), valdesc)
         
-        state.errs.append(_invalidTypeMsg(
-            state.path,
-            (1 < len(tvals) and "one of " or "") + valdesc,
-            typify(current), current, 'V0210'))
-            
-            
+        # If we're validating against an array spec but got a non-array value,
+        # add a more specific error message
+        if islist(tvals[0]) and not islist(current):
+            state.errs.append(_invalidTypeMsg(
+                state.path,
+                S_array,
+                typify(current), current, 'V0210'))
+        else:
+            state.errs.append(_invalidTypeMsg(
+                state.path,
+                (1 < len(tvals) and "one of " or "") + valdesc,
+                typify(current), current, 'V0210'))
+
+
 def validate_EXACT(state, _val, current, _ref, _store):
     """
     Match exactly one of the specified values.
@@ -1459,11 +1475,8 @@ def validate_EXACT(state, _val, current, _ref, _store):
 
         state.keyI = len(state.keys)
 
-        grandparent = nodes[-2] if len(nodes) >= 2 else UNDEF
-        grandkey = path[-2] if len(path) >= 2 else UNDEF
-
         # Clean up structure, replacing [$EXACT, ...] with current
-        setprop(grandparent, grandkey, current)
+        state.setval(current, 2)
         state.path = state.path[:-1]
         state.key = state.path[-1]
 
@@ -1496,7 +1509,7 @@ def validate_EXACT(state, _val, current, _ref, _store):
             'exactly equal to ' + ('' if 1 == len(tvals) else 'one of ') + valdesc,
             typify(current), current, 'V0110'))
     else:
-        setprop(parent, key, UNDEF)
+        state.setval(UNDEF)  # Using setval instead of setprop
 
         
 def _validation(
