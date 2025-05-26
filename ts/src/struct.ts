@@ -177,6 +177,8 @@ function isfunc(val: any) {
 }
 
 
+// The integer size of the value. For arrays and strings, the length,
+// for numbers, the integer part, for boolean, true is 1 and falso 0, for all other values, 0.
 function size(val: any): number {
   if (islist(val)) {
     return val.length
@@ -202,6 +204,10 @@ function size(val: any): number {
 }
 
 
+// Extract part of an array or string into a new value, from the start point to the end point.
+// If no end is specified, extract to the full length of the value. Negative arguments count
+// from the end of the value. For numbers, perform min and max bounding, where start is
+// inclusive, and end is *exclusive*.
 function slice<V extends any>(val: V, start?: number, end?: number): V {
   if ('number' === typeof val) {
     start = null == start || 'number' !== typeof start ? Number.MIN_SAFE_INTEGER : start
@@ -454,6 +460,7 @@ function stringify(val: any, maxlen?: number, pretty?: any): string {
   }
 
   if (pretty) {
+    // Indicate deeper JSON levels with different terminal colors (simplistic wrt strings).
     let c = [81, 118, 213, 39, 208, 201, 45, 190, 129, 51, 160, 121, 226, 33, 207, 69]
       .map(n => `\x1b[38;5;${n}m`),
       r = '\x1b[0m', d = 0, o = c[0], t = o
