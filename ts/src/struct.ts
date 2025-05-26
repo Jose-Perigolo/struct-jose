@@ -90,6 +90,7 @@ const UNDEF = undefined
 
 const SKIP = {}
 
+// TODO: predefine all regexps here
 
 
 // Keys are strings for maps, or integers for lists.
@@ -717,7 +718,7 @@ function getpath(store: any, path: string | string[],
     if (!isfunc(val)) {
       val = src
 
-      const m = parts[0].match(/^([^$]+)\$:(.+)$/)
+      const m = parts[0].match(/^([^$]+)\$=(.+)$/)
       if (m && injdef && injdef.meta) {
         val = getprop(injdef.meta, m[1])
         parts[0] = m[2]
@@ -2077,10 +2078,11 @@ const _validatehandler: Injector = (
 ): any => {
   let out = val
 
-  const m = ref.match(/^([^$]+)\$:(.+)$/)
+  const m = ref.match(/^([^$]+)\$=(.+)$/)
   const ismetapath = null != m
   // console.log('VH', ismetapath, val, 'ref=', ref, inj + '')
 
+  // TODO: $~ is default
   if (ismetapath) {
     inj.setval(['`$EXACT`', val])
     inj.keyI = -1
