@@ -378,6 +378,25 @@ stringify: {
 }
 
 
+jsonify: {
+  set: [
+    { in: 1, out: '1' }
+    { in: 'a', out: '"a"' }
+    { in: true, out: 'true' }
+    { in: false, out: 'false' }
+    { in: null, out: 'null' }
+    { out: 'null' }
+    { in: [], out: '[]' }
+    { in: {}, out: '{}' }
+    { in: [1,2,3], out: '[\n  1,\n  2,\n  3\n]' }
+    { in: {a:1}, out: '{\n  "a": 1\n}' }
+    { in: {a:1,b:2}, out: '{\n  "a": 1,\n  "b": 2\n}' }
+    { in: {x:{y:1}}, out: '{\n  "x": {\n    "y": 1\n  }\n}' }
+    { in: [{a:1},{b:2}], out: '[\n  {\n    "a": 1\n  },\n  {\n    "b": 2\n  }\n]' }
+  ]
+}
+
+
 pathify: {
   set: [
     { in: { path: [a] }, out:'a' }

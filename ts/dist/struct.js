@@ -19,6 +19,7 @@ exports.ismap = ismap;
 exports.isnode = isnode;
 exports.items = items;
 exports.joinurl = joinurl;
+exports.jsonify = jsonify;
 exports.keysof = keysof;
 exports.merge = merge;
 exports.pad = pad;
@@ -355,6 +356,19 @@ function joinurl(sarr) {
             .replace(R_TRAILING_SLASH, S_MT))
         .filter(s => S_MT !== s)
         .join(S_FS);
+}
+// Output JSON in a "standard" format, with 2 space indents, each property on a new line,
+// and spaces after {[: and before ]}. Any "wierd" values (NaN, etc) are output as null.
+// In general, the behaivor of of JavaScript's JSON.stringify(val,null,2) is followed.
+function jsonify(val) {
+    let str = S_null;
+    if (null != val) {
+        str = JSON.stringify(val, null, 2);
+        if (UNDEF === str) {
+            str = S_null;
+        }
+    }
+    return str;
 }
 // Safely stringify a value for humans (NOT JSON!).
 function stringify(val, maxlen, pretty) {
@@ -1633,6 +1647,7 @@ class StructUtility {
         this.isnode = isnode;
         this.items = items;
         this.joinurl = joinurl;
+        this.jsonify = jsonify;
         this.keysof = keysof;
         this.merge = merge;
         this.pad = pad;

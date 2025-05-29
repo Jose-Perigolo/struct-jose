@@ -11,7 +11,7 @@ const TEST_JSON_FILE = '../../build/test/test.json';
 (0, node_test_1.describe)('struct', async () => {
     const runner = await (0, runner_1.makeRunner)(TEST_JSON_FILE, await sdk_js_1.SDK.test());
     const { spec, runset, runsetflags, client } = await runner('struct');
-    const { clone, delprop, escre, escurl, getelem, getpath, getprop, haskey, inject, isempty, isfunc, iskey, islist, ismap, isnode, items, joinurl, keysof, merge, pad, pathify, size, slice, setprop, strkey, stringify, transform, typify, validate, walk, } = client.utility().struct;
+    const { clone, delprop, escre, escurl, getelem, getpath, getprop, haskey, inject, isempty, isfunc, iskey, islist, ismap, isnode, items, joinurl, jsonify, keysof, merge, pad, pathify, size, slice, setprop, strkey, stringify, transform, typify, validate, walk, } = client.utility().struct;
     const minorSpec = spec.minor;
     const walkSpec = spec.walk;
     const mergeSpec = spec.merge;
@@ -37,6 +37,7 @@ const TEST_JSON_FILE = '../../build/test/test.json';
         (0, node_assert_1.equal)('function', typeof isnode);
         (0, node_assert_1.equal)('function', typeof items);
         (0, node_assert_1.equal)('function', typeof joinurl);
+        (0, node_assert_1.equal)('function', typeof jsonify);
         (0, node_assert_1.equal)('function', typeof keysof);
         (0, node_assert_1.equal)('function', typeof merge);
         (0, node_assert_1.equal)('function', typeof pad);
@@ -90,6 +91,9 @@ const TEST_JSON_FILE = '../../build/test/test.json';
     });
     (0, node_test_1.test)('minor-stringify', async () => {
         await runset(minorSpec.stringify, (vin) => stringify((runner_1.NULLMARK === vin.val ? "null" : vin.val), vin.max));
+    });
+    (0, node_test_1.test)('minor-jsonify', async () => {
+        await runsetflags(minorSpec.jsonify, { null: false }, jsonify);
     });
     (0, node_test_1.test)('minor-pathify', async () => {
         await runsetflags(minorSpec.pathify, { null: true }, (vin) => {
