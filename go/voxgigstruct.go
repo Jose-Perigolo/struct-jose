@@ -468,6 +468,23 @@ func JoinUrl(parts []any) string {
 	return strings.Join(finalParts, "/")
 }
 
+// Output JSON in a "standard" format, with 2 space indents, each property on a new line,
+// and spaces after {[: and before ]}. Any "weird" values (NaN, etc) are output as null.
+// In general, the behavior of JavaScript's JSON.stringify(val,null,2) is followed.
+func Jsonify(val any) string {
+	str := S_null
+	if nil != val {
+		b, err := json.MarshalIndent(val, "", "  ")
+		if err != nil {
+			str = S_null
+		} else {
+			str = string(b)
+		}
+	}
+	
+	return str
+}
+
 // Safely stringify a value for humans (NOT JSON!).
 func Stringify(val any, maxlen ...int) string {
 	if nil == val {
