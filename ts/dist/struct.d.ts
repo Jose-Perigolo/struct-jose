@@ -44,7 +44,7 @@ declare function delprop<PARENT>(parent: PARENT, key: any): PARENT;
 declare function setprop<PARENT>(parent: PARENT, key: any, val: any): PARENT;
 declare function walk(val: any, apply: WalkApply, key?: string | number, parent?: any, path?: string[]): any;
 declare function merge(val: any): any;
-declare function getpath(store: any, path: string | string[], injdef?: Partial<Injection>): any;
+declare function getpath(store: any, path: number | string | string[], injdef?: Partial<Injection>): any;
 declare function inject(val: any, store: any, injdef?: Partial<Injection>): any;
 declare function transform(data: any, // Source data to transform into new data (original not mutated)
 spec: any, // Transform specification; output follows this shape
@@ -52,6 +52,7 @@ injdef?: Partial<Injection>): any;
 declare function validate(data: any, // Source data to transform into new data (original not mutated)
 spec: any, // Transform specification; output follows this shape
 injdef?: Partial<Injection>): any;
+declare function select(query: any, children: any): any[];
 declare class Injection {
     mode: InjectMode;
     full: boolean;
@@ -100,6 +101,7 @@ declare class StructUtility {
     merge: typeof merge;
     pad: typeof pad;
     pathify: typeof pathify;
+    select: typeof select;
     setprop: typeof setprop;
     size: typeof size;
     slice: typeof slice;
@@ -110,5 +112,5 @@ declare class StructUtility {
     validate: typeof validate;
     walk: typeof walk;
 }
-export { StructUtility, clone, delprop, escre, escurl, getelem, getpath, getprop, haskey, inject, isempty, isfunc, iskey, islist, ismap, isnode, items, joinurl, jsonify, keysof, merge, pad, pathify, setprop, size, slice, strkey, stringify, transform, typify, validate, walk, };
+export { StructUtility, clone, delprop, escre, escurl, getelem, getpath, getprop, haskey, inject, isempty, isfunc, iskey, islist, ismap, isnode, items, joinurl, jsonify, keysof, merge, pad, pathify, select, setprop, size, slice, strkey, stringify, transform, typify, validate, walk, };
 export type { Injection, Injector, WalkApply };
