@@ -12528,6 +12528,790 @@
       },
       "name": "validate",
       "set": []
+    },
+    "select": {
+      "basic": {
+        "set": [
+          {
+            "in": {
+              "query": {
+                "age": 30
+              },
+              "obj": {
+                "a": {
+                  "name": "Alice",
+                  "age": 30
+                },
+                "b": {
+                  "name": "Bob",
+                  "age": 25
+                }
+              }
+            },
+            "out": [
+              {
+                "name": "Alice",
+                "age": 30,
+                "$KEY": "a"
+              }
+            ]
+          },
+          {
+            "in": {
+              "query": {
+                "name": "Bob"
+              },
+              "obj": {
+                "a": {
+                  "name": "Alice",
+                  "age": 30
+                },
+                "b": {
+                  "name": "Bob",
+                  "age": 25
+                }
+              }
+            },
+            "out": [
+              {
+                "name": "Bob",
+                "age": 25,
+                "$KEY": "b"
+              }
+            ]
+          },
+          {
+            "in": {
+              "query": {
+                "age": 30,
+                "city": "NYC"
+              },
+              "obj": {
+                "a": {
+                  "age": 30,
+                  "city": "NYC"
+                },
+                "b": {
+                  "age": 30,
+                  "city": "LA"
+                }
+              }
+            },
+            "out": [
+              {
+                "age": 30,
+                "city": "NYC",
+                "$KEY": "a"
+              }
+            ]
+          },
+          {
+            "in": {
+              "query": {
+                "type": "user"
+              },
+              "obj": [
+                {
+                  "id": 1,
+                  "type": "user"
+                },
+                {
+                  "id": 2,
+                  "type": "admin"
+                },
+                {
+                  "id": 3,
+                  "type": "user"
+                }
+              ]
+            },
+            "out": [
+              {
+                "id": 1,
+                "type": "user",
+                "$KEY": 0
+              },
+              {
+                "id": 3,
+                "type": "user",
+                "$KEY": 2
+              }
+            ]
+          },
+          {
+            "in": {
+              "query": {
+                "age": 40
+              },
+              "obj": {
+                "a": {
+                  "age": 30
+                },
+                "b": {
+                  "age": 25
+                }
+              }
+            },
+            "out": []
+          },
+          {
+            "in": {
+              "query": {},
+              "obj": {
+                "a": {
+                  "x": 1
+                },
+                "b": {
+                  "x": 2
+                }
+              }
+            },
+            "out": [
+              {
+                "x": 1,
+                "$KEY": "a"
+              },
+              {
+                "x": 2,
+                "$KEY": "b"
+              }
+            ]
+          },
+          {
+            "in": {
+              "query": {
+                "x": 1
+              },
+              "obj": "hello"
+            },
+            "out": []
+          },
+          {
+            "in": {
+              "query": {
+                "x": 1
+              },
+              "obj": 42
+            },
+            "out": []
+          },
+          {
+            "in": {
+              "query": {
+                "x": 1
+              },
+              "obj": null
+            },
+            "out": []
+          },
+          {
+            "in": {
+              "query": {
+                "x": 1
+              },
+              "obj": "undefined"
+            },
+            "out": []
+          },
+          {
+            "in": {
+              "query": {
+                "data": {
+                  "x": 1,
+                  "y": 2
+                }
+              },
+              "obj": {
+                "a": {
+                  "data": {
+                    "x": 1,
+                    "y": 2
+                  }
+                },
+                "b": {
+                  "data": {
+                    "x": 1,
+                    "y": 3
+                  }
+                }
+              }
+            },
+            "out": [
+              {
+                "data": {
+                  "x": 1,
+                  "y": 2
+                },
+                "$KEY": "a"
+              }
+            ]
+          },
+          {
+            "in": {
+              "query": {
+                "tags": [
+                  "a",
+                  "b"
+                ]
+              },
+              "obj": {
+                "a": {
+                  "tags": [
+                    "a",
+                    "b"
+                  ]
+                },
+                "b": {
+                  "tags": [
+                    "a",
+                    "c"
+                  ]
+                }
+              }
+            },
+            "out": [
+              {
+                "tags": [
+                  "a",
+                  "b"
+                ],
+                "$KEY": "a"
+              }
+            ]
+          }
+        ]
+      },
+      "operators": {
+        "set": [
+          {
+            "in": {
+              "query": {
+                "`$AND`": [
+                  {
+                    "age": 30
+                  },
+                  {
+                    "city": "NYC"
+                  }
+                ]
+              },
+              "obj": {
+                "a": {
+                  "age": 30,
+                  "city": "NYC"
+                },
+                "b": {
+                  "age": 30,
+                  "city": "LA"
+                },
+                "c": {
+                  "age": 25,
+                  "city": "NYC"
+                }
+              }
+            },
+            "out": [
+              {
+                "age": 30,
+                "city": "NYC",
+                "$KEY": "a"
+              }
+            ]
+          },
+          {
+            "in": {
+              "query": {
+                "`$AND`": [
+                  {
+                    "age": 30
+                  },
+                  {
+                    "city": "Boston"
+                  }
+                ]
+              },
+              "obj": {
+                "a": {
+                  "age": 30,
+                  "city": "NYC"
+                },
+                "b": {
+                  "age": 30,
+                  "city": "LA"
+                }
+              }
+            },
+            "out": []
+          },
+          {
+            "in": {
+              "query": {
+                "`$OR`": [
+                  {
+                    "age": 25
+                  },
+                  {
+                    "age": 35
+                  }
+                ]
+              },
+              "obj": {
+                "a": {
+                  "age": 30
+                },
+                "b": {
+                  "age": 25
+                },
+                "c": {
+                  "age": 35
+                }
+              }
+            },
+            "out": [
+              {
+                "age": 25,
+                "$KEY": "b"
+              },
+              {
+                "age": 35,
+                "$KEY": "c"
+              }
+            ]
+          },
+          {
+            "in": {
+              "query": {
+                "`$OR`": [
+                  {
+                    "type": "user"
+                  },
+                  {
+                    "type": "admin"
+                  }
+                ]
+              },
+              "obj": [
+                {
+                  "type": "user"
+                },
+                {
+                  "type": "admin"
+                },
+                {
+                  "type": "guest"
+                }
+              ]
+            },
+            "out": [
+              {
+                "type": "user",
+                "$KEY": 0
+              },
+              {
+                "type": "admin",
+                "$KEY": 1
+              }
+            ]
+          },
+          {
+            "in": {
+              "query": {
+                "`$OR`": [
+                  {
+                    "`$AND`": [
+                      {
+                        "role": "user"
+                      },
+                      {
+                        "active": true
+                      }
+                    ]
+                  },
+                  {
+                    "`$AND`": [
+                      {
+                        "role": "admin"
+                      },
+                      {
+                        "age": 30
+                      }
+                    ]
+                  }
+                ]
+              },
+              "obj": {
+                "a": {
+                  "role": "admin",
+                  "age": 30,
+                  "active": true
+                },
+                "b": {
+                  "role": "user",
+                  "age": 25,
+                  "active": true
+                },
+                "c": {
+                  "role": "user",
+                  "age": 30,
+                  "active": false
+                },
+                "d": {
+                  "role": "admin",
+                  "age": 30,
+                  "active": false
+                }
+              }
+            },
+            "out": [
+              {
+                "role": "admin",
+                "age": 30,
+                "active": true,
+                "$KEY": "a"
+              },
+              {
+                "role": "user",
+                "age": 25,
+                "active": true,
+                "$KEY": "b"
+              },
+              {
+                "role": "admin",
+                "age": 30,
+                "active": false,
+                "$KEY": "d"
+              }
+            ]
+          },
+          {
+            "in": {
+              "query": {
+                "`$AND`": [
+                  {
+                    "`$OR`": [
+                      {
+                        "status": "active"
+                      },
+                      {
+                        "status": "pending"
+                      }
+                    ]
+                  },
+                  {
+                    "priority": "high"
+                  }
+                ]
+              },
+              "obj": {
+                "a": {
+                  "status": "active",
+                  "priority": "high"
+                },
+                "b": {
+                  "status": "active",
+                  "priority": "low"
+                },
+                "c": {
+                  "status": "pending",
+                  "priority": "high"
+                },
+                "d": {
+                  "status": "done",
+                  "priority": "high"
+                }
+              }
+            },
+            "out": [
+              {
+                "status": "active",
+                "priority": "high",
+                "$KEY": "a"
+              },
+              {
+                "status": "pending",
+                "priority": "high",
+                "$KEY": "c"
+              }
+            ]
+          },
+          {
+            "in": {
+              "query": {
+                "`$AND`": []
+              },
+              "obj": {
+                "a": {
+                  "x": 1
+                },
+                "b": {
+                  "x": 2
+                }
+              }
+            },
+            "out": [
+              {
+                "x": 1,
+                "$KEY": "a"
+              },
+              {
+                "x": 2,
+                "$KEY": "b"
+              }
+            ]
+          },
+          {
+            "in": {
+              "query": {
+                "`$OR`": []
+              },
+              "obj": {
+                "a": {
+                  "x": 1
+                },
+                "b": {
+                  "x": 2
+                }
+              }
+            },
+            "out": []
+          },
+          {
+            "in": {
+              "query": {
+                "a": {
+                  "`$GT`": 10
+                }
+              },
+              "obj": [
+                {
+                  "a": 9
+                },
+                {
+                  "a": 10
+                },
+                {
+                  "a": 11
+                },
+                {
+                  "a": 12
+                }
+              ]
+            },
+            "out": [
+              {
+                "a": 11,
+                "$KEY": 2
+              },
+              {
+                "a": 12,
+                "$KEY": 3
+              }
+            ]
+          },
+          {
+            "in": {
+              "query": {
+                "b": {
+                  "`$LT`": 10
+                }
+              },
+              "obj": [
+                {
+                  "b": 9
+                },
+                {
+                  "b": 10
+                },
+                {
+                  "b": 11
+                },
+                {
+                  "b": 12
+                }
+              ]
+            },
+            "out": [
+              {
+                "b": 9,
+                "$KEY": 0
+              }
+            ]
+          },
+          {
+            "in": {
+              "query": {
+                "x": {
+                  "y": 20
+                }
+              },
+              "obj": [
+                {
+                  "x": {
+                    "y": 20,
+                    "z": 220
+                  }
+                },
+                {
+                  "x": {
+                    "y": 21,
+                    "z": 221
+                  }
+                }
+              ]
+            },
+            "out": [
+              {
+                "x": {
+                  "y": 20,
+                  "z": 220
+                },
+                "$KEY": 0
+              }
+            ]
+          }
+        ]
+      },
+      "edge": {
+        "set": [
+          {
+            "in": {
+              "query": {
+                "type": "user",
+                "`$OR`": [
+                  {
+                    "status": "active"
+                  },
+                  {
+                    "admin": true
+                  }
+                ]
+              },
+              "obj": [
+                {
+                  "type": "user",
+                  "status": "active"
+                },
+                {
+                  "type": "user",
+                  "status": "inactive",
+                  "admin": true
+                },
+                {
+                  "type": "guest",
+                  "status": "active"
+                }
+              ]
+            },
+            "out": [
+              {
+                "type": "user",
+                "status": "active",
+                "$KEY": 0
+              },
+              {
+                "type": "user",
+                "status": "inactive",
+                "admin": true,
+                "$KEY": 1
+              }
+            ]
+          },
+          {
+            "in": {
+              "query": {
+                "value": "q"
+              },
+              "obj": {
+                "a": {
+                  "value": "q"
+                },
+                "b": {
+                  "value": "p"
+                },
+                "c": {}
+              }
+            },
+            "out": [
+              {
+                "value": "q",
+                "$KEY": "a"
+              }
+            ]
+          },
+          {
+            "in": {
+              "query": {
+                "value": null
+              },
+              "obj": {
+                "a": {
+                  "value": null
+                },
+                "b": {
+                  "value": 0
+                },
+                "c": {}
+              }
+            },
+            "out": [
+              {
+                "value": null,
+                "$KEY": "a"
+              }
+            ]
+          },
+          {
+            "in": {
+              "query": {
+                "active": true
+              },
+              "obj": {
+                "a": {
+                  "active": true
+                },
+                "b": {
+                  "active": false
+                },
+                "c": {
+                  "active": 1
+                }
+              }
+            },
+            "out": [
+              {
+                "active": true,
+                "$KEY": "a"
+              }
+            ]
+          },
+          {
+            "in": {
+              "query": {
+                "count": 0
+              },
+              "obj": {
+                "a": {
+                  "count": 0
+                },
+                "b": {
+                  "count": false
+                },
+                "c": {
+                  "count": "0"
+                }
+              }
+            },
+            "out": [
+              {
+                "count": 0,
+                "$KEY": "a"
+              }
+            ]
+          }
+        ]
+      },
+      "name": "select",
+      "set": []
     }
   },
   "primary": {
