@@ -49,6 +49,7 @@ describe('struct', async () => {
     items,
 
     joinurl,
+    jsonify,
     keysof,
     merge,
     pad,
@@ -98,6 +99,7 @@ describe('struct', async () => {
     equal('function', typeof items)
 
     equal('function', typeof joinurl)
+    equal('function', typeof jsonify)
     equal('function', typeof keysof)
     equal('function', typeof merge)
     equal('function', typeof pad)
@@ -178,6 +180,11 @@ describe('struct', async () => {
   test('minor-stringify', async () => {
     await runset(minorSpec.stringify, (vin: any) =>
       stringify((NULLMARK === vin.val ? "null" : vin.val), vin.max))
+  })
+
+
+  test('minor-jsonify', async () => {
+    await runsetflags(minorSpec.jsonify, { null: false }, jsonify)
   })
 
 

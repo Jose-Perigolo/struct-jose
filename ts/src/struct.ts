@@ -446,6 +446,22 @@ function joinurl(sarr: any[]) {
 }
 
 
+// Output JSON in a "standard" format, with 2 space indents, each property on a new line,
+// and spaces after {[: and before ]}. Any "wierd" values (NaN, etc) are output as null.
+// In general, the behaivor of of JavaScript's JSON.stringify(val,null,2) is followed.
+function jsonify(val: any) {
+  let str = S_null
+  if (null != val) {
+    str = JSON.stringify(val, null, 2)
+    if (UNDEF === str) {
+      str = S_null
+    }
+  }
+
+  return str
+}
+
+
 // Safely stringify a value for humans (NOT JSON!).
 function stringify(val: any, maxlen?: number, pretty?: any): string {
   let valstr = S_MT
@@ -743,9 +759,7 @@ function merge(val: any): any {
 }
 
 
-function getpath(store: any, path: string | string[],
-  injdef?: Partial<Injection>
-) {
+function getpath(store: any, path: string | string[], injdef?: Partial<Injection>) {
 
   // Operate on a string array.
   const parts = islist(path) ? path : S_string === typeof path ? path.split(S_DT) : UNDEF
@@ -2167,6 +2181,7 @@ class StructUtility {
   isnode = isnode
   items = items
   joinurl = joinurl
+  jsonify = jsonify
   keysof = keysof
   merge = merge
   pad = pad
@@ -2201,6 +2216,7 @@ export {
   isnode,
   items,
   joinurl,
+  jsonify,
   keysof,
   merge,
   pad,

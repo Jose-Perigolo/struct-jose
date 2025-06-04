@@ -36,6 +36,7 @@ declare function items(val: any): [number | string, any][];
 declare function escre(s: string): string;
 declare function escurl(s: string): string;
 declare function joinurl(sarr: any[]): string;
+declare function jsonify(val: any): string;
 declare function stringify(val: any, maxlen?: number, pretty?: any): string;
 declare function pathify(val: any, startin?: number, endin?: number): string;
 declare function clone(val: any): any;
@@ -94,6 +95,7 @@ declare class StructUtility {
     isnode: typeof isnode;
     items: typeof items;
     joinurl: typeof joinurl;
+    jsonify: typeof jsonify;
     keysof: typeof keysof;
     merge: typeof merge;
     pad: typeof pad;
@@ -108,5 +110,5 @@ declare class StructUtility {
     validate: typeof validate;
     walk: typeof walk;
 }
-export { StructUtility, clone, delprop, escre, escurl, getelem, getpath, getprop, haskey, inject, isempty, isfunc, iskey, islist, ismap, isnode, items, joinurl, keysof, merge, pad, pathify, setprop, size, slice, strkey, stringify, transform, typify, validate, walk, };
+export { StructUtility, clone, delprop, escre, escurl, getelem, getpath, getprop, haskey, inject, isempty, isfunc, iskey, islist, ismap, isnode, items, joinurl, jsonify, keysof, merge, pad, pathify, setprop, size, slice, strkey, stringify, transform, typify, validate, walk, };
 export type { Injection, Injector, WalkApply };
