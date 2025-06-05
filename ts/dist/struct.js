@@ -24,6 +24,7 @@ exports.keysof = keysof;
 exports.merge = merge;
 exports.pad = pad;
 exports.pathify = pathify;
+exports.select = select;
 exports.setprop = setprop;
 exports.size = size;
 exports.slice = slice;
@@ -117,7 +118,7 @@ const S_KEY = 'KEY';
 // The standard undefined value for this language.
 const UNDEF = undefined;
 // Private marker to indicate a skippable value.
-const SKIP = {};
+const SKIP = { '`$SKIP`': true };
 // Regular expression constants
 const R_INTEGER_KEY = /^[-0-9]+$/; // Match integer keys (including <0).
 const R_ESCAPE_REGEXP = /[.*+?^${}()|[\]\\]/g; // Chars that need escaping in regexp.
@@ -609,7 +610,9 @@ function merge(val) {
 }
 function getpath(store, path, injdef) {
     // Operate on a string array.
-    const parts = islist(path) ? path : S_string === typeof path ? path.split(S_DT) : UNDEF;
+    const parts = islist(path) ? path :
+        'string' === typeof path ? path.split(S_DT) :
+            'number' === typeof path ? [strkey(path)] : UNDEF;
     if (UNDEF === parts) {
         return UNDEF;
     }
@@ -770,11 +773,13 @@ function inject(val, store, injdef) {
             inj.setval(val);
         }
     }
+    // console.log('INJECT-M0 ', val, '' + inj)
     // Custom modification.
     if (inj.modify && SKIP !== val) {
         let mkey = inj.key;
         let mparent = inj.parent;
         let mval = getprop(mparent, mkey);
+        // console.log('INJECT-M1 ' + inj)
         inj.modify(mval, mkey, mparent, inj, store);
     }
     inj.val = val;
@@ -1326,9 +1331,12 @@ const _validation = (pval, key, parent, inj) => {
     if (SKIP === pval) {
         return;
     }
+    // select needs exact matches
+    const exact = getprop(inj.meta, '`$EXACT`');
     // Current val to verify.
     const cval = getprop(inj.dparent, key);
-    if (UNDEF === cval || UNDEF === inj) {
+    // if (UNDEF === cval || UNDEF === inj) {
+    if (UNDEF === inj || (!exact && UNDEF === cval)) {
         return;
     }
     const ptype = typify(pval);
@@ -1337,6 +1345,7 @@ const _validation = (pval, key, parent, inj) => {
         return;
     }
     const ctype = typify(cval);
+    // console.log('VALID-A', pval, ptype, cval, ctype)
     // Type mismatch.
     if (ptype !== ctype && UNDEF !== pval) {
         inj.errs.push(_invalidTypeMsg(inj.path, ptype, ctype, cval, 'V0010'));
@@ -1374,6 +1383,13 @@ const _validation = (pval, key, parent, inj) => {
     else if (islist(cval)) {
         if (!islist(pval)) {
             inj.errs.push(_invalidTypeMsg(inj.path, ptype, ctype, cval, 'V0030'));
+        }
+    }
+    else if (exact) {
+        // else if (inj.meta['`$EXACT`']) {
+        // console.log('VALID-X', cval, pval)
+        if (cval !== pval) {
+            inj.errs.push('Value ' + cval + ' should equal ' + pval);
         }
     }
     else {
@@ -1433,6 +1449,117 @@ injdef) {
         throw new Error('Invalid data: ' + errs.join(' | '));
     }
     return out;
+}
+const select_AND = (inj, val, _ref, store) => {
+    if (S_MKEYPRE === inj.mode) {
+        const terms = getprop(inj.parent, inj.key);
+        const src = getprop(store, inj.base, store);
+        for (let term of terms) {
+            // setprop(term, '`$OPEN`', getprop(term, '`$OPEN`', true))
+            let terrs = [];
+            validate(src, term, {
+                extra: store,
+                errs: terrs,
+                meta: inj.meta,
+            });
+            if (0 != terrs.length) {
+                inj.errs.push('AND:' + stringify(val) + ' fail:' + stringify(term));
+            }
+        }
+    }
+};
+const select_OR = (inj, val, _ref, store) => {
+    if (S_MKEYPRE === inj.mode) {
+        const terms = getprop(inj.parent, inj.key);
+        const src = getprop(store, inj.base, store);
+        for (let term of terms) {
+            // setprop(term, '`$OPEN`', getprop(term, '`$OPEN`', true))
+            let terrs = [];
+            validate(src, term, {
+                extra: store,
+                errs: terrs,
+                meta: inj.meta,
+            });
+            if (0 === terrs.length) {
+                return;
+            }
+        }
+        inj.errs.push('OR:' + stringify(val) + ' fail:' + stringify(terms));
+    }
+};
+const select_CMP = (inj, _val, ref, store) => {
+    if (S_MKEYPRE === inj.mode) {
+        const term = getprop(inj.parent, inj.key);
+        const src = getprop(store, inj.base, store);
+        const gkey = getelem(inj.path, -2);
+        const tval = getprop(src, gkey);
+        let pass = false;
+        if ('$GT' === ref && tval > term) {
+            pass = true;
+        }
+        else if ('$LT' === ref && tval < term) {
+            pass = true;
+        }
+        else if ('$GTE' === ref && tval >= term) {
+            pass = true;
+        }
+        else if ('$LTE' === ref && tval <= term) {
+            pass = true;
+        }
+        if (pass) {
+            // Update spec to match found value so that _validate does not complain.
+            const gp = getelem(inj.nodes, -2);
+            setprop(gp, gkey, tval);
+        }
+        else {
+            inj.errs.push('CMP: fail:' + ref + ' ' + stringify(term));
+        }
+    }
+    return UNDEF;
+};
+// Select children from a top-level object that match a MongoDB-style query.
+// Supports $and, $or, and equality comparisons.
+// For arrays, children are elements; for objects, children are values.
+// TODO: swap arg order for consistency
+function select(query, children) {
+    if (!isnode(children)) {
+        return [];
+    }
+    if (ismap(children)) {
+        children = items(children).map(n => (n[1][S_DKEY] = n[0], n[1]));
+    }
+    else {
+        children = children.map((n, i) => ((ismap(n) ? n[S_DKEY] = i : null), n));
+    }
+    const results = [];
+    const injdef = {
+        errs: [],
+        meta: { '`$EXACT`': true },
+        extra: {
+            $AND: select_AND,
+            $OR: select_OR,
+            $GT: select_CMP,
+            $LT: select_CMP,
+            $GTE: select_CMP,
+            $LTE: select_CMP,
+        }
+    };
+    const q = clone(query);
+    walk(q, (_k, v) => {
+        if (ismap(v)) {
+            setprop(v, '`$OPEN`', getprop(v, '`$OPEN`', true));
+        }
+        return v;
+    });
+    for (const child of children) {
+        // console.log('CHILD', child, q)
+        injdef.errs = [];
+        validate(child, clone(q), injdef);
+        if (0 === size(injdef.errs)) {
+            results.push(child);
+        }
+    }
+    return results;
 }
 // Injection state used for recursive injection into JSON - like data structures.
 class Injection {
@@ -1652,6 +1779,7 @@ class StructUtility {
         this.merge = merge;
         this.pad = pad;
         this.pathify = pathify;
+        this.select = select;
         this.setprop = setprop;
         this.size = size;
         this.slice = slice;

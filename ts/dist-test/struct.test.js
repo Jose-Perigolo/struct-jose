@@ -11,7 +11,7 @@ const TEST_JSON_FILE = '../../build/test/test.json';
 (0, node_test_1.describe)('struct', async () => {
     const runner = await (0, runner_1.makeRunner)(TEST_JSON_FILE, await sdk_js_1.SDK.test());
     const { spec, runset, runsetflags, client } = await runner('struct');
-    const { clone, delprop, escre, escurl, getelem, getpath, getprop, haskey, inject, isempty, isfunc, iskey, islist, ismap, isnode, items, joinurl, jsonify, keysof, merge, pad, pathify, size, slice, setprop, strkey, stringify, transform, typify, validate, walk, } = client.utility().struct;
+    const { clone, delprop, escre, escurl, getelem, getpath, getprop, haskey, inject, isempty, isfunc, iskey, islist, ismap, isnode, items, joinurl, jsonify, keysof, merge, pad, pathify, select, size, slice, setprop, strkey, stringify, transform, typify, validate, walk, } = client.utility().struct;
     const minorSpec = spec.minor;
     const walkSpec = spec.walk;
     const mergeSpec = spec.merge;
@@ -19,6 +19,7 @@ const TEST_JSON_FILE = '../../build/test/test.json';
     const injectSpec = spec.inject;
     const transformSpec = spec.transform;
     const validateSpec = spec.validate;
+    const selectSpec = spec.select;
     (0, node_test_1.test)('exists', () => {
         (0, node_assert_1.equal)('function', typeof clone);
         (0, node_assert_1.equal)('function', typeof delprop);
@@ -42,6 +43,7 @@ const TEST_JSON_FILE = '../../build/test/test.json';
         (0, node_assert_1.equal)('function', typeof merge);
         (0, node_assert_1.equal)('function', typeof pad);
         (0, node_assert_1.equal)('function', typeof pathify);
+        (0, node_assert_1.equal)('function', typeof select);
         (0, node_assert_1.equal)('function', typeof size);
         (0, node_assert_1.equal)('function', typeof slice);
         (0, node_assert_1.equal)('function', typeof setprop);
@@ -343,6 +345,17 @@ const TEST_JSON_FILE = '../../build/test/test.json';
         out = validate({ a: 'A' }, shape, { extra, errs });
         (0, node_assert_1.deepEqual)(out, { a: 'A' });
         (0, node_assert_1.deepEqual)(errs, ['Not an integer at a: A']);
+    });
+    // select tests
+    // ============
+    (0, node_test_1.test)('select-basic', async () => {
+        await runset(selectSpec.basic, (vin) => select(vin.query, vin.obj));
+    });
+    (0, node_test_1.test)('select-operators', async () => {
+        await runset(selectSpec.operators, (vin) => select(vin.query, vin.obj));
+    });
+    (0, node_test_1.test)('select-edge', async () => {
+        await runset(selectSpec.edge, (vin) => select(vin.query, vin.obj));
     });
 });
 //# sourceMappingURL=struct.test.js.map

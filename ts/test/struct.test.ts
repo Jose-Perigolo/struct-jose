@@ -55,6 +55,7 @@ describe('struct', async () => {
     pad,
     pathify,
 
+    select,
     size,
     slice,
     setprop,
@@ -76,6 +77,7 @@ describe('struct', async () => {
   const injectSpec = spec.inject
   const transformSpec = spec.transform
   const validateSpec = spec.validate
+  const selectSpec = spec.select
 
 
   test('exists', () => {
@@ -105,6 +107,7 @@ describe('struct', async () => {
     equal('function', typeof pad)
     equal('function', typeof pathify)
 
+    equal('function', typeof select)
     equal('function', typeof size)
     equal('function', typeof slice)
     equal('function', typeof setprop)
@@ -578,6 +581,24 @@ describe('struct', async () => {
     out = validate({ a: 'A' }, shape, { extra, errs })
     deepEqual(out, { a: 'A' })
     deepEqual(errs, ['Not an integer at a: A'])
+  })
+
+
+  // select tests
+  // ============
+
+  test('select-basic', async () => {
+    await runset(selectSpec.basic, (vin: any) => select(vin.query, vin.obj))
+  })
+
+
+  test('select-operators', async () => {
+    await runset(selectSpec.operators, (vin: any) => select(vin.query, vin.obj))
+  })
+
+
+  test('select-edge', async () => {
+    await runset(selectSpec.edge, (vin: any) => select(vin.query, vin.obj))
   })
 
 })
