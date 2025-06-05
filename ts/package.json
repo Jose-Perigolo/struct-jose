@@ -25,6 +25,7 @@
     "test-direct": "node dist-test/direct.js",
     "watch": "tsc --build src test -w",
     "build": "tsc --build src test",
+    "doc": "echo doc",
     "clean": "rm -rf dist dist-test node_modules yarn.lock package-lock.json",
     "reset": "npm run clean && npm i && npm run build && npm test",
     "repo-tag": "REPO_VERSION=`node -e \"console.log(require('./package').version)\"` && echo TAG: v$REPO_VERSION && git commit -a -m v$REPO_VERSION && git push && git tag v$REPO_VERSION && git push --tags;",
