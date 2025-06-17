@@ -36,7 +36,10 @@ declare function items(val: any): [number | string, any][];
 declare function escre(s: string): string;
 declare function escurl(s: string): string;
 declare function joinurl(sarr: any[]): string;
-declare function jsonify(val: any): string;
+declare function jsonify(val: any, flags?: {
+    indent?: number;
+    offset?: number;
+}): string;
 declare function stringify(val: any, maxlen?: number, pretty?: any): string;
 declare function pathify(val: any, startin?: number, endin?: number): string;
 declare function clone(val: any): any;

@@ -246,7 +246,7 @@ function slice(val, start, end) {
     return val;
 }
 function pad(str, padding, padchar) {
-    str = stringify(str);
+    str = S_string === typeof str ? str : stringify(str);
     padding = null == padding ? 44 : padding;
     padchar = null == padchar ? S_SP : ((padchar + S_SP)[0]);
     return -1 < padding ? str.padEnd(padding, padchar) : str.padStart(0 - padding, padchar);
@@ -361,12 +361,18 @@ function joinurl(sarr) {
 // Output JSON in a "standard" format, with 2 space indents, each property on a new line,
 // and spaces after {[: and before ]}. Any "wierd" values (NaN, etc) are output as null.
 // In general, the behaivor of of JavaScript's JSON.stringify(val,null,2) is followed.
-function jsonify(val) {
+function jsonify(val, flags) {
     let str = S_null;
     if (null != val) {
-        str = JSON.stringify(val, null, 2);
+        str = JSON.stringify(val, null, getprop(flags, 'indent', 2));
         if (UNDEF === str) {
             str = S_null;
+        }
+        const offset = getprop(flags, 'offset', 0);
+        if (0 < offset) {
+            str = '{\n' + str.split('\n').slice(1)
+                .map(n => pad(n, offset))
+                .join('\n');
         }
     }
     return str;
@@ -378,25 +384,29 @@ function stringify(val, maxlen, pretty) {
     if (UNDEF === val) {
         return pretty ? '<>' : valstr;
     }
-    try {
-        valstr = JSON.stringify(val, function (_key, val) {
-            if (val !== null &&
-                typeof val === "object" &&
-                !Array.isArray(val)) {
-                const sortedObj = {};
-                for (const k of Object.keys(val).sort()) {
-                    sortedObj[k] = val[k];
+    if (S_string === typeof val) {
+        valstr = val;
+    }
+    else {
+        try {
+            valstr = JSON.stringify(val, function (_key, val) {
+                if (val !== null &&
+                    typeof val === "object" &&
+                    !Array.isArray(val)) {
+                    const sortedObj = {};
+                    for (const k of Object.keys(val).sort()) {
+                        sortedObj[k] = val[k];
+                    }
+                    return sortedObj;
                 }
-                return sortedObj;
-            }
-            return val;
-        });
+                return val;
+            });
+            valstr = valstr.replace(R_QUOTES, S_MT);
+        }
+        catch (err) {
+            valstr = S_MT + val;
+        }
     }
-    catch (err) {
-        valstr = S_MT + val;
-    }
-    valstr = S_string !== typeof valstr ? S_MT + valstr : valstr;
-    valstr = valstr.replace(R_QUOTES, S_MT);
     if (null != maxlen && -1 < maxlen) {
         let js = valstr.substring(0, maxlen);
         valstr = maxlen < valstr.length ? (js.substring(0, maxlen - 3) + '...') : valstr;

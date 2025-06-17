@@ -365,6 +365,7 @@ stringify: {
   set: [
     { in: { val: 1 }, out: '1' }
     { in: { val: 'a' }, out: 'a' }
+    { in: { val: '"' }, out: '"' }
     { in: { val: false }, out: 'false' }
     { in: { val: null }, out: 'null' }
     { in: { }, out: '' }
@@ -682,5 +683,8 @@ pad: {
     { in: {val:'', pad:1, char:'jk'}, out: 'j' }
     { in: {val:'', pad:2, char:'jk'}, out: 'jj' }
     { in: {val:'', pad:3, char:'jk'}, out: 'jjj' }
+
+    { in: {val:'"', pad:2}, out: '" ' }
+    { in: {val:'"', pad:-3}, out: '  "' }
   ]
 }
