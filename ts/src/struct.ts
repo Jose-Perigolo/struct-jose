@@ -452,14 +452,17 @@ function joinurl(sarr: any[]) {
 function jsonify(val: any, flags?: { indent?: number, offset?: number }) {
   let str = S_null
   if (null != val) {
-    str = JSON.stringify(val, null, getprop(flags, 'indent', 2))
+    const indent = getprop(flags, 'indent', 2)
+    str = JSON.stringify(val, null, indent)
     if (UNDEF === str) {
       str = S_null
     }
     const offset = getprop(flags, 'offset', 0)
     if (0 < offset) {
+      // Left offset entire indented JSON so that it aligns with surrounding code
+      // indented by offset.
       str = '{\n' + str.split('\n').slice(1)
-        .map(n => pad(n, offset))
+        .map(n => pad(n, 0 - offset - size(n)))
         .join('\n')
     }
   }
