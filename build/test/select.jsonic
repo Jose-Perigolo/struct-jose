@@ -90,6 +90,10 @@ operators: {
     { in: { query: {b:{'`$LT`':10}}, obj: [{b:9},{b:10},{b:11},{b:12}] }, 
       out: [{b:9,'$KEY':0}] }
 
+   { in: { query: {a:b:'`$LT`':10}, obj: [{a:b:9},{a:b:10},{a:b:11},{a:b:12}] }, 
+      out: [{a:b:9,'$KEY':0}] }
+
+      
       
     { in: { query: {x:{y:20}}, obj: [{x:{y:20,z:220}},{x:{y:21,z:221}}] }, 
       out: [{x:{y:20,z:220},'$KEY':0}] }
@@ -118,6 +122,32 @@ edge: {
     # Number comparison (exact match)
     { in: { query: {count:0}, obj: {a:{count:0}, b:{count:false}, c:{count:'0'}} }, 
       out: [{count:0,'$KEY':'a'}] }
-    
+
+      
+    { in: { query: {'`$OR`':[{a:1},{a:2}]}, obj: [{a:0}, {a:1}, {a:2}, {a:3}] }, 
+      out: [{a:1,'$KEY':1}, {a:2,'$KEY':2}] }
+
+    { in: { query: {a:{'`$OR`':[10,20]}}, obj: [{a:0}, {a:10}, {a:20}, {a:30}] }, 
+      out: [{a:10,'$KEY':1}, {a:20,'$KEY':2}] }
+
+    { in: { query: {a2:{'`$OR`':[{b2:1},{b2:2}]}},
+            obj: [{a2:{b2:0}}, {a2:{b2:1}}, {a2:{b2:2}}, {a2:{b2:3}}] }, 
+      out: [{a2:{b2:1},'$KEY':1}, {a2:{b2:2},'$KEY':2}] }
+
+    { in: { query: {'`$OR`':[{a3:{'`$OR`':[1]}}]}, obj: [{a3:0}, {a3:1}, {a3:2}] }, 
+      out: [{a3:1,'$KEY':1}] }
+
+
+    { in: { query: {c0:{'`$AND`':[{x:1},{y:2}]}},
+            obj: [{c0:{x:1,y:3,z:0}}, {c0:{x:1,y:2,z:1}}] }, 
+      out: [{c0:{x:1,y:2,z:1},'$KEY':1}] }
+
+    { in: { query: {c0:{'`$AND`':[{x:1},{y:{'`$OR`':[2,3]}}]}},
+            obj: [{c0:{x:1,y:3,z:0}}, {c0:{x:1,y:2,z:1}}, {c0:{x:1,y:1,z:2}}] }, 
+      out: [{c0:{x:1,y:3,z:0},'$KEY':0}, {c0:{x:1,y:2,z:1},'$KEY':1}] }
+
+      
+      
+      
   ]
 }

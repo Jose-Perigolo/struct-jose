@@ -1463,69 +1463,90 @@ injdef) {
     }
     return out;
 }
-const select_AND = (inj, val, _ref, store) => {
+const select_AND = (inj, _val, _ref, store) => {
     if (S_MKEYPRE === inj.mode) {
         const terms = getprop(inj.parent, inj.key);
-        const src = getprop(store, inj.base, store);
+        // const src = getprop(store, inj.base, store)
+        const ppath = slice(inj.path, -1);
+        const point = getpath(store, ppath);
+        const vstore = { ...store };
+        vstore.$TOP = point;
         for (let term of terms) {
             // setprop(term, '`$OPEN`', getprop(term, '`$OPEN`', true))
             let terrs = [];
-            validate(src, term, {
-                extra: store,
+            validate(point, term, {
+                extra: vstore,
                 errs: terrs,
                 meta: inj.meta,
             });
             if (0 != terrs.length) {
-                inj.errs.push('AND:' + stringify(val) + ' fail:' + stringify(term));
+                inj.errs.push('AND:' + pathify(ppath) + ': ' + stringify(point) + ' fail:' + stringify(terms));
             }
         }
+        const gkey = getelem(inj.path, -2);
+        const gp = getelem(inj.nodes, -2);
+        setprop(gp, gkey, point);
     }
 };
-const select_OR = (inj, val, _ref, store) => {
+const select_OR = (inj, _val, _ref, store) => {
     if (S_MKEYPRE === inj.mode) {
         const terms = getprop(inj.parent, inj.key);
-        const src = getprop(store, inj.base, store);
+        // const src = getprop(store, inj.base, store)
+        const ppath = slice(inj.path, -1);
+        const point = getpath(store, ppath);
+        // console.log('OR:', ppath, point)
+        const vstore = { ...store };
+        vstore.$TOP = point;
         for (let term of terms) {
+            // console.log('OR-TERM:', term)
             // setprop(term, '`$OPEN`', getprop(term, '`$OPEN`', true))
             let terrs = [];
-            validate(src, term, {
-                extra: store,
+            validate(point, term, {
+                extra: vstore,
                 errs: terrs,
                 meta: inj.meta,
             });
+            // console.log('OR-ERRS:', terrs)
             if (0 === terrs.length) {
+                const gkey = getelem(inj.path, -2);
+                const gp = getelem(inj.nodes, -2);
+                setprop(gp, gkey, point);
+                // console.log('OR-NODES:' + inj, inj.nodes)
                 return;
             }
         }
-        inj.errs.push('OR:' + stringify(val) + ' fail:' + stringify(terms));
+        inj.errs.push('OR:' + pathify(ppath) + ': ' + stringify(point) + ' fail:' + stringify(terms));
     }
 };
 const select_CMP = (inj, _val, ref, store) => {
     if (S_MKEYPRE === inj.mode) {
         const term = getprop(inj.parent, inj.key);
-        const src = getprop(store, inj.base, store);
+        // const src = getprop(store, inj.base, store)
         const gkey = getelem(inj.path, -2);
-        const tval = getprop(src, gkey);
+        // const tval = getprop(src, gkey)
+        const ppath = slice(inj.path, -1);
+        const point = getpath(store, ppath);
         let pass = false;
-        if ('$GT' === ref && tval > term) {
+        if ('$GT' === ref && point > term) {
             pass = true;
         }
-        else if ('$LT' === ref && tval < term) {
+        else if ('$LT' === ref && point < term) {
             pass = true;
         }
-        else if ('$GTE' === ref && tval >= term) {
+        else if ('$GTE' === ref && point >= term) {
             pass = true;
         }
-        else if ('$LTE' === ref && tval <= term) {
+        else if ('$LTE' === ref && point <= term) {
             pass = true;
         }
         if (pass) {
             // Update spec to match found value so that _validate does not complain.
             const gp = getelem(inj.nodes, -2);
-            setprop(gp, gkey, tval);
+            setprop(gp, gkey, point);
         }
         else {
-            inj.errs.push('CMP: fail:' + ref + ' ' + stringify(term));
+            inj.errs.push('CMP: ' + pathify(ppath) + ': ' + stringify(point) +
+                ' fail:' + ref + ' ' + stringify(term));
         }
     }
     return UNDEF;
@@ -1568,6 +1589,7 @@ function select(query, children) {
         // console.log('CHILD', child, q)
         injdef.errs = [];
         validate(child, clone(q), injdef);
+        // console.log('CHILD-ERRS', injdef.errs)
         if (0 === size(injdef.errs)) {
             results.push(child);
         }
