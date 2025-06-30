@@ -131,10 +131,13 @@ special: {
     
     { in: { path: 'a.$META:b$', store: {a:c:33}, inj: {meta:{b:c}} }, out: 33 }
     { in: { path: 'a.$META:d$', store: {a:c:33}, inj: {meta:{b:c}} }  }
+    { in: { path: 'a.$META:e$', store: {a:'b.c':34}, inj: {meta:{e:'b.c'}} }, out: 34 }
 
     { in: { path: 'p0$~a', store: {}, inj: {meta:{p0:a:44}} }, out:44  }
     { in: { path: 'p0$~b', store: {}, inj: {meta:{p0:a:45}} } }
     { in: { path: 'p0$~a.c', store: {}, inj: {meta:{p0:a:c:46}} }, out:46  }
+
+    { in: { path: 'p0$~a', store: {}, inj: {meta:{p0:a:44}} }, out:44  }
   ]
 }
 
