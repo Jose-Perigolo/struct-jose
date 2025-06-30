@@ -1,6 +1,6 @@
 {
   "name": "@voxgig/struct",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "description": "Data structure manipulations",
   "main": "dist/struct.js",
   "type": "commonjs",
@@ -40,7 +40,7 @@
     "dist"
   ],
   "devDependencies": {
-    "@types/node": "^22.15.19",
+    "@types/node": "^24.0.7",
     "typescript": "^5.8.3"
   }
 }
