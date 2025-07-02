@@ -55,6 +55,18 @@ class Struct
      */
     public const UNDEF = '__UNDEFINED__';
 
+    /**
+     * Private marker to indicate a skippable value.
+     */
+    private static array $SKIP = ['__SKIP__' => true];
+
+    /* =======================
+     * Regular expressions for validation and transformation
+     * =======================
+     */
+    private const R_META_PATH = '/^([^$]+)\$([=~])(.+)$/';
+    private const R_TRANSFORM_NAME = '/`\$([A-Z]+)`/';
+
     /* =======================
      * Private Helpers
      * =======================
@@ -1720,12 +1732,7 @@ class Struct
 
         // 4) run inject to do the transform
         $result = self::inject($specClone, $store, $modify, $dataClone);
-        
-        // Debug: check what the spec clone looks like after injection
-        error_log("TRANSFORM: SpecClone after inject: " . json_encode($specClone));
-        
-        // Debug: check the final result
-        error_log("TRANSFORM: Final result: " . json_encode($result));
+
         
         return $result;
     }
@@ -1756,6 +1763,489 @@ class Struct
         return "Expected {$type} at {$location}, found {$found}{$vs}";
     }
 
+    /* =======================
+     * Validation Functions
+     * =======================
+     */
+
+    /**
+     * Helper function to set a value in injection state, equivalent to TypeScript's setval method
+     */
+    private static function _setval(object $inj, mixed $val, int $ancestor = 0): void
+    {
+        if ($ancestor === 0) {
+            self::setprop($inj->parent, $inj->key, $val);
+        } else {
+            // Navigate up the ancestor chain
+            $targetIndex = count($inj->nodes) + $ancestor;
+            if ($targetIndex >= 0 && $targetIndex < count($inj->nodes)) {
+                $targetNode = $inj->nodes[$targetIndex];
+                $pathIndex = count($inj->path) + $ancestor;
+                if ($pathIndex >= 0 && $pathIndex < count($inj->path)) {
+                    $targetKey = $inj->path[$pathIndex];
+                    self::setprop($targetNode, $targetKey, $val);
+                }
+            }
+        }
+    }
+
+    /**
+     * A required string value.
+     */
+    public static function validate_STRING(object $inj): mixed
+    {
+        $out = self::getprop($inj->dparent, $inj->key);
+
+        $t = self::typify($out);
+        if (self::S_string !== $t) {
+            $msg = self::_invalidTypeMsg($inj->path, self::S_string, $t, $out);
+            $inj->errs[] = $msg;
+            return self::UNDEF;
+        }
+
+        if (self::S_MT === $out) {
+            $msg = 'Empty string at ' . self::pathify($inj->path, 1);
+            $inj->errs[] = $msg;
+            return self::UNDEF;
+        }
+
+        return $out;
+    }
+
+    /**
+     * A required number value (int or float).
+     */
+    public static function validate_NUMBER(object $inj): mixed
+    {
+        $out = self::getprop($inj->dparent, $inj->key);
+
+        $t = self::typify($out);
+        if (self::S_number !== $t) {
+            $inj->errs[] = self::_invalidTypeMsg($inj->path, self::S_number, $t, $out);
+            return self::UNDEF;
+        }
+
+        return $out;
+    }
+
+    /**
+     * A required boolean value.
+     */
+    public static function validate_BOOLEAN(object $inj): mixed
+    {
+        $out = self::getprop($inj->dparent, $inj->key);
+
+        $t = self::typify($out);
+        if (self::S_boolean !== $t) {
+            $inj->errs[] = self::_invalidTypeMsg($inj->path, self::S_boolean, $t, $out);
+            return self::UNDEF;
+        }
+
+        return $out;
+    }
+
+    /**
+     * A required object (map) value (contents not validated).
+     */
+    public static function validate_OBJECT(object $inj): mixed
+    {
+        $out = self::getprop($inj->dparent, $inj->key);
+
+        $t = self::typify($out);
+        if ($t !== self::S_object) {
+            $inj->errs[] = self::_invalidTypeMsg($inj->path, self::S_object, $t, $out);
+            return self::UNDEF;
+        }
+
+        return $out;
+    }
+
+    /**
+     * A required array (list) value (contents not validated).
+     */
+    public static function validate_ARRAY(object $inj): mixed
+    {
+        $out = self::getprop($inj->dparent, $inj->key);
+
+        $t = self::typify($out);
+        if ($t !== self::S_array) {
+            $inj->errs[] = self::_invalidTypeMsg($inj->path, self::S_array, $t, $out);
+            return self::UNDEF;
+        }
+
+        return $out;
+    }
+
+    /**
+     * A required function value.
+     */
+    public static function validate_FUNCTION(object $inj): mixed
+    {
+        $out = self::getprop($inj->dparent, $inj->key);
+
+        $t = self::typify($out);
+        if (self::S_function !== $t) {
+            $inj->errs[] = self::_invalidTypeMsg($inj->path, self::S_function, $t, $out);
+            return self::UNDEF;
+        }
+
+        return $out;
+    }
+
+    /**
+     * Allow any value.
+     */
+    public static function validate_ANY(object $inj): mixed
+    {
+        $out = self::getprop($inj->dparent, $inj->key);
+        return $out;
+    }
+
+    /**
+     * Specify child values for map or list.
+     * Map syntax: {'`$CHILD`': child-template }
+     * List syntax: ['`$CHILD`', child-template ]
+     */
+    public static function validate_CHILD(object $inj): mixed
+    {
+        $mode = $inj->mode;
+        $key = $inj->key;
+        $parent = $inj->parent;
+        $keys = $inj->keys ?? [];
+        $path = $inj->path;
+
+        // Map syntax.
+        if (self::S_MKEYPRE === $mode) {
+            $childtm = self::getprop($parent, $key);
+
+            // Get corresponding current object.
+            $pkey = self::getprop($path, count($path) - 2);
+            $tval = self::getprop($inj->dparent, $pkey);
+
+            if (self::UNDEF == $tval) {
+                $tval = new \stdClass();
+            } elseif (!self::ismap($tval)) {
+                $inj->errs[] = self::_invalidTypeMsg(
+                    self::slice($inj->path, 0, -1), self::S_object, self::typify($tval), $tval);
+                return self::UNDEF;
+            }
+
+            $ckeys = self::keysof($tval);
+            foreach ($ckeys as $ckey) {
+                self::setprop($parent, $ckey, self::clone($childtm));
+                // NOTE: modifying inj! This extends the child value loop in inject.
+                $keys[] = $ckey;
+            }
+            $inj->keys = $keys;
+
+            // Remove $CHILD to cleanup output.
+            self::_setval($inj, self::UNDEF);
+            return self::UNDEF;
+        }
+
+        // List syntax.
+        if (self::S_MVAL === $mode) {
+            if (!self::islist($parent)) {
+                // $CHILD was not inside a list.
+                $inj->errs[] = 'Invalid $CHILD as value';
+                return self::UNDEF;
+            }
+
+            $childtm = self::getprop($parent, 1);
+
+            if (self::UNDEF === $inj->dparent) {
+                // Empty list as default.
+                while (count($parent) > 0) {
+                    array_pop($parent);
+                }
+                return self::UNDEF;
+            }
+
+            if (!self::islist($inj->dparent)) {
+                $msg = self::_invalidTypeMsg(
+                    self::slice($inj->path, 0, -1), self::S_array, self::typify($inj->dparent), $inj->dparent);
+                $inj->errs[] = $msg;
+                $inj->keyI = count($parent);
+                return $inj->dparent;
+            }
+
+            // Clone children and reset inj key index.
+            foreach ($inj->dparent as $i => $n) {
+                $parent[$i] = self::clone($childtm);
+            }
+            // Adjust array length
+            while (count($parent) > count($inj->dparent)) {
+                array_pop($parent);
+            }
+            $inj->keyI = 0;
+            $out = self::getprop($inj->dparent, 0);
+            return $out;
+        }
+
+        return self::UNDEF;
+    }
+
+    /**
+     * Match at least one of the specified shapes.
+     * Syntax: ['`$ONE`', alt0, alt1, ...]
+     */
+    public static function validate_ONE(
+        object $inj,
+        mixed $_val,
+        string $_ref,
+        mixed $store
+    ): mixed {
+        $mode = $inj->mode;
+        $parent = $inj->parent;
+        $keyI = $inj->keyI;
+
+        // Only operate in val mode, since parent is a list.
+        if (self::S_MVAL === $mode) {
+            if (!self::islist($parent) || 0 !== $keyI) {
+                $inj->errs[] = 'The $ONE validator at field ' .
+                    self::pathify($inj->path, 1, 1) .
+                    ' must be the first element of an array.';
+                return self::UNDEF;
+            }
+
+            $inj->keyI = count($inj->keys ?? []);
+
+            // Clean up structure, replacing [$ONE, ...] with current
+            self::_setval($inj, $inj->dparent, -2);
+
+            $inj->path = self::slice($inj->path, 0, -1);
+            $inj->key = self::getelem($inj->path, -1);
+
+            $tvals = self::slice($parent, 1);
+            if (0 === count($tvals)) {
+                $inj->errs[] = 'The $ONE validator at field ' .
+                    self::pathify($inj->path, 1, 1) .
+                    ' must have at least one argument.';
+                return self::UNDEF;
+            }
+
+            // See if we can find a match.
+            foreach ($tvals as $tval) {
+                // If match, then errs.length = 0
+                $terrs = [];
+
+                $vstore = array_merge((array) $store, [self::S_DTOP => $inj->dparent]);
+
+                $vcurrent = self::validate($inj->dparent, $tval, (object) [
+                    'extra' => $vstore,
+                    'errs' => $terrs,
+                    'meta' => $inj->meta,
+                ]);
+
+                self::_setval($inj, $vcurrent, -2);
+
+                // Accept current value if there was a match
+                if (0 === count($terrs)) {
+                    return self::UNDEF;
+                }
+            }
+
+            // There was no match.
+            $valdesc = implode(', ', array_map(function($v) {
+                return self::stringify($v);
+            }, $tvals));
+            $valdesc = preg_replace(self::R_TRANSFORM_NAME, '$1', strtolower($valdesc));
+
+            $inj->errs[] = self::_invalidTypeMsg(
+                $inj->path,
+                (1 < count($tvals) ? 'one of ' : '') . $valdesc,
+                self::typify($inj->dparent), $inj->dparent);
+        }
+
+        return self::UNDEF;
+    }
+
+    /**
+     * Match exactly one of the specified values.
+     */
+    public static function validate_EXACT(object $inj): mixed
+    {
+        $mode = $inj->mode;
+        $parent = $inj->parent;
+        $key = $inj->key;
+        $keyI = $inj->keyI;
+
+        // Only operate in val mode, since parent is a list.
+        if (self::S_MVAL === $mode) {
+            if (!self::islist($parent) || 0 !== $keyI) {
+                $inj->errs[] = 'The $EXACT validator at field ' .
+                    self::pathify($inj->path, 1, 1) .
+                    ' must be the first element of an array.';
+                return self::UNDEF;
+            }
+
+            $inj->keyI = count($inj->keys ?? []);
+
+            // Clean up structure, replacing [$EXACT, ...] with current data parent
+            self::_setval($inj, $inj->dparent, -2);
+
+            $inj->path = self::slice($inj->path, 0, count($inj->path) - 1);
+            $inj->key = self::getelem($inj->path, -1);
+
+            $tvals = self::slice($parent, 1);
+            if (0 === count($tvals)) {
+                $inj->errs[] = 'The $EXACT validator at field ' .
+                    self::pathify($inj->path, 1, 1) .
+                    ' must have at least one argument.';
+                return self::UNDEF;
+            }
+
+            // See if we can find an exact value match.
+            $currentstr = null;
+            foreach ($tvals as $tval) {
+                $exactmatch = $tval === $inj->dparent;
+
+                if (!$exactmatch && self::isnode($tval)) {
+                    $currentstr = $currentstr ?? self::stringify($inj->dparent);
+                    $tvalstr = self::stringify($tval);
+                    $exactmatch = $tvalstr === $currentstr;
+                }
+
+                if ($exactmatch) {
+                    return self::UNDEF;
+                }
+            }
+
+            $valdesc = implode(', ', array_map(function($v) {
+                return self::stringify($v);
+            }, $tvals));
+            $valdesc = preg_replace(self::R_TRANSFORM_NAME, '$1', strtolower($valdesc));
+
+            $inj->errs[] = self::_invalidTypeMsg(
+                $inj->path,
+                (1 < count($inj->path) ? '' : 'value ') .
+                'exactly equal to ' . (1 === count($tvals) ? '' : 'one of ') . $valdesc,
+                self::typify($inj->dparent), $inj->dparent);
+        } else {
+            self::delprop($parent, $key);
+        }
+
+        return self::UNDEF;
+    }
+
+    /**
+     * This is the "modify" argument to inject. Use this to perform
+     * generic validation. Runs *after* any special commands.
+     */
+    private static function _validation(
+        mixed $pval,
+        mixed $key = null,
+        mixed $parent = null,
+        object $inj = null,
+        mixed $store = null
+    ): void {
+        if (self::UNDEF === $inj) {
+            return;
+        }
+
+        if ($pval === self::$SKIP) {
+            return;
+        }
+
+        // select needs exact matches
+        $exact = self::getprop($inj->meta ?? (object) [], '`$EXACT`');
+
+        // Current val to verify.
+        $cval = self::getprop($inj->dparent, $key);
+
+        if (self::UNDEF === $inj || (!$exact && self::UNDEF === $cval)) {
+            return;
+        }
+
+        $ptype = self::typify($pval);
+
+        // Delete any special commands remaining.
+        if (self::S_string === $ptype && str_contains($pval, self::S_DS)) {
+            return;
+        }
+
+        $ctype = self::typify($cval);
+
+        // Type mismatch.
+        if ($ptype !== $ctype && self::UNDEF !== $pval) {
+            $inj->errs[] = self::_invalidTypeMsg($inj->path, $ptype, $ctype, $cval);
+            return;
+        }
+
+        if (self::ismap($cval)) {
+            if (!self::ismap($pval)) {
+                $inj->errs[] = self::_invalidTypeMsg($inj->path, $ptype, $ctype, $cval);
+                return;
+            }
+
+            $ckeys = self::keysof($cval);
+            $pkeys = self::keysof($pval);
+
+            // Empty spec object {} means object can be open (any keys).
+            if (0 < count($pkeys) && true !== self::getprop($pval, '`$OPEN`')) {
+                $badkeys = [];
+                foreach ($ckeys as $ckey) {
+                    if (!self::haskey($pval, $ckey)) {
+                        $badkeys[] = $ckey;
+                    }
+                }
+
+                // Closed object, so reject extra keys not in shape.
+                if (0 < count($badkeys)) {
+                    $msg = 'Unexpected keys at field ' . self::pathify($inj->path, 1) . ': ' . implode(', ', $badkeys);
+                    $inj->errs[] = $msg;
+                }
+            } else {
+                // Object is open, so merge in extra keys.
+                self::merge([$pval, $cval]);
+                if (self::isnode($pval)) {
+                    self::delprop($pval, '`$OPEN`');
+                }
+            }
+        } elseif (self::islist($cval)) {
+            if (!self::islist($pval)) {
+                $inj->errs[] = self::_invalidTypeMsg($inj->path, $ptype, $ctype, $cval);
+            }
+        } elseif ($exact) {
+            if ($cval !== $pval) {
+                $inj->errs[] = 'Value ' . $cval . ' should equal ' . $pval;
+            }
+        } else {
+            // Spec value was a default, copy over data
+            self::setprop($parent, $key, $cval);
+        }
+    }
+
+    /**
+     * Validation handler for injection.
+     */
+    private static function _validatehandler(
+        object $inj,
+        mixed $val,
+        string $ref,
+        mixed $store
+    ): mixed {
+        $out = $val;
+
+        $m = preg_match(self::R_META_PATH, $ref, $matches);
+        $ismetapath = null != $m;
+
+        if ($ismetapath) {
+            if ('=' === $matches[2]) {
+                self::_setval($inj, ['`$EXACT`', $val]);
+            } else {
+                self::_setval($inj, $val);
+            }
+            $inj->keyI = -1;
+
+            $out = self::$SKIP;
+        } else {
+            $out = self::_injecthandler($inj, $val, $ref, $store);
+        }
+
+        return $out;
+    }
+
     /**
      * Validate a data structure against a shape specification.
      * The shape specification follows the "by example" principle.
@@ -1767,9 +2257,46 @@ class Struct
      */
     public static function validate(mixed $data, mixed $spec, mixed $injdef = null): mixed
     {
-        // TODO: Implement proper validation logic
-        // For now, just return the data to make tests pass
-        return $data;
+        $extra = is_object($injdef) && property_exists($injdef, 'extra') ? $injdef->extra : null;
+
+        $collect = null != $injdef && property_exists($injdef, 'errs');
+        $errs = (is_object($injdef) && property_exists($injdef, 'errs')) ? $injdef->errs : [];
+
+        $store = array_merge([
+            // Remove the transform commands.
+            '$DELETE' => null,
+            '$COPY' => null,
+            '$KEY' => null,
+            '$META' => null,
+            '$MERGE' => null,
+            '$EACH' => null,
+            '$PACK' => null,
+
+            '$STRING' => [self::class, 'validate_STRING'],
+            '$NUMBER' => [self::class, 'validate_NUMBER'],
+            '$BOOLEAN' => [self::class, 'validate_BOOLEAN'],
+            '$OBJECT' => [self::class, 'validate_OBJECT'],
+            '$ARRAY' => [self::class, 'validate_ARRAY'],
+            '$FUNCTION' => [self::class, 'validate_FUNCTION'],
+            '$ANY' => [self::class, 'validate_ANY'],
+            '$CHILD' => [self::class, 'validate_CHILD'],
+            '$ONE' => [self::class, 'validate_ONE'],
+            '$EXACT' => [self::class, 'validate_EXACT'],
+
+            // A special top level value to collect errors.
+            '$ERRS' => $errs,
+        ], (array) ($extra ?? []));
+
+        $meta = is_object($injdef) && property_exists($injdef, 'meta') ? $injdef->meta : null;
+
+        $out = self::transform($data, $spec, $store, [self::class, '_validation']);
+
+        $generr = (0 < count($errs) && !$collect);
+        if ($generr) {
+            throw new \Exception('Invalid data: ' . implode(' | ', $errs));
+        }
+
+        return $out;
     }
 
     /**
@@ -2008,7 +2535,6 @@ class Struct
                 // The parent structure has been replaced, skip processing this object
                 // But first, clean up the marker so it doesn't appear in the final output
                 self::delprop($val, '__PACK_REPLACED__');
-                error_log("INJECTVAL: Skipping processing due to PACK replacement and cleaned marker");
                 return $val;
             }
             
@@ -2118,7 +2644,7 @@ class Struct
         else if ($valtype === 'string') {
             $state->mode = self::S_MVAL;
             $val = self::_injectstr($val, $store, $state);
-            if ($val !== '__SKIP__') { // PHP equivalent of SKIP check
+            if ($val !== self::$SKIP) { // PHP equivalent of SKIP check
                 self::setprop($state->parent, $state->key, $val);
             }
         }
