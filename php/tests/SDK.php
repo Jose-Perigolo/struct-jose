@@ -2,6 +2,8 @@
 
 namespace Voxgig\Struct;
 
+require_once __DIR__ . '/../src/Struct.php';
+
 class SDK {
     private array $opts;
     private object $utility;
@@ -18,10 +20,30 @@ class SDK {
                     return call_user_func_array(['Voxgig\Struct\Struct', $name], $args);
                 }
             },
+            // A contextify function that returns the context map as-is.
+            'contextify' => function($ctxmap) {
+                return $ctxmap;
+            },
             // A simple check function similar to the TS version.
             'check' => function($ctx) use ($optsCopy) {
                 $foo = isset($optsCopy['foo']) ? $optsCopy['foo'] : '';
-                $bar = isset($ctx->bar) ? $ctx->bar : '0';
+                
+                // Handle both array and object contexts
+                $bar = '0';
+                if (is_object($ctx) && isset($ctx->meta)) {
+                    if (is_object($ctx->meta) && isset($ctx->meta->bar)) {
+                        $bar = $ctx->meta->bar;
+                    } elseif (is_array($ctx->meta) && isset($ctx->meta['bar'])) {
+                        $bar = $ctx->meta['bar'];
+                    }
+                } elseif (is_array($ctx) && isset($ctx['meta'])) {
+                    if (is_array($ctx['meta']) && isset($ctx['meta']['bar'])) {
+                        $bar = $ctx['meta']['bar'];
+                    } elseif (is_object($ctx['meta']) && isset($ctx['meta']->bar)) {
+                        $bar = $ctx['meta']->bar;
+                    }
+                }
+                
                 return (object)[
                     'zed' => 'ZED' . $foo . '_' . $bar
                 ];
