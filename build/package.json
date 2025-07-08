@@ -1,15 +1,17 @@
 {
-  "name": "@voxgig/struct",
+  "name": "@voxgig/struct-build",
   "version": "0.0.1",
   "description": "",
   "main": "index.js",
   "scripts": {
     "test-model": "voxgig-model test/test.jsonic",
-    "test-model-watch": "voxgig-model -w test/test.jsonic"
+    "test-model-watch": "voxgig-model -w test/test.jsonic",
+    "clean": "rm -rf node_modules yarn.lock package-lock.json",
+    "reset": "npm run clean && npm i && npm run test-model"
   },
   "author": "",
   "license": "MIT",
   "dependencies": {
-    "@voxgig/model": "^5.6.0"
+    "@voxgig/model": "^6.0.1"
   }
 }

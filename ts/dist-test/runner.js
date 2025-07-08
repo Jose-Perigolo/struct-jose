@@ -1,5 +1,7 @@
 "use strict";
+// VERSION: @voxgig/struct 0.0.0
 // This test utility runs the JSON-specified tests in build/test/test.json.
+// (or .sdk/test/test.json if used in a @voxgig/sdkgen project)
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.EXISTSMARK = exports.NULLMARK = void 0;
 exports.nullModifier = nullModifier;
@@ -36,6 +38,9 @@ async function makeRunner(testfile, client) {
                     checkResult(entry, res, structUtils);
                 }
                 catch (err) {
+                    if (err instanceof node_assert_1.AssertionError) {
+                        throw err;
+                    }
                     handleError(entry, err, structUtils);
                 }
             }
@@ -87,6 +92,10 @@ function resolveEntry(entry, flags) {
 }
 function checkResult(entry, res, structUtils) {
     let matched = false;
+    if (entry.err) {
+        return (0, node_assert_1.fail)('Expected error did not occur: ' + entry.err +
+            '\n\nENTRY: ' + JSON.stringify(entry, null, 2));
+    }
     if (entry.match) {
         const result = { in: entry.in, out: entry.res, ctx: entry.ctx };
         match(entry.match, result, structUtils);

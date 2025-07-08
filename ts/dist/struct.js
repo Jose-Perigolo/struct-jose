@@ -34,6 +34,8 @@ exports.transform = transform;
 exports.typify = typify;
 exports.validate = validate;
 exports.walk = walk;
+exports.jo = jo;
+exports.ja = ja;
 /* Voxgig Struct
  * =============
  *
@@ -91,6 +93,7 @@ const S_MKEY = 'key';
 // Special keys.
 const S_BKEY = '`$KEY`';
 const S_BANNO = '`$ANNO`';
+const S_BEXACT = '`$EXACT`';
 const S_DKEY = '$KEY';
 const S_DTOP = '$TOP';
 const S_DERRS = '$ERRS';
@@ -115,6 +118,7 @@ const S_OS = '[';
 const S_CS = ']';
 const S_SP = ' ';
 const S_KEY = 'KEY';
+const S_VIZ = ': ';
 // The standard undefined value for this language.
 const UNDEF = undefined;
 // Private marker to indicate a skippable value.
@@ -475,6 +479,26 @@ function clone(val) {
         (m = v.match(R_FUNCTION_REF), m ? refs[m[1]] : v) : v;
     return UNDEF === val ? UNDEF : JSON.parse(JSON.stringify(val, replacer), reviver);
 }
+// Define a JSON Object using function arguments.
+function jo(...kv) {
+    const kvsize = size(kv);
+    const o = {};
+    for (let i = 0; i < kvsize; i += 2) {
+        let k = getprop(kv, i, '$KEY' + i);
+        k = 'string' === typeof k ? k : stringify(k);
+        o[k] = getprop(kv, i + 1, null);
+    }
+    return o;
+}
+// Define a JSON Array using function arguments.
+function ja(...v) {
+    const vsize = size(v);
+    const a = new Array(vsize);
+    for (let i = 0; i < vsize; i++) {
+        a[i] = getprop(v, i, null);
+    }
+    return a;
+}
 // Safely delete a property from an object or array element. 
 // Undefined arguments and invalid keys are ignored.
 // Returns the (possibly modified) parent.
@@ -786,13 +810,11 @@ function inject(val, store, injdef) {
             inj.setval(val);
         }
     }
-    // console.log('INJECT-M0 ', val, '' + inj)
     // Custom modification.
     if (inj.modify && SKIP !== val) {
         let mkey = inj.key;
         let mparent = inj.parent;
         let mval = getprop(mparent, mkey);
-        // console.log('INJECT-M1 ' + inj)
         inj.modify(mval, mkey, mparent, inj, store);
     }
     inj.val = val;
@@ -1067,8 +1089,6 @@ const transform_REF = (inj, val, _ref, store) => {
 // Arrays are treated as if they are objects with indices as keys.
 function transform(data, // Source data to transform into new data (original not mutated)
 spec, // Transform specification; output follows this shape
-// extra?: any, // Additional store of data and transforms.
-// modify?: Modify // Optionally modify individual values.
 injdef) {
     // Clone the spec so that the clone can be modified in place as the transform result.
     const origspec = spec;
@@ -1106,7 +1126,6 @@ injdef) {
         // Custom extra transforms, if any.
         ...extraTransforms,
     };
-    // const out = inject(spec, store, { modify, extra })
     const out = inject(spec, store, injdef);
     return out;
 }
@@ -1345,10 +1364,9 @@ const _validation = (pval, key, parent, inj) => {
         return;
     }
     // select needs exact matches
-    const exact = getprop(inj.meta, '`$EXACT`');
+    const exact = getprop(inj.meta, S_BEXACT, false);
     // Current val to verify.
     const cval = getprop(inj.dparent, key);
-    // if (UNDEF === cval || UNDEF === inj) {
     if (UNDEF === inj || (!exact && UNDEF === cval)) {
         return;
     }
@@ -1358,7 +1376,6 @@ const _validation = (pval, key, parent, inj) => {
         return;
     }
     const ctype = typify(cval);
-    // console.log('VALID-A', pval, ptype, cval, ctype)
     // Type mismatch.
     if (ptype !== ctype && UNDEF !== pval) {
         inj.errs.push(_invalidTypeMsg(inj.path, ptype, ctype, cval, 'V0010'));
@@ -1381,7 +1398,7 @@ const _validation = (pval, key, parent, inj) => {
             }
             // Closed object, so reject extra keys not in shape.
             if (0 < badkeys.length) {
-                const msg = 'Unexpected keys at field ' + pathify(inj.path, 1) + ': ' + badkeys.join(', ');
+                const msg = 'Unexpected keys at field ' + pathify(inj.path, 1) + S_VIZ + badkeys.join(', ');
                 inj.errs.push(msg);
             }
         }
@@ -1399,10 +1416,10 @@ const _validation = (pval, key, parent, inj) => {
         }
     }
     else if (exact) {
-        // else if (inj.meta['`$EXACT`']) {
-        // console.log('VALID-X', cval, pval)
         if (cval !== pval) {
-            inj.errs.push('Value ' + cval + ' should equal ' + pval);
+            const pathmsg = 1 < size(inj.path) ? 'at field ' + pathify(inj.path, 1) + S_VIZ : S_MT;
+            inj.errs.push('Value ' + pathmsg + cval +
+                ' should equal ' + pval + S_DT);
         }
     }
     else {
@@ -1451,8 +1468,12 @@ injdef) {
         // NOTE: collecterrs paramter always wins.
         $ERRS: errs,
     };
+    let meta = { [S_BEXACT]: false };
+    if (injdef?.meta) {
+        meta = merge([meta, injdef.meta]);
+    }
     const out = transform(data, spec, {
-        meta: injdef?.meta,
+        meta,
         extra: store,
         modify: _validation,
         handler: _validatehandler
@@ -1466,7 +1487,6 @@ injdef) {
 const select_AND = (inj, _val, _ref, store) => {
     if (S_MKEYPRE === inj.mode) {
         const terms = getprop(inj.parent, inj.key);
-        // const src = getprop(store, inj.base, store)
         const ppath = slice(inj.path, -1);
         const point = getpath(store, ppath);
         const vstore = { ...store };
@@ -1480,7 +1500,7 @@ const select_AND = (inj, _val, _ref, store) => {
                 meta: inj.meta,
             });
             if (0 != terrs.length) {
-                inj.errs.push('AND:' + pathify(ppath) + ': ' + stringify(point) + ' fail:' + stringify(terms));
+                inj.errs.push('AND:' + pathify(ppath) + S_VIZ + stringify(point) + ' fail:' + stringify(terms));
             }
         }
         const gkey = getelem(inj.path, -2);
@@ -1491,31 +1511,46 @@ const select_AND = (inj, _val, _ref, store) => {
 const select_OR = (inj, _val, _ref, store) => {
     if (S_MKEYPRE === inj.mode) {
         const terms = getprop(inj.parent, inj.key);
-        // const src = getprop(store, inj.base, store)
         const ppath = slice(inj.path, -1);
         const point = getpath(store, ppath);
-        // console.log('OR:', ppath, point)
         const vstore = { ...store };
         vstore.$TOP = point;
         for (let term of terms) {
-            // console.log('OR-TERM:', term)
-            // setprop(term, '`$OPEN`', getprop(term, '`$OPEN`', true))
             let terrs = [];
             validate(point, term, {
                 extra: vstore,
                 errs: terrs,
                 meta: inj.meta,
             });
-            // console.log('OR-ERRS:', terrs)
             if (0 === terrs.length) {
                 const gkey = getelem(inj.path, -2);
                 const gp = getelem(inj.nodes, -2);
                 setprop(gp, gkey, point);
-                // console.log('OR-NODES:' + inj, inj.nodes)
                 return;
             }
         }
-        inj.errs.push('OR:' + pathify(ppath) + ': ' + stringify(point) + ' fail:' + stringify(terms));
+        inj.errs.push('OR:' + pathify(ppath) + S_VIZ + stringify(point) + ' fail:' + stringify(terms));
+    }
+};
+const select_NOT = (inj, _val, _ref, store) => {
+    if (S_MKEYPRE === inj.mode) {
+        const term = getprop(inj.parent, inj.key);
+        const ppath = slice(inj.path, -1);
+        const point = getpath(store, ppath);
+        const vstore = { ...store };
+        vstore.$TOP = point;
+        let terrs = [];
+        validate(point, term, {
+            extra: vstore,
+            errs: terrs,
+            meta: inj.meta,
+        });
+        if (0 == terrs.length) {
+            inj.errs.push('NOT:' + pathify(ppath) + S_VIZ + stringify(point) + ' fail:' + stringify(term));
+        }
+        const gkey = getelem(inj.path, -2);
+        const gp = getelem(inj.nodes, -2);
+        setprop(gp, gkey, point);
     }
 };
 const select_CMP = (inj, _val, ref, store) => {
@@ -1539,13 +1574,16 @@ const select_CMP = (inj, _val, ref, store) => {
         else if ('$LTE' === ref && point <= term) {
             pass = true;
         }
+        else if ('$LIKE' === ref && stringify(point).match(RegExp(term))) {
+            pass = true;
+        }
         if (pass) {
             // Update spec to match found value so that _validate does not complain.
             const gp = getelem(inj.nodes, -2);
             setprop(gp, gkey, point);
         }
         else {
-            inj.errs.push('CMP: ' + pathify(ppath) + ': ' + stringify(point) +
+            inj.errs.push('CMP: ' + pathify(ppath) + S_VIZ + stringify(point) +
                 ' fail:' + ref + ' ' + stringify(term));
         }
     }
@@ -1555,7 +1593,7 @@ const select_CMP = (inj, _val, ref, store) => {
 // Supports $and, $or, and equality comparisons.
 // For arrays, children are elements; for objects, children are values.
 // TODO: swap arg order for consistency
-function select(query, children) {
+function select(children, query) {
     if (!isnode(children)) {
         return [];
     }
@@ -1568,14 +1606,16 @@ function select(query, children) {
     const results = [];
     const injdef = {
         errs: [],
-        meta: { '`$EXACT`': true },
+        meta: { [S_BEXACT]: true },
         extra: {
             $AND: select_AND,
             $OR: select_OR,
+            $NOT: select_NOT,
             $GT: select_CMP,
             $LT: select_CMP,
             $GTE: select_CMP,
             $LTE: select_CMP,
+            $LIKE: select_CMP,
         }
     };
     const q = clone(query);
@@ -1586,10 +1626,8 @@ function select(query, children) {
         return v;
     });
     for (const child of children) {
-        // console.log('CHILD', child, q)
         injdef.errs = [];
         validate(child, clone(q), injdef);
-        // console.log('CHILD-ERRS', injdef.errs)
         if (0 === size(injdef.errs)) {
             results.push(child);
         }
@@ -1699,7 +1737,7 @@ function _invalidTypeMsg(path, needtype, vt, v, _whence) {
     return 'Expected ' +
         (1 < path.length ? ('field ' + pathify(path, 1) + ' to be ') : '') +
         needtype + ', but found ' +
-        (null != v ? vt + ': ' : '') + vs +
+        (null != v ? vt + S_VIZ : '') + vs +
         // Uncomment to help debug validation errors.
         // ' [' + _whence + ']' +
         '.';
@@ -1725,7 +1763,7 @@ const _validatehandler = (inj, val, ref, store) => {
     const ismetapath = null != m;
     if (ismetapath) {
         if ('=' === m[2]) {
-            inj.setval(['`$EXACT`', val]);
+            inj.setval([S_BEXACT, val]);
         }
         else {
             inj.setval(val);
@@ -1824,6 +1862,8 @@ class StructUtility {
         this.typify = typify;
         this.validate = validate;
         this.walk = walk;
+        this.jo = jo;
+        this.ja = ja;
     }
 }
 exports.StructUtility = StructUtility;

@@ -43,6 +43,8 @@ declare function jsonify(val: any, flags?: {
 declare function stringify(val: any, maxlen?: number, pretty?: any): string;
 declare function pathify(val: any, startin?: number, endin?: number): string;
 declare function clone(val: any): any;
+declare function jo(...kv: any[]): Record<string, any>;
+declare function ja(...v: any[]): any[];
 declare function delprop<PARENT>(parent: PARENT, key: any): PARENT;
 declare function setprop<PARENT>(parent: PARENT, key: any, val: any): PARENT;
 declare function walk(val: any, apply: WalkApply, key?: string | number, parent?: any, path?: string[]): any;
@@ -55,7 +57,7 @@ injdef?: Partial<Injection>): any;
 declare function validate(data: any, // Source data to transform into new data (original not mutated)
 spec: any, // Transform specification; output follows this shape
 injdef?: Partial<Injection>): any;
-declare function select(query: any, children: any): any[];
+declare function select(children: any, query: any): any[];
 declare class Injection {
     mode: InjectMode;
     full: boolean;
@@ -114,6 +116,8 @@ declare class StructUtility {
     typify: typeof typify;
     validate: typeof validate;
     walk: typeof walk;
+    jo: typeof jo;
+    ja: typeof ja;
 }
-export { StructUtility, clone, delprop, escre, escurl, getelem, getpath, getprop, haskey, inject, isempty, isfunc, iskey, islist, ismap, isnode, items, joinurl, jsonify, keysof, merge, pad, pathify, select, setprop, size, slice, strkey, stringify, transform, typify, validate, walk, };
+export { StructUtility, clone, delprop, escre, escurl, getelem, getpath, getprop, haskey, inject, isempty, isfunc, iskey, islist, ismap, isnode, items, joinurl, jsonify, keysof, merge, pad, pathify, select, setprop, size, slice, strkey, stringify, transform, typify, validate, walk, jo, ja, };
 export type { Injection, Injector, WalkApply };

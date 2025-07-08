@@ -1,15 +1,15 @@
 "use strict";
+// VERSION: @voxgig/struct 0.0.0
 // RUN: npm test
 // RUN-SOME: npm run test-some --pattern=getpath
 Object.defineProperty(exports, "__esModule", { value: true });
 const node_test_1 = require("node:test");
 const node_assert_1 = require("node:assert");
-const runner_1 = require("./runner");
-const sdk_js_1 = require("./sdk.js");
-const TEST_JSON_FILE = '../../build/test/test.json';
+const runner_1 = require("../runner");
+const index_1 = require("./index");
 // NOTE: tests are (mostly) in order of increasing dependence.
 (0, node_test_1.describe)('struct', async () => {
-    const runner = await (0, runner_1.makeRunner)(TEST_JSON_FILE, await sdk_js_1.SDK.test());
+    const runner = await (0, runner_1.makeRunner)(index_1.TEST_JSON_FILE, await index_1.SDK.test());
     const { spec, runset, runsetflags, client } = await runner('struct');
     const { clone, delprop, escre, escurl, getelem, getpath, getprop, haskey, inject, isempty, isfunc, iskey, islist, ismap, isnode, items, joinurl, jsonify, keysof, merge, pad, pathify, select, size, slice, setprop, strkey, stringify, transform, typify, validate, walk, jo, ja, } = client.utility().struct;
     const minorSpec = spec.minor;
@@ -401,4 +401,4 @@ const TEST_JSON_FILE = '../../build/test/test.json';
 }`);
     });
 });
-//# sourceMappingURL=struct.test.js.map
+//# sourceMappingURL=StructUtility.test.js.map

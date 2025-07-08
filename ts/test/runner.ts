@@ -1,10 +1,10 @@
+// VERSION: @voxgig/struct 0.0.0
 // This test utility runs the JSON-specified tests in build/test/test.json.
+// (or .sdk/test/test.json if used in a @voxgig/sdkgen project)
 
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { deepEqual, fail, AssertionError } from 'node:assert'
-
-import { StructUtility } from '../dist/struct'
 
 const NULLMARK = '__NULL__' // Value is JSON null
 const UNDEFMARK = '__UNDEF__' // Value is not present (thus, undefined).
@@ -35,7 +35,7 @@ type Flags = Record<string, boolean>
 
 
 type Utility = {
-  struct: StructUtility
+  struct: any
   contextify: (ctxmap: Record<string, any>) => any
 }
 
@@ -83,6 +83,9 @@ async function makeRunner(testfile: string, client: Client) {
           checkResult(entry, res, structUtils)
         }
         catch (err: any) {
+          if (err instanceof AssertionError) {
+            throw err
+          }
           handleError(entry, err, structUtils)
         }
       }
@@ -162,6 +165,11 @@ function resolveEntry(entry: any, flags: Flags): any {
 
 function checkResult(entry: any, res: any, structUtils: Record<string, any>) {
   let matched = false
+
+  if (entry.err) {
+    return fail('Expected error did not occur: ' + entry.err +
+      '\n\nENTRY: ' + JSON.stringify(entry, null, 2))
+  }
 
   if (entry.match) {
     const result = { in: entry.in, out: entry.res, ctx: entry.ctx }

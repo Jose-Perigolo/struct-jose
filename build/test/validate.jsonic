@@ -2,31 +2,35 @@
 
 basic: {
   set: [
-    { in: { data: {}, spec: {a0:'A0'} }, out: {a0:'A0'} }
-  
+    { in: { data: 1000, spec: 1000 }, out: 1000 }
+    { in: { data: 1002, spec: 1001 }, out: 1002 }
+
+    { in: { data: {x0:'X0'}, spec: {x0:'X0'} }, out: {x0:'X0'} }
+    { in: { data: {x1:'X0'}, spec: {x1:'X1'} }, out: {x1:'X0'} }
+    { in: { data: {}, spec: {x2:'X2'} }, out: {x2:'X2'} }
+    
     { in: { data: a, spec: '`$STRING`' }, out: a }
     { in: { data: 1, spec: '`$STRING`' }, out: 1,
       err: 'Invalid data: Expected string, but found number: 1.' }
 
-    { in: { data: {a:A}, spec: {a:'`$STRING`'} }, out: {a:A} }
+    { in: { data: {a0:A}, spec: {a0:'`$STRING`'} }, out: {a0:A} }
 
-    { in: { data: {a:1}, spec: {a:'`$STRING`'} }
-      err: 'Expected field a to be string, but found number: 1' }
+    { in: { data: {a1:1}, spec: {a1:'`$STRING`'} }
+      err: 'Expected field a1 to be string, but found number: 1' }
 
-    { in: { data: {a:11,b:'B'}, spec: {a:'`$STRING`',b:'`$NUMBER`'} }
-      err: 'Expected field a to be string, but found number: 11. | Expected field b to be number, but found string: B.' }
+    { in: { data: {a2:11,b2:'B'}, spec: {a2:'`$STRING`',b2:'`$NUMBER`'} }
+      err: 'Expected field a2 to be string, but found number: 11. | Expected field b2 to be number, but found string: B.' }
 
-    { in: { data: {a:2,b:B,c:true}, spec: {a:'`$NUMBER`',b:'`$STRING`',c:'`$BOOLEAN`'}}
-      out: {a:2,b:B,c:true} }
+    { in: { data: {a3:2,b3:B,c3:true}, spec: {a3:'`$NUMBER`',b3:'`$STRING`',c3:'`$BOOLEAN`'}}
+      out: {a3:2,b3:B,c3:true} }
 
-    { in: { data: {a:3,b:B}, spec: {a:'`$NUMBER`'}}
-      out: {a:3,b:B}
-      err: 'Unexpected keys at field <root>: b' }
+    { in: { data: {a4:3,b4:B}, spec: {a4:'`$NUMBER`'}}
+      out: {a4:3,b4:B}
+      err: 'Unexpected keys at field <root>: b4' }
 
-    { in: { data: {a:4}, spec: {a:'`$NUMBER`',b:C}}
-      out: {a:4,b:C} }
+    { in: { data: {a5:4,b5:D}, spec: {a5:'`$NUMBER`',b5:C}}
+      out: {a5:4,b5:D} }
 
-      
     { in: { data: {a:5,b:D}, spec: {a:'`$NUMBER`',b:C}}
       out: {a:5,b:D} }
 
@@ -263,4 +267,21 @@ special: set: [
   { in: { data: {x15:204}, spec:{x15:'`q0$~x1`' }, inj:meta:q0:x1:104 }, out: {x15:204} }
   { in: { data: {x16:'s16'}, spec:{x16:'`q0$~x1`' }, inj:meta:q0:x1:104 }
     err: 'Invalid data: Expected field x16 to be number, but found string: s16.' }
+
+  { in: { data: 2000, spec:2000, inj:meta:'`$EXACT`':true }, out: 2000 }
+
+  { in: { data: 2001, spec:2002, inj:meta:'`$EXACT`':true }
+    err: 'Value 2001 should equal 2002.' }
+
+  { in: { data: [3000], spec:[3000], inj:meta:'`$EXACT`':true }, out: [3000] }
+
+  { in: { data: [3001], spec:[3002], inj:meta:'`$EXACT`':true }
+    err: 'Value at field 0: 3001 should equal 3002.' }
+
+  { in: { data: a:b:c:4000, spec:a:b:c:4000, inj:meta:'`$EXACT`':true }, out: a:b:c:4000 }
+
+  { in: { data: a:b:c:4001, spec:a:b:c:4002, inj:meta:'`$EXACT`':true }
+    err: 'Value at field a.b.c: 4001 should equal 4002.' }
+
+    
 ]

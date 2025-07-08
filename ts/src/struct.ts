@@ -61,6 +61,7 @@ const S_MKEY = 'key'
 // Special keys.
 const S_BKEY = '`$KEY`'
 const S_BANNO = '`$ANNO`'
+const S_BEXACT = '`$EXACT`'
 
 const S_DKEY = '$KEY'
 const S_DTOP = '$TOP'
@@ -87,6 +88,7 @@ const S_OS = '['
 const S_CS = ']'
 const S_SP = ' '
 const S_KEY = 'KEY'
+const S_VIZ = ': '
 
 
 // The standard undefined value for this language.
@@ -581,6 +583,31 @@ function clone(val: any): any {
 }
 
 
+// Define a JSON Object using function arguments.
+function jo(...kv: any[]): Record<string, any> {
+  const kvsize = size(kv)
+  const o: any = {}
+  for (let i = 0; i < kvsize; i += 2) {
+    let k = getprop(kv, i, '$KEY' + i)
+    k = 'string' === typeof k ? k : stringify(k)
+    o[k] = getprop(kv, i + 1, null)
+  }
+  return o
+}
+
+
+// Define a JSON Array using function arguments.
+function ja(...v: any[]): any[] {
+  const vsize = size(v)
+  const a: any = new Array(vsize)
+  for (let i = 0; i < vsize; i++) {
+    a[i] = getprop(v, i, null)
+  }
+  return a
+}
+
+
+
 // Safely delete a property from an object or array element. 
 // Undefined arguments and invalid keys are ignored.
 // Returns the (possibly modified) parent.
@@ -978,15 +1005,11 @@ function inject(
     }
   }
 
-  // console.log('INJECT-M0 ', val, '' + inj)
-
   // Custom modification.
   if (inj.modify && SKIP !== val) {
     let mkey = inj.key
     let mparent = inj.parent
     let mval = getprop(mparent, mkey)
-
-    // console.log('INJECT-M1 ' + inj)
 
     inj.modify(
       mval,
@@ -1380,8 +1403,6 @@ const transform_REF: Injector = (
 function transform(
   data: any, // Source data to transform into new data (original not mutated)
   spec: any, // Transform specification; output follows this shape
-  // extra?: any, // Additional store of data and transforms.
-  // modify?: Modify // Optionally modify individual values.
   injdef?: Partial<Injection>
 ) {
   // Clone the spec so that the clone can be modified in place as the transform result.
@@ -1433,7 +1454,6 @@ function transform(
     ...extraTransforms,
   }
 
-  // const out = inject(spec, store, { modify, extra })
   const out = inject(spec, store, injdef)
   return out
 }
@@ -1768,12 +1788,11 @@ const _validation: Modify = (
   }
 
   // select needs exact matches
-  const exact = getprop(inj.meta, '`$EXACT`')
+  const exact = getprop(inj.meta, S_BEXACT, false)
 
   // Current val to verify.
   const cval = getprop(inj.dparent, key)
 
-  // if (UNDEF === cval || UNDEF === inj) {
   if (UNDEF === inj || (!exact && UNDEF === cval)) {
     return
   }
@@ -1786,9 +1805,6 @@ const _validation: Modify = (
   }
 
   const ctype = typify(cval)
-
-  // console.log('VALID-A', pval, ptype, cval, ctype)
-
 
   // Type mismatch.
   if (ptype !== ctype && UNDEF !== pval) {
@@ -1817,7 +1833,7 @@ const _validation: Modify = (
       // Closed object, so reject extra keys not in shape.
       if (0 < badkeys.length) {
         const msg =
-          'Unexpected keys at field ' + pathify(inj.path, 1) + ': ' + badkeys.join(', ')
+          'Unexpected keys at field ' + pathify(inj.path, 1) + S_VIZ + badkeys.join(', ')
         inj.errs.push(msg)
       }
     }
@@ -1835,11 +1851,10 @@ const _validation: Modify = (
     }
   }
   else if (exact) {
-    // else if (inj.meta['`$EXACT`']) {
-    // console.log('VALID-X', cval, pval)
-
     if (cval !== pval) {
-      inj.errs.push('Value ' + cval + ' should equal ' + pval)
+      const pathmsg = 1 < size(inj.path) ? 'at field ' + pathify(inj.path, 1) + S_VIZ : S_MT
+      inj.errs.push('Value ' + pathmsg + cval +
+        ' should equal ' + pval + S_DT)
     }
   }
   else {
@@ -1900,8 +1915,14 @@ function validate(
     $ERRS: errs,
   }
 
+  let meta = { [S_BEXACT]: false }
+
+  if (injdef?.meta) {
+    meta = merge([meta, injdef.meta])
+  }
+
   const out = transform(data, spec, {
-    meta: injdef?.meta,
+    meta,
     extra: store,
     modify: _validation,
     handler: _validatehandler
@@ -1919,7 +1940,6 @@ function validate(
 const select_AND: Injector = (inj: Injection, _val: any, _ref: string, store: any) => {
   if (S_MKEYPRE === inj.mode) {
     const terms = getprop(inj.parent, inj.key)
-    // const src = getprop(store, inj.base, store)
 
     const ppath = slice(inj.path, -1)
     const point = getpath(store, ppath)
@@ -1940,7 +1960,7 @@ const select_AND: Injector = (inj: Injection, _val: any, _ref: string, store: an
 
       if (0 != terrs.length) {
         inj.errs.push(
-          'AND:' + pathify(ppath) + ': ' + stringify(point) + ' fail:' + stringify(terms))
+          'AND:' + pathify(ppath) + S_VIZ + stringify(point) + ' fail:' + stringify(terms))
       }
     }
 
@@ -1954,19 +1974,14 @@ const select_AND: Injector = (inj: Injection, _val: any, _ref: string, store: an
 const select_OR: Injector = (inj: Injection, _val: any, _ref: string, store: any) => {
   if (S_MKEYPRE === inj.mode) {
     const terms = getprop(inj.parent, inj.key)
-    // const src = getprop(store, inj.base, store)
 
     const ppath = slice(inj.path, -1)
     const point = getpath(store, ppath)
-    // console.log('OR:', ppath, point)
 
     const vstore = { ...store }
     vstore.$TOP = point
 
     for (let term of terms) {
-      // console.log('OR-TERM:', term)
-      // setprop(term, '`$OPEN`', getprop(term, '`$OPEN`', true))
-
       let terrs: any[] = []
 
       validate(point, term, {
@@ -1975,20 +1990,47 @@ const select_OR: Injector = (inj: Injection, _val: any, _ref: string, store: any
         meta: inj.meta,
       })
 
-      // console.log('OR-ERRS:', terrs)
-
       if (0 === terrs.length) {
         const gkey = getelem(inj.path, -2)
         const gp = getelem(inj.nodes, -2)
         setprop(gp, gkey, point)
 
-        // console.log('OR-NODES:' + inj, inj.nodes)
         return
       }
     }
 
     inj.errs.push(
-      'OR:' + pathify(ppath) + ': ' + stringify(point) + ' fail:' + stringify(terms))
+      'OR:' + pathify(ppath) + S_VIZ + stringify(point) + ' fail:' + stringify(terms))
+  }
+}
+
+
+const select_NOT: Injector = (inj: Injection, _val: any, _ref: string, store: any) => {
+  if (S_MKEYPRE === inj.mode) {
+    const term = getprop(inj.parent, inj.key)
+
+    const ppath = slice(inj.path, -1)
+    const point = getpath(store, ppath)
+
+    const vstore = { ...store }
+    vstore.$TOP = point
+
+    let terrs: any[] = []
+
+    validate(point, term, {
+      extra: vstore,
+      errs: terrs,
+      meta: inj.meta,
+    })
+
+    if (0 == terrs.length) {
+      inj.errs.push(
+        'NOT:' + pathify(ppath) + S_VIZ + stringify(point) + ' fail:' + stringify(term))
+    }
+
+    const gkey = getelem(inj.path, -2)
+    const gp = getelem(inj.nodes, -2)
+    setprop(gp, gkey, point)
   }
 }
 
@@ -2018,6 +2060,9 @@ const select_CMP: Injector = (inj: Injection, _val: any, ref: string, store: any
     else if ('$LTE' === ref && point <= term) {
       pass = true
     }
+    else if ('$LIKE' === ref && stringify(point).match(RegExp(term))) {
+      pass = true
+    }
 
     if (pass) {
       // Update spec to match found value so that _validate does not complain.
@@ -2025,7 +2070,7 @@ const select_CMP: Injector = (inj: Injection, _val: any, ref: string, store: any
       setprop(gp, gkey, point)
     }
     else {
-      inj.errs.push('CMP: ' + pathify(ppath) + ': ' + stringify(point) +
+      inj.errs.push('CMP: ' + pathify(ppath) + S_VIZ + stringify(point) +
         ' fail:' + ref + ' ' + stringify(term))
     }
   }
@@ -2038,7 +2083,7 @@ const select_CMP: Injector = (inj: Injection, _val: any, ref: string, store: any
 // Supports $and, $or, and equality comparisons.
 // For arrays, children are elements; for objects, children are values.
 // TODO: swap arg order for consistency
-function select(query: any, children: any): any[] {
+function select(children: any, query: any): any[] {
   if (!isnode(children)) {
     return []
   }
@@ -2053,14 +2098,16 @@ function select(query: any, children: any): any[] {
   const results: any[] = []
   const injdef = {
     errs: [],
-    meta: { '`$EXACT`': true },
+    meta: { [S_BEXACT]: true },
     extra: {
       $AND: select_AND,
       $OR: select_OR,
+      $NOT: select_NOT,
       $GT: select_CMP,
       $LT: select_CMP,
       $GTE: select_CMP,
       $LTE: select_CMP,
+      $LIKE: select_CMP,
     }
   }
 
@@ -2074,13 +2121,9 @@ function select(query: any, children: any): any[] {
   })
 
   for (const child of children) {
-    // console.log('CHILD', child, q)
-
     injdef.errs = []
 
     validate(child, clone(q), injdef)
-
-    // console.log('CHILD-ERRS', injdef.errs)
 
     if (0 === size(injdef.errs)) {
       results.push(child)
@@ -2240,7 +2283,7 @@ function _invalidTypeMsg(path: any, needtype: string, vt: string, v: any, _whenc
   return 'Expected ' +
     (1 < path.length ? ('field ' + pathify(path, 1) + ' to be ') : '') +
     needtype + ', but found ' +
-    (null != v ? vt + ': ' : '') + vs +
+    (null != v ? vt + S_VIZ : '') + vs +
 
     // Uncomment to help debug validation errors.
     // ' [' + _whence + ']' +
@@ -2287,7 +2330,7 @@ const _validatehandler: Injector = (
 
   if (ismetapath) {
     if ('=' === m[2]) {
-      inj.setval(['`$EXACT`', val])
+      inj.setval([S_BEXACT, val])
     }
     else {
       inj.setval(val)
@@ -2405,6 +2448,9 @@ class StructUtility {
   typify = typify
   validate = validate
   walk = walk
+
+  jo = jo
+  ja = ja
 }
 
 export {
@@ -2441,6 +2487,9 @@ export {
   typify,
   validate,
   walk,
+
+  jo,
+  ja,
 }
 
 export type {

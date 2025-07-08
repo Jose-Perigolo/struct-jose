@@ -1,24 +1,21 @@
-
+// VERSION: @voxgig/struct 0.0.0
 // RUN: npm test
 // RUN-SOME: npm run test-some --pattern=getpath
 
 import { test, describe } from 'node:test'
 import { equal, deepEqual } from 'node:assert'
 
-import type {
-  Injection
-} from '../dist/struct'
-
-
 import {
   makeRunner,
   nullModifier,
   NULLMARK,
-} from './runner'
+} from '../runner'
 
-import { SDK } from './sdk.js'
 
-const TEST_JSON_FILE = '../../build/test/test.json'
+import {
+  SDK,
+  TEST_JSON_FILE
+} from './index'
 
 
 // NOTE: tests are (mostly) in order of increasing dependence.
@@ -67,6 +64,9 @@ describe('struct', async () => {
     validate,
 
     walk,
+
+    jo,
+    ja,
 
   } = client.utility().struct
 
@@ -556,8 +556,7 @@ describe('struct', async () => {
   test('validate-custom', async () => {
     const errs: any[] = []
     const extra = {
-      // $INTEGER: (state: any, _val: any, current: any) => {
-      $INTEGER: (inj: Injection) => {
+      $INTEGER: (inj: any) => {
         const { key } = inj
         // let out = getprop(current, key)
         let out = getprop(inj.dparent, key)
@@ -588,18 +587,92 @@ describe('struct', async () => {
   // ============
 
   test('select-basic', async () => {
-    await runset(selectSpec.basic, (vin: any) => select(vin.query, vin.obj))
+    await runset(selectSpec.basic, (vin: any) => select(vin.obj, vin.query))
   })
 
 
   test('select-operators', async () => {
-    await runset(selectSpec.operators, (vin: any) => select(vin.query, vin.obj))
+    await runset(selectSpec.operators, (vin: any) => select(vin.obj, vin.query))
   })
 
 
   test('select-edge', async () => {
-    await runset(selectSpec.edge, (vin: any) => select(vin.query, vin.obj))
+    await runset(selectSpec.edge, (vin: any) => select(vin.obj, vin.query))
   })
 
-})
 
+  // JSON Builder
+  // ============
+
+  test('json-builder', async () => {
+    equal(jsonify(jo(
+      'a', 1
+    )), `{
+  "a": 1
+}`)
+
+    equal(jsonify(ja(
+      'b', 2
+    )), `[
+  "b",
+  2
+]`)
+
+    equal(jsonify(jo(
+      'c', 'C',
+      'd', jo('x', true),
+      'e', ja(null, false)
+    )), `{
+  "c": "C",
+  "d": {
+    "x": true
+  },
+  "e": [
+    null,
+    false
+  ]
+}`)
+
+    equal(jsonify(ja(
+      3.3, jo(
+        'f', true,
+        'g', false,
+        'h', null,
+        'i', ja('y', 0),
+        'j', jo('z', -1),
+        'k')
+    )), `[
+  3.3,
+  {
+    "f": true,
+    "g": false,
+    "h": null,
+    "i": [
+      "y",
+      0
+    ],
+    "j": {
+      "z": -1
+    },
+    "k": null
+  }
+]`)
+
+    equal(jsonify(jo(
+      true, 1,
+      false, 2,
+      null, 3,
+      ['a'], 4,
+      { 'b': 0 }, 5
+    )), `{
+  "true": 1,
+  "false": 2,
+  "null": 3,
+  "[a]": 4,
+  "{b:0}": 5
+}`)
+
+  })
+
+
+})

@@ -33,14 +33,17 @@ let errs;
 // errs = []
 // out = validate({ x: 5 }, { y: '`dm$=a.b`' }, { meta: { dm: { a: 5 } }, errs })
 // console.log('validate-OUT', out, errs)
-errs = [];
-out = (0, __1.validate)(undefined, {
-    // x: '`dm$=a`'
-    // x: 9
-    x: ['`$EXACT`', 9]
-}, { meta: { dm: { a: 9 } }, errs });
-console.log('validate-OUT', out, errs);
+// errs = []
+// out = validate(undefined, {
+//   // x: '`dm$=a`'
+//   // x: 9
+//   x: ['`$EXACT`', 9]
+// }, { meta: { dm: { a: 9 } }, errs })
+// console.log('validate-OUT', out, errs)
 // errs = []
 // out = validate({}, { '`$OPEN`': true, z: 1 }, { errs })
 // console.log('validate-OUT', out, errs)
+errs = [];
+out = (0, __1.validate)(1000, 1001, { errs });
+console.log('validate-OUT', out, errs);
 //# sourceMappingURL=direct.js.map
