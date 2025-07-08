@@ -1,6 +1,6 @@
 {
   "name": "@voxgig/struct",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "description": "Data structure manipulations",
   "main": "dist/struct.js",
   "type": "commonjs",

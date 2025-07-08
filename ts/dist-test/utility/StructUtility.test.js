@@ -1,5 +1,5 @@
 "use strict";
-// VERSION: @voxgig/struct 0.0.3
+// VERSION: @voxgig/struct 0.0.4
 // RUN: npm test
 // RUN-SOME: npm run test-some --pattern=getpath
 Object.defineProperty(exports, "__esModule", { value: true });
