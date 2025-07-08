@@ -148,3 +148,5 @@ __pycache__
 *.swp
 
 package-lock.json
+
+*.local.*
