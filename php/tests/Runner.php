@@ -4,6 +4,8 @@ namespace Voxgig\Struct;
 
 use Exception;
 
+require_once __DIR__ . '/../src/Struct.php';
+
 class Runner {
 
     private const NULLMARK  = "__NULL__";
