@@ -689,22 +689,38 @@ function setprop<PARENT>(parent: PARENT, key: any, val: any): PARENT {
 function walk(
   // These arguments are the public interface.
   val: any,
-  apply: WalkApply,
+
+  // Before descending into a node.
+  before?: WalkApply,
+
+  // After descending into a node.
+  after?: WalkApply,
+
+  // Maximum recursive depth, default: 32. Use null for infinite depth.
+  maxdepth?: number,
 
   // These areguments are used for recursive state.
   key?: string | number,
   parent?: any,
   path?: string[]
 ): any {
+  let out = null == before ? val : before(key, val, parent, path || [])
+
+  maxdepth = null != maxdepth && 0 <= maxdepth ? maxdepth : 32
+  if (0 === maxdepth || (null != path && 0 < maxdepth && maxdepth <= path.length)) {
+    return out
+  }
+
   if (isnode(val)) {
     for (let [ckey, child] of items(val)) {
-      setprop(val, ckey, walk(child, apply, ckey, val, [...(path || []), S_MT + ckey]))
+      setprop(val, ckey, walk(
+        child, before, after, maxdepth, ckey, val, [...(path || []), S_MT + ckey]))
     }
   }
 
-  // Nodes are applied *after* their children.
-  // For the root node, key and parent will be undefined.
-  return apply(key, val, parent, path || [])
+  out = null == after ? out : after(key, val, parent, path || [])
+
+  return out
 }
 
 
@@ -712,7 +728,7 @@ function walk(
 // precedence.  Nodes override scalars. Node kinds (list or map)
 // override each other, and do *not* merge.  The first element is
 // modified.
-function merge(val: any): any {
+function merge(val: any, maxdepth?: number): any {
   let out: any = UNDEF
 
   // Handle edge cases.
@@ -742,15 +758,39 @@ function merge(val: any): any {
     }
     else {
       // Nodes win, also over nodes of a different kind.
-      if (!isnode(out) || (ismap(obj) && islist(out)) || (islist(obj) && ismap(out))) {
+      if (!isnode(out) || (ismap(obj) && islist(out)) || (islist(obj) && ismap(out))
+
+        // do not descend into class instances
+        || !(null == obj.constructor ||
+          'Object' === obj.constructor.name ||
+          'Array' === obj.constructor.name
+        )
+
+      ) {
         out = obj
       }
       else {
         // Node stack. walking down the current obj.
         let cur: any[] = [out]
+        let dst: any[] = [out]
         let cI = 0
 
-        function merger(
+        let curX: any[] = []
+        let dstX: any[] = []
+
+        function before(
+          key: string | number | undefined,
+          val: any,
+          parent: any,
+          path: string[]
+        ) {
+          if (isnode(val)) {
+            curX.push(val)
+          }
+          REFACTOR
+        }
+
+        function after(
           key: string | number | undefined,
           val: any,
           parent: any,
@@ -762,35 +802,22 @@ function merge(val: any): any {
           }
 
           // Get the current value at the current path in obj.
-          // NOTE: this is not exactly efficient, and should be optimised.
-          let lenpath = path.length
+          let lenpath = size(path)
           cI = lenpath - 1
           if (UNDEF === cur[cI]) {
-            cur[cI] = getpath(out, slice(path, 0, lenpath - 1))
+            dst[cI] = getprop(dst[cI - 1], getelem(path, -2))
+            cur[cI] = dst[cI]
           }
-
-          // console.log('AAA', path, cur[cI])
 
           // Create node if needed.
           if (!isnode(cur[cI])) {
             cur[cI] = islist(parent) ? [] : {}
           }
 
-          // console.log('BBB', path, cur[cI])
-
-          // console.log('VAL', path, val, isnode(val), isempty(val))
-
-          // Node child is just ahead of us on the stack, since
-          // `walk` traverses leaves before nodes.
+          // Node child is just ahead of us on the stack.
           if (isnode(val)) {
             const missing = UNDEF === getprop(cur[cI], key)
-            if (!isempty(val) || missing) { //  || ) {
-              // console.log('CCC')
-
-              // if (missing) {
-              //   console.log('MISSING', key, val, cur[cI], cur[cI + 1])
-              // }
-
+            if (!isempty(val) || missing) {
               const mval = missing ? val : cur[cI + 1]
               setprop(cur[cI], key, mval)
               cur[cI + 1] = UNDEF
@@ -799,7 +826,6 @@ function merge(val: any): any {
 
           // Scalar child.
           else {
-            // console.log('DDD', cur[cI], key, val)
             setprop(cur[cI], key, val)
           }
 
@@ -807,7 +833,7 @@ function merge(val: any): any {
         }
 
         // Walk overriding node, creating paths in output as needed.
-        walk(obj, merger)
+        walk(obj, before, after, maxdepth)
       }
     }
   }
@@ -2235,6 +2261,7 @@ class Injection {
       }
     }
 
+    // TODO: is this needed?
     return this.dparent
   }
 

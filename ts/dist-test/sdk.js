@@ -13,14 +13,14 @@ var __classPrivateFieldGet = (this && this.__classPrivateFieldGet) || function (
 var _SDK_opts, _SDK_utility;
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.SDK = void 0;
-const struct_1 = require("../dist/struct");
+const StructUtility_1 = require("../dist/StructUtility");
 class SDK {
     constructor(opts) {
         _SDK_opts.set(this, {});
         _SDK_utility.set(this, {});
         __classPrivateFieldSet(this, _SDK_opts, opts || {}, "f");
         __classPrivateFieldSet(this, _SDK_utility, {
-            struct: new struct_1.StructUtility(),
+            struct: new StructUtility_1.StructUtility(),
             contextify: (ctxmap) => ctxmap,
             check: (ctx) => {
                 return {
