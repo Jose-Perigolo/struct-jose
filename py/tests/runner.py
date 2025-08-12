@@ -140,7 +140,7 @@ def check_result(entry, res, structUtils):
     if cleaned_res != out:
         raise AssertionError(
             f"Expected: {out}, got: {cleaned_res}\n"
-            f"Entry: {json.dumps(entry, indent=2, default=jsonfallback)}"
+            f"Test: {entry.get('name', 'unknown')}"
         )
 
 
@@ -181,14 +181,13 @@ def handle_error(entry, err, structUtils):
     elif isinstance(err, AssertionError):
         # Propagate assertion errors with added context
         raise AssertionError(
-            f"{str(err)}\n\nENTRY: {json.dumps(entry, indent=2, default=jsonfallback)}"
+            f"{str(err)}\nTest: {entry.get('name', 'unknown')}"
         )
     else:
         # For other errors, include the full error stack
         import traceback
         raise AssertionError(
-            f"{traceback.format_exc()}\nENTRY: "+
-            f"{json.dumps(entry, indent=2, default=jsonfallback)}"
+            f"{traceback.format_exc()}\nTest: {entry.get('name', 'unknown')}"
         )
 
     
@@ -288,7 +287,7 @@ def match(check, base, structUtils):
     # Use walk function to iterate through the check structure
     def walk_apply(_key, val, _parent, path):
         if not structUtils.isnode(val):
-            baseval = structUtils.getpath(path, base)
+            baseval = structUtils.getpath(base, path)
             
             if baseval == val:
                 return val

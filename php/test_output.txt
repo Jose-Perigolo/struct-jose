@@ -1,0 +1,13 @@
+Input data: {"x":[{"y":0,"k":"K0"},{"y":1,"k":"K1"}]}
+Spec: {"z":{"`$PACK`":["x",{"`$KEY`":"k","y":"`$COPY`","q":"Q0"}]}}
+DEBUG _injectstr: Processing PACK injection
+DEBUG _injectstr: injection state mode: key:pre
+DEBUG PACK: Called with mode=key:pre, key=`$PACK`
+DEBUG PACK: Returning UNDEF to delete key
+DEBUG _injectstr: getpath returned for PACK: "__UNDEFINED__"
+TRANSFORM: SpecClone after inject: {"z":{}}
+TRANSFORM: Final result: {"z":{}}
+Result: {"z":{}}
+Expected: {"z":{"K0":{"y":0,"q":"Q0"},"K1":{"y":1,"q":"Q0"}}}
+Match: NO
+ 
