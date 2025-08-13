@@ -36,7 +36,7 @@ exports.validate = validate;
 exports.walk = walk;
 exports.jo = jo;
 exports.ja = ja;
-// VERSION: @voxgig/struct 0.0.8
+// VERSION: @voxgig/struct 0.0.9
 /* Voxgig Struct
  * =============
  *

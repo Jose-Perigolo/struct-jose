@@ -1,5 +1,5 @@
 "use strict";
-// VERSION: @voxgig/struct 0.0.8
+// VERSION: @voxgig/struct 0.0.9
 // This test utility runs the JSON-specified tests in build/test/test.json.
 // (or .sdk/test/test.json if used in a @voxgig/sdkgen project)
 Object.defineProperty(exports, "__esModule", { value: true });

@@ -1,4 +1,4 @@
-// VERSION: @voxgig/struct 0.0.8
+// VERSION: @voxgig/struct 0.0.9
 // RUN: npm test
 // RUN-SOME: npm run test-some --pattern=getpath
 
