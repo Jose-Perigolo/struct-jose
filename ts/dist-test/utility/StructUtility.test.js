@@ -120,7 +120,7 @@ const index_1 = require("./index");
     });
     (0, node_test_1.test)('minor-getprop', async () => {
         const { getprop } = struct;
-        await runsetflags(spec.minor.getprop, { null: false }, (vin) => null == vin.alt ? getprop(vin.val, vin.key) : getprop(vin.val, vin.key, vin.alt));
+        await runsetflags(spec.minor.getprop, { null: false }, (vin) => undefined === vin.alt ? getprop(vin.val, vin.key) : getprop(vin.val, vin.key, vin.alt));
     });
     (0, node_test_1.test)('minor-edge-getprop', async () => {
         const { getprop } = struct;
@@ -225,6 +225,7 @@ const index_1 = require("./index");
                 else {
                     cur[key] = val;
                 }
+                return val;
             }
             struct.walk(vin.src, copy, undefined, vin.maxdepth);
             return top;
@@ -258,11 +259,18 @@ const index_1 = require("./index");
         (0, node_assert_1.deepEqual)(merge([{ a: global.fetch }]), { a: global.fetch });
         (0, node_assert_1.deepEqual)(merge([[global.fetch]]), [global.fetch]);
         (0, node_assert_1.deepEqual)(merge([{ a: { b: global.fetch } }]), { a: { b: global.fetch } });
-        // class Bar { x = 1 }
-        // const b0 = new Bar()
-        // equal(merge([{ x: 0 }, b0]), b0)
-        // deepEqual(merge([{ a: b0 }, { a: { x: 2 } }]), { a: b0 })
-        // equal(b0.x, 1)
+        class Bar {
+            constructor() {
+                this.x = 1;
+            }
+        }
+        const b0 = new Bar();
+        (0, node_assert_1.equal)(merge([{ x: 10 }, b0]), b0);
+        (0, node_assert_1.deepEqual)(merge([{ a: b0 }, { a: { x: 11 } }]), { a: { x: 11 } });
+        (0, node_assert_1.equal)(b0.x, 1);
+        (0, node_assert_1.deepEqual)(merge([b0, { x: 20 }]), { x: 20 });
+        (0, node_assert_1.deepEqual)(merge([{ a: { x: 21 } }, { a: b0 }]), { a: b0 });
+        (0, node_assert_1.equal)(b0.x, 1);
     });
     // getpath tests
     // =============

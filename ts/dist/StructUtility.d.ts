@@ -32,7 +32,7 @@ declare function getprop(val: any, key: any, alt?: any): any;
 declare function strkey(key?: any): string;
 declare function keysof(val: any): string[];
 declare function haskey(val: any, key: any): boolean;
-declare function items(val: any): [number | string, any][];
+declare function items(val: any): [string, any][];
 declare function escre(s: string): string;
 declare function escurl(s: string): string;
 declare function joinurl(sarr: any[]): string;

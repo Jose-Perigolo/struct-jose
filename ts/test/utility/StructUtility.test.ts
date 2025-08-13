@@ -184,7 +184,7 @@ describe('struct', async () => {
   test('minor-getprop', async () => {
     const { getprop } = struct
     await runsetflags(spec.minor.getprop, { null: false }, (vin: any) =>
-      null == vin.alt ? getprop(vin.val, vin.key) : getprop(vin.val, vin.key, vin.alt))
+      undefined === vin.alt ? getprop(vin.val, vin.key) : getprop(vin.val, vin.key, vin.alt))
   })
 
 
@@ -341,6 +341,7 @@ describe('struct', async () => {
           else {
             cur[key] = val
           }
+          return val
         }
         struct.walk(vin.src, copy, undefined, vin.maxdepth)
         return top
@@ -387,11 +388,17 @@ describe('struct', async () => {
     deepEqual(merge([[global.fetch]]), [global.fetch])
     deepEqual(merge([{ a: { b: global.fetch } }]), { a: { b: global.fetch } })
 
-    // class Bar { x = 1 }
-    // const b0 = new Bar()
-    // equal(merge([{ x: 0 }, b0]), b0)
-    // deepEqual(merge([{ a: b0 }, { a: { x: 2 } }]), { a: b0 })
-    // equal(b0.x, 1)
+    class Bar { x = 1 }
+    const b0 = new Bar()
+
+    equal(merge([{ x: 10 }, b0]), b0)
+    deepEqual(merge([{ a: b0 }, { a: { x: 11 } }]), { a: { x: 11 } })
+    equal(b0.x, 1)
+
+    deepEqual(merge([b0, { x: 20 }]), { x: 20 })
+    deepEqual(merge([{ a: { x: 21 } }, { a: b0 }]), { a: b0 })
+    equal(b0.x, 1)
+
   })
 
 

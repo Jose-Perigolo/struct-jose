@@ -109,7 +109,7 @@ function checkResult(entry, res, structUtils) {
     if (matched && (NULLMARK === out || null == out)) {
         return;
     }
-    (0, node_assert_1.deepEqual)(null != res ? JSON.parse(JSON.stringify(res)) : res, entry.out);
+    (0, node_assert_1.deepStrictEqual)(null != res ? JSON.parse(JSON.stringify(res)) : res, entry.out);
 }
 // Handle errors from test execution
 function handleError(entry, err, structUtils) {

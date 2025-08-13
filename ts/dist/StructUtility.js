@@ -103,21 +103,22 @@ const S_array = 'array';
 const S_base = 'base';
 const S_boolean = 'boolean';
 const S_function = 'function';
+const S_instance = 'instance';
+const S_key = 'key';
+const S_null = 'null';
 const S_number = 'number';
 const S_object = 'object';
 const S_string = 'string';
-const S_null = 'null';
-const S_key = 'key';
-const S_MT = '';
 const S_BT = '`';
+const S_CN = ':';
+const S_CS = ']';
 const S_DS = '$';
 const S_DT = '.';
-const S_CN = ':';
 const S_FS = '/';
-const S_OS = '[';
-const S_CS = ']';
-const S_SP = ' ';
 const S_KEY = 'KEY';
+const S_MT = '';
+const S_OS = '[';
+const S_SP = ' ';
 const S_VIZ = ': ';
 // The standard undefined value for this language.
 const UNDEF = undefined;
@@ -256,17 +257,28 @@ function pad(str, padding, padchar) {
     return -1 < padding ? str.padEnd(padding, padchar) : str.padStart(0 - padding, padchar);
 }
 // Determine the type of a value as a string.
-// Returns one of: 'null', 'string', 'number', 'boolean', 'function', 'array', 'object'
+// Returns one of:
+//   'null', 'string', 'number', 'boolean', 'function', 'array', 'object', 'instance'
+//   where 'instance' is an instance of a class, and 'null' is undefined, null, or NaN.
 // Normalizes and simplifies JavaScript's type system for consistency.
 function typify(value) {
     if (value === null || value === undefined) {
         return S_null;
     }
     const type = typeof value;
+    if (S_number === type && isNaN(value)) {
+        return S_null;
+    }
     if (Array.isArray(value)) {
         return S_array;
     }
     if (type === 'object') {
+        if (value.constructor instanceof Function) {
+            let cname = value.constructor.name;
+            if ('Object' !== cname && 'Array' !== cname) {
+                return S_instance;
+            }
+        }
         return S_object;
     }
     return type;
@@ -327,7 +339,7 @@ function strkey(key = UNDEF) {
     }
     return S_MT;
 }
-// Sorted keys of a map, or indexes of a list.
+// Sorted keys of a map, or indexes (as strings) of a list.
 function keysof(val) {
     return !isnode(val) ? [] :
         ismap(val) ? Object.keys(val).sort() : val.map((_n, i) => S_MT + i);
@@ -337,7 +349,7 @@ function haskey(val, key) {
     return UNDEF !== getprop(val, key);
 }
 // List the sorted keys of a map or list as an array of tuples of the form [key, value].
-// NOTE: Unlike keysof, list indexes are returned as numbers.
+// As with keysof, list indexes are converted to strings.
 function items(val) {
     return keysof(val).map((k) => [k, val[k]]);
 }
@@ -578,12 +590,18 @@ key, parent, path) {
     if (0 === maxdepth || (null != path && 0 < maxdepth && maxdepth <= path.length)) {
         return out;
     }
-    if (isnode(val)) {
-        for (let [ckey, child] of items(val)) {
-            setprop(val, ckey, walk(child, before, after, maxdepth, ckey, val, [...(path || []), S_MT + ckey]));
+    // if (isnode(val)) {
+    if (isnode(out)) {
+        // for (let [ckey, child] of items(val)) {
+        for (let [ckey, child] of items(out)) {
+            // setprop(val, ckey, walk(
+            setprop(out, ckey, walk(
+            // child, before, after, maxdepth, ckey, val, [...(path || []), S_MT + ckey]))
+            child, before, after, maxdepth, ckey, out, [...(path || []), S_MT + ckey]));
         }
     }
-    out = null == after ? out : after(key, val, parent, path || []);
+    // out = null == after ? out : after(key, val, parent, path || [])
+    out = null == after ? out : after(key, out, parent, path || []);
     return out;
 }
 // Merge a list of values into each other. Later values have
@@ -613,57 +631,52 @@ function merge(val, maxdepth) {
             out = obj;
         }
         else {
-            // Nodes win, also over nodes of a different kind.
-            if (!isnode(out) || (ismap(obj) && islist(out)) || (islist(obj) && ismap(out))
-                // do not descend into class instances
-                || !(null == obj.constructor ||
-                    'Object' === obj.constructor.name ||
-                    'Array' === obj.constructor.name)) {
-                out = obj;
-            }
-            else {
-                // Node stack. walking down the current obj.
-                let cur = [out];
-                let dst = [out];
-                let cI = 0;
-                function before(key, val, parent, path) {
-                    if (isnode(val)) {
-                    }
+            // Current value at path end in overriding node.
+            let cur = [out];
+            // Current value at path end in destination node.
+            let dst = [out];
+            function before(key, val, _parent, path) {
+                const pI = size(path);
+                // Scalars just override directly.
+                if (!isnode(val)) {
+                    cur[pI] = val;
                 }
-                function after(key, val, parent, path) {
-                    // No key at top.
-                    if (null == key) {
-                        return val;
+                // Descend into override node - Set up correct target in `after` function.
+                else {
+                    // Descend into destination node using same key.
+                    dst[pI] = 0 < pI ? getprop(dst[pI - 1], key) : dst[pI];
+                    const tval = dst[pI];
+                    // Destination empty, so create node.
+                    if (UNDEF === tval) {
+                        cur[pI] = islist(val) ? [] : {};
                     }
-                    // Get the current value at the current path in obj.
-                    let lenpath = size(path);
-                    cI = lenpath - 1;
-                    if (UNDEF === cur[cI]) {
-                        dst[cI] = getprop(dst[cI - 1], getelem(path, -2));
-                        cur[cI] = dst[cI];
+                    // Matching override and destination so continue with their values.
+                    else if (typify(val) === typify(tval)) {
+                        cur[pI] = tval;
                     }
-                    // Create node if needed.
-                    if (!isnode(cur[cI])) {
-                        cur[cI] = islist(parent) ? [] : {};
-                    }
-                    // Node child is just ahead of us on the stack.
-                    if (isnode(val)) {
-                        const missing = UNDEF === getprop(cur[cI], key);
-                        if (!isempty(val) || missing) {
-                            const mval = missing ? val : cur[cI + 1];
-                            setprop(cur[cI], key, mval);
-                            cur[cI + 1] = UNDEF;
-                        }
-                    }
-                    // Scalar child.
+                    // Override wins.
                     else {
-                        setprop(cur[cI], key, val);
+                        cur[pI] = val;
+                        // No need to descend when override wins (destination is discarded).
+                        val = UNDEF;
                     }
-                    return val;
                 }
-                // Walk overriding node, creating paths in output as needed.
-                walk(obj, before, after, maxdepth);
+                // console.log('BEFORE-END', pathify(path), '@', pI, key,
+                //   stringify(val, -1, 1), stringify(parent, -1, 1),
+                //   'CUR=', stringify(cur, -1, 1), 'DST=', stringify(dst, -1, 1))
+                return val;
             }
+            function after(key, _val, _parent, path) {
+                const cI = size(path);
+                const target = cur[cI - 1];
+                const value = cur[cI];
+                // console.log('AFTER-PREP', pathify(path), '@', cI,
+                //   stringify(key, -1, 1), stringify(value, -1, 1), 'T=', stringify(target, -1, 1))
+                setprop(target, key, value);
+                return value;
+            }
+            // Walk overriding node, creating paths in output as needed.
+            out = walk(obj, before, after, maxdepth);
         }
     }
     return out;
@@ -1168,52 +1181,12 @@ const validate_STRING = (inj) => {
     }
     return out;
 };
-// A required number value (int or float).
-const validate_NUMBER = (inj) => {
+const validate_TYPE = (inj, _val, ref) => {
+    let tname = slice(ref, 1).toLowerCase();
     let out = getprop(inj.dparent, inj.key);
     const t = typify(out);
-    if (S_number !== t) {
-        inj.errs.push(_invalidTypeMsg(inj.path, S_number, t, out, 'V1020'));
-        return UNDEF;
-    }
-    return out;
-};
-// A required boolean value.
-const validate_BOOLEAN = (inj) => {
-    let out = getprop(inj.dparent, inj.key);
-    const t = typify(out);
-    if (S_boolean !== t) {
-        inj.errs.push(_invalidTypeMsg(inj.path, S_boolean, t, out, 'V1030'));
-        return UNDEF;
-    }
-    return out;
-};
-// A required object (map) value (contents not validated).
-const validate_OBJECT = (inj) => {
-    let out = getprop(inj.dparent, inj.key);
-    const t = typify(out);
-    if (t !== S_object) {
-        inj.errs.push(_invalidTypeMsg(inj.path, S_object, t, out, 'V1040'));
-        return UNDEF;
-    }
-    return out;
-};
-// A required array (list) value (contents not validated).
-const validate_ARRAY = (inj) => {
-    let out = getprop(inj.dparent, inj.key);
-    const t = typify(out);
-    if (t !== S_array) {
-        inj.errs.push(_invalidTypeMsg(inj.path, S_array, t, out, 'V1050'));
-        return UNDEF;
-    }
-    return out;
-};
-// A required function value.
-const validate_FUNCTION = (inj) => {
-    let out = getprop(inj.dparent, inj.key);
-    const t = typify(out);
-    if (S_function !== t) {
-        inj.errs.push(_invalidTypeMsg(inj.path, S_function, t, out, 'V1060'));
+    if (t !== tname) {
+        inj.errs.push(_invalidTypeMsg(inj.path, tname, t, out, 'V1001'));
         return UNDEF;
     }
     return out;
@@ -1477,11 +1450,12 @@ injdef) {
         $EACH: null,
         $PACK: null,
         $STRING: validate_STRING,
-        $NUMBER: validate_NUMBER,
-        $BOOLEAN: validate_BOOLEAN,
-        $OBJECT: validate_OBJECT,
-        $ARRAY: validate_ARRAY,
-        $FUNCTION: validate_FUNCTION,
+        $NUMBER: validate_TYPE,
+        $BOOLEAN: validate_TYPE,
+        $OBJECT: validate_TYPE,
+        $ARRAY: validate_TYPE,
+        $FUNCTION: validate_TYPE,
+        $INSTANCE: validate_TYPE,
         $ANY: validate_ANY,
         $CHILD: validate_CHILD,
         $ONE: validate_ONE,
