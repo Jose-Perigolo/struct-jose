@@ -390,15 +390,31 @@ describe('struct', async () => {
 
     class Bar { x = 1 }
     const b0 = new Bar()
+    let out
 
     equal(merge([{ x: 10 }, b0]), b0)
+    equal(b0.x, 1)
+    equal(b0 instanceof Bar, true)
+
     deepEqual(merge([{ a: b0 }, { a: { x: 11 } }]), { a: { x: 11 } })
     equal(b0.x, 1)
+    equal(b0 instanceof Bar, true)
 
     deepEqual(merge([b0, { x: 20 }]), { x: 20 })
-    deepEqual(merge([{ a: { x: 21 } }, { a: b0 }]), { a: b0 })
     equal(b0.x, 1)
+    equal(b0 instanceof Bar, true)
 
+    out = merge([{ a: { x: 21 } }, { a: b0 }])
+    deepEqual(out, { a: b0 })
+    equal(b0, out.a)
+    equal(b0.x, 1)
+    equal(b0 instanceof Bar, true)
+
+    out = merge([{}, { b: b0 }])
+    deepEqual(out, { b: b0 })
+    equal(b0, out.b)
+    equal(b0.x, 1)
+    equal(b0 instanceof Bar, true)
   })
 
 

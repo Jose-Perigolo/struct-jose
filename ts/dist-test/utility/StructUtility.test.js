@@ -265,12 +265,26 @@ const index_1 = require("./index");
             }
         }
         const b0 = new Bar();
+        let out;
         (0, node_assert_1.equal)(merge([{ x: 10 }, b0]), b0);
+        (0, node_assert_1.equal)(b0.x, 1);
+        (0, node_assert_1.equal)(b0 instanceof Bar, true);
         (0, node_assert_1.deepEqual)(merge([{ a: b0 }, { a: { x: 11 } }]), { a: { x: 11 } });
         (0, node_assert_1.equal)(b0.x, 1);
+        (0, node_assert_1.equal)(b0 instanceof Bar, true);
         (0, node_assert_1.deepEqual)(merge([b0, { x: 20 }]), { x: 20 });
-        (0, node_assert_1.deepEqual)(merge([{ a: { x: 21 } }, { a: b0 }]), { a: b0 });
         (0, node_assert_1.equal)(b0.x, 1);
+        (0, node_assert_1.equal)(b0 instanceof Bar, true);
+        out = merge([{ a: { x: 21 } }, { a: b0 }]);
+        (0, node_assert_1.deepEqual)(out, { a: b0 });
+        (0, node_assert_1.equal)(b0, out.a);
+        (0, node_assert_1.equal)(b0.x, 1);
+        (0, node_assert_1.equal)(b0 instanceof Bar, true);
+        out = merge([{}, { b: b0 }]);
+        (0, node_assert_1.deepEqual)(out, { b: b0 });
+        (0, node_assert_1.equal)(b0, out.b);
+        (0, node_assert_1.equal)(b0.x, 1);
+        (0, node_assert_1.equal)(b0 instanceof Bar, true);
     });
     // getpath tests
     // =============

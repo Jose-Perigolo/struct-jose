@@ -591,17 +591,11 @@ key, parent, path) {
     if (0 === maxdepth || (null != path && 0 < maxdepth && maxdepth <= path.length)) {
         return out;
     }
-    // if (isnode(val)) {
     if (isnode(out)) {
-        // for (let [ckey, child] of items(val)) {
         for (let [ckey, child] of items(out)) {
-            // setprop(val, ckey, walk(
-            setprop(out, ckey, walk(
-            // child, before, after, maxdepth, ckey, val, [...(path || []), S_MT + ckey]))
-            child, before, after, maxdepth, ckey, out, [...(path || []), S_MT + ckey]));
+            setprop(out, ckey, walk(child, before, after, maxdepth, ckey, out, [...(path || []), S_MT + ckey]));
         }
     }
-    // out = null == after ? out : after(key, val, parent, path || [])
     out = null == after ? out : after(key, out, parent, path || []);
     return out;
 }
@@ -647,8 +641,8 @@ function merge(val, maxdepth) {
                     // Descend into destination node using same key.
                     dst[pI] = 0 < pI ? getprop(dst[pI - 1], key) : dst[pI];
                     const tval = dst[pI];
-                    // Destination empty, so create node.
-                    if (UNDEF === tval) {
+                    // Destination empty, so create node (unless override is class instance).
+                    if (UNDEF === tval && S_instance !== typify(val)) {
                         cur[pI] = islist(val) ? [] : {};
                     }
                     // Matching override and destination so continue with their values.
@@ -1466,10 +1460,8 @@ injdef) {
         // NOTE: collecterrs paramter always wins.
         $ERRS: errs,
     };
-    let meta = { [S_BEXACT]: false };
-    if (injdef?.meta) {
-        meta = merge([meta, injdef.meta]);
-    }
+    let meta = getprop(injdef, 'meta', {});
+    setprop(meta, S_BEXACT, getprop(meta, S_BEXACT, false));
     const out = transform(data, spec, {
         meta,
         extra: store,
