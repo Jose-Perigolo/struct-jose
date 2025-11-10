@@ -1636,7 +1636,9 @@ const validate_CHILD: Injector = (inj: Injection) => {
   return UNDEF
 }
 
-
+// TODO: implement SOME, ALL
+// FIX: ONE should mean exactly one, not at least one (=SOME)
+// TODO: implement a generate validate_ALT to do all of these
 // Match at least one of the specified shapes.
 // Syntax: ['`$ONE`', alt0, alt1, ...]okI
 const validate_ONE: Injector = (
@@ -2088,10 +2090,13 @@ function select(children: any, query: any): any[] {
   }
 
   if (ismap(children)) {
-    children = items(children).map(n => (n[1][S_DKEY] = n[0], n[1]))
+    children = items(children).map(n => {
+      setprop(n[1], S_DKEY, n[0])
+      return n[1]
+    })
   }
   else {
-    children = (children as any[]).map((n, i) => ((ismap(n) ? n[S_DKEY] = i : null), n))
+    children = (children as any[]).map((n, i) => (setprop(n, S_DKEY, i), n))
   }
 
   const results: any[] = []

@@ -349,6 +349,34 @@ describe('struct', async () => {
   })
 
 
+  test('walk-copy', async () => {
+    const { walk, isnode, ismap, islist, size, setprop } = struct
+
+    let cur: any[]
+    function walkcopy(key: any, val: any, _parent: any, path: any) {
+      if (undefined === key) {
+        cur = []
+        cur[0] = ismap(val) ? {} : islist(val) ? [] : val
+        return val
+      }
+
+      let v = val
+      let i = size(path)
+
+      if (isnode(v)) {
+        v = cur[i] = ismap(v) ? {} : []
+      }
+
+      setprop(cur[i - 1], key, v)
+
+      return val
+    }
+
+    await runset(spec.walk.copy, (vin: any) => (walk(vin, walkcopy), cur[0]))
+  })
+
+
+
   // merge tests
   // ===========
 

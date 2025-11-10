@@ -53,6 +53,22 @@ operators: {
       out: [] }
     
     # `$OR` operator
+    { in: { query: {'`$OR`':['x', 'y']}, 
+            obj: {a:'x', b:'z', c:'y'} }, 
+      out: ['x', 'y'] }
+
+
+    # TODO: review
+   
+    # { in: { query: {'$KEY':{'`$OR`':['b', 'c']}}, 
+    #         obj: {a:'x', b:'z', c:'y'} }, 
+    #   out: ['z', 'y'] }
+
+    # { in: { query: {'`$OR`':[{'$KEY':'b'}, {'$KEY':'c'}]}, 
+    #         obj: {a:'x', b:'z', c:'y'} }, 
+    #   out: ['z', 'y'] }
+
+      
     { in: { query: {'`$OR`':[{age:25}, {age:35}]}, 
             obj: {a:{age:30}, b:{age:25}, c:{age:35}} }, 
       out: [{age:25,'$KEY':'b'}, {age:35,'$KEY':'c'}] }

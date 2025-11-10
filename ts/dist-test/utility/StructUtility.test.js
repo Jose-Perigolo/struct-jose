@@ -231,6 +231,25 @@ const index_1 = require("./index");
             return top;
         });
     });
+    (0, node_test_1.test)('walk-copy', async () => {
+        const { walk, isnode, ismap, islist, size, setprop } = struct;
+        let cur;
+        function walkcopy(key, val, _parent, path) {
+            if (undefined === key) {
+                cur = [];
+                cur[0] = ismap(val) ? {} : islist(val) ? [] : val;
+                return val;
+            }
+            let v = val;
+            let i = size(path);
+            if (isnode(v)) {
+                v = cur[i] = ismap(v) ? {} : [];
+            }
+            setprop(cur[i - 1], key, v);
+            return val;
+        }
+        await runset(spec.walk.copy, (vin) => (walk(vin, walkcopy), cur[0]));
+    });
     // merge tests
     // ===========
     (0, node_test_1.test)('merge-basic', async () => {
