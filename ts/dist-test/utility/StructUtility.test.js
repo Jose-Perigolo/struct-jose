@@ -447,6 +447,9 @@ const index_1 = require("./index");
     (0, node_test_1.test)('select-edge', async () => {
         await runset(spec.select.edge, (vin) => struct.select(vin.obj, vin.query));
     });
+    (0, node_test_1.test)('select-alts', async () => {
+        await runset(spec.select.alts, (vin) => struct.select(vin.obj, vin.query));
+    });
     // JSON Builder
     // ============
     (0, node_test_1.test)('json-builder', async () => {

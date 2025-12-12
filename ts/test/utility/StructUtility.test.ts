@@ -675,6 +675,11 @@ describe('struct', async () => {
   })
 
 
+  test('select-alts', async () => {
+    await runset(spec.select.alts, (vin: any) => struct.select(vin.obj, vin.query))
+  })
+
+
   // JSON Builder
   // ============
 

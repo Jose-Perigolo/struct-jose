@@ -13,7 +13,8 @@ basic: {
       out: [{age:30,city:'NYC','$KEY':'a'}] }
     
     # Array children
-    { in: { query: {type:'user'}, obj: [{id:1,type:'user'}, {id:2,type:'admin'}, {id:3,type:'user'}] }, 
+    { in: { query: {type:'user'},
+            obj: [{id:1,type:'user'}, {id:2,type:'admin'}, {id:3,type:'user'}] }, 
       out: [{id:1,type:'user','$KEY':0}, {id:3,type:'user','$KEY':2}] }
     
     # No matches
@@ -173,10 +174,66 @@ edge: {
 
     { in: { query: {c0:{'`$AND`':[{x:1},{y:{'`$OR`':[2,3]}}]}},
             obj: [{c0:{x:1,y:3,z:0}}, {c0:{x:1,y:2,z:1}}, {c0:{x:1,y:1,z:2}}] }, 
-      out: [{c0:{x:1,y:3,z:0},'$KEY':0}, {c0:{x:1,y:2,z:1},'$KEY':1}] }
+      out: [{c0:{x:1,y:3,z:0},'$KEY':0}, {c0:{x:1,y:2,z:1},'$KEY':1}] }     
+  ]
+}
 
-      
-      
-      
+
+# path alternates selection
+# NOTES FOR SDK:
+#  build query by union of all select keys, getting values from operation spec, match
+#  need a deterministic sort of alts so multiple selects (should not happen) have at least
+#    a stable list of returned alts order. also $path as get out of jail
+#      normalize: /a/{x}/b/ -> path$:'/a/{}/b'
+#  if no alt found, use select to indicate missing select options
+alts: {
+  data: obj0: [
+    { select:foo_id:true, x:1 }
+    { select:bar_id:true, x:2 }
+  ]
+  data: obj1: [
+    { select:{a:A,b:B}, x:11 }
+    { select:{a:A,b:B}, x:12 }
+  ]
+  data: obj2: [
+    { select:{query:q0:v0}, x:21 }
+    { select:{query:q0:v1}, x:22 }
+  ]
+  data: obj3: [
+    { select:{'$action':foo,zed_id:true}, x:31 }
+    { select:{'$action':bar,zed_id:true}, x:32 }
+  ]
+  
+  set: [
+    { in: { query: select: {
+              foo_id:true  # boolean true means value exists (incl. JSON null)
+            }
+            obj: $.struct.select.alts.data.obj0 }
+      out: [{'$KEY':0,select:foo_id:true,x:1}] }
+
+     { in: { query: select: {  bar_id:true }
+             obj: $.struct.select.alts.data.obj0 }
+       out: [{'$KEY':1,select:bar_id:true,x:2}]
+     }
+
+     # literals always use the string representation
+     { in: { query: select: {  a:A,b:B }
+             obj: $.struct.select.alts.data.obj1 }
+       out: [{ '$KEY': 0, select: { a: 'A', b: 'B' }, x: 11},
+             { '$KEY': 1, select: { a: 'A', b: 'B' }, x: 12} ]
+     }
+
+     # namespacing query, headers etc. same rules: boolean existence or string literal
+     { in: { query: select: {  query:q0:v0 }
+             obj: $.struct.select.alts.data.obj2 }
+       out: [{ '$KEY': 0, select: { query:q0:v0 }, x: 21} ]
+     }
+     
+     { in: { query: select: { '$action':bar, zed_id:true }
+             obj: $.struct.select.alts.data.obj3 }
+       out: [{ '$KEY': 1, select: {'$action':bar,zed_id:true}, x: 32} ]
+     }
+     
+
   ]
 }

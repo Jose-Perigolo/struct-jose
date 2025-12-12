@@ -14521,6 +14521,260 @@
           }
         ]
       },
+      "alts": {
+        "data": {
+          "obj0": [
+            {
+              "select": {
+                "foo_id": true
+              },
+              "x": 1
+            },
+            {
+              "select": {
+                "bar_id": true
+              },
+              "x": 2
+            }
+          ],
+          "obj1": [
+            {
+              "select": {
+                "a": "A",
+                "b": "B"
+              },
+              "x": 11
+            },
+            {
+              "select": {
+                "a": "A",
+                "b": "B"
+              },
+              "x": 12
+            }
+          ],
+          "obj2": [
+            {
+              "select": {
+                "query": {
+                  "q0": "v0"
+                }
+              },
+              "x": 21
+            },
+            {
+              "select": {
+                "query": {
+                  "q0": "v1"
+                }
+              },
+              "x": 22
+            }
+          ],
+          "obj3": [
+            {
+              "select": {
+                "$action": "foo",
+                "zed_id": true
+              },
+              "x": 31
+            },
+            {
+              "select": {
+                "$action": "bar",
+                "zed_id": true
+              },
+              "x": 32
+            }
+          ]
+        },
+        "set": [
+          {
+            "in": {
+              "query": {
+                "select": {
+                  "foo_id": true
+                }
+              },
+              "obj": [
+                {
+                  "select": {
+                    "foo_id": true
+                  },
+                  "x": 1
+                },
+                {
+                  "select": {
+                    "bar_id": true
+                  },
+                  "x": 2
+                }
+              ]
+            },
+            "out": [
+              {
+                "$KEY": 0,
+                "select": {
+                  "foo_id": true
+                },
+                "x": 1
+              }
+            ]
+          },
+          {
+            "in": {
+              "query": {
+                "select": {
+                  "bar_id": true
+                }
+              },
+              "obj": [
+                {
+                  "select": {
+                    "foo_id": true
+                  },
+                  "x": 1
+                },
+                {
+                  "select": {
+                    "bar_id": true
+                  },
+                  "x": 2
+                }
+              ]
+            },
+            "out": [
+              {
+                "$KEY": 1,
+                "select": {
+                  "bar_id": true
+                },
+                "x": 2
+              }
+            ]
+          },
+          {
+            "in": {
+              "query": {
+                "select": {
+                  "a": "A",
+                  "b": "B"
+                }
+              },
+              "obj": [
+                {
+                  "select": {
+                    "a": "A",
+                    "b": "B"
+                  },
+                  "x": 11
+                },
+                {
+                  "select": {
+                    "a": "A",
+                    "b": "B"
+                  },
+                  "x": 12
+                }
+              ]
+            },
+            "out": [
+              {
+                "$KEY": 0,
+                "select": {
+                  "a": "A",
+                  "b": "B"
+                },
+                "x": 11
+              },
+              {
+                "$KEY": 1,
+                "select": {
+                  "a": "A",
+                  "b": "B"
+                },
+                "x": 12
+              }
+            ]
+          },
+          {
+            "in": {
+              "query": {
+                "select": {
+                  "query": {
+                    "q0": "v0"
+                  }
+                }
+              },
+              "obj": [
+                {
+                  "select": {
+                    "query": {
+                      "q0": "v0"
+                    }
+                  },
+                  "x": 21
+                },
+                {
+                  "select": {
+                    "query": {
+                      "q0": "v1"
+                    }
+                  },
+                  "x": 22
+                }
+              ]
+            },
+            "out": [
+              {
+                "$KEY": 0,
+                "select": {
+                  "query": {
+                    "q0": "v0"
+                  }
+                },
+                "x": 21
+              }
+            ]
+          },
+          {
+            "in": {
+              "query": {
+                "select": {
+                  "$action": "bar",
+                  "zed_id": true
+                }
+              },
+              "obj": [
+                {
+                  "select": {
+                    "$action": "foo",
+                    "zed_id": true
+                  },
+                  "x": 31
+                },
+                {
+                  "select": {
+                    "$action": "bar",
+                    "zed_id": true
+                  },
+                  "x": 32
+                }
+              ]
+            },
+            "out": [
+              {
+                "$KEY": 1,
+                "select": {
+                  "$action": "bar",
+                  "zed_id": true
+                },
+                "x": 32
+              }
+            ]
+          }
+        ]
+      },
       "name": "select",
       "set": []
     }
