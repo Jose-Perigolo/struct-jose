@@ -127,6 +127,7 @@ class InjectState:
         self.prior = None
         self.dparent = UNDEF
         self.dpath = [S_DTOP]
+        self.root = None  # Virtual root parent; set at top level so we can return it after transforms
 
     def descend(self):
         """Descend into the current node, updating dparent and dpath."""
@@ -135,6 +136,13 @@ class InjectState:
         self.meta['__d'] += 1
         
         parentkey = getelem(self.path, -2)
+        currentkey = getelem(self.path, -1)
+
+        # At root (path length 1), resolve data root only when dparent has S_DTOP (e.g. store).
+        # When dparent is EACH's tcur (a list), it has no S_DTOP; do not overwrite with UNDEF.
+        if len(self.path) == 1 and self.dparent is not UNDEF and haskey(self.dparent, S_DTOP):
+            self.dparent = getprop(self.dparent, S_DTOP)
+            return self.dparent
 
         # Resolve current node in store for local paths.
         if self.dparent is UNDEF:
@@ -145,13 +153,83 @@ class InjectState:
         else:
             # Advance dparent to the container of current node (parent key)
             if parentkey is not None:
-                self.dparent = getprop(self.dparent, parentkey)
+                # When we're inside a list item (e.g. path ['y', '0', 'q']), parentkey is
+                # the list index '0' but dparent is already the item dict. Don't do
+                # getprop(dparent, '0') or we get UNDEF; skip descent and keep dparent.
+                # When path length > 1 and parentkey is S_DTOP: only skip if dparent has no $TOP
+                # (e.g. tcur from transform_EACH). When dparent is the store we must resolve.
+                skip_descent = False
+                if (parentkey is not None and parentkey == S_DTOP and len(self.path) > 1
+                        and not haskey(self.dparent, S_DTOP)):
+                    skip_descent = True
+                elif ismap(self.dparent) and not haskey(self.dparent, parentkey):
+                    skip_descent = True  # template key (e.g. x0) or list index not in data; keep dparent for ..n
+                elif islist(self.dparent):
+                    try:
+                        idx = int(parentkey) if isinstance(parentkey, str) else parentkey
+                        if not (isinstance(idx, int) and 0 <= idx < len(self.dparent)):
+                            skip_descent = True  # template key (e.g. 'x0') not a list index
+                    except (ValueError, TypeError):
+                        skip_descent = True
+                if not skip_descent:
+                    self.dparent = getprop(self.dparent, parentkey)
 
-                lastpart = getelem(self.dpath, -1)
-                if lastpart == '$:' + str(parentkey):
-                    self.dpath = slice(self.dpath, -1)
+                    lastpart = getelem(self.dpath, -1)
+                    if lastpart == '$:' + str(parentkey):
+                        self.dpath = slice(self.dpath, -1)
+                    else:
+                        self.dpath = self.dpath + [parentkey]
+                    
+                    # If dparent is now a list and parentkey was a list index, step to the item
+                    # so that template keys (e.g. x0, y0) still see dparent = current source item.
+                    if islist(self.dparent) and parentkey is not None:
+                        try:
+                            pidx = int(parentkey) if isinstance(parentkey, str) else parentkey
+                            if isinstance(pidx, int) and 0 <= pidx < len(self.dparent):
+                                self.dparent = getprop(self.dparent, pidx)
+                                self.dpath = self.dpath + [pidx]
+                        except (ValueError, TypeError):
+                            pass
+                    # If dparent is now a list and currentkey is an index, access that item
+                    elif islist(self.dparent) and currentkey is not None:
+                        try:
+                            idx = int(currentkey) if isinstance(currentkey, str) else currentkey
+                            if isinstance(idx, int) and 0 <= idx < len(self.dparent):
+                                self.dparent = getprop(self.dparent, idx)
+                                self.dpath = self.dpath + [idx]
+                        except (ValueError, TypeError):
+                            pass
                 else:
-                    self.dpath = self.dpath + [parentkey]
+                    # Skip descent (template key or S_DTOP): keep dparent.
+                    # For '..n' (single ..) getpath uses ascends 0 and val = dparent, then .n.
+                    pass
+                if skip_descent and currentkey is not None:
+                    # After skip due to S_DTOP (tcur has no $TOP): advance by currentkey only when
+                    # currentkey is a list index (so we're inside EACH going from tcur['0'] to list
+                    # to list[0]). Do not advance when currentkey is a string key (e.g. 'a') or we'd
+                    # overwrite dparent with the scalar and $COPY would omit the key.
+                    skipped_s_dtop = (
+                        parentkey is not None and parentkey == S_DTOP and len(self.path) > 1
+                        and not haskey(self.dparent, S_DTOP)
+                    )
+                    try:
+                        is_list_index = isinstance(int(currentkey) if isinstance(currentkey, str) else currentkey, int)
+                    except (ValueError, TypeError):
+                        is_list_index = False
+                    # Only advance by currentkey when nested (path > 2) or list index; at path [S_DTOP,'a']
+                    # we must keep dparent = data so $COPY does getprop(data, 'a').
+                    nested_or_index = is_list_index or (len(self.path) > 2 and ismap(self.dparent) and haskey(self.dparent, currentkey))
+                    if skipped_s_dtop and nested_or_index:
+                        if ismap(self.dparent) and haskey(self.dparent, currentkey):
+                            self.dparent = getprop(self.dparent, currentkey)
+                        if islist(self.dparent):
+                            try:
+                                idx = int(currentkey) if isinstance(currentkey, str) else currentkey
+                                if isinstance(idx, int) and 0 <= idx < len(self.dparent):
+                                    self.dparent = getprop(self.dparent, idx)
+                                    self.dpath = self.dpath + [idx]
+                            except (ValueError, TypeError):
+                                pass
 
         return self.dparent
 
@@ -179,6 +257,8 @@ class InjectState:
         cinj.prior = self
         cinj.dpath = self.dpath[:]
         cinj.dparent = self.dparent
+        cinj.extra = self.extra  # Preserve extra (contains transform functions)
+        cinj.root = getattr(self, 'root', None)
         
         return cinj
 
@@ -428,12 +508,10 @@ def haskey(val: Any = UNDEF, key: Any = UNDEF) -> bool:
     
 def items(val: Any = UNDEF):
     "List the keys of a map or list as an array of [key, value] tuples."
-    if ismap(val):
-        return [(k, val[k]) for k in keysof(val)]
-    elif islist(val):
-        return [(i, val[i]) for i in list(range(len(val)))]
-    else:
+    if not isnode(val):
         return []
+    keys = keysof(val)
+    return [(k, val[k] if ismap(val) else val[int(k)]) for k in keys]
     
 
 def escre(s: Any):
@@ -1054,19 +1132,40 @@ def getpath(store, path, injdef=UNDEF):
                     # $META:metapath$ -> get meta value, use as path part (string)
                     part = stringify(getpath(inj_meta, part[6:-1]))
                 
-                # $$ escapes $
-                part = R_DOUBLE_DOLLAR.sub('$', part)
+                # $$ escapes $ (path parts can be int e.g. list indices)
+                if isinstance(part, str):
+                    part = R_DOUBLE_DOLLAR.sub('$', part)
+                else:
+                    part = strkey(part)
                 
                 if part == S_MT:
-                    # Handle relative paths (..)
-                    ascends = 0
+                    # Handle relative paths (..): count leading empty parts (dots).
+                    ascends = 1  # current part is already one dot
                     while pI + 1 < len(parts) and parts[pI + 1] == S_MT:
                         ascends += 1
                         pI += 1
+                    # One dot '.x' or path '.' = current (ascends 0). Two dots '..key' = current then .key; '..' only = ascend 1.
+                    # Three+ dots '...' = ascend to data root.
+                    applied_three_dots = False
+                    if ascends == 1:
+                        ascends = 0
+                    elif ascends == 2 and (len(parts) == 2 or (base and pI + 1 < len(parts))):
+                        ascends = 0  # '.' or '..key' in transform (base set) = current (then .key if present)
+                    elif ascends >= 3 and dpath and (pI + 1 < len(parts) or (ascends == 4 and len(parts) == 4)):
+                        # Three dots '...' (4 parts) or '...key': ascend to data/store root.
+                        # With base (e.g. $TOP): ascend to data root = keep base, so ascends = size(dpath)-1.
+                        # Without base (getpath_relative): ascend to store root, so ascends = size(dpath).
+                        ascends = size(dpath) - 1 if base else size(dpath)
+                        applied_three_dots = True
                     
                     if injdef and ascends > 0:
-                        if pI == len(parts) - 1:
-                            ascends -= 1
+                        if not applied_three_dots:
+                            # At last part, or have trailing key (e.g. '..c'): reduce ascends by 1.
+                            if pI == len(parts) - 1 or (pI + 1 < len(parts) and ascends >= 2):
+                                ascends -= 1
+                            # Path '..' (2 dots) gives 3 parts and ascends=3; we need ascend 1, so decrement again.
+                            if ascends == 2 and len(parts) == 3:
+                                ascends -= 1
                         
                         if ascends == 0:
                             val = dparent
@@ -1123,6 +1222,7 @@ def inject(val, store, injdef=UNDEF):
         )
         inj.dparent = store
         inj.dpath = [S_DTOP]
+        inj.root = parent  # Virtual root so we can return it after $EACH etc. replace it
 
         if injdef is not UNDEF:
             if getprop(injdef, 'extra'):
@@ -1203,6 +1303,11 @@ def inject(val, store, injdef=UNDEF):
 
         inj.modify(mval, mkey, mparent, inj)
 
+    # Return the (possibly transform-replaced) root only at top level (prior is None).
+    if getattr(inj, 'prior', None) is None and getattr(inj, 'root', None) is not None and haskey(inj.root, S_DTOP):
+        return getprop(inj.root, S_DTOP)
+    if inj.key == S_DTOP and inj.parent is not UNDEF and haskey(inj.parent, S_DTOP):
+        return getprop(inj.parent, S_DTOP)
     return val
 
 
@@ -1255,7 +1360,30 @@ def transform_COPY(inj, val, ref, store):
     if mode.startswith('key'):
         out = key
     else:
-        out = getprop(inj.dparent, key)
+        # If dparent is a scalar (not a node): at root (path length 1) use whole data; when nested
+        # (path length > 2) use dparent; at first level (path length 2): if key is a list index
+        # we're at a list item (dparent already indexed) -> use dparent; else omit key (UNDEF).
+        if not isnode(inj.dparent):
+            if len(inj.path) != 2:
+                out = inj.dparent
+            else:
+                try:
+                    int(key)  # list index -> we're at the list item value
+                    out = inj.dparent
+                except (ValueError, TypeError):
+                    out = UNDEF
+        else:
+            out = getprop(inj.dparent, key)
+            # If getprop returned UNDEF and key looks like a list index,
+            # we might be at the item level already - return dparent itself
+            if out is UNDEF and key is not None:
+                try:
+                    int(key)  # key is a list index
+                    # We're at the item level, key is the list index
+                    # This shouldn't happen normally, but handle it
+                    out = inj.dparent
+                except (ValueError, TypeError):
+                    pass
         inj.setval(out)
 
     return out
@@ -1378,6 +1506,8 @@ def transform_EACH(inj, val, ref, store):
     tkey = path[-2] if len(path) >= 2 else UNDEF
     target = nodes_[-2] if len(nodes_) >= 2 else nodes_[-1]
 
+    rval = []
+    
     if isnode(src):
         if islist(src):
             tval = [clone(child_template) for _ in src]
@@ -1385,60 +1515,65 @@ def transform_EACH(inj, val, ref, store):
             # Convert dict to a list of child templates
             tval = []
             for k, v in src.items():
-                # Create child state for each key
-                child_state = inj.child(0, [k])
                 # Keep key in meta for usage by `$KEY`
                 copy_child = clone(child_template)
-                copy_child[S_DMETA] = {S_KEY: k}
+                if ismap(copy_child):
+                    setprop(copy_child, S_DMETA, {S_KEY: k})
                 tval.append(copy_child)
         tcurrent = list(src.values()) if ismap(src) else src
+        
+        if 0 < size(tval):
+            # Build tcurrent structure matching TypeScript approach
+            ckey = getelem(path, -2) if len(path) >= 2 else UNDEF
+            tpath = path[:-1] if len(path) > 0 else []
+            
+            # Build dpath: [S_DTOP, ...srcpath parts, '$:' + ckey]
+            dpath = [S_DTOP]
+            if isinstance(srcpath, str) and srcpath:
+                for part in srcpath.split(S_DT):
+                    if part != S_MT:
+                        dpath.append(part)
+            if ckey is not UNDEF:
+                dpath.append('$:' + str(ckey))
+            
+            # Build nested tcurrent structure. Use strkey(ckey) so getprop(tcur, '0')
+            # in inject/descend finds the list when child key is '0' (list indices).
+            # When ckey is S_DTOP (root EACH, path = [S_DTOP, 0]), use list directly so
+            # descend skips and advances by 0 to reach list[0]; otherwise we'd get list and never index.
+            tcur = tcurrent
+            if ckey is not UNDEF and ckey != S_DTOP:
+                tcur = {strkey(ckey): tcur}
+            
+            # Add parent level if needed
+            if len(tpath) > 1:
+                pkey = getelem(path, -3, S_DTOP) if len(path) >= 3 else S_DTOP
+                tcur = {strkey(pkey): tcur}
+                dpath.append('$:' + str(pkey))
+            
+            # Create child injection state
+            tinj = inj.child(0, [ckey] if ckey is not UNDEF else [])
+            tinj.path = tpath
+            tinj.nodes = nodes_[:-1] if len(nodes_) > 0 else []
+            tinj.parent = getelem(tinj.nodes, -1) if len(tinj.nodes) > 0 else UNDEF
+            
+            if ckey is not UNDEF and tinj.parent is not UNDEF:
+                setprop(tinj.parent, ckey, tval)
+            
+            tinj.val = tval
+            tinj.dpath = dpath
+            tinj.dparent = tcur
+            
+            # Inject the entire list at once
+            inject(tval, store, tinj)
+            rval = tinj.val
 
-    # Build parallel "current" rooted at $TOP
-    tcurrent = {S_DTOP: tcurrent}
-
-    # Inject each child template with its corresponding current item,
-    # maintaining a dpath that points to the element within the original data.
-    if islist(tval):
-        out_list = []
-        cur_list = getprop(tcurrent, S_DTOP, [])
-        # Build base dpath from current inj.dpath plus explicit source path parts
-        base_dpath = inj.dpath[:]
-        if isinstance(srcpath, str) and srcpath:
-            for part in srcpath.split('.'):
-                if part != S_MT:
-                    base_dpath.append(part)
-        for i in range(len(tval)):
-            item_current = getprop(cur_list, i)
-            einj = {
-                'modify': inj.modify,
-                'meta': inj.meta,
-                'handler': inj.handler,
-                'extra': inj.extra,
-                # For $COPY and relative lookups, element is the current dparent
-                'dparent': item_current,
-                'dpath': base_dpath + [i],
-                'base': inj.base,
-            }
-            out_list.append(inject(tval[i], store, einj))
-        tval = out_list
-    else:
-        einj = {
-            'modify': inj.modify,
-            'meta': inj.meta,
-            'handler': inj.handler,
-            'extra': inj.extra,
-            'dparent': tcurrent,
-            'dpath': [S_DTOP],
-            'base': S_DTOP,
-        }
-        tval = inject(tval, store, einj)
-
-    _updateAncestors(inj, target, tkey, tval)
+    _updateAncestors(inj, target, tkey, rval)
     # Prevent further sibling processing by advancing beyond last key
     inj.keyI = len(inj.keys)
     
     # Prevent callee from damaging first list entry (since we are in `val` mode).
-    return tval[0] if tval else UNDEF
+    # In TypeScript, [][0] returns undefined; in Python it raises IndexError, so handle it
+    return rval[0] if rval and len(rval) > 0 else UNDEF
 
 
 def transform_PACK(inj, val, ref, store):
@@ -1589,7 +1724,8 @@ def transform_REF(inj, val, _ref, store):
     tval = getpath(store, tpath)
     rval = UNDEF
 
-    if not hasSubRef or tval is not UNDEF:
+    # When ref target not found, omit the key (setval UNDEF). Do not inject UNDEF.
+    if ref is not UNDEF and (not hasSubRef or tval is not UNDEF):
         # Create child state for the next level
         child_state = inj.child(0, [getelem(tpath, -1)])
         child_state.path = tpath
@@ -1623,6 +1759,7 @@ def transform(
         injdef=UNDEF
 ):
     # Clone the spec so that the clone can be modified in place as the transform result.
+    origspec = spec
     spec = clone(spec)
 
     extra = getprop(injdef, 'extra') if injdef else UNDEF
@@ -1649,6 +1786,9 @@ def transform(
         # NOTE: to escape data that contains "`$FOO`" keys at the top level,
         # place that data inside a holding map: { myholder: mydata }.
         S_DTOP: data_clone,
+
+        # Original spec (before clone) for $REF to resolve refpath.
+        S_DSPEC: lambda: origspec,
         
         # Escape backtick (this also works inside backticks).
         '$BT': lambda *args, **kwargs: S_BT,
