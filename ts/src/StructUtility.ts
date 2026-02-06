@@ -100,6 +100,8 @@ const UNDEF = undefined
 // Private marker to indicate a skippable value.
 const SKIP = { '`$SKIP`': true }
 
+const DELETE = { '`$DELETE`': true }
+
 // Regular expression constants
 const R_INTEGER_KEY = /^[-0-9]+$/                      // Match integer keys (including <0).
 const R_ESCAPE_REGEXP = /[.*+?^${}()|[\]\\]/g          // Chars that need escaping in regexp.
@@ -364,7 +366,7 @@ function getelem(val: any, key: any, alt?: any) {
   }
 
   if (UNDEF === out) {
-    return alt
+    return S_function === typify(alt) ? alt() : alt
   }
 
   return out
@@ -433,8 +435,17 @@ function haskey(val: any, key: any) {
 
 // List the sorted keys of a map or list as an array of tuples of the form [key, value].
 // As with keysof, list indexes are converted to strings.
-function items(val: any): [string, any][] {
-  return keysof(val).map((k: any) => [k, val[k]])
+function items(val: any): [string, any][];
+function items<T>(val: any, apply: (item: [string, any]) => T): T[];
+function items(
+  val: any,
+  apply?: (item: [string, any]) => any
+): any[] {
+  let out: [string, any][] = keysof(val).map((k: any) => [k, val[k]])
+  if (null != apply) {
+    out = out.map(apply)
+  }
+  return out
 }
 
 
@@ -687,6 +698,8 @@ function setprop<PARENT>(parent: PARENT, key: any, val: any): PARENT {
 
     keyI = Math.floor(keyI)
 
+    // TODO: DELETE list element
+
     // Set or append value at position keyI, or append if keyI out of bounds.
     if (0 <= keyI) {
       parent[parent.length < keyI ? parent.length : keyI] = val
@@ -853,6 +866,45 @@ function merge(val: any, maxdepth?: number): any {
 }
 
 
+function setpath(
+  store: any,
+  path: number | string | string[],
+  val: any,
+  injdef?: Partial<Injection>) {
+  const pathType = typify(path)
+  const parts = islist(path) ? path :
+    'string' === pathType ? (path as string).split(S_DT) :
+      'number' === pathType ? [path] : UNDEF
+
+  if (UNDEF === parts) {
+    return UNDEF
+  }
+
+  const base = getprop(injdef, S_base)
+  const numparts = size(parts)
+  let parent = getprop(store, base, store)
+
+  for (let pI = 0; pI < numparts - 1; pI++) {
+    const partKey = getelem(parts, pI)
+    let nextParent = getprop(parent, partKey)
+    if (!isnode(nextParent)) {
+      nextParent = 'number' === typify(getelem(parts, pI + 1)) ? [] : {}
+      setprop(parent, partKey, nextParent)
+    }
+    parent = nextParent
+  }
+
+  if (DELETE === val) {
+    delprop(parent, getelem(parts, -1))
+  }
+  else {
+    setprop(parent, getelem(parts, -1), val)
+  }
+
+  return parent
+}
+
+
 function getpath(store: any, path: number | string | string[], injdef?: Partial<Injection>) {
 
   // Operate on a string array.
@@ -936,10 +988,12 @@ function getpath(store: any, path: number | string | string[], injdef?: Partial<
 
               if (ascends <= size(dpath)) {
                 val = getpath(store, fullpath)
+                // val = getpath(src, fullpath)
               }
               else {
                 val = UNDEF
               }
+
               break
             }
           }
@@ -960,6 +1014,8 @@ function getpath(store: any, path: number | string | string[], injdef?: Partial<
     const ref = pathify(path)
     val = handler(injdef, val, ref, store)
   }
+
+  // console.log('GETPATH', path, val)
 
   return val
 }
@@ -996,6 +1052,9 @@ function inject(
   }
 
   inj.descend()
+
+  // console.log('INJ-START', val, inj.mode, inj.key, inj.val,
+  //  't=', inj.path, 'P=', inj.parent, 'dp=', inj.dparent, 'ST=', store.$TOP)
 
   // Descend into node.
   if (isnode(val)) {
@@ -1075,6 +1134,8 @@ function inject(
     )
   }
 
+  // console.log('INJ-VAL', val)
+
   inj.val = val
 
   // Original val reference may no longer be correct.
@@ -1128,7 +1189,7 @@ const transform_KEY: Injector = (inj: Injection) => {
 }
 
 
-// Annotatea node.  Does nothing itself, just used by
+// Annotate node.  Does nothing itself, just used by
 // other injectors, and is removed when called.
 const transform_ANNO: Injector = (inj: Injection) => {
   const { parent } = inj
@@ -1269,7 +1330,7 @@ const transform_EACH: Injector = (
 
 
 // Convert a node to a map.
-// Format: { '`$PACK`':['`source-path`', child-template]}
+// Format: { '`$PACK`':['source-path', child-template]}
 const transform_PACK: Injector = (
   inj: Injection,
   _val: any,
@@ -1284,40 +1345,62 @@ const transform_PACK: Injector = (
   }
 
   // Get arguments.
-  const args = parent[key]
-  const srcpath = args[0] // Path to source data.
-  const child = clone(args[1]) // Child template.
+  const args = getprop(parent, key)
+  const srcpath = getelem(args, 0) // Path to source data.
+  // const childspec = clone(getelem(args, 1)) // Child specification.
+  const childspec = getelem(args, 1) // Child specification.
 
   // Find key and target node.
-  const keyprop = child[S_BKEY]
+  // const keyprop = getprop(childspec, S_BKEY)
   const tkey = getelem(path, -2)
-  const target = nodes[path.length - 2] || nodes[path.length - 1]
+  // const target = getelem(nodes, path.length - 2, getelem(nodes, path.length - 1))
+  const pathsize = size(path)
+  const target = getelem(nodes, pathsize - 2, () => getelem(nodes, pathsize - 1))
 
   // Source data
   const srcstore = getprop(store, inj.base, store)
-
   let src = getpath(srcstore, srcpath, inj)
 
   // Prepare source as a list.
+  if (!islist(src)) {
+    if (ismap(src)) {
+      src = items(src, (item: [string, any]) => {
+        item[1][S_BANNO] = { KEY: item[0] }
+        return item[1]
+      })
+    }
+    else {
+      src = UNDEF
+    }
+  }
+
+  /*
   src = islist(src) ? src :
     ismap(src) ? Object.entries(src)
       .reduce((a: any[], n: any) =>
         (n[1][S_BANNO] = { KEY: n[0] }, a.push(n[1]), a), []) :
       UNDEF
+  */
 
   if (null == src) {
     return UNDEF
   }
 
   // Get key if specified.
-  let childkey: PropKey | undefined = getprop(child, S_BKEY)
-  let keyname = UNDEF === childkey ? keyprop : childkey
-  delprop(child, S_BKEY)
+  // TODO: chldkey -> childpath
+  // let childkey: PropKey | undefined = getprop(childspec, S_BKEY)
+  // let keyname = UNDEF === childkey ? keyprop : childkey
+  const keypath = getprop(childspec, S_BKEY)
+  delprop(childspec, S_BKEY)
+
+  const child = getprop(childspec, '`$VAL`', childspec)
 
   // Build parallel target object.
   let tval: any = {}
-  tval = src.reduce((a: any, n: any) => {
-    let kn = getprop(n, keyname)
+  tval = src.reduce((a: any, n: any, i: any) => {
+    let kn = null == keypath ? i :
+      keypath.startsWith('`') ? inject(keypath, { ...store, $TOP: n }) :
+        getpath(n, keypath, inj)
     setprop(a, kn, clone(child))
     const nchild = getprop(a, kn)
     const mval = getprop(n, S_BANNO)
@@ -1332,22 +1415,29 @@ const transform_PACK: Injector = (
 
   let rval = {}
 
-  if (0 < size(tval)) {
+  if (!isempty(tval)) {
 
     // Build parallel source object.
-    let tcur: any = {}
-    src.reduce((a: any, n: any) => {
-      let kn = getprop(n, keyname)
+    let tsrc: any = {}
+    src.reduce((a: any, n: any, i: any) => {
+      // let kn = isnode(n) ? getprop(n, keyname) : n
+      // let kn = isnode(n) ? getprop(n, keyname) : i
+      // let kn = isnode(n) ? getpath(n, keypath, inj) : i
+
+      let kn = null == keypath ? i :
+        keypath.startsWith('`') ? inject(keypath, { ...store, $TOP: n }) :
+          getpath(n, keypath, inj)
+
       setprop(a, kn, n)
       return a
-    }, tcur)
+    }, tsrc)
 
     const tpath = slice(inj.path, -1)
 
     const ckey = getelem(inj.path, -2)
     const dpath = [S_DTOP, ...srcpath.split(S_DT), '$:' + ckey]
 
-    tcur = { [ckey]: tcur }
+    let tcur = { [ckey]: tsrc }
 
     if (1 < tpath.length) {
       const pkey = getelem(inj.path, -3, S_DTOP)
@@ -1359,7 +1449,6 @@ const transform_PACK: Injector = (
     tinj.path = tpath
     tinj.nodes = slice(inj.nodes, -1)
 
-    // tinj.parent = tcur
     tinj.parent = getelem(tinj.nodes, -1)
     tinj.val = tval
 
@@ -1452,6 +1541,69 @@ const transform_REF: Injector = (
 }
 
 
+const transform_FORMAT: Injector = (
+  inj: Injection,
+  _val: any,
+  _ref: string,
+  store: any
+) => {
+  // console.log('FORMAT-START', inj, _val)
+
+  // Remove arguments to avoid spurious processing.
+  if (null != inj.keys) {
+    inj.keys.length = 1
+  }
+
+  if (S_MVAL !== inj.mode) {
+    return UNDEF
+  }
+
+  // Get arguments: ['`$FORMAT`', 'name', child].
+  // TODO: or a custom function
+  // TODO: EACH and PACK should accept customm functions too
+  const name = getprop(inj.parent, 1)
+  const child = getprop(inj.parent, 2)
+
+  // Source data.
+  const srcstore = getprop(store, inj.base, store)
+
+  const tkey = inj.path[inj.path.length - 2]
+  const target = inj.nodes[inj.nodes.length - 2] || inj.nodes[inj.nodes.length - 1]
+
+  // console.log('FORMAT-CHILD', inj.prior?.prior)
+  let cinj = inj
+
+  // Replace ['`$FORMAT`',...] with child
+  if (null != inj.prior?.prior) {
+    cinj = inj.prior.prior.child(inj.prior.keyI, inj.prior.keys)
+    cinj.val = child
+    setprop(cinj.parent, inj.prior.key, child)
+  }
+  // console.log('FORMAT-CHILD', cinj, cinj.nodes)
+
+  inject(child, store, cinj)
+  // console.dir(cinj, { depth: null })
+  let resolved = cinj.val
+  // console.log('RESOLVED', resolved)
+
+  let formatter = FORMATTER[name] ?? FORMATTER.identity
+
+  let out = walk(resolved, formatter)
+
+  _updateAncestors(inj, target, tkey, out)
+
+  return out
+}
+
+
+const FORMATTER: Record<string, WalkApply> = {
+  identity: (_k: any, v: any) => v,
+  upper: (_k: any, v: any) => isnode(v) ? v : ('' + v).toUpperCase(),
+  lower: (_k: any, v: any) => isnode(v) ? v : ('' + v).toLowerCase(),
+}
+
+
+
 // Transform data using spec.
 // Only operates on static JSON-like data.
 // Arrays are treated as if they are objects with indices as keys.
@@ -1504,6 +1656,7 @@ function transform(
     $EACH: transform_EACH,
     $PACK: transform_PACK,
     $REF: transform_REF,
+    $FORMAT: transform_FORMAT,
 
     // Custom extra transforms, if any.
     ...extraTransforms,
@@ -2254,18 +2407,22 @@ class Injection {
 
 
   setval(val: any, ancestor?: number) {
+    let parent = UNDEF
     if (null == ancestor || ancestor < 2) {
-      return UNDEF === val ?
+      parent = UNDEF === val ?
         delprop(this.parent, this.key) :
         setprop(this.parent, this.key, val)
     }
     else {
       const aval = getelem(this.nodes, 0 - ancestor)
       const akey = getelem(this.path, 0 - ancestor)
-      return UNDEF === val ?
+      parent = UNDEF === val ?
         delprop(aval, akey) :
         setprop(aval, akey, val)
     }
+
+    // console.log('SETVAL', val, this.key, this.parent)
+    return parent
   }
 }
 
@@ -2446,6 +2603,7 @@ class StructUtility {
   pad = pad
   pathify = pathify
   select = select
+  setpath = setpath
   setprop = setprop
   size = size
   slice = slice
@@ -2455,6 +2613,9 @@ class StructUtility {
   typify = typify
   validate = validate
   walk = walk
+
+  SKIP = SKIP
+  DELETE = DELETE
 
   jo = jo
   ja = ja
@@ -2485,6 +2646,7 @@ export {
   pad,
   pathify,
   select,
+  setpath,
   setprop,
   size,
   slice,
@@ -2494,6 +2656,9 @@ export {
   typify,
   validate,
   walk,
+
+  SKIP,
+  DELETE,
 
   jo,
   ja,

@@ -1,3 +1,9 @@
+declare const SKIP: {
+    '`$SKIP`': boolean;
+};
+declare const DELETE: {
+    '`$DELETE`': boolean;
+};
 type PropKey = string | number;
 type Indexable = {
     [key: string]: any;
@@ -33,6 +39,7 @@ declare function strkey(key?: any): string;
 declare function keysof(val: any): string[];
 declare function haskey(val: any, key: any): boolean;
 declare function items(val: any): [string, any][];
+declare function items<T>(val: any, apply: (item: [string, any]) => T): T[];
 declare function escre(s: string): string;
 declare function escurl(s: string): string;
 declare function joinurl(sarr: any[]): string;
@@ -49,6 +56,7 @@ declare function delprop<PARENT>(parent: PARENT, key: any): PARENT;
 declare function setprop<PARENT>(parent: PARENT, key: any, val: any): PARENT;
 declare function walk(val: any, before?: WalkApply, after?: WalkApply, maxdepth?: number, key?: string | number, parent?: any, path?: string[]): any;
 declare function merge(val: any, maxdepth?: number): any;
+declare function setpath(store: any, path: number | string | string[], val: any, injdef?: Partial<Injection>): any;
 declare function getpath(store: any, path: number | string | string[], injdef?: Partial<Injection>): any;
 declare function inject(val: any, store: any, injdef?: Partial<Injection>): any;
 declare function transform(data: any, // Source data to transform into new data (original not mutated)
@@ -81,7 +89,7 @@ declare class Injection {
     toString(prefix?: string): string;
     descend(): any;
     child(keyI: number, keys: string[]): Injection;
-    setval(val: any, ancestor?: number): any;
+    setval(val: any, ancestor?: number): undefined;
 }
 declare class StructUtility {
     clone: typeof clone;
@@ -107,6 +115,7 @@ declare class StructUtility {
     pad: typeof pad;
     pathify: typeof pathify;
     select: typeof select;
+    setpath: typeof setpath;
     setprop: typeof setprop;
     size: typeof size;
     slice: typeof slice;
@@ -116,8 +125,14 @@ declare class StructUtility {
     typify: typeof typify;
     validate: typeof validate;
     walk: typeof walk;
+    SKIP: {
+        '`$SKIP`': boolean;
+    };
+    DELETE: {
+        '`$DELETE`': boolean;
+    };
     jo: typeof jo;
     ja: typeof ja;
 }
-export { StructUtility, clone, delprop, escre, escurl, getelem, getpath, getprop, haskey, inject, isempty, isfunc, iskey, islist, ismap, isnode, items, joinurl, jsonify, keysof, merge, pad, pathify, select, setprop, size, slice, strkey, stringify, transform, typify, validate, walk, jo, ja, };
+export { StructUtility, clone, delprop, escre, escurl, getelem, getpath, getprop, haskey, inject, isempty, isfunc, iskey, islist, ismap, isnode, items, joinurl, jsonify, keysof, merge, pad, pathify, select, setpath, setprop, size, slice, strkey, stringify, transform, typify, validate, walk, SKIP, DELETE, jo, ja, };
 export type { Injection, Injector, WalkApply };
