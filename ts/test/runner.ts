@@ -80,7 +80,7 @@ async function makeRunner(testfile: string, client: Client) {
           res = fixJSON(res, flags)
           entry.res = res
 
-          checkResult(entry, res, structUtils)
+          checkResult(entry, args, res, structUtils)
         }
         catch (err: any) {
           if (err instanceof AssertionError) {
@@ -163,7 +163,7 @@ function resolveEntry(entry: any, flags: Flags): any {
 }
 
 
-function checkResult(entry: any, res: any, structUtils: Record<string, any>) {
+function checkResult(entry: any, args: any[], res: any, structUtils: Record<string, any>) {
   let matched = false
 
   if (entry.err) {
@@ -172,7 +172,7 @@ function checkResult(entry: any, res: any, structUtils: Record<string, any>) {
   }
 
   if (entry.match) {
-    const result = { in: entry.in, out: entry.res, ctx: entry.ctx }
+    const result = { in: entry.in, args, out: entry.res, ctx: entry.ctx }
     match(
       entry.match,
       result,

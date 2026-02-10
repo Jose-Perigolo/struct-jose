@@ -48,6 +48,7 @@ const index_1 = require("./index");
         (0, node_assert_1.equal)('function', typeof s.pad);
         (0, node_assert_1.equal)('function', typeof s.pathify);
         (0, node_assert_1.equal)('function', typeof s.select);
+        (0, node_assert_1.equal)('function', typeof s.setpath);
         (0, node_assert_1.equal)('function', typeof s.size);
         (0, node_assert_1.equal)('function', typeof s.slice);
         (0, node_assert_1.equal)('function', typeof s.setprop);
@@ -100,8 +101,20 @@ const index_1 = require("./index");
     (0, node_test_1.test)('minor-stringify', async () => {
         await runset(spec.minor.stringify, (vin) => struct.stringify((runner_1.NULLMARK === vin.val ? "null" : vin.val), vin.max));
     });
+    (0, node_test_1.test)('minor-edge-stringify', async () => {
+        const { stringify } = struct;
+        const a = {};
+        a.a = a;
+        (0, node_assert_1.equal)(stringify(a), '__STRINGIFY_FAILED__');
+        (0, node_assert_1.equal)(stringify({ a: [9] }, -1, true), '\x1B[38;5;81m\x1B[38;5;118m{\x1B[38;5;118ma\x1B[38;5;118m:' +
+            '\x1B[38;5;213m[\x1B[38;5;213m9\x1B[38;5;213m]\x1B[38;5;118m}\x1B[0m');
+    });
     (0, node_test_1.test)('minor-jsonify', async () => {
-        await runsetflags(spec.minor.jsonify, { null: false }, struct.jsonify);
+        await runsetflags(spec.minor.jsonify, { null: false }, (vin) => struct.jsonify(vin.val, vin.flags));
+    });
+    (0, node_test_1.test)('minor-edge-jsonify', async () => {
+        const { jsonify } = struct;
+        (0, node_assert_1.equal)(jsonify(() => 1), 'null');
     });
     (0, node_test_1.test)('minor-pathify', async () => {
         await runsetflags(spec.minor.pathify, { null: true }, (vin) => {
@@ -169,6 +182,10 @@ const index_1 = require("./index");
         await runsetflags(spec.minor.joinurl, { null: false }, struct.joinurl);
     });
     (0, node_test_1.test)('minor-typify', async () => {
+        const { typify } = struct;
+        (0, node_assert_1.equal)(typify(NaN), 'null');
+    });
+    (0, node_test_1.test)('minor-edge-typify', async () => {
         await runsetflags(spec.minor.typify, { null: false }, struct.typify);
     });
     (0, node_test_1.test)('minor-size', async () => {
@@ -179,6 +196,9 @@ const index_1 = require("./index");
     });
     (0, node_test_1.test)('minor-pad', async () => {
         await runsetflags(spec.minor.pad, { null: false }, (vin) => struct.pad(vin.val, vin.pad, vin.char));
+    });
+    (0, node_test_1.test)('minor-setpath', async () => {
+        await runsetflags(spec.minor.setpath, { null: false }, (vin) => struct.setpath(vin.store, vin.path, vin.val));
     });
     // walk tests
     // ==========
@@ -265,6 +285,9 @@ const index_1 = require("./index");
     });
     (0, node_test_1.test)('merge-integrity', async () => {
         await runset(spec.merge.integrity, struct.merge);
+    });
+    (0, node_test_1.test)('merge-depth', async () => {
+        await runset(spec.merge.depth, (vin) => struct.merge(vin.val, vin.depth));
     });
     (0, node_test_1.test)('merge-special', async () => {
         const { merge } = struct;

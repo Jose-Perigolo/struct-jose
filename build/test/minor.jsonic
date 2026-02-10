@@ -383,19 +383,23 @@ stringify: {
 
 jsonify: {
   set: [
-    { in: 1, out: '1' }
-    { in: 'a', out: '"a"' }
-    { in: true, out: 'true' }
-    { in: false, out: 'false' }
-    { in: null, out: 'null' }
-    { out: 'null' }
-    { in: [], out: '[]' }
-    { in: {}, out: '{}' }
-    { in: [1,2,3], out: '[\n  1,\n  2,\n  3\n]' }
-    { in: {a:1}, out: '{\n  "a": 1\n}' }
-    { in: {a:1,b:2}, out: '{\n  "a": 1,\n  "b": 2\n}' }
-    { in: {x:{y:1}}, out: '{\n  "x": {\n    "y": 1\n  }\n}' }
-    { in: [{a:1},{b:2}], out: '[\n  {\n    "a": 1\n  },\n  {\n    "b": 2\n  }\n]' }
+    { in: {val:1} out: '1' }
+    { in: {val:'a'} out: '"a"' }
+    { in: {val:true} out: 'true' }
+    { in: {val:false} out: 'false' }
+    { in: {val:null} out: 'null' }
+    { in: {} out: 'null' }
+    { in: {val:[]} out: '[]' }
+    { in: {val:{}} out: '{}' }
+    { in: {val:[1,2,3]} out: '[\n  1,\n  2,\n  3\n]' }
+    { in: {val:{a:1}} out: '{\n  "a": 1\n}' }
+    { in: {val:{a:1,b:2}} out: '{\n  "a": 1,\n  "b": 2\n}' }
+    { in: {val:{x:{y:1}}} out: '{\n  "x": {\n    "y": 1\n  }\n}' }
+    { in: {val:[{a:1},{b:2}]} out: '[\n  {\n    "a": 1\n  },\n  {\n    "b": 2\n  }\n]' }
+
+    { in: {val:{x:{y:2}}, flags:{indent:4}}, out: '{\n    "x": {\n        "y": 2\n    }\n}' }
+    { in: {val:{x:{y:2}}, flags:{indent:1,offset:2}},
+      out: '{\n   "x": {\n    "y": 2\n   }\n  }' }
   ]
 }
 
@@ -586,6 +590,7 @@ slice: {
     { in: {val:[226], start:-5}, out: [] }
 
     { in: {val:[33,34,35], start:2, end:1}, out: [] }
+    { in: {val:[43,44,45], end:2}, out: [43,44] }
 
     { in: {val:'abc'}, out: 'abc' }
     { in: {val:'ABC', start:1}, out: 'BC' }
@@ -690,6 +695,15 @@ pad: {
     { in: {val:'"', pad:-3}, out: '  "' }
 
   ]
+}
+
+
+setpath: {
+  set: [
+    { in: { store:{x:1} path:'x', val:2 }, out: {x:2},
+      match:args:0:store:x:2
+    }
+  ]  
 }
 
 

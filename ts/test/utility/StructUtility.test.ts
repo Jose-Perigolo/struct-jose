@@ -72,6 +72,7 @@ describe('struct', async () => {
     equal('function', typeof s.pathify)
 
     equal('function', typeof s.select)
+    equal('function', typeof s.setpath)
     equal('function', typeof s.size)
     equal('function', typeof s.slice)
     equal('function', typeof s.setprop)
@@ -152,8 +153,27 @@ describe('struct', async () => {
   })
 
 
+  test('minor-edge-stringify', async () => {
+    const { stringify } = struct
+    const a: any = {}
+    a.a = a
+    equal(stringify(a), '__STRINGIFY_FAILED__')
+
+    equal(stringify({ a: [9] }, -1, true),
+      '\x1B[38;5;81m\x1B[38;5;118m{\x1B[38;5;118ma\x1B[38;5;118m:' +
+      '\x1B[38;5;213m[\x1B[38;5;213m9\x1B[38;5;213m]\x1B[38;5;118m}\x1B[0m')
+  })
+
+
   test('minor-jsonify', async () => {
-    await runsetflags(spec.minor.jsonify, { null: false }, struct.jsonify)
+    await runsetflags(spec.minor.jsonify, { null: false },
+      (vin: any) => struct.jsonify(vin.val, vin.flags))
+  })
+
+
+  test('minor-edge-jsonify', async () => {
+    const { jsonify } = struct
+    equal(jsonify(() => 1), 'null')
   })
 
 
@@ -260,6 +280,12 @@ describe('struct', async () => {
 
 
   test('minor-typify', async () => {
+    const { typify } = struct
+    equal(typify(NaN), 'null')
+  })
+
+
+  test('minor-edge-typify', async () => {
     await runsetflags(spec.minor.typify, { null: false }, struct.typify)
   })
 
@@ -280,6 +306,11 @@ describe('struct', async () => {
       (vin: any) => struct.pad(vin.val, vin.pad, vin.char))
   })
 
+
+  test('minor-setpath', async () => {
+    await runsetflags(spec.minor.setpath, { null: false },
+      (vin: any) => struct.setpath(vin.store, vin.path, vin.val))
+  })
 
 
   // walk tests
@@ -399,6 +430,11 @@ describe('struct', async () => {
 
   test('merge-integrity', async () => {
     await runset(spec.merge.integrity, struct.merge)
+  })
+
+
+  test('merge-depth', async () => {
+    await runset(spec.merge.depth, (vin: any) => struct.merge(vin.val, vin.depth))
   })
 
 

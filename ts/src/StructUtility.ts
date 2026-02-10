@@ -60,10 +60,11 @@ const S_MKEYPOST = 'key:post'
 const S_MVAL = 'val'
 const S_MKEY = 'key'
 
-// Special keys.
+// Special strings.
 const S_BKEY = '`$KEY`'
 const S_BANNO = '`$ANNO`'
 const S_BEXACT = '`$EXACT`'
+const S_BVAL = '`$VAL`'
 
 const S_DKEY = '$KEY'
 const S_DTOP = '$TOP'
@@ -118,6 +119,9 @@ const R_INJECTION_FULL = /^`(\$[A-Z]+|[^`]*)[0-9]*`$/  // Full string injection 
 const R_BT_ESCAPE = /\$BT/g                            // Backtick escape sequence.
 const R_DS_ESCAPE = /\$DS/g                            // Dollar sign escape sequence.
 const R_INJECTION_PARTIAL = /`([^`]+)`/g               // Partial string injection pattern.
+
+
+const MAXDEPTH = 32
 
 
 // Keys are strings for maps, or integers for lists.
@@ -490,7 +494,7 @@ function jsonify(val: any, flags?: { indent?: number, offset?: number }) {
     const offset = getprop(flags, 'offset', 0)
     if (0 < offset) {
       // Left offset entire indented JSON so that it aligns with surrounding code
-      // indented by offset.
+      // indented by offset. Assume first brace is on line with asignment, so not offset.
       str = '{\n' + str.split('\n').slice(1)
         .map(n => pad(n, 0 - offset - size(n)))
         .join('\n')
@@ -532,7 +536,7 @@ function stringify(val: any, maxlen?: number, pretty?: any): string {
       valstr = valstr.replace(R_QUOTES, S_MT)
     }
     catch (err: any) {
-      valstr = S_MT + val
+      valstr = '__STRINGIFY_FAILED__'
     }
   }
 
@@ -734,9 +738,13 @@ function walk(
   parent?: any,
   path?: string[]
 ): any {
-  let out = null == before ? val : before(key, val, parent, path || [])
+  if (UNDEF === path) {
+    path = []
+  }
 
-  maxdepth = null != maxdepth && 0 <= maxdepth ? maxdepth : 32
+  let out = null == before ? val : before(key, val, parent, path)
+
+  maxdepth = null != maxdepth && 0 <= maxdepth ? maxdepth : MAXDEPTH
   if (0 === maxdepth || (null != path && 0 < maxdepth && maxdepth <= path.length)) {
     return out
   }
@@ -744,21 +752,24 @@ function walk(
   if (isnode(out)) {
     for (let [ckey, child] of items(out)) {
       setprop(out, ckey, walk(
-        child, before, after, maxdepth, ckey, out, [...(path || []), S_MT + ckey]))
+        child, before, after, maxdepth, ckey, out,
+        [...(path), S_MT + ckey]
+      ))
     }
   }
 
-  out = null == after ? out : after(key, out, parent, path || [])
+  out = null == after ? out : after(key, out, parent, path)
 
   return out
 }
-
 
 // Merge a list of values into each other. Later values have
 // precedence.  Nodes override scalars. Node kinds (list or map)
 // override each other, and do *not* merge.  The first element is
 // modified.
 function merge(val: any, maxdepth?: number): any {
+  // const md: number = null == maxdepth ? MAXDEPTH : maxdepth < 0 ? 0 : maxdepth
+  const md: number = slice(maxdepth ?? MAXDEPTH, 0)
   let out: any = UNDEF
 
   // Handle edge cases.
@@ -781,6 +792,7 @@ function merge(val: any, maxdepth?: number): any {
 
   for (let oI = 1; oI < lenlist; oI++) {
     let obj = list[oI]
+    // console.log('OBJ', oI, obj)
 
     if (!isnode(obj)) {
       // Nodes win.
@@ -801,8 +813,12 @@ function merge(val: any, maxdepth?: number): any {
       ) {
         const pI = size(path)
 
+        if (md <= pI) {
+          setprop(cur[pI - 1], key, val)
+        }
+
         // Scalars just override directly.
-        if (!isnode(val)) {
+        else if (!isnode(val)) {
           cur[pI] = val
         }
 
@@ -850,7 +866,7 @@ function merge(val: any, maxdepth?: number): any {
         const target = cur[cI - 1]
         const value = cur[cI]
 
-        // console.log('AFTER-PREP', pathify(path), '@', cI,
+        // console.log('AFTER-PREP', pathify(path), '@', cI, cur, '|',
         //   stringify(key, -1, 1), stringify(value, -1, 1), 'T=', stringify(target, -1, 1))
 
         setprop(target, key, value)
@@ -859,7 +875,13 @@ function merge(val: any, maxdepth?: number): any {
 
       // Walk overriding node, creating paths in output as needed.
       out = walk(obj, before, after, maxdepth)
+      // console.log('WALK-DONE', out, obj)
     }
+  }
+
+  if (0 === md) {
+    out = getelem(list, -1)
+    out = islist(out) ? [] : ismap(out) ? {} : out
   }
 
   return out
@@ -1262,6 +1284,7 @@ const transform_EACH: Injector = (
   const srcstore = getprop(store, inj.base, store)
 
   const src = getpath(srcstore, srcpath, inj)
+  const srctype = typify(src)
 
   // Create parallel data structures:
   // source entries :: child templates
@@ -1272,16 +1295,15 @@ const transform_EACH: Injector = (
   const target = inj.nodes[inj.nodes.length - 2] || inj.nodes[inj.nodes.length - 1]
 
   // Create clones of the child template for each value of the current soruce.
-  if (islist(src)) {
-    tval = src.map(() => clone(child))
+  if (S_array === srctype) {
+    tval = items(src, () => clone(child))
   }
-  else if (ismap(src)) {
-    tval = Object.entries(src).map(n => ({
-      ...clone(child),
-
+  else if (S_object === srctype) {
+    tval = items(src, (n => merge([
+      clone(child),
       // Make a note of the key for $KEY transforms.
-      [S_BANNO]: { KEY: n[0] }
-    }))
+      { [S_BANNO]: { KEY: n[0] } }
+    ], 1)))
   }
 
   let rval = []
@@ -1329,6 +1351,7 @@ const transform_EACH: Injector = (
 }
 
 
+
 // Convert a node to a map.
 // Format: { '`$PACK`':['source-path', child-template]}
 const transform_PACK: Injector = (
@@ -1347,13 +1370,10 @@ const transform_PACK: Injector = (
   // Get arguments.
   const args = getprop(parent, key)
   const srcpath = getelem(args, 0) // Path to source data.
-  // const childspec = clone(getelem(args, 1)) // Child specification.
   const childspec = getelem(args, 1) // Child specification.
 
   // Find key and target node.
-  // const keyprop = getprop(childspec, S_BKEY)
   const tkey = getelem(path, -2)
-  // const target = getelem(nodes, path.length - 2, getelem(nodes, path.length - 1))
   const pathsize = size(path)
   const target = getelem(nodes, pathsize - 2, () => getelem(nodes, pathsize - 1))
 
@@ -1365,7 +1385,7 @@ const transform_PACK: Injector = (
   if (!islist(src)) {
     if (ismap(src)) {
       src = items(src, (item: [string, any]) => {
-        item[1][S_BANNO] = { KEY: item[0] }
+        setprop(item[1], S_BANNO, { KEY: item[0] })
         return item[1]
       })
     }
@@ -1374,44 +1394,46 @@ const transform_PACK: Injector = (
     }
   }
 
-  /*
-  src = islist(src) ? src :
-    ismap(src) ? Object.entries(src)
-      .reduce((a: any[], n: any) =>
-        (n[1][S_BANNO] = { KEY: n[0] }, a.push(n[1]), a), []) :
-      UNDEF
-  */
-
   if (null == src) {
     return UNDEF
   }
 
-  // Get key if specified.
-  // TODO: chldkey -> childpath
-  // let childkey: PropKey | undefined = getprop(childspec, S_BKEY)
-  // let keyname = UNDEF === childkey ? keyprop : childkey
+  // Get keypath.
   const keypath = getprop(childspec, S_BKEY)
   delprop(childspec, S_BKEY)
 
-  const child = getprop(childspec, '`$VAL`', childspec)
+  const child = getprop(childspec, S_BVAL, childspec)
 
   // Build parallel target object.
   let tval: any = {}
-  tval = src.reduce((a: any, n: any, i: any) => {
-    let kn = null == keypath ? i :
-      keypath.startsWith('`') ? inject(keypath, { ...store, $TOP: n }) :
-        getpath(n, keypath, inj)
-    setprop(a, kn, clone(child))
-    const nchild = getprop(a, kn)
-    const mval = getprop(n, S_BANNO)
-    if (UNDEF === mval) {
-      delprop(nchild, S_BANNO)
+
+  items(src, (item: [string, any]) => {
+    const srckey = item[0]
+    const srcnode = item[1]
+
+    let key: string = srckey
+    if (UNDEF !== keypath) {
+      if (keypath.startsWith('`')) {
+        // key = inject(keypath, { ...store, $TOP: srcnode })
+        key = inject(keypath, merge([{}, store, { $TOP: srcnode }], 1))
+      }
+      else {
+        key = getpath(srcnode, keypath, inj)
+      }
+    }
+
+
+    const tchild = clone(child)
+    setprop(tval, key, tchild)
+
+    const anno = getprop(srcnode, S_BANNO)
+    if (UNDEF === anno) {
+      delprop(tchild, S_BANNO)
     }
     else {
-      setprop(nchild, S_BANNO, mval)
+      setprop(tchild, S_BANNO, anno)
     }
-    return a
-  }, tval)
+  })
 
   let rval = {}
 
@@ -1420,12 +1442,10 @@ const transform_PACK: Injector = (
     // Build parallel source object.
     let tsrc: any = {}
     src.reduce((a: any, n: any, i: any) => {
-      // let kn = isnode(n) ? getprop(n, keyname) : n
-      // let kn = isnode(n) ? getprop(n, keyname) : i
-      // let kn = isnode(n) ? getpath(n, keypath, inj) : i
-
       let kn = null == keypath ? i :
-        keypath.startsWith('`') ? inject(keypath, { ...store, $TOP: n }) :
+        keypath.startsWith('`') ?
+          // inject(keypath, { ...store, $TOP: n }) :
+          inject(keypath, merge([{}, store, { $TOP: n }], 1)) :
           getpath(n, keypath, inj)
 
       setprop(a, kn, n)
@@ -1559,13 +1579,12 @@ const transform_FORMAT: Injector = (
   }
 
   // Get arguments: ['`$FORMAT`', 'name', child].
-  // TODO: or a custom function
   // TODO: EACH and PACK should accept customm functions too
   const name = getprop(inj.parent, 1)
   const child = getprop(inj.parent, 2)
 
   // Source data.
-  const srcstore = getprop(store, inj.base, store)
+  // const srcstore = getprop(store, inj.base, store)
 
   const tkey = inj.path[inj.path.length - 2]
   const target = inj.nodes[inj.nodes.length - 2] || inj.nodes[inj.nodes.length - 1]
@@ -1574,19 +1593,28 @@ const transform_FORMAT: Injector = (
   let cinj = inj
 
   // Replace ['`$FORMAT`',...] with child
-  if (null != inj.prior?.prior) {
-    cinj = inj.prior.prior.child(inj.prior.keyI, inj.prior.keys)
-    cinj.val = child
-    setprop(cinj.parent, inj.prior.key, child)
+  if (null != inj.prior) {
+    if (null != inj.prior.prior) {
+      cinj = inj.prior.prior.child(inj.prior.keyI, inj.prior.keys)
+      cinj.val = child
+      setprop(cinj.parent, inj.prior.key, child)
+    }
+    else {
+      // console.log('QQQ', inj)
+      cinj = inj.prior.child(inj.keyI, inj.keys)
+      cinj.val = child
+      setprop(cinj.parent, inj.key, child)
+    }
   }
-  // console.log('FORMAT-CHILD', cinj, cinj.nodes)
 
+  // console.log('FORMAT-INJECT-CHILD', child)
   inject(child, store, cinj)
+
   // console.dir(cinj, { depth: null })
   let resolved = cinj.val
-  // console.log('RESOLVED', resolved)
+  // console.log('RESOLVED', resolved, cinj)
 
-  let formatter = FORMATTER[name] ?? FORMATTER.identity
+  let formatter = S_function === typify(name) ? name : (FORMATTER[name] ?? FORMATTER.identity)
 
   let out = walk(resolved, formatter)
 
@@ -1600,6 +1628,78 @@ const FORMATTER: Record<string, WalkApply> = {
   identity: (_k: any, v: any) => v,
   upper: (_k: any, v: any) => isnode(v) ? v : ('' + v).toUpperCase(),
   lower: (_k: any, v: any) => isnode(v) ? v : ('' + v).toLowerCase(),
+  string: (_k: any, v: any) => isnode(v) ? v : ('' + v),
+  number: (_k: any, v: any) => {
+    if (isnode(v)) {
+      return v
+    }
+    else {
+      let n = Number(v)
+      if (isNaN(n)) {
+        n = 0
+      }
+      return n
+    }
+  },
+  integer: (k: any, v: any) => getprop(FORMATTER, 'number')(k, v) | 0,
+  concat: (k: any, v: any) =>
+    null == k && islist(v) ? items(v, (n => isnode(n[1]) ? '' : ('' + n[1]))).join('') : v
+}
+
+
+
+const transform_APPLY: Injector = (
+  inj: Injection,
+  _val: any,
+  _ref: string,
+  store: any
+) => {
+  // Remove arguments to avoid spurious processing.
+  if (null != inj.keys) {
+    inj.keys.length = 1
+  }
+
+  if (S_MVAL !== inj.mode) {
+    return UNDEF
+  }
+
+  // Get arguments: ['`$APPLY`', function, child].
+  const apply = getprop(inj.parent, 1)
+  const child = getprop(inj.parent, 2)
+
+  // TODO: how to handle invalid args?
+
+  // Source data.
+  // const srcstore = getprop(store, inj.base, store)
+
+  const tkey = inj.path[inj.path.length - 2]
+  const target = inj.nodes[inj.nodes.length - 2] || inj.nodes[inj.nodes.length - 1]
+
+  let cinj = inj
+
+  // Replace ['`$APPLY`',...] with child
+  if (null != inj.prior) {
+    if (null != inj.prior.prior) {
+      cinj = inj.prior.prior.child(inj.prior.keyI, inj.prior.keys)
+      cinj.val = child
+      setprop(cinj.parent, inj.prior.key, child)
+    }
+    else {
+      // console.log('QQQ', inj)
+      cinj = inj.prior.child(inj.keyI, inj.keys)
+      cinj.val = child
+      setprop(cinj.parent, inj.key, child)
+    }
+  }
+
+  inject(child, store, cinj)
+  let resolved = cinj.val
+
+  const out = apply(resolved, store, cinj)
+
+  _updateAncestors(inj, target, tkey, out)
+
+  return out
 }
 
 
@@ -1657,6 +1757,7 @@ function transform(
     $PACK: transform_PACK,
     $REF: transform_REF,
     $FORMAT: transform_FORMAT,
+    $APPLY: transform_APPLY,
 
     // Custom extra transforms, if any.
     ...extraTransforms,
