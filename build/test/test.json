@@ -2925,44 +2925,44 @@
             "in": {
               "a": 1
             },
-            "out": "object"
+            "out": 8256
           },
           {
             "in": [
               1
             ],
-            "out": "array"
+            "out": 16448
           },
           {
             "in": 1,
-            "out": "number"
+            "out": 201326720
           },
           {
             "in": 3.14159,
-            "out": "number"
+            "out": 335544448
           },
           {
             "in": -0.5,
-            "out": "number"
+            "out": 335544448
           },
           {
             "in": "a",
-            "out": "string"
+            "out": 33554560
           },
           {
             "in": true,
-            "out": "boolean"
+            "out": 536871040
           },
           {
             "in": false,
-            "out": "boolean"
+            "out": 536871040
           },
           {
             "in": null,
-            "out": "null"
+            "out": 4194432
           },
           {
-            "out": "null"
+            "out": 1073741824
           }
         ]
       },
@@ -4225,6 +4225,142 @@
                 "0": {
                   "store": {
                     "x": 2
+                  }
+                }
+              }
+            }
+          },
+          {
+            "in": {
+              "store": {
+                "x": {
+                  "y": 1
+                }
+              },
+              "path": "x.y",
+              "val": 2
+            },
+            "out": {
+              "y": 2
+            },
+            "match": {
+              "args": {
+                "0": {
+                  "store": {
+                    "x": {
+                      "y": 2
+                    }
+                  }
+                }
+              }
+            }
+          },
+          {
+            "in": {
+              "store": {
+                "x": {}
+              },
+              "path": "x.y",
+              "val": 3
+            },
+            "out": {
+              "y": 3
+            },
+            "match": {
+              "args": {
+                "0": {
+                  "store": {
+                    "x": {
+                      "y": 3
+                    }
+                  }
+                }
+              }
+            }
+          },
+          {
+            "in": {
+              "store": {},
+              "path": "x.y",
+              "val": 4
+            },
+            "out": {
+              "y": 4
+            },
+            "match": {
+              "args": {
+                "0": {
+                  "store": {
+                    "x": {
+                      "y": 4
+                    }
+                  }
+                }
+              }
+            }
+          },
+          {
+            "in": {
+              "store": {},
+              "path": "x.y.0",
+              "val": 5
+            },
+            "out": {
+              "0": 5
+            },
+            "match": {
+              "args": {
+                "0": {
+                  "store": {
+                    "x": {
+                      "y": {
+                        "0": 5
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          {
+            "in": {
+              "store": {},
+              "path": [
+                "x",
+                "y",
+                0
+              ],
+              "val": 6
+            },
+            "out": [
+              6
+            ],
+            "match": {
+              "args": {
+                "0": {
+                  "store": {
+                    "x": {
+                      "y": [
+                        6
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          {
+            "in": {
+              "store": {
+                "x": 1
+              },
+              "val": 7
+            },
+            "match": {
+              "args": {
+                "0": {
+                  "store": {
+                    "x": 1
                   }
                 }
               }
@@ -6518,6 +6654,20 @@
             "out": {
               "s4": ""
             }
+          },
+          {
+            "in": [
+              1,
+              2.3
+            ],
+            "out": 2.3
+          },
+          {
+            "in": [
+              4.5,
+              6
+            ],
+            "out": 6
           }
         ]
       },
@@ -11636,6 +11786,388 @@
           }
         ]
       },
+      "format": {
+        "set": [
+          {
+            "in": {
+              "data": null,
+              "spec": [
+                "`$FORMAT`",
+                "upper",
+                "a"
+              ]
+            },
+            "out": "A"
+          },
+          {
+            "in": {
+              "data": null,
+              "spec": {
+                "x": [
+                  "`$FORMAT`",
+                  "upper",
+                  "b"
+                ]
+              }
+            },
+            "out": {
+              "x": "B"
+            }
+          },
+          {
+            "in": {
+              "data": null,
+              "spec": {
+                "x": [
+                  [
+                    "`$FORMAT`",
+                    "upper",
+                    1
+                  ]
+                ]
+              }
+            },
+            "out": {
+              "x": [
+                "1"
+              ]
+            }
+          },
+          {
+            "in": {
+              "data": null,
+              "spec": {
+                "x": {
+                  "y": [
+                    "`$FORMAT`",
+                    "upper",
+                    true
+                  ]
+                }
+              }
+            },
+            "out": {
+              "x": {
+                "y": "TRUE"
+              }
+            }
+          },
+          {
+            "in": {
+              "data": null,
+              "spec": {
+                "x": {
+                  "y": [
+                    [
+                      [
+                        "`$FORMAT`",
+                        "upper",
+                        null
+                      ]
+                    ]
+                  ]
+                }
+              }
+            },
+            "out": {
+              "x": {
+                "y": [
+                  [
+                    "NULL"
+                  ]
+                ]
+              }
+            }
+          },
+          {
+            "in": {
+              "data": null,
+              "spec": [
+                "`$FORMAT`",
+                "upper",
+                []
+              ]
+            },
+            "out": []
+          },
+          {
+            "in": {
+              "data": null,
+              "spec": [
+                "`$FORMAT`",
+                "upper",
+                {}
+              ]
+            },
+            "out": {}
+          },
+          {
+            "in": {
+              "data": null,
+              "spec": [
+                "`$FORMAT`",
+                "upper",
+                [
+                  "c"
+                ]
+              ]
+            },
+            "out": [
+              "C"
+            ]
+          },
+          {
+            "in": {
+              "data": null,
+              "spec": [
+                "`$FORMAT`",
+                "upper",
+                {
+                  "c": "d"
+                }
+              ]
+            },
+            "out": {
+              "c": "D"
+            }
+          },
+          {
+            "in": {
+              "data": null,
+              "spec": [
+                "`$FORMAT`",
+                "upper",
+                [
+                  "e",
+                  [
+                    "f"
+                  ]
+                ]
+              ]
+            },
+            "out": [
+              "E",
+              [
+                "F"
+              ]
+            ]
+          },
+          {
+            "in": {
+              "data": null,
+              "spec": [
+                "`$FORMAT`",
+                "upper",
+                {
+                  "g": "h",
+                  "i": {
+                    "j": "k"
+                  }
+                }
+              ]
+            },
+            "out": {
+              "g": "H",
+              "i": {
+                "j": "K"
+              }
+            }
+          },
+          {
+            "in": {
+              "data": null,
+              "spec": [
+                "`$FORMAT`",
+                "not-a-format",
+                "a"
+              ]
+            },
+            "err": "$FORMAT: unknown format: not-a-format."
+          },
+          {
+            "in": {
+              "data": null,
+              "spec": [
+                "`$FORMAT`",
+                "identity",
+                1
+              ]
+            },
+            "out": 1
+          },
+          {
+            "in": {
+              "data": null,
+              "spec": [
+                "`$FORMAT`",
+                "identity",
+                [
+                  1
+                ]
+              ]
+            },
+            "out": [
+              1
+            ]
+          },
+          {
+            "in": {
+              "data": null,
+              "spec": [
+                "`$FORMAT`",
+                "identity",
+                {
+                  "x": 1
+                }
+              ]
+            },
+            "out": {
+              "x": 1
+            }
+          },
+          {
+            "in": {
+              "data": null,
+              "spec": [
+                "`$FORMAT`",
+                "lower",
+                "A"
+              ]
+            },
+            "out": "a"
+          },
+          {
+            "in": {
+              "data": null,
+              "spec": [
+                "`$FORMAT`",
+                "string",
+                1.2
+              ]
+            },
+            "out": "1.2"
+          },
+          {
+            "in": {
+              "data": null,
+              "spec": [
+                "`$FORMAT`",
+                "number",
+                "3.4"
+              ]
+            },
+            "out": 3.4
+          },
+          {
+            "in": {
+              "data": null,
+              "spec": [
+                "`$FORMAT`",
+                "integer",
+                [
+                  1,
+                  2.3,
+                  "4",
+                  "5.6"
+                ]
+              ]
+            },
+            "out": [
+              1,
+              2,
+              4,
+              5
+            ]
+          },
+          {
+            "in": {
+              "data": null,
+              "spec": [
+                "`$FORMAT`",
+                "number",
+                {
+                  "a": 1,
+                  "b": 2.3,
+                  "c": "4",
+                  "d": "5.6"
+                }
+              ]
+            },
+            "out": {
+              "a": 1,
+              "b": 2.3,
+              "c": 4,
+              "d": 5.6
+            }
+          },
+          {
+            "in": {
+              "data": null,
+              "spec": [
+                "`$FORMAT`",
+                "concat",
+                [
+                  "a",
+                  "b"
+                ]
+              ]
+            },
+            "out": "ab"
+          },
+          {
+            "in": {
+              "data": null,
+              "spec": [
+                "`$FORMAT`",
+                "concat",
+                [
+                  "c",
+                  1,
+                  "d",
+                  null,
+                  false,
+                  {},
+                  []
+                ]
+              ]
+            },
+            "out": "c1dnullfalse"
+          }
+        ]
+      },
+      "apply": {
+        "set": [
+          {
+            "in": {
+              "data": {},
+              "spec": [
+                "`$APPLY`",
+                "not-a-function",
+                "ignored"
+              ]
+            },
+            "err": "$APPLY: invalid argument: not-a-function (string at position 1) is not of type: function."
+          },
+          {
+            "in": {
+              "data": {},
+              "spec": {
+                "`$APPLY`": 1
+              }
+            },
+            "err": "$APPLY: invalid placement as key, expected: value."
+          },
+          {
+            "in": {
+              "data": {},
+              "spec": {
+                "x": "`$APPLY`"
+              }
+            },
+            "err": "$APPLY: invalid placement in parent map, expected: list."
+          }
+        ]
+      },
       "name": "transform",
       "set": []
     },
@@ -12388,7 +12920,86 @@
               "spec": "`$STRING`"
             },
             "out": 1,
-            "err": "Invalid data: Expected string, but found number: 1."
+            "err": "Expected string, but found integer: 1."
+          },
+          {
+            "in": {
+              "data": 1001,
+              "spec": "`$NUMBER`"
+            },
+            "out": 1001
+          },
+          {
+            "in": {
+              "data": 1002,
+              "spec": "`$INTEGER`"
+            },
+            "out": 1002
+          },
+          {
+            "in": {
+              "data": 1003.3,
+              "spec": "`$DECIMAL`"
+            },
+            "out": 1003.3
+          },
+          {
+            "in": {
+              "data": true,
+              "spec": "`$BOOLEAN`"
+            },
+            "out": true
+          },
+          {
+            "in": {
+              "data": {},
+              "spec": "`$MAP`"
+            },
+            "out": {}
+          },
+          {
+            "in": {
+              "data": [],
+              "spec": "`$LIST`"
+            },
+            "out": []
+          },
+          {
+            "in": {
+              "data": null,
+              "spec": "`$NULL`"
+            },
+            "out": null
+          },
+          {
+            "in": {
+              "data": {},
+              "spec": {
+                "n0": "`$NIL`"
+              }
+            },
+            "out": {}
+          },
+          {
+            "in": {
+              "data": 1101,
+              "spec": "`$ANY`"
+            },
+            "out": 1101
+          },
+          {
+            "in": {
+              "data": "b0",
+              "spec": "`$ANY`"
+            },
+            "out": "b0"
+          },
+          {
+            "in": {
+              "data": {},
+              "spec": "`$ANY`"
+            },
+            "out": {}
           },
           {
             "in": {
@@ -12412,7 +13023,7 @@
                 "a1": "`$STRING`"
               }
             },
-            "err": "Expected field a1 to be string, but found number: 1"
+            "err": "Expected field a1 to be string, but found integer: 1"
           },
           {
             "in": {
@@ -12425,7 +13036,7 @@
                 "b2": "`$NUMBER`"
               }
             },
-            "err": "Expected field a2 to be string, but found number: 11. | Expected field b2 to be number, but found string: B."
+            "err": "Expected field a2 to be string, but found integer: 11. | Expected field b2 to be number, but found string: B."
           },
           {
             "in": {
@@ -12505,7 +13116,7 @@
                 "b": "C"
               }
             },
-            "err": "Expected field b to be string, but found number: 2"
+            "err": "Expected field b to be string, but found integer: 2"
           },
           {
             "in": {
@@ -12515,7 +13126,7 @@
                 }
               },
               "spec": {
-                "x1": "`$OBJECT`"
+                "x1": "`$MAP`"
               }
             },
             "out": {
@@ -12530,7 +13141,7 @@
                 "x2": {}
               },
               "spec": {
-                "x2": "`$OBJECT`"
+                "x2": "`$MAP`"
               }
             },
             "out": {
@@ -12544,8 +13155,8 @@
                 "b": {}
               },
               "spec": {
-                "a": "`$ARRAY`",
-                "b": "`$OBJECT`"
+                "a": "`$LIST`",
+                "b": "`$MAP`"
               }
             },
             "out": {
@@ -12566,8 +13177,8 @@
                 }
               },
               "spec": {
-                "a": "`$ARRAY`",
-                "b": "`$OBJECT`"
+                "a": "`$LIST`",
+                "b": "`$MAP`"
               }
             },
             "out": {
@@ -12602,8 +13213,8 @@
                 }
               },
               "spec": {
-                "a": "`$ARRAY`",
-                "b": "`$OBJECT`"
+                "a": "`$LIST`",
+                "b": "`$MAP`"
               }
             },
             "out": {
@@ -12741,24 +13352,24 @@
           {
             "in": {
               "data": {
-                "a1": {}
+                "c1": {}
               },
               "spec": {
-                "a1": []
+                "c1": []
               }
             },
-            "err": "Expected field a1 to be array, but found object: {}."
+            "err": "Expected field c1 to be list, but found map: {}."
           },
           {
             "in": {
               "data": {
-                "a2": []
+                "c2": []
               },
               "spec": {
-                "a2": {}
+                "c2": {}
               }
             },
-            "err": "Expected field a2 to be object, but found array: []."
+            "err": "Expected field c2 to be map, but found list: []."
           },
           {
             "in": {
@@ -12794,6 +13405,80 @@
             "out": {
               "s1": ""
             }
+          },
+          {
+            "in": {
+              "data": "z0",
+              "spec": "`$NUMBER`"
+            },
+            "err": "Expected number, but found string: z0."
+          },
+          {
+            "in": {
+              "data": "z1",
+              "spec": "`$INTEGER`"
+            },
+            "err": "Expected integer, but found string: z1."
+          },
+          {
+            "in": {
+              "data": "z2",
+              "spec": "`$DECIMAL`"
+            },
+            "err": "Expected decimal, but found string: z2."
+          },
+          {
+            "in": {
+              "data": "z3",
+              "spec": "`$BOOLEAN`"
+            },
+            "err": "Expected boolean, but found string: z3."
+          },
+          {
+            "in": {
+              "data": "z4",
+              "spec": "`$MAP`"
+            },
+            "err": "Expected map, but found string: z4."
+          },
+          {
+            "in": {
+              "data": "z5",
+              "spec": "`$LIST`"
+            },
+            "err": "Expected list, but found string: z5."
+          },
+          {
+            "in": {
+              "data": "z6",
+              "spec": "`$NULL`"
+            },
+            "err": "Expected null, but found string: z6."
+          },
+          {
+            "in": {
+              "data": {
+                "n1": "z7"
+              },
+              "spec": {
+                "n1": "`$NIL`"
+              }
+            },
+            "err": "Expected field n1 to be nil, but found string: z7."
+          },
+          {
+            "in": {
+              "data": 4.4,
+              "spec": "`$INTEGER`"
+            },
+            "err": "Expected integer, but found decimal: 4.4."
+          },
+          {
+            "in": {
+              "data": 5,
+              "spec": "`$DECIMAL`"
+            },
+            "err": "Expected decimal, but found integer: 5."
           }
         ]
       },
@@ -12864,7 +13549,7 @@
                 }
               }
             },
-            "err": "Invalid data: Expected field q.a.x to be number, but found string: X"
+            "err": "Expected field q.a.x to be number, but found string: X"
           },
           {
             "in": {
@@ -13060,7 +13745,7 @@
               "spec": {
                 "q": [
                   "`$CHILD`",
-                  "`$OBJECT`"
+                  "`$MAP`"
                 ]
               }
             },
@@ -13119,7 +13804,7 @@
                 }
               }
             },
-            "err": "Expected field a411.x2 to be number, but found string: X"
+            "err": "Expected field a411.x2 to be integer, but found string: X"
           },
           {
             "in": {
@@ -13162,7 +13847,7 @@
                 }
               }
             },
-            "err": "Expected field a44 to be object, but found number: 1"
+            "err": "Expected field a44 to be map, but found integer: 1"
           },
           {
             "in": {
@@ -13336,10 +14021,10 @@
               "spec": [
                 "`$ONE`",
                 {
-                  "x1": "`$ARRAY`"
+                  "x1": "`$LIST`"
                 },
                 {
-                  "x1": "`$OBJECT`"
+                  "x1": "`$MAP`"
                 }
               ]
             },
@@ -13384,8 +14069,8 @@
               "spec": {
                 "a": [
                   "`$ONE`",
-                  "`$OBJECT`",
-                  "`$ARRAY`"
+                  "`$MAP`",
+                  "`$LIST`"
                 ]
               }
             },
@@ -13401,8 +14086,8 @@
               "spec": {
                 "a": [
                   "`$ONE`",
-                  "`$OBJECT`",
-                  "`$ARRAY`"
+                  "`$MAP`",
+                  "`$LIST`"
                 ]
               }
             },
@@ -13418,12 +14103,12 @@
               "spec": {
                 "a": [
                   "`$ONE`",
-                  "`$OBJECT`",
-                  "`$ARRAY`"
+                  "`$MAP`",
+                  "`$LIST`"
                 ]
               }
             },
-            "err": "Expected field a to be one of object, array, but found number: 1."
+            "err": "Expected field a to be one of map, list, but found integer: 1."
           },
           {
             "in": {
@@ -13431,12 +14116,12 @@
               "spec": {
                 "a": [
                   "`$ONE`",
-                  "`$OBJECT`",
-                  "`$ARRAY`"
+                  "`$MAP`",
+                  "`$LIST`"
                 ]
               }
             },
-            "err": "Expected field a to be one of object, array, but found no value."
+            "err": "Expected field a to be one of map, list, but found no value."
           }
         ]
       },
@@ -13616,7 +14301,7 @@
                 22
               ]
             },
-            "err": "Expected value exactly equal to 22, but found number: 21."
+            "err": "Expected value exactly equal to 22, but found integer: 21."
           },
           {
             "in": {
@@ -13628,7 +14313,7 @@
                 24
               ]
             },
-            "err": "Expected value exactly equal to one of a, false, 24, but found number: 23."
+            "err": "Expected value exactly equal to one of a, false, 24, but found integer: 23."
           },
           {
             "in": {
@@ -13639,7 +14324,7 @@
                 []
               ]
             },
-            "err": "Expected value exactly equal to one of {}, [], but found number: 25."
+            "err": "Expected value exactly equal to one of {}, [], but found integer: 25."
           },
           {
             "in": {
@@ -13654,7 +14339,7 @@
                 ]
               ]
             },
-            "err": "Expected value exactly equal to one of {x:1}, [2], but found number: 26."
+            "err": "Expected value exactly equal to one of {x:1}, [2], but found integer: 26."
           },
           {
             "in": {
@@ -13673,7 +14358,7 @@
                 ]
               ]
             },
-            "err": "Expected value exactly equal to one of {x:[3]}, [{y:4}], but found number: 27."
+            "err": "Expected value exactly equal to one of {x:[3]}, [{y:4}], but found integer: 27."
           },
           {
             "in": {
@@ -13689,7 +14374,7 @@
                 }
               ]
             },
-            "err": "Expected value exactly equal to {x:{y:{z:[]}}}, but found number: 28."
+            "err": "Expected value exactly equal to {x:{y:{z:[]}}}, but found integer: 28."
           },
           {
             "in": {
@@ -13705,7 +14390,7 @@
                 ]
               ]
             },
-            "err": "Expected value exactly equal to [33,34], but found array: [31,32]."
+            "err": "Expected value exactly equal to [33,34], but found list: [31,32]."
           },
           {
             "in": {
@@ -13719,7 +14404,7 @@
                 }
               ]
             },
-            "err": "Expected value exactly equal to {x:222}, but found object: {x:111}."
+            "err": "Expected value exactly equal to {x:222}, but found map: {x:111}."
           },
           {
             "in": {
@@ -13735,7 +14420,7 @@
                 }
               ]
             },
-            "err": "Expected value exactly equal to {a:36,b:37}, but found object: {a:36,b:35}."
+            "err": "Expected value exactly equal to {a:36,b:37}, but found map: {a:36,b:35}."
           },
           {
             "in": {
@@ -13755,7 +14440,7 @@
                 ]
               }
             },
-            "err": "Expected field x0 to be exactly equal to {a:36,b:37}, but found object: {a:36,b:35}."
+            "err": "Expected field x0 to be exactly equal to {a:36,b:37}, but found map: {a:36,b:35}."
           }
         ]
       },
@@ -13779,7 +14464,7 @@
                 "b0": "bb"
               }
             },
-            "err": "Expected field a0 to be number, but found string: a. | Expected field b0 to be string, but found number: 1."
+            "err": "Expected field a0 to be integer, but found string: a. | Expected field b0 to be string, but found integer: 1."
           },
           {
             "in": {
@@ -13793,7 +14478,7 @@
                 ]
               }
             },
-            "err": "Invalid data: Expected field a0 to be exactly equal to 1, but found number: 2."
+            "err": "Expected field a0 to be exactly equal to 1, but found integer: 2."
           },
           {
             "in": {
@@ -13805,7 +14490,7 @@
                 ]
               }
             },
-            "err": "Invalid data: Expected field a1 to be exactly equal to 1, but found no value."
+            "err": "Expected field a1 to be exactly equal to 1, but found no value."
           },
           {
             "in": {
@@ -13817,7 +14502,7 @@
                 ]
               }
             },
-            "err": "Invalid data: Expected field a2 to be exactly equal to 1, but found no value."
+            "err": "Expected field a2 to be exactly equal to 1, but found no value."
           },
           {
             "in": {
@@ -13828,7 +14513,7 @@
                 ]
               }
             },
-            "err": "Invalid data: Expected field a3 to be exactly equal to 1, but found no value."
+            "err": "Expected field a3 to be exactly equal to 1, but found no value."
           }
         ]
       },
@@ -13961,7 +14646,7 @@
                 }
               }
             },
-            "err": "Invalid data: Expected field x11 to be exactly equal to 101, but found string: s11."
+            "err": "Expected field x11 to be exactly equal to 101, but found string: s11."
           },
           {
             "in": {
@@ -13999,7 +14684,7 @@
                 }
               }
             },
-            "err": "Invalid data: Expected field x13 to be exactly equal to 103, but found string: s13."
+            "err": "Expected field x13 to be exactly equal to 103, but found string: s13."
           },
           {
             "in": {
@@ -14057,7 +14742,7 @@
                 }
               }
             },
-            "err": "Invalid data: Expected field x16 to be number, but found string: s16."
+            "err": "Expected field x16 to be integer, but found string: s16."
           },
           {
             "in": {

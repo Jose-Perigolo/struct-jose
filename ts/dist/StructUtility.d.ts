@@ -1,3 +1,18 @@
+declare const T_any: number;
+declare const T_nil: number;
+declare const T_boolean: number;
+declare const T_decimal: number;
+declare const T_integer: number;
+declare const T_number: number;
+declare const T_string: number;
+declare const T_function: number;
+declare const T_symbol: number;
+declare const T_null: number;
+declare const T_list: number;
+declare const T_map: number;
+declare const T_instance: number;
+declare const T_scalar: number;
+declare const T_node: number;
 declare const SKIP: {
     '`$SKIP`': boolean;
 };
@@ -21,6 +36,7 @@ parent?: any, // Parent node, if any.
 inj?: Injection, // Injection state, if any.
 store?: any) => void;
 type WalkApply = (key: string | number | undefined, val: any, parent: any, path: string[]) => any;
+declare function tn(t: number): any;
 declare function isnode(val: any): val is Indexable;
 declare function ismap(val: any): val is {
     [key: string]: any;
@@ -32,7 +48,7 @@ declare function isfunc(val: any): val is Function;
 declare function size(val: any): number;
 declare function slice<V extends any>(val: V, start?: number, end?: number): V;
 declare function pad(str: any, padding?: number, padchar?: string): string;
-declare function typify(value: any): string;
+declare function typify(value: any): number;
 declare function getelem(val: any, key: any, alt?: any): any;
 declare function getprop(val: any, key: any, alt?: any): any;
 declare function strkey(key?: any): string;
@@ -133,6 +149,22 @@ declare class StructUtility {
     };
     jo: typeof jo;
     ja: typeof ja;
+    tn: typeof tn;
+    T_any: number;
+    T_nil: number;
+    T_boolean: number;
+    T_decimal: number;
+    T_integer: number;
+    T_number: number;
+    T_string: number;
+    T_function: number;
+    T_symbol: number;
+    T_null: number;
+    T_list: number;
+    T_map: number;
+    T_instance: number;
+    T_scalar: number;
+    T_node: number;
 }
-export { StructUtility, clone, delprop, escre, escurl, getelem, getpath, getprop, haskey, inject, isempty, isfunc, iskey, islist, ismap, isnode, items, joinurl, jsonify, keysof, merge, pad, pathify, select, setpath, setprop, size, slice, strkey, stringify, transform, typify, validate, walk, SKIP, DELETE, jo, ja, };
+export { StructUtility, clone, delprop, escre, escurl, getelem, getpath, getprop, haskey, inject, isempty, isfunc, iskey, islist, ismap, isnode, items, joinurl, jsonify, keysof, merge, pad, pathify, select, setpath, setprop, size, slice, strkey, stringify, transform, typify, validate, walk, SKIP, DELETE, jo, ja, tn, T_any, T_nil, T_boolean, T_decimal, T_integer, T_number, T_string, T_function, T_symbol, T_null, T_list, T_map, T_instance, T_scalar, T_node, };
 export type { Injection, Injector, WalkApply };

@@ -500,3 +500,55 @@ ref: {
 
   ]
 }
+
+
+format: {
+  set: [
+    { in: { data: null, spec:['`$FORMAT`','upper',a] } out: A }
+    { in: { data: null, spec:x:['`$FORMAT`','upper',b] } out: x:B }
+    { in: { data: null, spec:x:[['`$FORMAT`','upper',1]] } out: x:['1'] }
+    { in: { data: null, spec:x:y:['`$FORMAT`','upper',true] } out: x:y:TRUE }
+    { in: { data: null, spec:x:y:[[['`$FORMAT`','upper',null]]] } out: x:y:[['NULL']] }
+    { in: { data: null, spec:['`$FORMAT`','upper',[]] } out: [] }
+    { in: { data: null, spec:['`$FORMAT`','upper',{}] } out: {} }
+    { in: { data: null, spec:['`$FORMAT`','upper',[c]] } out: [C] }
+    { in: { data: null, spec:['`$FORMAT`','upper',{c:d}] } out: {c:D} }
+    { in: { data: null, spec:['`$FORMAT`','upper',[e,[f]]] } out: [E,[F]] }
+    { in: { data: null, spec:['`$FORMAT`','upper',{g:h,i:j:k}] } out: {g:H,i:j:K} }
+
+    { in: { data: null, spec:['`$FORMAT`','not-a-format',a] }
+      err: '$FORMAT: unknown format: not-a-format.' }
+
+    { in: { data: null, spec:['`$FORMAT`','identity',1] } out: 1 }
+    { in: { data: null, spec:['`$FORMAT`','identity',[1]] } out: [1] }
+    { in: { data: null, spec:['`$FORMAT`','identity',{x:1}] } out: {x:1} }
+    
+    { in: { data: null, spec:['`$FORMAT`','lower',A] } out: a }
+    { in: { data: null, spec:['`$FORMAT`','string',1.2] } out: '1.2' }
+    { in: { data: null, spec:['`$FORMAT`','number','3.4'] } out: 3.4 }
+    { in: { data: null, spec:['`$FORMAT`','integer',[1,2.3,'4','5.6']] } out: [1,2,4,5] }
+    { in: { data: null, spec:['`$FORMAT`','number',{a:1,b:2.3,c:'4',d:'5.6'}] }
+      out: {a:1 b:2.3 c:4 d:5.6}  }
+
+    { in: { data: null, spec:['`$FORMAT`','concat',[a,b]] } out: ab }
+    { in: { data: null, spec:['`$FORMAT`','concat',[c,1,d,null,false,{},[]]] }
+      out: c1dnullfalse }
+  ]
+}
+
+
+apply: {
+  set: [
+    { in: { data: {}, spec:['`$APPLY`','not-a-function','ignored'] }
+      err: '$APPLY: invalid argument: '+
+           'not-a-function (string at position 1) is not of type: function.' }
+
+    { in: { data: {}, spec:{'`$APPLY`':1} }
+      err: '$APPLY: invalid placement as key, expected: value.' }
+
+    { in: { data: {}, spec:{x:'`$APPLY`'} }
+      err: '$APPLY: invalid placement in parent map, expected: list.' }
+      
+  ]
+
+}

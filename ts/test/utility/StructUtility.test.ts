@@ -3,7 +3,7 @@
 // RUN-SOME: npm run test-some --pattern=getpath
 
 import { test, describe, before } from 'node:test'
-import { equal, deepEqual } from 'node:assert'
+import assert from 'node:assert'
 
 import {
   makeRunner,
@@ -16,6 +16,9 @@ import {
   SDK,
   TEST_JSON_FILE
 } from './index'
+
+
+const { equal, deepEqual } = assert
 
 
 // NOTE: tests are (mostly) in order of increasing dependence.
@@ -130,10 +133,27 @@ describe('struct', async () => {
 
 
   test('minor-clone', async () => {
+    await runsetflags(spec.minor.clone, { null: false }, struct.clone)
+  })
+
+
+  test('minor-edge-clone', async () => {
     const { clone } = struct
-    await runsetflags(spec.minor.clone, { null: false }, clone)
+
     const f0 = () => null
     deepEqual({ a: f0 }, clone({ a: f0 }))
+
+    const x = { y: 1 }
+    let xc = clone(x)
+    deepEqual(x, xc)
+    assert(x !== xc)
+
+    class A { x = 1 }
+    const a = new A()
+    let ac = clone(a)
+    deepEqual(a, ac)
+    assert(a === ac)
+    equal(a.constructor.name, ac.constructor.name)
   })
 
 
@@ -198,6 +218,12 @@ describe('struct', async () => {
     const { getelem } = struct
     await runsetflags(spec.minor.getelem, { null: false }, (vin: any) =>
       null == vin.alt ? getelem(vin.val, vin.key) : getelem(vin.val, vin.key, vin.alt))
+  })
+
+
+  test('minor-edge-getelem', async () => {
+    const { getelem } = struct
+    equal(getelem([], 1, () => 2), 2)
   })
 
 
@@ -280,13 +306,24 @@ describe('struct', async () => {
 
 
   test('minor-typify', async () => {
-    const { typify } = struct
-    equal(typify(NaN), 'null')
+    await runsetflags(spec.minor.typify, { null: false }, struct.typify)
   })
 
 
   test('minor-edge-typify', async () => {
-    await runsetflags(spec.minor.typify, { null: false }, struct.typify)
+    const {
+      typify, T_nil, T_scalar, T_function, T_symbol, T_any, T_node, T_instance, T_null
+    } = struct
+    class X { }
+    const x = new X()
+    equal(typify(), T_nil)
+    equal(typify(undefined), T_nil)
+    equal(typify(NaN), T_nil)
+    equal(typify(null), T_scalar | T_null)
+    equal(typify(() => null), T_scalar | T_function)
+    equal(typify(Symbol('S')), T_scalar | T_symbol)
+    equal(typify(BigInt(1)), T_any)
+    equal(typify(x), T_node | T_instance)
   })
 
 
@@ -311,6 +348,15 @@ describe('struct', async () => {
     await runsetflags(spec.minor.setpath, { null: false },
       (vin: any) => struct.setpath(vin.store, vin.path, vin.val))
   })
+
+
+  test('minor-edge-setpath', async () => {
+    const { setpath, DELETE } = struct
+    const x = { y: { z: 1, q: 2 } }
+    deepEqual(setpath(x, 'y.q', DELETE), { z: 1 })
+    deepEqual(x, { y: { z: 1 } })
+  })
+
 
 
   // walk tests
@@ -581,6 +627,24 @@ describe('struct', async () => {
   })
 
 
+  test('transform-format', async () => {
+    await runsetflags(spec.transform.format, { null: false }, (vin: any) =>
+      struct.transform(vin.data, vin.spec))
+  })
+
+
+  test('transform-apply', async () => {
+    await runset(spec.transform.apply, (vin: any) =>
+      struct.transform(vin.data, vin.spec))
+  })
+
+  test('transform-edge-apply', async () => {
+    const { transform } = struct
+    equal(2, transform({}, ['`$APPLY`', (v: any) => 1 + v, 1]))
+  })
+
+
+
   test('transform-modify', async () => {
     await runset(spec.transform.modify, (vin: any) =>
       struct.transform(
@@ -632,7 +696,8 @@ describe('struct', async () => {
   // ===============
 
   test('validate-basic', async () => {
-    await runset(spec.validate.basic, (vin: any) => struct.validate(vin.data, vin.spec))
+    await runsetflags(spec.validate.basic, { null: false },
+      (vin: any) => struct.validate(vin.data, vin.spec))
   })
 
 
@@ -660,6 +725,29 @@ describe('struct', async () => {
   test('validate-special', async () => {
     await runset(spec.validate.special, (vin: any) =>
       struct.validate(vin.data, vin.spec, vin.inj))
+  })
+
+
+  test('validate-edge', async () => {
+    const { validate } = struct
+    let errs: any[] = []
+    validate({ x: 1 }, { x: '`$INSTANCE`' }, { errs })
+    equal(errs[0], 'Expected field x to be instance, but found integer: 1.')
+
+    errs = []
+    validate({ x: {} }, { x: '`$INSTANCE`' }, { errs })
+    equal(errs[0], 'Expected field x to be instance, but found map: {}.')
+
+    errs = []
+    validate({ x: [] }, { x: '`$INSTANCE`' }, { errs })
+    equal(errs[0], 'Expected field x to be instance, but found list: [].')
+
+    class C { }
+    const c = new C()
+    errs = []
+    validate({ x: c }, { x: '`$INSTANCE`' }, { errs })
+    console.log(errs)
+    equal(errs.length, 0)
   })
 
 

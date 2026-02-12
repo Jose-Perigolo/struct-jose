@@ -484,16 +484,16 @@ joinurl: {
 
 typify: {
   set: [
-    { in: {a:1}, out: 'object' }
-    { in: [1], out: 'array' }
-    { in: 1, out: 'number' }
-    { in: 3.14159, out: 'number' }
-    { in: -0.5, out: 'number' }
-    { in: 'a', out: 'string' }
-    { in: true, out: 'boolean' }
-    { in: false, out: 'boolean' }
-    { in: null, out: 'null' }
-    { out: 'null' }
+    { in: {a:1}, out: 8192+64 }
+    { in: [1], out: 16384+64 }
+    { in: 1, out: 201326720 }
+    { in: 3.14159, out: 335544448 }
+    { in: -0.5, out: 335544448 }
+    { in: 'a', out: 33554560 }
+    { in: true, out: 536871040 }
+    { in: false, out: 536871040 }
+    { in: null, out: 4194432 }
+    { out: 1073741824 }
   ]
 }
 
@@ -701,8 +701,25 @@ pad: {
 setpath: {
   set: [
     { in: { store:{x:1} path:'x', val:2 }, out: {x:2},
-      match:args:0:store:x:2
-    }
+      match:args:0:store:x:2 }
+
+    { in: { store:{x:y:1} path:'x.y', val:2 }, out: {y:2},
+      match:args:0:store:x:y:2 }
+
+    { in: { store:{x:{}} path:'x.y', val:3 }, out: {y:3},
+      match:args:0:store:x:y:3 }
+
+    { in: { store:{} path:'x.y', val:4 }, out: {y:4},
+      match:args:0:store:x:y:4 }
+
+    { in: { store:{} path:'x.y.0', val:5 }, out: {'0':5},
+      match:args:0:store:x:y:0:5 }
+
+    { in: { store:{} path:['x','y',0], val:6 }, out: [6],
+      match:args:0:store:x:y:[6] }
+
+    { in: { store:{x:1} val:7 },
+      match:args:0:store:x:1 }
   ]  
 }
 

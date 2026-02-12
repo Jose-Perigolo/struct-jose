@@ -76,6 +76,7 @@ const S_array = 'array'
 const S_base = 'base'
 const S_boolean = 'boolean'
 const S_function = 'function'
+const S_symbol = 'symbol'
 const S_instance = 'instance'
 const S_key = 'key'
 const S_null = 'null'
@@ -94,6 +95,46 @@ const S_OS = '['
 const S_SP = ' '
 const S_VIZ = ': '
 
+// Types
+let t = 31
+const T_any = (1 << t--) - 1
+const T_nil = 1 << t-- // Means property absent, undefined. Also NOT a scalar!
+const T_boolean = 1 << t--
+const T_decimal = 1 << t--
+const T_integer = 1 << t--
+const T_number = 1 << t--
+const T_string = 1 << t--
+const T_function = 1 << t--
+const T_symbol = 1 << t--
+const T_null = 1 << t-- // The actual JSON null value.
+t -= 7
+const T_list = 1 << t--
+const T_map = 1 << t--
+const T_instance = 1 << t--
+t -= 4
+const T_scalar = 1 << t--
+const T_node = 1 << t--
+
+const TYPENAME = [
+  'any',
+  'nil',
+  'boolean',
+  'decimal',
+  'integer',
+  'number',
+  'string',
+  'function',
+  'symbol',
+  'null',
+  '', '', '',
+  '', '', '', '',
+  'list',
+  'map',
+  'instance',
+  '', '', '', '',
+  'scalar',
+  'node',
+]
 
 // The standard undefined value for this language.
 const UNDEF = undefined
@@ -111,7 +152,7 @@ const R_LEADING_TRAILING_SLASH = /([^\/])\/+/          // Multiple slashes in UR
 const R_LEADING_SLASH = /^\/+/                         // Leading slashes in URLs.
 const R_QUOTES = /"/g                                  // Double quotes for removal.
 const R_DOT = /\./g                                    // Dots in path strings.
-const R_FUNCTION_REF = /^`\$FUNCTION:([0-9]+)`$/       // Function reference in clone.
+const R_CLONE_REF = /^`\$REF:([0-9]+)`$/               // Copy reference in cloning.
 const R_META_PATH = /^([^$]+)\$([=~])(.+)$/            // Meta path syntax.
 const R_DOUBLE_DOLLAR = /\$\$/g                        // Double dollar escape sequence.
 const R_TRANSFORM_NAME = /`\$([A-Z]+)`/g               // Transform command names.
@@ -168,6 +209,11 @@ type WalkApply = (
   path: string[]
 ) => any
 
+
+// Return type string for narrowest type.
+function tn(t: number) {
+  return getelem(TYPENAME, Math.clz32(t), TYPENAME[0])
+}
 
 
 // Value is a node - defined, and a map (hash) or list (array).
@@ -314,39 +360,62 @@ function pad(str: any, padding?: number, padchar?: string): string {
 }
 
 
-// Determine the type of a value as a string.
-// Returns one of:
-//   'null', 'string', 'number', 'boolean', 'function', 'array', 'object', 'instance'
-//   where 'instance' is an instance of a class, and 'null' is undefined, null, or NaN.
-// Normalizes and simplifies JavaScript's type system for consistency.
-function typify(value: any): string {
-  if (value === null || value === undefined) {
-    return S_null
+// Determine the type of a value as a bit code.
+function typify(value: any): number {
+
+  if (undefined === value) {
+    return T_nil
   }
 
-  const type = typeof value
+  const typestr = typeof value
 
-  if (S_number === type && isNaN(value)) {
-    return S_null
+  if (null === value) {
+    return T_scalar | T_null
+  }
+  else if (S_number === typestr) {
+    if (Number.isInteger(value)) {
+      return T_scalar | T_number | T_integer
+    }
+    else if (isNaN(value)) {
+      return T_nil
+    }
+    else {
+      return T_scalar | T_number | T_decimal
+    }
+  }
+  else if (S_string === typestr) {
+    return T_scalar | T_string
+  }
+  else if (S_boolean === typestr) {
+    return T_scalar | T_boolean
+  }
+  else if (S_function === typestr) {
+    return T_scalar | T_function
   }
 
-  if (Array.isArray(value)) {
-    return S_array
+  // For languages that have symbolic atoms.
+  else if (S_symbol === typestr) {
+    return T_scalar | T_symbol
   }
 
-  if (type === 'object') {
+  else if (Array.isArray(value)) {
+    return T_node | T_list
+  }
+
+  else if (typestr === 'object') {
 
     if (value.constructor instanceof Function) {
       let cname = value.constructor.name
       if ('Object' !== cname && 'Array' !== cname) {
-        return S_instance
+        return T_node | T_instance
       }
     }
 
-    return S_object
+    return T_node | T_map
   }
 
-  return type
+  // Anything else (e.g. bigint) is considered T_any
+  return T_any
 }
 
 
@@ -370,7 +439,7 @@ function getelem(val: any, key: any, alt?: any) {
   }
 
   if (UNDEF === out) {
-    return S_function === typify(alt) ? alt() : alt
+    return 0 < (T_function & typify(alt)) ? alt() : alt
   }
 
   return out
@@ -604,14 +673,16 @@ function pathify(val: any, startin?: number, endin?: number) {
 
 
 // Clone a JSON-like data structure.
-// NOTE: function value references are copied, *not* cloned.
+// NOTE: function and instance values are copied, *not* cloned.
 function clone(val: any): any {
   const refs: any[] = []
-  const replacer: any = (_k: any, v: any) => S_function === typeof v ?
-    (refs.push(v), '`$FUNCTION:' + (refs.length - 1) + '`') : v
+  const reftype = T_function | T_instance
+  const replacer: any = (_k: any, v: any) => 0 < (reftype & typify(v)) ?
+    (refs.push(v), '`$REF:' + (refs.length - 1) + '`') : v
   const reviver: any = (_k: any, v: any, m: any) => S_string === typeof v ?
-    (m = v.match(R_FUNCTION_REF), m ? refs[m[1]] : v) : v
-  return UNDEF === val ? UNDEF : JSON.parse(JSON.stringify(val, replacer), reviver)
+    (m = v.match(R_CLONE_REF), m ? refs[m[1]] : v) : v
+  const out = UNDEF === val ? UNDEF : JSON.parse(JSON.stringify(val, replacer), reviver)
+  return out
 }
 
 
@@ -830,7 +901,7 @@ function merge(val: any, maxdepth?: number): any {
           const tval = dst[pI]
 
           // Destination empty, so create node (unless override is class instance).
-          if (UNDEF === tval && S_instance !== typify(val)) {
+          if (UNDEF === tval && 0 === (T_instance & typify(val))) {
             cur[pI] = islist(val) ? [] : {}
           }
 
@@ -894,9 +965,14 @@ function setpath(
   val: any,
   injdef?: Partial<Injection>) {
   const pathType = typify(path)
-  const parts = islist(path) ? path :
-    'string' === pathType ? (path as string).split(S_DT) :
-      'number' === pathType ? [path] : UNDEF
+  // const parts = islist(path) ? path :
+  //   'string' === pathType ? (path as string).split(S_DT) :
+  //     'number' === pathType ? [path] : UNDEF
+
+  const parts = 0 < (T_list & pathType) ? path :
+    0 < (T_string & pathType) ? (path as string).split(S_DT) :
+      0 < (T_number & pathType) ? [path] : UNDEF
+
 
   if (UNDEF === parts) {
     return UNDEF
@@ -910,7 +986,7 @@ function setpath(
     const partKey = getelem(parts, pI)
     let nextParent = getprop(parent, partKey)
     if (!isnode(nextParent)) {
-      nextParent = 'number' === typify(getelem(parts, pI + 1)) ? [] : {}
+      nextParent = 0 < (T_number & typify(getelem(parts, pI + 1))) ? [] : {}
       setprop(parent, partKey, nextParent)
     }
     parent = nextParent
@@ -1045,7 +1121,7 @@ function getpath(store: any, path: number | string | string[], injdef?: Partial<
 
 
 // Inject values from a data store into a node recursively, resolving
-// paths against the store, or current if they are local. THe modify
+// paths against the store, or current if they are local. The modify
 // argument allows custom modification of the result.  The inj
 // (Injection) argument is used to maintain recursive state.
 function inject(
@@ -1295,10 +1371,10 @@ const transform_EACH: Injector = (
   const target = inj.nodes[inj.nodes.length - 2] || inj.nodes[inj.nodes.length - 1]
 
   // Create clones of the child template for each value of the current soruce.
-  if (S_array === srctype) {
+  if (0 < (T_list & srctype)) {
     tval = items(src, () => clone(child))
   }
-  else if (S_object === srctype) {
+  else if (0 < (T_map & srctype)) {
     tval = items(src, (n => merge([
       clone(child),
       // Make a note of the key for $KEY transforms.
@@ -1614,7 +1690,12 @@ const transform_FORMAT: Injector = (
   let resolved = cinj.val
   // console.log('RESOLVED', resolved, cinj)
 
-  let formatter = S_function === typify(name) ? name : (FORMATTER[name] ?? FORMATTER.identity)
+  let formatter = 0 < (T_function & typify(name)) ? name : getprop(FORMATTER, name)
+
+  if (UNDEF === formatter) {
+    inj.errs.push('$FORMAT: unknown format: ' + name + '.')
+    return UNDEF
+  }
 
   let out = walk(resolved, formatter)
 
@@ -1641,9 +1722,68 @@ const FORMATTER: Record<string, WalkApply> = {
       return n
     }
   },
-  integer: (k: any, v: any) => getprop(FORMATTER, 'number')(k, v) | 0,
+  integer: (_k: any, v: any) => {
+    if (isnode(v)) {
+      return v
+    }
+    else {
+      let n = Number(v)
+      if (isNaN(n)) {
+        n = 0
+      }
+      return n | 0
+    }
+  },
   concat: (k: any, v: any) =>
     null == k && islist(v) ? items(v, (n => isnode(n[1]) ? '' : ('' + n[1]))).join('') : v
+}
+
+const PLACEMENT: any = {
+  [S_MVAL]: 'value',
+  [S_MKEYPRE]: S_key,
+  [S_MKEYPOST]: S_key,
+}
+
+function checkPlacement(
+  modes: InjectMode[],
+  ijname: string,
+  parentTypes: number,
+  inj: Injection
+): boolean {
+  if (!modes.includes(inj.mode)) {
+    inj.errs.push('$' + ijname + ': invalid placement as ' + PLACEMENT[inj.mode] +
+      ', expected: ' + items(modes, (n: any) => PLACEMENT[n[1]]).join(',') + '.')
+    return false
+  }
+  if (!isempty(parentTypes)) {
+    const ptype = typify(inj.parent)
+    if (0 === (parentTypes & ptype)) {
+      inj.errs.push('$' + ijname + ': invalid placement in parent ' + tn(ptype) +
+        ', expected: ' + tn(parentTypes) + '.')
+      return false
+
+    }
+  }
+  return true
+}
+
+
+function injectorArgs(argTypes: number[], inj: Injection): any {
+  const numargs = size(argTypes)
+  const found = new Array(1 + numargs)
+  found[0] = UNDEF
+  for (let argI = 0; argI < numargs; argI++) {
+    const arg = inj.parent[1 + argI]
+    const argType = typify(arg)
+    if (0 === (argTypes[argI] & argType)) {
+      found[0] = 'invalid argument: ' + stringify(arg, 22) +
+        ' (' + tn(argType) + ' at position ' + (1 + argI) +
+        ') is not of type: ' + tn(argTypes[argI]) + '.'
+      break
+    }
+    found[1 + argI] = arg
+  }
+  return found
 }
 
 
@@ -1654,23 +1794,37 @@ const transform_APPLY: Injector = (
   _ref: string,
   store: any
 ) => {
-  // Remove arguments to avoid spurious processing.
-  if (null != inj.keys) {
-    inj.keys.length = 1
-  }
+  const ijname = 'APPLY'
 
-  if (S_MVAL !== inj.mode) {
+  if (!checkPlacement([S_MVAL], ijname, T_list, inj)) {
     return UNDEF
   }
 
-  // Get arguments: ['`$APPLY`', function, child].
-  const apply = getprop(inj.parent, 1)
-  const child = getprop(inj.parent, 2)
+  const [err, apply, child] = injectorArgs([T_function, T_any], inj)
+  if (UNDEF !== err) {
+    inj.errs.push('$' + ijname + ': ' + err)
+    return UNDEF
+  }
+
+  // Remove arguments to avoid spurious processing.
+  // if (null != inj.keys) {
+  //   inj.keys.length = 1
+  // }
+
+
+  // // Get arguments: ['`$APPLY`', function, child].
+  // const apply = getprop(inj.parent, 1)
+  // const child = getprop(inj.parent, 2)
 
   // TODO: how to handle invalid args?
 
   // Source data.
   // const srcstore = getprop(store, inj.base, store)
+
+  // if (S_function != typify(apply)) {
+  //   inj.errs.push('$APPLY: invalid argument: apply (first) is not a function.')
+  //   return UNDEF
+  // }
 
   const tkey = inj.path[inj.path.length - 2]
   const target = inj.nodes[inj.nodes.length - 2] || inj.nodes[inj.nodes.length - 1]
@@ -1717,7 +1871,9 @@ function transform(
   spec = clone(origspec)
 
   const extra = injdef?.extra
-  // const modify = injdef?.modify
+
+  const collect = null != injdef?.errs
+  const errs = injdef?.errs || []
 
   const extraTransforms: any = {}
   const extraData = null == extra ? UNDEF : items(extra)
@@ -1730,40 +1886,51 @@ function transform(
   ])
 
   // Define a top level store that provides transform operations.
-  const store = {
+  const store = merge([
+    {
+      // The inject function recognises this special location for the root of the source data.
+      // NOTE: to escape data that contains "`$FOO`" keys at the top level,
+      // place that data inside a holding map: { myholder: mydata }.
+      $TOP: dataClone,
 
-    // The inject function recognises this special location for the root of the source data.
-    // NOTE: to escape data that contains "`$FOO`" keys at the top level,
-    // place that data inside a holding map: { myholder: mydata }.
-    $TOP: dataClone,
+      $SPEC: () => origspec,
 
-    $SPEC: () => origspec,
+      // Escape backtick (this also works inside backticks).
+      $BT: () => S_BT,
 
-    // Escape backtick (this also works inside backticks).
-    $BT: () => S_BT,
+      // Escape dollar sign (this also works inside backticks).
+      $DS: () => S_DS,
 
-    // Escape dollar sign (this also works inside backticks).
-    $DS: () => S_DS,
+      // Insert current date and time as an ISO string.
+      $WHEN: () => new Date().toISOString(),
 
-    // Insert current date and time as an ISO string.
-    $WHEN: () => new Date().toISOString(),
-
-    $DELETE: transform_DELETE,
-    $COPY: transform_COPY,
-    $KEY: transform_KEY,
-    $ANNO: transform_ANNO,
-    $MERGE: transform_MERGE,
-    $EACH: transform_EACH,
-    $PACK: transform_PACK,
-    $REF: transform_REF,
-    $FORMAT: transform_FORMAT,
-    $APPLY: transform_APPLY,
+      $DELETE: transform_DELETE,
+      $COPY: transform_COPY,
+      $KEY: transform_KEY,
+      $ANNO: transform_ANNO,
+      $MERGE: transform_MERGE,
+      $EACH: transform_EACH,
+      $PACK: transform_PACK,
+      $REF: transform_REF,
+      $FORMAT: transform_FORMAT,
+      $APPLY: transform_APPLY,
+    },
 
     // Custom extra transforms, if any.
-    ...extraTransforms,
-  }
+    extraTransforms,
+
+    {
+      $ERRS: errs,
+    }
+  ], 1)
 
   const out = inject(spec, store, injdef)
+
+  const generr = (0 < errs.length && !collect)
+  if (generr) {
+    throw new Error(errs.join(' | '))
+  }
+
   return out
 }
 
@@ -1773,7 +1940,7 @@ const validate_STRING: Injector = (inj: Injection) => {
   let out = getprop(inj.dparent, inj.key)
 
   const t = typify(out)
-  if (S_string !== t) {
+  if (0 === (T_string & t)) {
     let msg = _invalidTypeMsg(inj.path, S_string, t, out, 'V1010')
     inj.errs.push(msg)
     return UNDEF
@@ -1792,11 +1959,15 @@ const validate_STRING: Injector = (inj: Injection) => {
 
 
 const validate_TYPE: Injector = (inj: Injection, _val: any, ref: string) => {
-  let tname = slice(ref, 1).toLowerCase()
+  const tname = slice(ref, 1).toLowerCase()
+  const typev = 1 << (31 - TYPENAME.indexOf(tname))
   let out = getprop(inj.dparent, inj.key)
 
   const t = typify(out)
-  if (t !== tname) {
+
+  // console.log('TYPE', tname, typev, tn(typev), 'O=', t, tn(t), out, 'C=', t & typev)
+
+  if (0 === (t & typev)) {
     inj.errs.push(_invalidTypeMsg(inj.path, tname, t, out, 'V1001'))
     return UNDEF
   }
@@ -1934,7 +2105,8 @@ const validate_ONE: Injector = (
       // If match, then errs.length = 0
       let terrs: any[] = []
 
-      const vstore = { ...store }
+      // const vstore = { ...store }
+      const vstore = merge([{}, store], 1)
       vstore.$TOP = inj.dparent
 
       const vcurrent = validate(inj.dparent, tval, {
@@ -2057,7 +2229,7 @@ const _validation: Modify = (
   const ptype = typify(pval)
 
   // Delete any special commands remaining.
-  if (S_string === ptype && pval.includes(S_DS)) {
+  if (0 < (T_string & ptype) && pval.includes(S_DS)) {
     return
   }
 
@@ -2065,13 +2237,13 @@ const _validation: Modify = (
 
   // Type mismatch.
   if (ptype !== ctype && UNDEF !== pval) {
-    inj.errs.push(_invalidTypeMsg(inj.path, ptype, ctype, cval, 'V0010'))
+    inj.errs.push(_invalidTypeMsg(inj.path, tn(ptype), ctype, cval, 'V0010'))
     return
   }
 
   if (ismap(cval)) {
     if (!ismap(pval)) {
-      inj.errs.push(_invalidTypeMsg(inj.path, ptype, ctype, cval, 'V0020'))
+      inj.errs.push(_invalidTypeMsg(inj.path, tn(ptype), ctype, cval, 'V0020'))
       return
     }
 
@@ -2104,7 +2276,7 @@ const _validation: Modify = (
   }
   else if (islist(cval)) {
     if (!islist(pval)) {
-      inj.errs.push(_invalidTypeMsg(inj.path, ptype, ctype, cval, 'V0030'))
+      inj.errs.push(_invalidTypeMsg(inj.path, tn(ptype), ctype, cval, 'V0030'))
     }
   }
   else if (exact) {
@@ -2144,34 +2316,44 @@ function validate(
   const collect = null != injdef?.errs
   const errs = injdef?.errs || []
 
-  const store = {
-    // Remove the transform commands.
-    $DELETE: null,
-    $COPY: null,
-    $KEY: null,
-    $META: null,
-    $MERGE: null,
-    $EACH: null,
-    $PACK: null,
+  const store = merge([
+    {
+      // Remove the transform commands.
+      $DELETE: null,
+      $COPY: null,
+      $KEY: null,
+      $META: null,
+      $MERGE: null,
+      $EACH: null,
+      $PACK: null,
 
-    $STRING: validate_STRING,
-    $NUMBER: validate_TYPE,
-    $BOOLEAN: validate_TYPE,
-    $OBJECT: validate_TYPE,
-    $ARRAY: validate_TYPE,
-    $FUNCTION: validate_TYPE,
-    $INSTANCE: validate_TYPE,
-    $ANY: validate_ANY,
-    $CHILD: validate_CHILD,
-    $ONE: validate_ONE,
-    $EXACT: validate_EXACT,
+      $STRING: validate_STRING,
+      $NUMBER: validate_TYPE,
+      $INTEGER: validate_TYPE,
+      $DECIMAL: validate_TYPE,
+      $BOOLEAN: validate_TYPE,
+      $NULL: validate_TYPE,
+      $NIL: validate_TYPE,
+      $MAP: validate_TYPE,
+      $LIST: validate_TYPE,
+      $FUNCTION: validate_TYPE,
+      $INSTANCE: validate_TYPE,
+      $ANY: validate_ANY,
+      $CHILD: validate_CHILD,
+      $ONE: validate_ONE,
+      $EXACT: validate_EXACT,
+    },
 
-    ...(extra || {}),
+    extra ?? {},
+
+    //...(extra || {}),
 
     // A special top level value to collect errors.
-    // NOTE: collecterrs paramter always wins.
-    $ERRS: errs,
-  }
+    // NOTE: collecterrs parameter always wins.
+    {
+      $ERRS: errs,
+    }
+  ], 1)
 
   let meta = getprop(injdef, 'meta', {})
   setprop(meta, S_BEXACT, getprop(meta, S_BEXACT, false))
@@ -2180,12 +2362,13 @@ function validate(
     meta,
     extra: store,
     modify: _validation,
-    handler: _validatehandler
+    handler: _validatehandler,
+    errs,
   })
 
   const generr = (0 < errs.length && !collect)
   if (generr) {
-    throw new Error('Invalid data: ' + errs.join(' | '))
+    throw new Error(errs.join(' | '))
   }
 
   return out
@@ -2199,7 +2382,8 @@ const select_AND: Injector = (inj: Injection, _val: any, _ref: string, store: an
     const ppath = slice(inj.path, -1)
     const point = getpath(store, ppath)
 
-    const vstore = { ...store }
+    // const vstore = { ...store }
+    const vstore = merge([{}, store], 1)
     vstore.$TOP = point
 
     for (let term of terms) {
@@ -2233,7 +2417,7 @@ const select_OR: Injector = (inj: Injection, _val: any, _ref: string, store: any
     const ppath = slice(inj.path, -1)
     const point = getpath(store, ppath)
 
-    const vstore = { ...store }
+    const vstore = merge([{}, store], 1)
     vstore.$TOP = point
 
     for (let term of terms) {
@@ -2267,7 +2451,7 @@ const select_NOT: Injector = (inj: Injection, _val: any, _ref: string, store: an
     const ppath = slice(inj.path, -1)
     const point = getpath(store, ppath)
 
-    const vstore = { ...store }
+    const vstore = merge([{}, store], 1)
     vstore.$TOP = point
 
     let terrs: any[] = []
@@ -2390,7 +2574,6 @@ function select(children: any, query: any): any[] {
 
   return results
 }
-
 
 
 // Injection state used for recursive injection into JSON - like data structures.
@@ -2540,13 +2723,13 @@ function _updateAncestors(_inj: Injection, target: any, tkey: any, tval: any) {
 
 
 // Build a type validation error message.
-function _invalidTypeMsg(path: any, needtype: string, vt: string, v: any, _whence?: string) {
+function _invalidTypeMsg(path: any, needtype: string, vt: number, v: any, _whence?: string) {
   let vs = null == v ? 'no value' : stringify(v)
 
   return 'Expected ' +
     (1 < path.length ? ('field ' + pathify(path, 1) + ' to be ') : '') +
     needtype + ', but found ' +
-    (null != v ? vt + S_VIZ : '') + vs +
+    (null != v ? tn(vt) + S_VIZ : '') + vs +
 
     // Uncomment to help debug validation errors.
     // ' [' + _whence + ']' +
@@ -2720,6 +2903,23 @@ class StructUtility {
 
   jo = jo
   ja = ja
+  tn = tn
+
+  T_any = T_any
+  T_nil = T_nil
+  T_boolean = T_boolean
+  T_decimal = T_decimal
+  T_integer = T_integer
+  T_number = T_number
+  T_string = T_string
+  T_function = T_function
+  T_symbol = T_symbol
+  T_null = T_null
+  T_list = T_list
+  T_map = T_map
+  T_instance = T_instance
+  T_scalar = T_scalar
+  T_node = T_node
 }
 
 export {
@@ -2763,6 +2963,24 @@ export {
 
   jo,
   ja,
+  tn,
+
+  T_any,
+  T_nil,
+  T_boolean,
+  T_decimal,
+  T_integer,
+  T_number,
+  T_string,
+  T_function,
+  T_symbol,
+  T_null,
+  T_list,
+  T_map,
+  T_instance,
+  T_scalar,
+  T_node,
+
 }
 
 export type {

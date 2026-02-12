@@ -1,6 +1,12 @@
 
 
-const { transform, setpath, items, isnode, merge } = require('../')
+const {
+  transform, setpath, items, isnode, merge,
+  validate, tn, T_nil, T_null, T_bool, T_any, 
+  T_map, T_node, T_scalar, T_number, T_integer, T_decimal,
+  T_string, T_function, T_instance,
+  typify,
+} = require('../')
 
 
 // console.log(transform([{x:'a'},{x:'b'},{x:'c'}],{'`$PACK`':['',{
@@ -56,7 +62,7 @@ console.dir(
 
 
 let x
-console.log(setpath(x={a:1}, 'a', 2),x)
+// console.log(setpath(x={a:1}, 'a', 2),x)
 // console.log(setpath(x={a:{b:1}}, 'a.b', 2),x)
 // console.log(setpath(x={a:{b:1}}, 'a', 3),x)
 // console.log(setpath(x={a:{b:1}}, '', 4),x)
@@ -142,3 +148,35 @@ console.log(setpath(x={a:1}, 'a', 2),x)
 
 // console.log(transform({x:'y'},{q:['`$APPLY`',(v)=>(''+v).toUpperCase(),'`x`']}))
 // console.log(transform({x:'y'},{q:['`$APPLY`',(v)=>'a'.repeat(v),3]}))
+
+
+
+// console.log(validate({x:1},{x:'`$ONE`'}))
+
+// console.log(transform({x:1},{x:['`$APPLY`']}))
+
+// console.log(T_any, tn(T_any), T_nil, tn(T_nil),T_bool, tn(T_bool))
+// console.log(tn(T_number), tn(T_number|T_integer),
+//             Math.clz32(T_number), Math.clz32(T_number|T_integer), )
+
+// console.log(T_map, T_node, T_map|T_node)
+// console.log(T_scalar, T_number, T_integer, T_decimal)
+// console.log(T_scalar|T_number|T_integer)
+// console.log(T_scalar|T_number|T_decimal)
+// console.log(T_scalar|T_string)
+// console.log(T_scalar|T_bool)
+// console.log(T_scalar, T_function, T_scalar|T_function)
+// console.log(typify(null),T_nil)
+// console.log(T_any, T_integer, T_any & T_integer)
+
+
+
+// console.log(typify(1001), T_integer, T_number, T_scalar, T_integer|T_number|T_scalar, 'QQQ',
+//           T_integer & typify(1001))
+
+
+// console.log(T_nil, T_null, T_null&T_scalar)
+
+let o = {x:1}
+let ot = typify(o)
+console.log(ot, T_node|T_map, T_instance, T_function, T_instance|T_function, (T_instance|T_function)&ot)
