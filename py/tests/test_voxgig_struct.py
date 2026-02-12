@@ -296,9 +296,11 @@ class TestStruct(unittest.TestCase):
                       ', p=' + stringify(parent) +
                       ', t=' + pathify(path))
             return val
-            
+        
+        # Test after callback (Python walk only supports after, not before)
+        # TODO: Python walk() needs to be updated to support before/after callbacks like TypeScript
         walk(test_data["in"], walklog)
-        self.assertEqual(log, test_data["out"])
+        self.assertEqual(log, test_data["out"]["after"])
         
     def test_walk_basic(self):
         def walkpath(_key, val, _parent, path):
@@ -430,9 +432,8 @@ class TestStruct(unittest.TestCase):
 
     # -------------------------------------------------
     # transform tests
+    # Inputs and expected outputs: build/test/transform.jsonic
     # -------------------------------------------------
-
-
 
     def test_transform_basic(self):
         test_data = clone(spec["transform"]["basic"])
@@ -457,22 +458,16 @@ class TestStruct(unittest.TestCase):
         runset(spec["transform"]["cmds"], transform_wrapper)
 
     def test_transform_each(self):
-        self.assertTrue(True)
-        return
         def transform_wrapper(vin):
             return transform(vin.get("data"), vin.get("spec"), vin.get("store"))
         runset(spec["transform"]["each"], transform_wrapper)
 
     def test_transform_pack(self):
-        self.assertTrue(True)
-        return
         def transform_wrapper(vin):
             return transform(vin.get("data"), vin.get("spec"), vin.get("store"))
         runset(spec["transform"]["pack"], transform_wrapper)
 
     def test_transform_ref(self):
-        self.assertTrue(True)
-        return
         def transform_wrapper(vin):
             return transform(vin.get("data"), vin.get("spec"), vin.get("store"))
         runset(spec["transform"]["ref"], transform_wrapper)
@@ -486,8 +481,6 @@ class TestStruct(unittest.TestCase):
                lambda vin: transform(vin.get("data"), vin.get("spec"), {"modify": modifier, "extra": vin.get("store")}))
 
     def test_transform_extra(self):
-        self.assertTrue(True)
-        return
         def upper_func(state, val, current, ref, store):
             path = state.path
             this_key = path[-1] if path else None
@@ -498,8 +491,10 @@ class TestStruct(unittest.TestCase):
                 {"a": 1},
                 {"x": "`a`", "b": "`$COPY`", "c": "`$UPPER`"},
                 {
-                    "b": 2,
-                    "$UPPER": upper_func
+                    "extra": {
+                        "b": 2,
+                        "$UPPER": upper_func
+                    }
                 }
             ),
             {"x": 1, "b": 2, "c": "C"}
@@ -521,30 +516,22 @@ class TestStruct(unittest.TestCase):
 
 
     def test_validate_basic(self):
-        self.assertTrue(True)
-        return
         def validate_wrapper(vin):
             return validate(vin.get("data"), vin.get("spec"))
         runset(spec["validate"]["basic"], validate_wrapper)
 
         
     def test_validate_child(self):
-        self.assertTrue(True)
-        return
         def validate_wrapper(vin):
             return validate(vin.get("data"), vin.get("spec"))
         runset(spec["validate"]["child"], validate_wrapper)
         
     def test_validate_one(self):
-        self.assertTrue(True)
-        return
         def validate_wrapper(vin):
             return validate(vin.get("data"), vin.get("spec"))
         runset(spec["validate"]["one"], validate_wrapper)
         
     def test_validate_exact(self):
-        self.assertTrue(True)
-        return
         def validate_wrapper(vin):
             return validate(vin.get("data"), vin.get("spec"))
         runset(spec["validate"]["exact"], validate_wrapper)
@@ -555,8 +542,6 @@ class TestStruct(unittest.TestCase):
                   lambda vin: validate(vin.get("data"), vin.get("spec")))
 
     def test_validate_special(self):
-        self.assertTrue(True)
-        return
         def validate_wrapper(vin):
             return validate(vin.get("data"), vin.get("spec"), vin.get("inj"))
         runset(spec["validate"]["special"], validate_wrapper)
@@ -603,18 +588,19 @@ class TestStruct(unittest.TestCase):
         runset(selectSpec["basic"], select_wrapper)
 
     def test_select_operators(self):
-        self.assertTrue(True)
-        return
         def select_wrapper(vin):
             return select(vin.get("obj"), vin.get("query"))
         runset(selectSpec["operators"], select_wrapper)
 
     def test_select_edge(self):
-        self.assertTrue(True)
-        return
         def select_wrapper(vin):
             return select(vin.get("obj"), vin.get("query"))
         runset(selectSpec["edge"], select_wrapper)
+
+    def test_select_alts(self):
+        def select_wrapper(vin):
+            return select(vin.get("obj"), vin.get("query"))
+        runset(selectSpec["alts"], select_wrapper)
 
     # -------------------------------------------------
     # JSON Builder tests
