@@ -36,7 +36,8 @@ parent?: any, // Parent node, if any.
 inj?: Injection, // Injection state, if any.
 store?: any) => void;
 type WalkApply = (key: string | number | undefined, val: any, parent: any, path: string[]) => any;
-declare function tn(t: number): any;
+declare function typename(t: number): any;
+declare function getdef(val: any, alt: any): any;
 declare function isnode(val: any): val is Indexable;
 declare function ismap(val: any): val is {
     [key: string]: any;
@@ -46,7 +47,7 @@ declare function iskey(key: any): key is PropKey;
 declare function isempty(val: any): boolean;
 declare function isfunc(val: any): val is Function;
 declare function size(val: any): number;
-declare function slice<V extends any>(val: V, start?: number, end?: number): V;
+declare function slice<V extends any>(val: V, start?: number, end?: number, mutate?: boolean): V;
 declare function pad(str: any, padding?: number, padchar?: string): string;
 declare function typify(value: any): number;
 declare function getelem(val: any, key: any, alt?: any): any;
@@ -56,6 +57,7 @@ declare function keysof(val: any): string[];
 declare function haskey(val: any, key: any): boolean;
 declare function items(val: any): [string, any][];
 declare function items<T>(val: any, apply: (item: [string, any]) => T): T[];
+declare function flatten(list: any[], depth?: number): any[];
 declare function escre(s: string): string;
 declare function escurl(s: string): string;
 declare function joinurl(sarr: any[]): string;
@@ -107,11 +109,16 @@ declare class Injection {
     child(keyI: number, keys: string[]): Injection;
     setval(val: any, ancestor?: number): undefined;
 }
+declare function checkPlacement(modes: InjectMode[], ijname: string, parentTypes: number, inj: Injection): boolean;
+declare function injectorArgs(argTypes: number[], args: any[]): any;
+declare function injectChild(child: any, store: any, inj: Injection): Injection;
 declare class StructUtility {
     clone: typeof clone;
     delprop: typeof delprop;
     escre: typeof escre;
     escurl: typeof escurl;
+    flatten: typeof flatten;
+    getdef: typeof getdef;
     getelem: typeof getelem;
     getpath: typeof getpath;
     getprop: typeof getprop;
@@ -149,7 +156,7 @@ declare class StructUtility {
     };
     jo: typeof jo;
     ja: typeof ja;
-    tn: typeof tn;
+    tn: typeof typename;
     T_any: number;
     T_nil: number;
     T_boolean: number;
@@ -165,6 +172,9 @@ declare class StructUtility {
     T_instance: number;
     T_scalar: number;
     T_node: number;
+    checkPlacement: typeof checkPlacement;
+    injectorArgs: typeof injectorArgs;
+    injectChild: typeof injectChild;
 }
-export { StructUtility, clone, delprop, escre, escurl, getelem, getpath, getprop, haskey, inject, isempty, isfunc, iskey, islist, ismap, isnode, items, joinurl, jsonify, keysof, merge, pad, pathify, select, setpath, setprop, size, slice, strkey, stringify, transform, typify, validate, walk, SKIP, DELETE, jo, ja, tn, T_any, T_nil, T_boolean, T_decimal, T_integer, T_number, T_string, T_function, T_symbol, T_null, T_list, T_map, T_instance, T_scalar, T_node, };
+export { StructUtility, clone, delprop, escre, escurl, flatten, getdef, getelem, getpath, getprop, haskey, inject, isempty, isfunc, iskey, islist, ismap, isnode, items, joinurl, jsonify, keysof, merge, pad, pathify, select, setpath, setprop, size, slice, strkey, stringify, transform, typify, validate, walk, SKIP, DELETE, jo, ja, typename, T_any, T_nil, T_boolean, T_decimal, T_integer, T_number, T_string, T_function, T_symbol, T_null, T_list, T_map, T_instance, T_scalar, T_node, checkPlacement, injectorArgs, injectChild, };
 export type { Injection, Injector, WalkApply };

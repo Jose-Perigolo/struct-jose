@@ -5,7 +5,8 @@ const {
   validate, tn, T_nil, T_null, T_bool, T_any, 
   T_map, T_node, T_scalar, T_number, T_integer, T_decimal,
   T_string, T_function, T_instance,
-  typify,
+  typify, getdef, flatten,
+  slice,
 } = require('../')
 
 
@@ -177,6 +178,46 @@ let x
 
 // console.log(T_nil, T_null, T_null&T_scalar)
 
-let o = {x:1}
-let ot = typify(o)
-console.log(ot, T_node|T_map, T_instance, T_function, T_instance|T_function, (T_instance|T_function)&ot)
+// let o = {x:1}
+// let ot = typify(o)
+// console.log(ot, T_node|T_map, T_instance, T_function, T_instance|T_function, (T_instance|T_function)&ot)
+
+
+// console.log(getdef(1,2), getdef(undefined,3))
+
+// console.log(flatten([1,[2,3],[[4]]]))
+// console.log(flatten([1,[2,3],[[4]]],2))
+
+// let a = [2]
+// console.log(flatten([1,getdef(a,[])]))
+
+// a = undefined
+// console.log(flatten([1,getdef(a,[])]))
+
+let a = [1,2,3,4]
+let b = slice(a,1,3,true)
+console.log(a,b,a===b)
+
+
+a = [1,2,3,4]
+b = slice(a,0,4,true)
+console.log(a,b,a===b)
+
+a = [1,2,3,4]
+b = slice(a,0,0,true)
+console.log(a,b,a===b)
+
+
+a = [1,2,3,4]
+b = slice(a,0,5,true)
+console.log(a,b,a===b)
+
+
+a = [1,2,3,4]
+b = slice(a,5,6,true)
+console.log(a,b,a===b)
+
+
+a = [1,2,3,4]
+b = slice(a,2,6,true)
+console.log(a,b,a===b)

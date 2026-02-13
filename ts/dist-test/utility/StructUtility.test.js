@@ -502,7 +502,6 @@ const { equal, deepEqual } = node_assert_1.default;
         const c = new C();
         errs = [];
         validate({ x: c }, { x: '`$INSTANCE`' }, { errs });
-        console.log(errs);
         equal(errs.length, 0);
     });
     (0, node_test_1.test)('validate-custom', async () => {

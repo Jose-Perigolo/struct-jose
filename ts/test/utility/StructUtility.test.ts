@@ -746,7 +746,6 @@ describe('struct', async () => {
     const c = new C()
     errs = []
     validate({ x: c }, { x: '`$INSTANCE`' }, { errs })
-    console.log(errs)
     equal(errs.length, 0)
   })
 
