@@ -312,13 +312,13 @@ describe('struct', async () => {
 
   test('minor-edge-typify', async () => {
     const {
-      typify, T_nil, T_scalar, T_function, T_symbol, T_any, T_node, T_instance, T_null
+      typify, T_noval, T_scalar, T_function, T_symbol, T_any, T_node, T_instance, T_null
     } = struct
     class X { }
     const x = new X()
-    equal(typify(), T_nil)
-    equal(typify(undefined), T_nil)
-    equal(typify(NaN), T_nil)
+    equal(typify(), T_noval)
+    equal(typify(undefined), T_noval)
+    equal(typify(NaN), T_noval)
     equal(typify(null), T_scalar | T_null)
     equal(typify(() => null), T_scalar | T_function)
     equal(typify(Symbol('S')), T_scalar | T_symbol)
@@ -807,24 +807,24 @@ describe('struct', async () => {
   // ============
 
   test('json-builder', async () => {
-    const { jsonify, jo, ja } = struct
-    equal(jsonify(jo(
+    const { jsonify, jm, jt } = struct
+    equal(jsonify(jm(
       'a', 1
     )), `{
   "a": 1
 }`)
 
-    equal(jsonify(ja(
+    equal(jsonify(jt(
       'b', 2
     )), `[
   "b",
   2
 ]`)
 
-    equal(jsonify(jo(
+    equal(jsonify(jm(
       'c', 'C',
-      'd', jo('x', true),
-      'e', ja(null, false)
+      'd', jm('x', true),
+      'e', jt(null, false)
     )), `{
   "c": "C",
   "d": {
@@ -836,13 +836,13 @@ describe('struct', async () => {
   ]
 }`)
 
-    equal(jsonify(ja(
-      3.3, jo(
+    equal(jsonify(jt(
+      3.3, jm(
         'f', true,
         'g', false,
         'h', null,
-        'i', ja('y', 0),
-        'j', jo('z', -1),
+        'i', jt('y', 0),
+        'j', jm('z', -1),
         'k')
     )), `[
   3.3,
@@ -861,7 +861,7 @@ describe('struct', async () => {
   }
 ]`)
 
-    equal(jsonify(jo(
+    equal(jsonify(jm(
       true, 1,
       false, 2,
       null, 3,

@@ -2,7 +2,7 @@
 
 const {
   transform, setpath, items, isnode, merge,
-  validate, tn, T_nil, T_null, T_bool, T_any, 
+  validate, tn, T_noval, T_null, T_bool, T_any, 
   T_map, T_node, T_scalar, T_number, T_integer, T_decimal,
   T_string, T_function, T_instance,
   typify, getdef, flatten,
@@ -156,7 +156,7 @@ let x
 
 // console.log(transform({x:1},{x:['`$APPLY`']}))
 
-// console.log(T_any, tn(T_any), T_nil, tn(T_nil),T_bool, tn(T_bool))
+// console.log(T_any, tn(T_any), T_noval, tn(T_noval),T_bool, tn(T_bool))
 // console.log(tn(T_number), tn(T_number|T_integer),
 //             Math.clz32(T_number), Math.clz32(T_number|T_integer), )
 
@@ -167,7 +167,7 @@ let x
 // console.log(T_scalar|T_string)
 // console.log(T_scalar|T_bool)
 // console.log(T_scalar, T_function, T_scalar|T_function)
-// console.log(typify(null),T_nil)
+// console.log(typify(null),T_noval)
 // console.log(T_any, T_integer, T_any & T_integer)
 
 
@@ -176,7 +176,7 @@ let x
 //           T_integer & typify(1001))
 
 
-// console.log(T_nil, T_null, T_null&T_scalar)
+// console.log(T_noval, T_null, T_null&T_scalar)
 
 // let o = {x:1}
 // let ot = typify(o)
