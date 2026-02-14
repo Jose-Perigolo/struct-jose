@@ -82,7 +82,7 @@ const (
 
 	// General strings.
 	S_any      = "any"
-	S_nil      = "nil"
+	S_noval    = "noval"
 	S_array    = "array"
 	S_list     = "list"
 	S_map      = "map"
@@ -112,7 +112,7 @@ const (
 // Type bits - using bit positions from 31 downward, matching the TS implementation.
 const (
 	T_any      = (1 << 31) - 1 // All bits set.
-	T_nil      = 1 << 30       // Undefined/absent. NOT a scalar.
+	T_noval    = 1 << 30       // Absent value (no value at all). NOT a scalar.
 	T_boolean  = 1 << 29
 	T_decimal  = 1 << 28
 	T_integer  = 1 << 27
@@ -133,7 +133,7 @@ const (
 // TYPENAME maps bit position (via leading zeros count) to type name string.
 var TYPENAME = [...]string{
 	S_any,
-	S_nil,
+	S_noval,
 	S_boolean,
 	S_decimal,
 	S_integer,
@@ -319,7 +319,7 @@ func Typify(value any) int {
 			return T_scalar | T_number | T_integer
 		}
 		if err == nil && math.IsNaN(f) {
-			return T_nil
+			return T_noval
 		}
 		return T_scalar | T_number | T_decimal
 
