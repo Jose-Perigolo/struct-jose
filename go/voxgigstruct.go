@@ -131,13 +131,13 @@ type Injection struct {
 	// Mode    InjectMode     // Injection mode: key:pre, val, key:post.
   Mode    string         // Injection mode: key:pre, val, key:post.
 	Full    bool           // Transform escape was full key name.
-	KeyI    int            // Index of parent key in list of parent keys.
-	Keys    []string       // List of parent keys.
-	Key     string         // Current parent key.
-	Val     any            // Current child value.
-	Parent  any            // Current parent (in transform specification).
-	Path    []string       // Path to current node.
-	Nodes   []any          // Stack of ancestor nodes.
+	KeyI    int              // Index of parent key in list of parent keys.
+	Keys    *ListRef[string] // List of parent keys.
+	Key     string           // Current parent key.
+	Val     any              // Current child value.
+	Parent  any              // Current parent (in transform specification).
+	Path    *ListRef[string] // Path to current node.
+	Nodes   *ListRef[any]   // Stack of ancestor nodes.
 	Handler Injector       // Custom handler for injections.
 	Errs    *ListRef[any]  // Error collector.
 	Meta    map[string]any // Custom meta data.
@@ -1094,12 +1094,12 @@ func InjectDescend(
       Mode:    S_MVAL,
 			Full:    false,
 			KeyI:    0,
-			Keys:    []string{S_DTOP},
+			Keys:    &ListRef[string]{List: []string{S_DTOP}},
 			Key:     S_DTOP,
 			Val:     val,
 			Parent:  parent,
-			Path:    []string{S_DTOP},
-			Nodes:   []any{parent},
+			Path:    &ListRef[string]{List: []string{S_DTOP}},
+			Nodes:   &ListRef[any]{List: []any{parent}},
 			Handler: injectHandler,
 			Base:    S_DTOP,
 			Modify:  modify,
@@ -1114,8 +1114,8 @@ func InjectDescend(
 			S_DTOP: store,
 		}
 	} else {
-		if len(state.Path) > 1 {
-			parentKey := state.Path[len(state.Path)-2]
+		if state.Path.Len() > 1 {
+			parentKey := state.Path.Get(state.Path.Len() - 2)
 			current = GetProp(current, parentKey)
 		}
 	}
@@ -1140,7 +1140,7 @@ func InjectDescend(
 
 		sort.Strings(normalKeys)
 		sort.Strings(transformKeys)
-		nodekeys := append(normalKeys, transformKeys...)
+		nodekeys := &ListRef[string]{List: append(normalKeys, transformKeys...)}
 
 		// Each child key-value pair is processed in three injection phases:
 		// 1. state.mode='key:pre' - Key string is injected, returning a possibly altered key.
@@ -1148,11 +1148,13 @@ func InjectDescend(
 		// 3. state.mode='key:post' - Key string is injected again, allowing child mutation.
 
 		nkI := 0
-		for nkI < len(nodekeys) {
-			nodekey := nodekeys[nkI]
+		for nkI < nodekeys.Len() {
+			nodekey := nodekeys.Get(nkI)
 
-			childpath := append(state.Path, nodekey)
-			childnodes := append(state.Nodes, val)
+			childpath := state.Path.CloneList()
+			childpath.Append(nodekey)
+			childnodes := state.Nodes.CloneList()
+			childnodes.Append(val)
 			childval := GetProp(val, nodekey)
 
 			childstate := &Injection{
@@ -1342,8 +1344,8 @@ var Transform_KEY Injector = func(
 
 	// fallback to the second-last path element
 	ppath := state.Path
-	if len(ppath) >= 2 {
-		return ppath[len(ppath)-2]
+	if ppath.Len() >= 2 {
+		return ppath.Get(ppath.Len() - 2)
 	}
 
 	return nil
@@ -1427,7 +1429,7 @@ var Transform_EACH Injector = func(
   
 	// Remove arguments to avoid spurious processing.
 	if nil != state.Keys {
-		state.Keys = state.Keys[:1]
+		state.Keys.Truncate(1)
 	}
 
 	// if InjectModeVal != state.Mode {
@@ -1452,10 +1454,10 @@ var Transform_EACH Injector = func(
 	var tval any
 	tval = []any{}
 
-	// tkey := state.Path[len(state.Path)-2]
-	target := state.Nodes[len(state.Nodes)-2]
-	if nil == target && len(state.Nodes) > 0 {
-		target = state.Nodes[len(state.Nodes)-1]
+	// tkey := state.Path.Get(state.Path.Len()-2)
+	target := state.Nodes.Get(state.Nodes.Len() - 2)
+	if nil == target && state.Nodes.Len() > 0 {
+		target = state.Nodes.Get(state.Nodes.Len() - 1)
 	}
 
 	// Create clones of the child template for each value of the current source.
@@ -1545,14 +1547,14 @@ var Transform_PACK Injector = func(
 	keyprop := GetProp(child, S_DKEY)
 
 	tkey := ""
-	if len(state.Path) >= 2 {
-		tkey = state.Path[len(state.Path)-2]
+	if state.Path.Len() >= 2 {
+		tkey = state.Path.Get(state.Path.Len() - 2)
 	}
 	var target any
-	if len(state.Nodes) >= 2 {
-		target = state.Nodes[len(state.Nodes)-2]
+	if state.Nodes.Len() >= 2 {
+		target = state.Nodes.Get(state.Nodes.Len() - 2)
 	} else {
-		target = state.Nodes[len(state.Nodes)-1]
+		target = state.Nodes.Get(state.Nodes.Len() - 1)
 	}
 
   // srcstore := GetProp(store, state.Base, store)
@@ -1716,13 +1718,13 @@ var validate_STRING Injector = func(
 
 	t := Typify(out)
 	if S_string != t {
-		msg := _invalidTypeMsg(state.Path, S_string, t, out)
+		msg := _invalidTypeMsg(state.Path.List, S_string, t, out)
 		state.Errs.Append(msg)
 		return nil
 	}
 
 	if S_MT == out.(string) {
-		msg := "Empty string at " + Pathify(state.Path, 0)
+		msg := "Empty string at " + Pathify(state.Path.List, 0)
 		state.Errs.Append(msg)
 		return nil
 	}
@@ -1741,7 +1743,7 @@ var validate_NUMBER Injector = func(
 
 	t := Typify(out)
 	if S_number != t {
-		msg := _invalidTypeMsg(state.Path, S_number, t, out)
+		msg := _invalidTypeMsg(state.Path.List, S_number, t, out)
 		state.Errs.Append(msg)
 		return nil
 	}
@@ -1760,7 +1762,7 @@ var validate_BOOLEAN Injector = func(
 
 	t := Typify(out)
 	if S_boolean != t {
-		msg := _invalidTypeMsg(state.Path, S_boolean, t, out)
+		msg := _invalidTypeMsg(state.Path.List, S_boolean, t, out)
 		state.Errs.Append(msg)
 		return nil
 	}
@@ -1780,7 +1782,7 @@ var validate_OBJECT Injector = func(
 	t := Typify(out)
 
 	if S_object != t {
-		msg := _invalidTypeMsg(state.Path, S_object, t, out)
+		msg := _invalidTypeMsg(state.Path.List, S_object, t, out)
 		state.Errs.Append(msg)
 
     return nil
@@ -1800,7 +1802,7 @@ var validate_ARRAY Injector = func(
 
 	t := Typify(out)
 	if S_array != t {
-		msg := _invalidTypeMsg(state.Path, S_array, t, out)
+		msg := _invalidTypeMsg(state.Path.List, S_array, t, out)
 		state.Errs.Append(msg)
 		return nil
 	}
@@ -1819,7 +1821,7 @@ var validate_FUNCTION Injector = func(
 
 	t := Typify(out)
 	if S_function != t {
-		msg := _invalidTypeMsg(state.Path, S_function, t, out)
+		msg := _invalidTypeMsg(state.Path.List, S_function, t, out)
 		state.Errs.Append(msg)
 		return nil
 	}
@@ -1848,7 +1850,7 @@ var validate_CHILD Injector = func(
 	if state.Mode == S_MKEYPRE {
 		child := GetProp(state.Parent, state.Key)
 
-		pkey := GetProp(state.Path, len(state.Path)-2)
+		pkey := state.Path.Get(state.Path.Len() - 2)
 		tval := GetProp(current, pkey)
 
 		if nil == tval {
@@ -1857,7 +1859,7 @@ var validate_CHILD Injector = func(
 		} else if !IsMap(tval) {
 			state.Errs.Append(
 				_invalidTypeMsg(
-					state.Path[:len(state.Path)-1],
+					state.Path.List[:state.Path.Len()-1],
 					S_object,
 					Typify(tval),
 					tval,
@@ -1869,7 +1871,7 @@ var validate_CHILD Injector = func(
 		ckeys := KeysOf(tval)
 		for _, ckey := range ckeys {
 			SetProp(state.Parent, ckey, Clone(child))
-			state.Keys = append(state.Keys, ckey)
+			state.Keys.Append(ckey)
 		}
 
 		SetProp(state.Parent, state.Key, nil)
@@ -1900,7 +1902,7 @@ var validate_CHILD Injector = func(
 		if !IsList(current) {
 			state.Errs.Append(
 				_invalidTypeMsg(
-					state.Path[:len(state.Path)-1],
+					state.Path.List[:state.Path.Len()-1],
 					S_array,
 					Typify(current),
 					current,
@@ -1952,13 +1954,13 @@ func init_validate_ONE() {
 			// Validate that parent is a list and we're at the first element
 			if !IsList(state.Parent) || state.KeyI != 0 {
 				state.Errs.Append("The $ONE validator at field " +
-					Pathify(state.Path, 1, 1) +
+					Pathify(state.Path.List, 1, 1) +
 					" must be the first element of an array.")
 				return nil
 			}
 
 			// Once we handle `$ONE`, we skip further iteration by setting KeyI to keys.length
-			state.KeyI = len(state.Keys)
+			state.KeyI = state.Keys.Len()
 
 			// The parent is assumed to be a slice: ["`$ONE`", alt0, alt1, ...].
 			parentSlice, ok := state.Parent.([]any)
@@ -1967,25 +1969,25 @@ func init_validate_ONE() {
 			}
 
 			// Get grandparent and grandkey to replace the structure
-			grandparent := GetProp(state.Nodes, len(state.Nodes)-2)
-			grandkey := GetProp(state.Path, len(state.Path)-2)
+			grandparent := state.Nodes.Get(state.Nodes.Len() - 2)
+			grandkey := state.Path.Get(state.Path.Len() - 2)
 
 			// Clean up structure by replacing [$ONE, ...] with current value
 			SetProp(grandparent, grandkey, current)
       state.Parent = current
       // _updateAncestors("ONE",state,grandparent,grandkey,current)
-      
+
 			// Adjust the path
-			state.Path = state.Path[:len(state.Path)-1]
-			state.Key = state.Path[len(state.Path)-1]
+			state.Path.Truncate(state.Path.Len() - 1)
+			state.Key = state.Path.Get(state.Path.Len() - 1)
 
 			// The shape alternatives are everything after the first element.
 			tvals := parentSlice[1:] // alt0, alt1, ...
-			
+
 			// Ensure we have at least one alternative
 			if len(tvals) == 0 {
 				state.Errs.Append("The $ONE validator at field " +
-					Pathify(state.Path, 1, 1) +
+					Pathify(state.Path.List, 1, 1) +
 					" must have at least one argument.")
 				return nil
 			}
@@ -2034,7 +2036,7 @@ func init_validate_ONE() {
 			}
 
 			msg := _invalidTypeMsg(
-				state.Path,
+				state.Path.List,
 				prefix+valdesc,
 				Typify(current),
 				current,
@@ -2060,31 +2062,31 @@ func init_validate_EXACT() {
 			// Validate that parent is a list and we're at the first element
 			if !IsList(state.Parent) || state.KeyI != 0 {
 				state.Errs.Append("The $EXACT validator at field " +
-					Pathify(state.Path, 1, 1) +
+					Pathify(state.Path.List, 1, 1) +
 					" must be the first element of an array.")
 				return nil
 			}
 
 			// Once we handle `$EXACT`, we skip further iteration by setting KeyI to keys.length
-			state.KeyI = len(state.Keys)
+			state.KeyI = state.Keys.Len()
 
 			// The parent is assumed to be a slice: ["`$EXACT`", alt0, alt1, ...].
 			parentSlice, ok := state.Parent.([]any)
 			if !ok {
 				return nil
 			}
-      
+
 			// Get grandparent and grandkey to replace the structure
-			grandparent := GetProp(state.Nodes, len(state.Nodes)-2)
-			grandkey := GetProp(state.Path, len(state.Path)-2)
+			grandparent := state.Nodes.Get(state.Nodes.Len() - 2)
+			grandkey := state.Path.Get(state.Path.Len() - 2)
 
 			// Clean up structure by replacing [$EXACT, ...] with current value
 			SetProp(grandparent, grandkey, current)
       state.Parent = current
-			
+
 			// Adjust the path
-			state.Path = state.Path[:len(state.Path)-1]
-			state.Key = state.Path[len(state.Path)-1]
+			state.Path.Truncate(state.Path.Len() - 1)
+			state.Key = state.Path.Get(state.Path.Len() - 1)
 
 			// The exact values to match are everything after the first element.
 			tvals := parentSlice[1:] // alt0, alt1, ...
@@ -2092,7 +2094,7 @@ func init_validate_EXACT() {
 			// Ensure we have at least one alternative
 			if len(tvals) == 0 {
 				state.Errs.Append("The $EXACT validator at field " +
-					Pathify(state.Path, 1, 1) +
+					Pathify(state.Path.List, 1, 1) +
 					" must have at least one argument.")
 				return nil
 			}
@@ -2144,17 +2146,17 @@ func init_validate_EXACT() {
 			})
 
 			prefix := ""
-			if len(state.Path) <= 1 {
+			if state.Path.Len() <= 1 {
 				prefix = "value "
 			}
-			
+
 			oneOf := ""
 			if len(tvals) > 1 {
 				oneOf = "one of "
 			}
 
 			msg := _invalidTypeMsg(
-				state.Path,
+				state.Path.List,
 				prefix+"exactly equal to "+oneOf+valdesc,
 				Typify(current),
 				current,
@@ -2201,7 +2203,7 @@ func validation(
 
 	// Type mismatch.
 	if ptype != ctype && pval != nil {
-		state.Errs.Append(_invalidTypeMsg(state.Path, ptype, ctype, cval))
+		state.Errs.Append(_invalidTypeMsg(state.Path.List, ptype, ctype, cval))
 		return
 	}
 
@@ -2213,7 +2215,7 @@ func validation(
 			} else {
 				errType = ptype
 			}
-			state.Errs.Append(_invalidTypeMsg(state.Path, errType, ctype, cval))
+			state.Errs.Append(_invalidTypeMsg(state.Path.List, errType, ctype, cval))
 			return
 		}
 
@@ -2231,7 +2233,7 @@ func validation(
 
 			// Closed object, so reject extra keys not in shape.
 			if len(badkeys) > 0 {
-				state.Errs.Append("Unexpected keys at field " + Pathify(state.Path, 1) +
+				state.Errs.Append("Unexpected keys at field " + Pathify(state.Path.List, 1) +
 					": " + strings.Join(badkeys, ", "))
 			}
 		} else {
@@ -2243,7 +2245,7 @@ func validation(
 		}
 	} else if IsList(cval) {
 		if !IsList(val) {
-			state.Errs.Append(_invalidTypeMsg(state.Path, ptype, ctype, cval))
+			state.Errs.Append(_invalidTypeMsg(state.Path.List, ptype, ctype, cval))
 		}
 	} else {
 		// Spec value was a default, copy over data
@@ -2368,6 +2370,28 @@ func (l *ListRef[T]) Append(elem T) {
 
 func (l *ListRef[T]) Prepend(elem T) {
 	l.List = append([]T{elem}, l.List...)
+}
+
+func (l *ListRef[T]) Len() int {
+	return len(l.List)
+}
+
+func (l *ListRef[T]) Get(i int) T {
+	return l.List[i]
+}
+
+func (l *ListRef[T]) Set(i int, v T) {
+	l.List[i] = v
+}
+
+func (l *ListRef[T]) Truncate(n int) {
+	l.List = l.List[:n]
+}
+
+func (l *ListRef[T]) CloneList() *ListRef[T] {
+	newList := make([]T, len(l.List))
+	copy(newList, l.List)
+	return &ListRef[T]{List: newList}
 }
 
 
@@ -2600,19 +2624,19 @@ func _setParentProp(whence string, state *Injection, val any) {
 func _updateAncestors(whence string, state *Injection, target any, tkey any, tval any) {
   ap := SetProp(target, tkey, tval)
   // state.Parent = ap
-	aI := len(state.Nodes) - 1
+	aI := state.Nodes.Len() - 1
 
 
 	if -1 < aI {
-		state.Nodes[aI] = ap
+		state.Nodes.Set(aI, ap)
 	}
 
 	aI = aI - 1
 	for -1 < aI {
-    ak := state.Path[aI]
-    an := state.Nodes[aI]
+    ak := state.Path.Get(aI)
+    an := state.Nodes.Get(aI)
     ap = SetProp(an, ak, ap)
-  
+
 		if IsList(an) {
 	 		aI = aI - 1
 		} else {

@@ -519,12 +519,12 @@ func TestStruct(t *testing.T) {
 			Mode:   "val",
 			Full:   false,
 			KeyI:   0,
-			Keys:   []string{"$TOP"},
+			Keys:   &voxgigstruct.ListRef[string]{List: []string{"$TOP"}},
 			Key:    "$TOP",
 			Val:    "",
 			Parent: nil,
-			Path:   []string{"$TOP"},
-			Nodes:  make([]any, 1),
+			Path:   &voxgigstruct.ListRef[string]{List: []string{"$TOP"}},
+			Nodes:  &voxgigstruct.ListRef[any]{List: make([]any, 1)},
 			Base:   "$TOP",
 			Errs:   voxgigstruct.ListRefCreate[any](),
 			Meta:   map[string]any{"step": 0},
@@ -692,10 +692,10 @@ func TestStruct(t *testing.T) {
 			store any,
 		) any {
 			p := s.Path
-			if len(p) == 0 {
+			if p.Len() == 0 {
 				return ""
 			}
-			last := p[len(p)-1]
+			last := p.Get(p.Len() - 1)
 			// uppercase the last letter
 			if len(last) > 0 {
 				return string(last[0]-32) + last[1:]
@@ -835,7 +835,7 @@ func TestStruct(t *testing.T) {
 				return x
 			default:
 				msg := fmt.Sprintf("Not an integer at %s: %v",
-					voxgigstruct.Pathify(state.Path, 1), out)
+					voxgigstruct.Pathify(state.Path.List, 1), out)
 				state.Errs.Append(msg)
 				return nil
 			}
