@@ -672,6 +672,9 @@ func CloneFlags(val any, flags map[string]bool) any {
 		for i, value := range v {
 			newSlice[i] = CloneFlags(value, flags)
 		}
+		if flags["wrap"] {
+			return &ListRef[any]{List: newSlice}
+		}
 		return newSlice
 	default:
 		return v
@@ -1676,14 +1679,6 @@ var Transform_PACK Injector = func(
 // ---------------------------------------------------------------------
 // Transform function: top-level
 
-// Walk apply function to convert bare lists to ListRefs on input.
-var _wrapLists WalkApply = func(key *string, val any, parent any, path []string) any {
-	if list, ok := val.([]any); ok {
-		return &ListRef[any]{List: list}
-	}
-	return val
-}
-
 // Walk apply function to convert ListRefs back to bare lists on output.
 var _unwrapLists WalkApply = func(key *string, val any, parent any, path []string) any {
 	if lr, ok := val.(*ListRef[any]); ok {
@@ -1706,8 +1701,10 @@ func TransformModify(
 	modify Modify, // optional modify
 ) any {
 
-	// Clone the spec so that the clone can be modified in place as the transform result.
-	spec = Clone(spec)
+	// Clone and wrap: clone the structures and convert bare lists to ListRefs
+	// for reference stability, in a single pass.
+	wrapFlags := map[string]bool{"wrap": true}
+	spec = CloneFlags(spec, wrapFlags)
 
 	// Split extra transforms from extra data
 	extraTransforms := map[string]any{}
@@ -1734,15 +1731,11 @@ func TransformModify(
 		data = map[string]any{}
 	}
 
-	// Merge extraData + data
+	// Merge extraData + data, clone+wrap in one pass
 	dataClone := Merge([]any{
-		Clone(extraData),
-		Clone(data),
+		CloneFlags(extraData, wrapFlags),
+		CloneFlags(data, wrapFlags),
 	})
-
-	// Walk input data and spec to convert bare lists to ListRefs for reference stability.
-	dataClone = Walk(dataClone, _wrapLists)
-	spec = Walk(spec, _wrapLists)
 
 	// The injection store with transform functions
 	store := map[string]any{
