@@ -737,7 +737,7 @@ function clone(val: any): any {
 
 
 // Define a JSON Object using function arguments.
-function jo(...kv: any[]): Record<string, any> {
+function jm(...kv: any[]): Record<string, any> {
   const kvsize = size(kv)
   const o: any = {}
   for (let i = 0; i < kvsize; i += 2) {
@@ -750,7 +750,7 @@ function jo(...kv: any[]): Record<string, any> {
 
 
 // Define a JSON Array using function arguments.
-function ja(...v: any[]): any[] {
+function jt(...v: any[]): any[] {
   const vsize = size(v)
   const a: any = new Array(vsize)
   for (let i = 0; i < vsize; i++) {
@@ -2930,8 +2930,8 @@ class StructUtility {
   SKIP = SKIP
   DELETE = DELETE
 
-  jo = jo
-  ja = ja
+  jm = jm
+  jt = jt
   tn = typename
 
   T_any = T_any
@@ -2996,8 +2996,8 @@ export {
   SKIP,
   DELETE,
 
-  jo,
-  ja,
+  jm,
+  jt,
   typename,
 
   T_any,

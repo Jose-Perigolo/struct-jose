@@ -807,24 +807,24 @@ describe('struct', async () => {
   // ============
 
   test('json-builder', async () => {
-    const { jsonify, jo, ja } = struct
-    equal(jsonify(jo(
+    const { jsonify, jm, jt } = struct
+    equal(jsonify(jm(
       'a', 1
     )), `{
   "a": 1
 }`)
 
-    equal(jsonify(ja(
+    equal(jsonify(jt(
       'b', 2
     )), `[
   "b",
   2
 ]`)
 
-    equal(jsonify(jo(
+    equal(jsonify(jm(
       'c', 'C',
-      'd', jo('x', true),
-      'e', ja(null, false)
+      'd', jm('x', true),
+      'e', jt(null, false)
     )), `{
   "c": "C",
   "d": {
@@ -836,13 +836,13 @@ describe('struct', async () => {
   ]
 }`)
 
-    equal(jsonify(ja(
-      3.3, jo(
+    equal(jsonify(jt(
+      3.3, jm(
         'f', true,
         'g', false,
         'h', null,
-        'i', ja('y', 0),
-        'j', jo('z', -1),
+        'i', jt('y', 0),
+        'j', jm('z', -1),
         'k')
     )), `[
   3.3,
@@ -861,7 +861,7 @@ describe('struct', async () => {
   }
 ]`)
 
-    equal(jsonify(jo(
+    equal(jsonify(jm(
       true, 1,
       false, 2,
       null, 3,

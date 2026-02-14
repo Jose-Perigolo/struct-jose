@@ -37,8 +37,8 @@ exports.transform = transform;
 exports.typify = typify;
 exports.validate = validate;
 exports.walk = walk;
-exports.jo = jo;
-exports.ja = ja;
+exports.jm = jm;
+exports.jt = jt;
 exports.typename = typename;
 exports.checkPlacement = checkPlacement;
 exports.injectorArgs = injectorArgs;
@@ -634,7 +634,7 @@ function clone(val) {
     return out;
 }
 // Define a JSON Object using function arguments.
-function jo(...kv) {
+function jm(...kv) {
     const kvsize = size(kv);
     const o = {};
     for (let i = 0; i < kvsize; i += 2) {
@@ -645,7 +645,7 @@ function jo(...kv) {
     return o;
 }
 // Define a JSON Array using function arguments.
-function ja(...v) {
+function jt(...v) {
     const vsize = size(v);
     const a = new Array(vsize);
     for (let i = 0; i < vsize; i++) {
@@ -2254,8 +2254,8 @@ class StructUtility {
         this.walk = walk;
         this.SKIP = SKIP;
         this.DELETE = DELETE;
-        this.jo = jo;
-        this.ja = ja;
+        this.jm = jm;
+        this.jt = jt;
         this.tn = typename;
         this.T_any = T_any;
         this.T_nil = T_nil;

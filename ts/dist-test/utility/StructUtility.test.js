@@ -544,15 +544,15 @@ const { equal, deepEqual } = node_assert_1.default;
     // JSON Builder
     // ============
     (0, node_test_1.test)('json-builder', async () => {
-        const { jsonify, jo, ja } = struct;
-        equal(jsonify(jo('a', 1)), `{
+        const { jsonify, jm, jt } = struct;
+        equal(jsonify(jm('a', 1)), `{
   "a": 1
 }`);
-        equal(jsonify(ja('b', 2)), `[
+        equal(jsonify(jt('b', 2)), `[
   "b",
   2
 ]`);
-        equal(jsonify(jo('c', 'C', 'd', jo('x', true), 'e', ja(null, false))), `{
+        equal(jsonify(jm('c', 'C', 'd', jm('x', true), 'e', jt(null, false))), `{
   "c": "C",
   "d": {
     "x": true
@@ -562,7 +562,7 @@ const { equal, deepEqual } = node_assert_1.default;
     false
   ]
 }`);
-        equal(jsonify(ja(3.3, jo('f', true, 'g', false, 'h', null, 'i', ja('y', 0), 'j', jo('z', -1), 'k'))), `[
+        equal(jsonify(jt(3.3, jm('f', true, 'g', false, 'h', null, 'i', jt('y', 0), 'j', jm('z', -1), 'k'))), `[
   3.3,
   {
     "f": true,
@@ -578,7 +578,7 @@ const { equal, deepEqual } = node_assert_1.default;
     "k": null
   }
 ]`);
-        equal(jsonify(jo(true, 1, false, 2, null, 3, ['a'], 4, { 'b': 0 }, 5)), `{
+        equal(jsonify(jm(true, 1, false, 2, null, 3, ['a'], 4, { 'b': 0 }, 5)), `{
   "true": 1,
   "false": 2,
   "null": 3,
