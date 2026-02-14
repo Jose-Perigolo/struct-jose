@@ -126,6 +126,20 @@ func MakeRunner(testfile string, client Client) func(name string, store any) (*R
 			for _, entryVal := range testset {
 				entry := resolveEntry(entryVal, flags)
 
+				// Go cannot distinguish absent values from nil (JSON null).
+				// Skip entries where "in" or "out" is missing and the expected
+				// result is T_noval, as this represents a concept (undefined)
+				// that does not exist in Go.
+				_, hasIn := entry["in"]
+				_, hasOut := entry["out"]
+				if !hasIn || !hasOut {
+					if outVal, ok := entry["out"]; ok {
+						if outNum, ok := outVal.(int); ok && outNum == voxgigstruct.T_noval {
+							continue
+						}
+					}
+				}
+
 				testpack, err := resolveTestPack(name, entry, subject, client, clients)
 				if err != nil {
 					// No debug output
