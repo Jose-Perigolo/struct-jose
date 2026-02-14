@@ -55,6 +55,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"math/bits"
 	"net/url"
 	"reflect"
 	"regexp"
@@ -80,13 +81,23 @@ const (
 	S_DERRS = "$ERRS"
 
 	// General strings.
+	S_any      = "any"
+	S_nil      = "nil"
 	S_array    = "array"
+	S_list     = "list"
+	S_map      = "map"
 	// S_base     = "base"
 	S_boolean  = "boolean"
+	S_decimal  = "decimal"
+	S_integer  = "integer"
 	S_function = "function"
+	S_symbol   = "symbol"
+	S_instance = "instance"
 	S_number   = "number"
 	S_object   = "object"
 	S_string   = "string"
+	S_scalar   = "scalar"
+	S_node     = "node"
 	S_null     = "null"
 	S_key      = "key"
 	S_parent   = "parent"
@@ -97,6 +108,49 @@ const (
 	S_CN       = ":"
 	S_KEY      = "KEY"
 )
+
+// Type bits - using bit positions from 31 downward, matching the TS implementation.
+const (
+	T_any      = (1 << 31) - 1 // All bits set.
+	T_nil      = 1 << 30       // Undefined/absent. NOT a scalar.
+	T_boolean  = 1 << 29
+	T_decimal  = 1 << 28
+	T_integer  = 1 << 27
+	T_number   = 1 << 26
+	T_string   = 1 << 25
+	T_function = 1 << 24
+	T_symbol   = 1 << 23
+	T_null     = 1 << 22
+	// 7 bits reserved
+	T_list     = 1 << 14
+	T_map      = 1 << 13
+	T_instance = 1 << 12
+	// 4 bits reserved
+	T_scalar   = 1 << 7
+	T_node     = 1 << 6
+)
+
+// TYPENAME maps bit position (via leading zeros count) to type name string.
+var TYPENAME = [...]string{
+	S_any,
+	S_nil,
+	S_boolean,
+	S_decimal,
+	S_integer,
+	S_number,
+	S_string,
+	S_function,
+	S_symbol,
+	S_null,
+	"", "", "",
+	"", "", "", "",
+	S_list,
+	S_map,
+	S_instance,
+	"", "", "", "",
+	S_scalar,
+	S_node,
+}
 
 // The standard undefined value for this language.
 // NOTE: `nil` must be used directly.
@@ -232,48 +286,70 @@ func IsFunc(val any) bool {
 	return reflect.ValueOf(val).Kind() == reflect.Func
 }
 
-// Determine the type of a value as a string.
-// Returns one of: 'null', 'string', 'number', 'boolean', 'function', 'array', 'object'
-// Normalizes and simplifies Go's type system for consistency.
-func Typify(value any) string {
+// Determine the type of a value as a bitset.
+// Use bitwise AND to test: 0 < (T_string & Typify(val))
+// Use Typename to get the string name.
+func Typify(value any) int {
 	if value == nil {
-		return "null"
+		return T_scalar | T_null
 	}
 
 	if _, ok := value.(*ListRef[any]); ok {
-		return "array"
+		return T_node | T_list
 	}
 
 	val := reflect.ValueOf(value)
 	if !val.IsValid() {
-		return "null"
+		return T_scalar | T_null
 	}
 
-	t := val.Type()
-
-	switch t.Kind() {
+	switch val.Type().Kind() {
 	case reflect.Bool:
-		return "boolean"
+		return T_scalar | T_boolean
 
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-		return "number"
+		return T_scalar | T_number | T_integer
 
-	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64,
-		reflect.Float32, reflect.Float64:
-		return "number"
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		return T_scalar | T_number | T_integer
+
+	case reflect.Float32, reflect.Float64:
+		f, err := _toFloat64(value)
+		if err == nil && f == math.Trunc(f) && !math.IsNaN(f) && !math.IsInf(f, 0) {
+			return T_scalar | T_number | T_integer
+		}
+		if err == nil && math.IsNaN(f) {
+			return T_nil
+		}
+		return T_scalar | T_number | T_decimal
 
 	case reflect.String:
-		return "string"
+		return T_scalar | T_string
 
 	case reflect.Func:
-		return "function"
+		return T_scalar | T_function
 
 	case reflect.Slice, reflect.Array:
-		return "array"
+		return T_node | T_list
+
+	case reflect.Map:
+		return T_node | T_map
 
 	default:
-		return "object"
+		return T_node | T_map
 	}
+}
+
+// Convert a type bitset to its string name using leading zeros count.
+func Typename(t int) string {
+	if t <= 0 {
+		return S_any
+	}
+	idx := bits.LeadingZeros32(uint32(t))
+	if idx < len(TYPENAME) && TYPENAME[idx] != "" {
+		return TYPENAME[idx]
+	}
+	return S_any
 }
 
 // Safely get a property of a node. Nil arguments return nil.
@@ -1140,7 +1216,7 @@ func InjectDescend(
 	current any,
 	state *Injection,
 ) any {
-	valType := _getType(val)
+	valType := Typify(val)
 
 	// Create state if at root of injection.  The input value is placed
 	// inside a virtual parent holder to simplify edge cases.
@@ -1273,7 +1349,7 @@ func InjectDescend(
 			nkI = nkI + 1
 		}
 
-	} else if valType == S_string {
+	} else if 0 < (T_string & valType) {
 
 		// Inject paths into string scalars.
 		// state.Mode = InjectModeVal
@@ -1779,8 +1855,8 @@ var validate_STRING Injector = func(
 	out := GetProp(current, state.Key)
 
 	t := Typify(out)
-	if S_string != t {
-		msg := _invalidTypeMsg(state.Path.List, S_string, t, out)
+	if 0 == (T_string & t) {
+		msg := _invalidTypeMsg(state.Path.List, S_string, Typename(t), out)
 		state.Errs.Append(msg)
 		return nil
 	}
@@ -1804,8 +1880,8 @@ var validate_NUMBER Injector = func(
 	out := GetProp(current, state.Key)
 
 	t := Typify(out)
-	if S_number != t {
-		msg := _invalidTypeMsg(state.Path.List, S_number, t, out)
+	if 0 == (T_number & t) {
+		msg := _invalidTypeMsg(state.Path.List, S_number, Typename(t), out)
 		state.Errs.Append(msg)
 		return nil
 	}
@@ -1823,8 +1899,8 @@ var validate_BOOLEAN Injector = func(
 	out := GetProp(current, state.Key)
 
 	t := Typify(out)
-	if S_boolean != t {
-		msg := _invalidTypeMsg(state.Path.List, S_boolean, t, out)
+	if 0 == (T_boolean & t) {
+		msg := _invalidTypeMsg(state.Path.List, S_boolean, Typename(t), out)
 		state.Errs.Append(msg)
 		return nil
 	}
@@ -1843,8 +1919,8 @@ var validate_OBJECT Injector = func(
 
 	t := Typify(out)
 
-	if S_object != t {
-		msg := _invalidTypeMsg(state.Path.List, S_object, t, out)
+	if 0 == (T_map & t) {
+		msg := _invalidTypeMsg(state.Path.List, S_object, Typename(t), out)
 		state.Errs.Append(msg)
 
     return nil
@@ -1863,8 +1939,8 @@ var validate_ARRAY Injector = func(
 	out := GetProp(current, state.Key)
 
 	t := Typify(out)
-	if S_array != t {
-		msg := _invalidTypeMsg(state.Path.List, S_array, t, out)
+	if 0 == (T_list & t) {
+		msg := _invalidTypeMsg(state.Path.List, S_array, Typename(t), out)
 		state.Errs.Append(msg)
 		return nil
 	}
@@ -1882,8 +1958,8 @@ var validate_FUNCTION Injector = func(
 	out := GetProp(current, state.Key)
 
 	t := Typify(out)
-	if S_function != t {
-		msg := _invalidTypeMsg(state.Path.List, S_function, t, out)
+	if 0 == (T_function & t) {
+		msg := _invalidTypeMsg(state.Path.List, S_function, Typename(t), out)
 		state.Errs.Append(msg)
 		return nil
 	}
@@ -1923,7 +1999,7 @@ var validate_CHILD Injector = func(
 				_invalidTypeMsg(
 					state.Path.List[:len(state.Path.List)-1],
 					S_object,
-					Typify(tval),
+					Typename(Typify(tval)),
 					tval,
 				))
 			return nil
@@ -1968,7 +2044,7 @@ var validate_CHILD Injector = func(
 				_invalidTypeMsg(
 					state.Path.List[:len(state.Path.List)-1],
 					S_array,
-					Typify(current),
+					Typename(Typify(current)),
 					current,
 				))
 			parentList := _listify(state.Parent)
@@ -2104,7 +2180,7 @@ func init_validate_ONE() {
 			msg := _invalidTypeMsg(
 				state.Path.List,
 				prefix+valdesc,
-				Typify(current),
+				Typename(Typify(current)),
 				current,
 				"V0210",
 			)
@@ -2224,7 +2300,7 @@ func init_validate_EXACT() {
 			msg := _invalidTypeMsg(
 				state.Path.List,
 				prefix+"exactly equal to "+oneOf+valdesc,
-				Typify(current),
+				Typename(Typify(current)),
 				current,
 				"V0110",
 			)
@@ -2259,7 +2335,7 @@ func validation(
 	ptype := Typify(pval)
 
 	// Delete any special commands remaining.
-	if S_string == ptype && pval != nil {
+	if 0 < (T_string & ptype) && pval != nil {
 		if strVal, ok := pval.(string); ok && strings.Contains(strVal, S_DS) {
 			return
 		}
@@ -2269,7 +2345,7 @@ func validation(
 
 	// Type mismatch.
 	if ptype != ctype && pval != nil {
-		state.Errs.Append(_invalidTypeMsg(state.Path.List, ptype, ctype, cval))
+		state.Errs.Append(_invalidTypeMsg(state.Path.List, Typename(ptype), Typename(ctype), cval))
 		return
 	}
 
@@ -2279,9 +2355,9 @@ func validation(
 			if IsList(val) {
 				errType = S_array
 			} else {
-				errType = ptype
+				errType = Typename(ptype)
 			}
-			state.Errs.Append(_invalidTypeMsg(state.Path.List, errType, ctype, cval))
+			state.Errs.Append(_invalidTypeMsg(state.Path.List, errType, Typename(ctype), cval))
 			return
 		}
 
@@ -2311,7 +2387,7 @@ func validation(
 		}
 	} else if IsList(cval) {
 		if !IsList(val) {
-			state.Errs.Append(_invalidTypeMsg(state.Path.List, ptype, ctype, cval))
+			state.Errs.Append(_invalidTypeMsg(state.Path.List, Typename(ptype), Typename(ctype), cval))
 		}
 	} else {
 		// Spec value was a default, copy over data
