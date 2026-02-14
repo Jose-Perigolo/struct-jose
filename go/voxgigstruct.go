@@ -666,6 +666,9 @@ func CloneFlags(val any, flags map[string]bool) any {
 		for i, value := range v.List {
 			newSlice[i] = CloneFlags(value, flags)
 		}
+		if flags["unwrap"] {
+			return newSlice
+		}
 		return &ListRef[any]{List: newSlice}
 	case []any:
 		newSlice := make([]any, len(v))
@@ -1679,14 +1682,6 @@ var Transform_PACK Injector = func(
 // ---------------------------------------------------------------------
 // Transform function: top-level
 
-// Walk apply function to convert ListRefs back to bare lists on output.
-var _unwrapLists WalkApply = func(key *string, val any, parent any, path []string) any {
-	if lr, ok := val.(*ListRef[any]); ok {
-		return lr.List
-	}
-	return val
-}
-
 func Transform(
 	data any, // source data
 	spec any, // transform specification
@@ -1768,8 +1763,8 @@ func TransformModify(
 
 	out := InjectDescend(spec, store, modify, store, nil)
 
-	// Walk output to convert ListRefs back to bare lists.
-	out = Walk(out, _unwrapLists)
+	// Clone output, unwrapping ListRefs back to bare lists.
+	out = CloneFlags(out, map[string]bool{"unwrap": true})
 
 	return out
 }
