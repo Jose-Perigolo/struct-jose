@@ -312,13 +312,13 @@ describe('struct', async () => {
 
   test('minor-edge-typify', async () => {
     const {
-      typify, T_nil, T_scalar, T_function, T_symbol, T_any, T_node, T_instance, T_null
+      typify, T_noval, T_scalar, T_function, T_symbol, T_any, T_node, T_instance, T_null
     } = struct
     class X { }
     const x = new X()
-    equal(typify(), T_nil)
-    equal(typify(undefined), T_nil)
-    equal(typify(NaN), T_nil)
+    equal(typify(), T_noval)
+    equal(typify(undefined), T_noval)
+    equal(typify(NaN), T_noval)
     equal(typify(null), T_scalar | T_null)
     equal(typify(() => null), T_scalar | T_function)
     equal(typify(Symbol('S')), T_scalar | T_symbol)

@@ -1,7 +1,7 @@
 "use strict";
 /* Copyright (c) 2025-2026 Voxgig Ltd. MIT LICENSE. */
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.T_node = exports.T_scalar = exports.T_instance = exports.T_map = exports.T_list = exports.T_null = exports.T_symbol = exports.T_function = exports.T_string = exports.T_number = exports.T_integer = exports.T_decimal = exports.T_boolean = exports.T_nil = exports.T_any = exports.DELETE = exports.SKIP = exports.StructUtility = void 0;
+exports.T_node = exports.T_scalar = exports.T_instance = exports.T_map = exports.T_list = exports.T_null = exports.T_symbol = exports.T_function = exports.T_string = exports.T_number = exports.T_integer = exports.T_decimal = exports.T_boolean = exports.T_noval = exports.T_any = exports.DELETE = exports.SKIP = exports.StructUtility = void 0;
 exports.clone = clone;
 exports.delprop = delprop;
 exports.escre = escre;
@@ -144,8 +144,8 @@ const S_VIZ = ': ';
 let t = 31;
 const T_any = (1 << t--) - 1;
 exports.T_any = T_any;
-const T_nil = 1 << t--; // Means property absent, undefined. Also NOT a scalar!
-exports.T_nil = T_nil;
+const T_noval = 1 << t--; // Means property absent, undefined. Also NOT a scalar!
+exports.T_noval = T_noval;
 const T_boolean = 1 << t--;
 exports.T_boolean = T_boolean;
 const T_decimal = 1 << t--;
@@ -195,7 +195,7 @@ const TYPENAME = [
     S_node,
 ];
 // The standard undefined value for this language.
-const UNDEF = undefined;
+const NONE = undefined;
 // Private marker to indicate a skippable value.
 const SKIP = { '`$SKIP`': true };
 exports.SKIP = SKIP;
@@ -224,7 +224,7 @@ function typename(t) {
 }
 // Get a defined value. Returns alt if val is undefined.
 function getdef(val, alt) {
-    if (UNDEF === val) {
+    if (NONE === val) {
         return alt;
     }
     return val;
@@ -360,7 +360,7 @@ function pad(str, padding, padchar) {
 // Determine the type of a value as a bit code.
 function typify(value) {
     if (undefined === value) {
-        return T_nil;
+        return T_noval;
     }
     const typestr = typeof value;
     if (null === value) {
@@ -371,7 +371,7 @@ function typify(value) {
             return T_scalar | T_number | T_integer;
         }
         else if (isNaN(value)) {
-            return T_nil;
+            return T_noval;
         }
         else {
             return T_scalar | T_number | T_decimal;
@@ -408,8 +408,8 @@ function typify(value) {
 // Get a list element. The key should be an integer, or a string
 // that can parse to an integer only. Negative integers count from the end of the list.
 function getelem(val, key, alt) {
-    let out = UNDEF;
-    if (UNDEF === val || UNDEF === key) {
+    let out = NONE;
+    if (NONE === val || NONE === key) {
         return alt;
     }
     if (islist(val)) {
@@ -421,7 +421,7 @@ function getelem(val, key, alt) {
             out = val[key];
         }
     }
-    if (UNDEF === out) {
+    if (NONE === out) {
         return 0 < (T_function & typify(alt)) ? alt() : alt;
     }
     return out;
@@ -430,13 +430,13 @@ function getelem(val, key, alt) {
 // If the key is not found, return the alternative value, if any.
 function getprop(val, key, alt) {
     let out = alt;
-    if (UNDEF === val || UNDEF === key) {
+    if (NONE === val || NONE === key) {
         return alt;
     }
     if (isnode(val)) {
         out = val[key];
     }
-    if (UNDEF === out) {
+    if (NONE === out) {
         return alt;
     }
     return out;
@@ -446,8 +446,8 @@ function getprop(val, key, alt) {
 // Number keys are converted to strings.
 // Floats are truncated to integers.
 // Booleans, objects, arrays, null, undefined all return empty string.
-function strkey(key = UNDEF) {
-    if (UNDEF === key) {
+function strkey(key = NONE) {
+    if (NONE === key) {
         return S_MT;
     }
     const t = typify(key);
@@ -469,7 +469,7 @@ function keysof(val) {
 }
 // Value of property with name key in node val is defined.
 function haskey(val, key) {
-    return UNDEF !== getprop(val, key);
+    return NONE !== getprop(val, key);
 }
 function items(val, apply) {
     let out = keysof(val).map((k) => [k, val[k]]);
@@ -519,7 +519,7 @@ function jsonify(val, flags) {
         try {
             const indent = getprop(flags, 'indent', 2);
             str = JSON.stringify(val, null, indent);
-            if (UNDEF === str) {
+            if (NONE === str) {
                 str = S_null;
             }
             const offset = getprop(flags, 'offset', 0);
@@ -541,7 +541,7 @@ function jsonify(val, flags) {
 function stringify(val, maxlen, pretty) {
     let valstr = S_MT;
     pretty = !!pretty;
-    if (UNDEF === val) {
+    if (NONE === val) {
         return pretty ? '<>' : valstr;
     }
     if (S_string === typeof val) {
@@ -596,14 +596,14 @@ function stringify(val, maxlen, pretty) {
 }
 // Build a human friendly path string.
 function pathify(val, startin, endin) {
-    let pathstr = UNDEF;
+    let pathstr = NONE;
     let path = islist(val) ? val :
         S_string == typeof val ? [val] :
             S_number == typeof val ? [val] :
-                UNDEF;
+                NONE;
     const start = null == startin ? 0 : -1 < startin ? startin : 0;
     const end = null == endin ? 0 : -1 < endin ? endin : 0;
-    if (UNDEF != path && 0 <= start) {
+    if (NONE != path && 0 <= start) {
         path = slice(path, start, path.length - end);
         if (0 === path.length) {
             pathstr = '<root>';
@@ -616,8 +616,8 @@ function pathify(val, startin, endin) {
                 .join(S_DT);
         }
     }
-    if (UNDEF === pathstr) {
-        pathstr = '<unknown-path' + (UNDEF === val ? S_MT : S_CN + stringify(val, 47)) + '>';
+    if (NONE === pathstr) {
+        pathstr = '<unknown-path' + (NONE === val ? S_MT : S_CN + stringify(val, 47)) + '>';
     }
     return pathstr;
 }
@@ -630,7 +630,7 @@ function clone(val) {
         (refs.push(v), '`$REF:' + (refs.length - 1) + '`') : v;
     const reviver = (_k, v, m) => S_string === typeof v ?
         (m = v.match(R_CLONE_REF), m ? refs[m[1]] : v) : v;
-    const out = UNDEF === val ? UNDEF : JSON.parse(JSON.stringify(val, replacer), reviver);
+    const out = NONE === val ? NONE : JSON.parse(JSON.stringify(val, replacer), reviver);
     return out;
 }
 // Define a JSON Object using function arguments.
@@ -730,7 +730,7 @@ after,
 maxdepth, 
 // These areguments are used for recursive state.
 key, parent, path) {
-    if (UNDEF === path) {
+    if (NONE === path) {
         path = [];
     }
     let out = null == before ? val : before(key, val, parent, path);
@@ -753,7 +753,7 @@ key, parent, path) {
 function merge(val, maxdepth) {
     // const md: number = null == maxdepth ? MAXDEPTH : maxdepth < 0 ? 0 : maxdepth
     const md = slice(maxdepth ?? MAXDEPTH, 0);
-    let out = UNDEF;
+    let out = NONE;
     // Handle edge cases.
     if (!islist(val)) {
         return val;
@@ -761,7 +761,7 @@ function merge(val, maxdepth) {
     const list = val;
     const lenlist = list.length;
     if (0 === lenlist) {
-        return UNDEF;
+        return NONE;
     }
     else if (1 === lenlist) {
         return list[0];
@@ -794,7 +794,7 @@ function merge(val, maxdepth) {
                     dst[pI] = 0 < pI ? getprop(dst[pI - 1], key) : dst[pI];
                     const tval = dst[pI];
                     // Destination empty, so create node (unless override is class instance).
-                    if (UNDEF === tval && 0 === (T_instance & typify(val))) {
+                    if (NONE === tval && 0 === (T_instance & typify(val))) {
                         cur[pI] = islist(val) ? [] : {};
                     }
                     // Matching override and destination so continue with their values.
@@ -805,7 +805,7 @@ function merge(val, maxdepth) {
                     else {
                         cur[pI] = val;
                         // No need to descend when override wins (destination is discarded).
-                        val = UNDEF;
+                        val = NONE;
                     }
                 }
                 // console.log('BEFORE-END', pathify(path), '@', pI, key,
@@ -839,9 +839,9 @@ function setpath(store, path, val, injdef) {
     const pathType = typify(path);
     const parts = 0 < (T_list & pathType) ? path :
         0 < (T_string & pathType) ? path.split(S_DT) :
-            0 < (T_number & pathType) ? [path] : UNDEF;
-    if (UNDEF === parts) {
-        return UNDEF;
+            0 < (T_number & pathType) ? [path] : NONE;
+    if (NONE === parts) {
+        return NONE;
     }
     const base = getprop(injdef, S_base);
     const numparts = size(parts);
@@ -867,9 +867,9 @@ function getpath(store, path, injdef) {
     // Operate on a string array.
     const parts = islist(path) ? path :
         'string' === typeof path ? path.split(S_DT) :
-            'number' === typeof path ? [strkey(path)] : UNDEF;
-    if (UNDEF === parts) {
-        return UNDEF;
+            'number' === typeof path ? [strkey(path)] : NONE;
+    if (NONE === parts) {
+        return NONE;
     }
     // let root = store
     let val = store;
@@ -894,7 +894,7 @@ function getpath(store, path, injdef) {
                 parts[0] = m[3];
             }
             const dpath = getprop(injdef, 'dpath');
-            for (let pI = 0; UNDEF !== val && pI < numparts; pI++) {
+            for (let pI = 0; NONE !== val && pI < numparts; pI++) {
                 let part = parts[pI];
                 if (injdef && S_DKEY === part) {
                     part = getprop(injdef, S_key);
@@ -933,7 +933,7 @@ function getpath(store, path, injdef) {
                                 val = getpath(store, fullpath);
                             }
                             else {
-                                val = UNDEF;
+                                val = NONE;
                             }
                             break;
                         }
@@ -966,13 +966,13 @@ function inject(val, store, injdef) {
     let inj = injdef;
     // Create state if at root of injection.  The input value is placed
     // inside a virtual parent holder to simplify edge cases.
-    if (UNDEF === injdef || null == injdef.mode) {
+    if (NONE === injdef || null == injdef.mode) {
         // Set up state assuming we are starting in the virtual parent.
         inj = new Injection(val, { [S_DTOP]: val });
         inj.dparent = store;
         inj.errs = getprop(store, S_DERRS, []);
         inj.meta.__d = 0;
-        if (UNDEF !== injdef) {
+        if (NONE !== injdef) {
             inj.modify = null == injdef.modify ? inj.modify : injdef.modify;
             inj.extra = null == injdef.extra ? inj.extra : injdef.extra;
             inj.meta = null == injdef.meta ? inj.meta : injdef.meta;
@@ -1006,7 +1006,7 @@ function inject(val, store, injdef) {
             nkI = childinj.keyI;
             nodekeys = childinj.keys;
             // Prevent further processing by returning an undefined prekey
-            if (UNDEF !== prekey) {
+            if (NONE !== prekey) {
                 childinj.val = getprop(val, prekey);
                 childinj.mode = S_MVAL;
                 // Perform the val mode injection on the child value.
@@ -1048,14 +1048,14 @@ function inject(val, store, injdef) {
 // The transform_* functions are special command inject handlers (see Injector).
 // Delete a key from a map or list.
 const transform_DELETE = (inj) => {
-    inj.setval(UNDEF);
-    return UNDEF;
+    inj.setval(NONE);
+    return NONE;
 };
 // Copy value from source data.
 const transform_COPY = (inj, _val) => {
     const ijname = 'COPY';
     if (!checkPlacement([S_MVAL], ijname, T_any, inj)) {
-        return UNDEF;
+        return NONE;
     }
     let out = getprop(inj.dparent, inj.key);
     inj.setval(out);
@@ -1067,11 +1067,11 @@ const transform_KEY = (inj) => {
     const { mode, path, parent } = inj;
     // Do nothing in val mode - not an error.
     if (S_MVAL !== mode) {
-        return UNDEF;
+        return NONE;
     }
     // Key is defined by $KEY meta property.
     const keyspec = getprop(parent, S_BKEY);
-    if (UNDEF !== keyspec) {
+    if (NONE !== keyspec) {
         delprop(parent, S_BKEY);
         return getprop(inj.dparent, keyspec);
     }
@@ -1084,7 +1084,7 @@ const transform_KEY = (inj) => {
 const transform_ANNO = (inj) => {
     const { parent } = inj;
     delprop(parent, S_BANNO);
-    return UNDEF;
+    return NONE;
 };
 // Merge a list of objects into the current object. 
 // Must be a key in an object. The value is merged over the current object.
@@ -1094,7 +1094,7 @@ const transform_ANNO = (inj) => {
 const transform_MERGE = (inj) => {
     const { mode, key, parent } = inj;
     // Ensures $MERGE is removed from parent list (val mode).
-    let out = UNDEF;
+    let out = NONE;
     if (S_MKEYPRE === mode) {
         out = key;
     }
@@ -1104,7 +1104,7 @@ const transform_MERGE = (inj) => {
         let args = getprop(parent, key);
         args = Array.isArray(args) ? args : [args];
         // Remove the $MERGE command from a parent map.
-        inj.setval(UNDEF);
+        inj.setval(NONE);
         // Literals in the parent have precedence, but we still merge onto
         // the parent object, so that node tree references are not changed.
         const mergelist = flatten([[parent], args, [clone(parent)]]);
@@ -1117,15 +1117,15 @@ const transform_MERGE = (inj) => {
 const transform_EACH = (inj, _val, _ref, store) => {
     const ijname = 'EACH';
     if (!checkPlacement([S_MVAL], ijname, T_list, inj)) {
-        return UNDEF;
+        return NONE;
     }
     // Remove remaining keys to avoid spurious processing.
     slice(inj.keys, 0, 1, true);
     // const [err, srcpath, child] = injectorArgs([T_string, T_any], inj)
     const [err, srcpath, child] = injectorArgs([T_string, T_any], slice(inj.parent, 1));
-    if (UNDEF !== err) {
+    if (NONE !== err) {
         inj.errs.push('$' + ijname + ': ' + err);
-        return UNDEF;
+        return NONE;
     }
     // Source data.
     const srcstore = getprop(store, inj.base, store);
@@ -1150,7 +1150,7 @@ const transform_EACH = (inj, _val, _ref, store) => {
     }
     let rval = [];
     if (0 < size(tval)) {
-        tcur = null == src ? UNDEF : Object.values(src);
+        tcur = null == src ? NONE : Object.values(src);
         const ckey = getelem(inj.path, -2);
         const tpath = slice(inj.path, -1);
         const dpath = flatten([S_DTOP, srcpath.split(S_DT), '$:' + ckey]);
@@ -1183,14 +1183,14 @@ const transform_PACK = (inj, _val, _ref, store) => {
     const { mode, key, path, parent, nodes } = inj;
     const ijname = 'EACH';
     if (!checkPlacement([S_MKEYPRE], ijname, T_map, inj)) {
-        return UNDEF;
+        return NONE;
     }
     // Get arguments.
     const args = getprop(parent, key);
     const [err, srcpath, origchildspec] = injectorArgs([T_string, T_any], args);
-    if (UNDEF !== err) {
+    if (NONE !== err) {
         inj.errs.push('$' + ijname + ': ' + err);
-        return UNDEF;
+        return NONE;
     }
     // Find key and target node.
     const tkey = getelem(path, -2);
@@ -1208,11 +1208,11 @@ const transform_PACK = (inj, _val, _ref, store) => {
             });
         }
         else {
-            src = UNDEF;
+            src = NONE;
         }
     }
     if (null == src) {
-        return UNDEF;
+        return NONE;
     }
     // Get keypath.
     const keypath = getprop(origchildspec, S_BKEY);
@@ -1224,7 +1224,7 @@ const transform_PACK = (inj, _val, _ref, store) => {
         const srckey = item[0];
         const srcnode = item[1];
         let key = srckey;
-        if (UNDEF !== keypath) {
+        if (NONE !== keypath) {
             if (keypath.startsWith('`')) {
                 key = inject(keypath, merge([{}, store, { $TOP: srcnode }], 1));
             }
@@ -1235,7 +1235,7 @@ const transform_PACK = (inj, _val, _ref, store) => {
         const tchild = clone(child);
         setprop(tval, key, tchild);
         const anno = getprop(srcnode, S_BANNO);
-        if (UNDEF === anno) {
+        if (NONE === anno) {
             delprop(tchild, S_BANNO);
         }
         else {
@@ -1276,15 +1276,15 @@ const transform_PACK = (inj, _val, _ref, store) => {
     // _updateAncestors(inj, target, tkey, rval)
     setprop(target, tkey, rval);
     // Drop transform key.
-    return UNDEF;
+    return NONE;
 };
-// TODO: not found ref should removed key (setprop UNDEF)
+// TODO: not found ref should removed key (setprop NONE)
 // Reference original spec (enables recursice transformations)
 // Format: ['`$REF`', '`spec-path`']
 const transform_REF = (inj, val, _ref, store) => {
     const { nodes } = inj;
     if (S_MVAL !== inj.mode) {
-        return UNDEF;
+        return NONE;
     }
     // Get arguments: ['`$REF`', 'ref-path'].
     const refpath = getprop(inj.parent, 1);
@@ -1313,8 +1313,8 @@ const transform_REF = (inj, val, _ref, store) => {
     const tpath = slice(inj.path, -1);
     let tcur = getpath(store, cpath);
     let tval = getpath(store, tpath);
-    let rval = UNDEF;
-    if (!hasSubRef || UNDEF !== tval) {
+    let rval = NONE;
+    if (!hasSubRef || NONE !== tval) {
         const tinj = inj.child(0, [getelem(tpath, -1)]);
         tinj.path = tpath;
         tinj.nodes = slice(inj.nodes, -1);
@@ -1326,7 +1326,7 @@ const transform_REF = (inj, val, _ref, store) => {
         rval = tinj.val;
     }
     else {
-        rval = UNDEF;
+        rval = NONE;
     }
     const grandparent = inj.setval(rval, 2);
     if (islist(grandparent) && inj.prior) {
@@ -1339,7 +1339,7 @@ const transform_FORMAT = (inj, _val, _ref, store) => {
     // Remove remaining keys to avoid spurious processing.
     slice(inj.keys, 0, 1, true);
     if (S_MVAL !== inj.mode) {
-        return UNDEF;
+        return NONE;
     }
     // Get arguments: ['`$FORMAT`', 'name', child].
     // TODO: EACH and PACK should accept customm functions too
@@ -1351,9 +1351,9 @@ const transform_FORMAT = (inj, _val, _ref, store) => {
     const cinj = injectChild(child, store, inj);
     const resolved = cinj.val;
     let formatter = 0 < (T_function & typify(name)) ? name : getprop(FORMATTER, name);
-    if (UNDEF === formatter) {
+    if (NONE === formatter) {
         inj.errs.push('$FORMAT: unknown format: ' + name + '.');
-        return UNDEF;
+        return NONE;
     }
     let out = walk(resolved, formatter);
     setprop(target, tkey, out);
@@ -1394,13 +1394,13 @@ const FORMATTER = {
 const transform_APPLY = (inj, _val, _ref, store) => {
     const ijname = 'APPLY';
     if (!checkPlacement([S_MVAL], ijname, T_list, inj)) {
-        return UNDEF;
+        return NONE;
     }
     // const [err, apply, child] = injectorArgs([T_function, T_any], inj)
     const [err, apply, child] = injectorArgs([T_function, T_any], slice(inj.parent, 1));
-    if (UNDEF !== err) {
+    if (NONE !== err) {
         inj.errs.push('$' + ijname + ': ' + err);
-        return UNDEF;
+        return NONE;
     }
     const tkey = getelem(inj.path, -2);
     const target = getelem(inj.nodes, -2, () => getelem(inj.nodes, -1));
@@ -1423,10 +1423,10 @@ injdef) {
     const collect = null != injdef?.errs;
     const errs = injdef?.errs || [];
     const extraTransforms = {};
-    const extraData = null == extra ? UNDEF : items(extra)
+    const extraData = null == extra ? NONE : items(extra)
         .reduce((a, n) => (n[0].startsWith(S_DS) ? extraTransforms[n[0]] = n[1] : (a[n[0]] = n[1]), a), {});
     const dataClone = merge([
-        isempty(extraData) ? UNDEF : clone(extraData),
+        isempty(extraData) ? NONE : clone(extraData),
         clone(data),
     ]);
     // Define a top level store that provides transform operations.
@@ -1474,12 +1474,12 @@ const validate_STRING = (inj) => {
     if (0 === (T_string & t)) {
         let msg = _invalidTypeMsg(inj.path, S_string, t, out, 'V1010');
         inj.errs.push(msg);
-        return UNDEF;
+        return NONE;
     }
     if (S_MT === out) {
         let msg = 'Empty string at ' + pathify(inj.path, 1);
         inj.errs.push(msg);
-        return UNDEF;
+        return NONE;
     }
     return out;
 };
@@ -1491,7 +1491,7 @@ const validate_TYPE = (inj, _val, ref) => {
     // console.log('TYPE', tname, typev, tn(typev), 'O=', t, tn(t), out, 'C=', t & typev)
     if (0 === (t & typev)) {
         inj.errs.push(_invalidTypeMsg(inj.path, tname, t, out, 'V1001'));
-        return UNDEF;
+        return NONE;
     }
     return out;
 };
@@ -1512,12 +1512,12 @@ const validate_CHILD = (inj) => {
         // Get corresponding current object.
         const pkey = getelem(path, -2);
         let tval = getprop(inj.dparent, pkey);
-        if (UNDEF == tval) {
+        if (NONE == tval) {
             tval = {};
         }
         else if (!ismap(tval)) {
             inj.errs.push(_invalidTypeMsg(slice(inj.path, -1), S_object, typify(tval), tval), 'V0220');
-            return UNDEF;
+            return NONE;
         }
         const ckeys = keysof(tval);
         for (let ckey of ckeys) {
@@ -1526,22 +1526,22 @@ const validate_CHILD = (inj) => {
             keys.push(ckey);
         }
         // Remove $CHILD to cleanup ouput.
-        inj.setval(UNDEF);
-        return UNDEF;
+        inj.setval(NONE);
+        return NONE;
     }
     // List syntax.
     if (S_MVAL === mode) {
         if (!islist(parent)) {
             // $CHILD was not inside a list.
             inj.errs.push('Invalid $CHILD as value');
-            return UNDEF;
+            return NONE;
         }
         const childtm = getprop(parent, 1);
-        if (UNDEF === inj.dparent) {
+        if (NONE === inj.dparent) {
             // Empty list as default.
             // parent.length = 0
             slice(parent, 0, 0, true);
-            return UNDEF;
+            return NONE;
         }
         if (!islist(inj.dparent)) {
             const msg = _invalidTypeMsg(slice(inj.path, -1), S_list, typify(inj.dparent), inj.dparent, 'V0230');
@@ -1559,7 +1559,7 @@ const validate_CHILD = (inj) => {
         const out = getprop(inj.dparent, 0);
         return out;
     }
-    return UNDEF;
+    return NONE;
 };
 // TODO: implement SOME, ALL
 // FIX: ONE should mean exactly one, not at least one (=SOME)
@@ -1663,7 +1663,7 @@ const validate_EXACT = (inj) => {
 // This is the "modify" argument to inject. Use this to perform
 // generic validation. Runs *after* any special commands.
 const _validation = (pval, key, parent, inj) => {
-    if (UNDEF === inj) {
+    if (NONE === inj) {
         return;
     }
     if (SKIP === pval) {
@@ -1673,7 +1673,7 @@ const _validation = (pval, key, parent, inj) => {
     const exact = getprop(inj.meta, S_BEXACT, false);
     // Current val to verify.
     const cval = getprop(inj.dparent, key);
-    if (UNDEF === inj || (!exact && UNDEF === cval)) {
+    if (NONE === inj || (!exact && NONE === cval)) {
         return;
     }
     const ptype = typify(pval);
@@ -1683,7 +1683,7 @@ const _validation = (pval, key, parent, inj) => {
     }
     const ctype = typify(cval);
     // Type mismatch.
-    if (ptype !== ctype && UNDEF !== pval) {
+    if (ptype !== ctype && NONE !== pval) {
         inj.errs.push(_invalidTypeMsg(inj.path, typename(ptype), ctype, cval, 'V0010'));
         return;
     }
@@ -1900,7 +1900,7 @@ const select_CMP = (inj, _val, ref, store) => {
                 ' fail:' + ref + ' ' + stringify(term));
         }
     }
-    return UNDEF;
+    return NONE;
 };
 // Select children from a top-level object that match a MongoDB-style query.
 // Supports $and, $or, and equality comparisons.
@@ -1956,7 +1956,7 @@ class Injection {
         this.val = val;
         this.parent = parent;
         this.errs = [];
-        this.dparent = UNDEF;
+        this.dparent = NONE;
         this.dpath = [S_DTOP];
         this.mode = S_MVAL;
         this.full = false;
@@ -1983,7 +1983,7 @@ class Injection {
         this.meta.__d++;
         const parentkey = getelem(this.path, -2);
         // Resolve current node in store for local paths.
-        if (UNDEF === this.dparent) {
+        if (NONE === this.dparent) {
             // Even if there's no data, dpath should continue to match path, so that
             // relative paths work properly.
             if (1 < size(this.dpath)) {
@@ -2027,16 +2027,16 @@ class Injection {
         return cinj;
     }
     setval(val, ancestor) {
-        let parent = UNDEF;
+        let parent = NONE;
         if (null == ancestor || ancestor < 2) {
-            parent = UNDEF === val ?
+            parent = NONE === val ?
                 this.parent = delprop(this.parent, this.key) :
                 setprop(this.parent, this.key, val);
         }
         else {
             const aval = getelem(this.nodes, 0 - ancestor);
             const akey = getelem(this.path, 0 - ancestor);
-            parent = UNDEF === val ?
+            parent = NONE === val ?
                 delprop(aval, akey) :
                 setprop(aval, akey, val);
         }
@@ -2066,7 +2066,7 @@ function _invalidTypeMsg(path, needtype, vt, v, _whence) {
 // call the function passing the injection inj. This is how transforms operate.
 const _injecthandler = (inj, val, ref, store) => {
     let out = val;
-    const iscmd = isfunc(val) && (UNDEF === ref || ref.startsWith(S_DS));
+    const iscmd = isfunc(val) && (NONE === ref || ref.startsWith(S_DS));
     // Only call val function if it is a special command ($NAME format).
     // TODO: OR if meta.'$CALL'
     if (iscmd) {
@@ -2142,7 +2142,7 @@ function _injectstr(val, store, inj) {
             }
             const found = getpath(store, ref, inj);
             // Ensure inject value is a string.
-            return UNDEF === found ? S_MT : S_string === typeof found ? found : JSON.stringify(found);
+            return NONE === found ? S_MT : S_string === typeof found ? found : JSON.stringify(found);
         };
         out = val.replace(R_INJECTION_PARTIAL, partial);
         // Also call the inj handler on the entire string, providing the
@@ -2181,7 +2181,7 @@ function checkPlacement(modes, ijname, parentTypes, inj) {
 function injectorArgs(argTypes, args) {
     const numargs = size(argTypes);
     const found = new Array(1 + numargs);
-    found[0] = UNDEF;
+    found[0] = NONE;
     for (let argI = 0; argI < numargs; argI++) {
         // const arg = inj.parent[1 + argI]
         const arg = args[argI];
@@ -2258,7 +2258,7 @@ class StructUtility {
         this.jt = jt;
         this.tn = typename;
         this.T_any = T_any;
-        this.T_nil = T_nil;
+        this.T_noval = T_noval;
         this.T_boolean = T_boolean;
         this.T_decimal = T_decimal;
         this.T_integer = T_integer;
