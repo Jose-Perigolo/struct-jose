@@ -1114,8 +1114,8 @@ func InjectDescend(
 			S_DTOP: store,
 		}
 	} else {
-		if state.Path.Len() > 1 {
-			parentKey := state.Path.Get(state.Path.Len() - 2)
+		if len(state.Path.List) > 1 {
+			parentKey := state.Path.List[len(state.Path.List)-2]
 			current = GetProp(current, parentKey)
 		}
 	}
@@ -1148,12 +1148,12 @@ func InjectDescend(
 		// 3. state.mode='key:post' - Key string is injected again, allowing child mutation.
 
 		nkI := 0
-		for nkI < nodekeys.Len() {
-			nodekey := nodekeys.Get(nkI)
+		for nkI < len(nodekeys.List) {
+			nodekey := nodekeys.List[nkI]
 
-			childpath := state.Path.CloneList()
+			childpath := &ListRef[string]{List: append([]string{}, state.Path.List...)}
 			childpath.Append(nodekey)
-			childnodes := state.Nodes.CloneList()
+			childnodes := &ListRef[any]{List: append([]any{}, state.Nodes.List...)}
 			childnodes.Append(val)
 			childval := GetProp(val, nodekey)
 
@@ -1344,8 +1344,8 @@ var Transform_KEY Injector = func(
 
 	// fallback to the second-last path element
 	ppath := state.Path
-	if ppath.Len() >= 2 {
-		return ppath.Get(ppath.Len() - 2)
+	if len(ppath.List) >= 2 {
+		return ppath.List[len(ppath.List)-2]
 	}
 
 	return nil
@@ -1429,7 +1429,7 @@ var Transform_EACH Injector = func(
   
 	// Remove arguments to avoid spurious processing.
 	if nil != state.Keys {
-		state.Keys.Truncate(1)
+		state.Keys.List = state.Keys.List[:1]
 	}
 
 	// if InjectModeVal != state.Mode {
@@ -1454,10 +1454,10 @@ var Transform_EACH Injector = func(
 	var tval any
 	tval = []any{}
 
-	// tkey := state.Path.Get(state.Path.Len()-2)
-	target := state.Nodes.Get(state.Nodes.Len() - 2)
-	if nil == target && state.Nodes.Len() > 0 {
-		target = state.Nodes.Get(state.Nodes.Len() - 1)
+	// tkey := state.Path.List[len(state.Path.List)-2]
+	target := state.Nodes.List[len(state.Nodes.List)-2]
+	if nil == target && len(state.Nodes.List) > 0 {
+		target = state.Nodes.List[len(state.Nodes.List)-1]
 	}
 
 	// Create clones of the child template for each value of the current source.
@@ -1547,14 +1547,14 @@ var Transform_PACK Injector = func(
 	keyprop := GetProp(child, S_DKEY)
 
 	tkey := ""
-	if state.Path.Len() >= 2 {
-		tkey = state.Path.Get(state.Path.Len() - 2)
+	if len(state.Path.List) >= 2 {
+		tkey = state.Path.List[len(state.Path.List)-2]
 	}
 	var target any
-	if state.Nodes.Len() >= 2 {
-		target = state.Nodes.Get(state.Nodes.Len() - 2)
+	if len(state.Nodes.List) >= 2 {
+		target = state.Nodes.List[len(state.Nodes.List)-2]
 	} else {
-		target = state.Nodes.Get(state.Nodes.Len() - 1)
+		target = state.Nodes.List[len(state.Nodes.List)-1]
 	}
 
   // srcstore := GetProp(store, state.Base, store)
@@ -1850,7 +1850,7 @@ var validate_CHILD Injector = func(
 	if state.Mode == S_MKEYPRE {
 		child := GetProp(state.Parent, state.Key)
 
-		pkey := state.Path.Get(state.Path.Len() - 2)
+		pkey := state.Path.List[len(state.Path.List)-2]
 		tval := GetProp(current, pkey)
 
 		if nil == tval {
@@ -1859,7 +1859,7 @@ var validate_CHILD Injector = func(
 		} else if !IsMap(tval) {
 			state.Errs.Append(
 				_invalidTypeMsg(
-					state.Path.List[:state.Path.Len()-1],
+					state.Path.List[:len(state.Path.List)-1],
 					S_object,
 					Typify(tval),
 					tval,
@@ -1902,7 +1902,7 @@ var validate_CHILD Injector = func(
 		if !IsList(current) {
 			state.Errs.Append(
 				_invalidTypeMsg(
-					state.Path.List[:state.Path.Len()-1],
+					state.Path.List[:len(state.Path.List)-1],
 					S_array,
 					Typify(current),
 					current,
@@ -1960,7 +1960,7 @@ func init_validate_ONE() {
 			}
 
 			// Once we handle `$ONE`, we skip further iteration by setting KeyI to keys.length
-			state.KeyI = state.Keys.Len()
+			state.KeyI = len(state.Keys.List)
 
 			// The parent is assumed to be a slice: ["`$ONE`", alt0, alt1, ...].
 			parentSlice, ok := state.Parent.([]any)
@@ -1969,8 +1969,8 @@ func init_validate_ONE() {
 			}
 
 			// Get grandparent and grandkey to replace the structure
-			grandparent := state.Nodes.Get(state.Nodes.Len() - 2)
-			grandkey := state.Path.Get(state.Path.Len() - 2)
+			grandparent := state.Nodes.List[len(state.Nodes.List)-2]
+			grandkey := state.Path.List[len(state.Path.List)-2]
 
 			// Clean up structure by replacing [$ONE, ...] with current value
 			SetProp(grandparent, grandkey, current)
@@ -1978,8 +1978,8 @@ func init_validate_ONE() {
       // _updateAncestors("ONE",state,grandparent,grandkey,current)
 
 			// Adjust the path
-			state.Path.Truncate(state.Path.Len() - 1)
-			state.Key = state.Path.Get(state.Path.Len() - 1)
+			state.Path.List = state.Path.List[:len(state.Path.List)-1]
+			state.Key = state.Path.List[len(state.Path.List)-1]
 
 			// The shape alternatives are everything after the first element.
 			tvals := parentSlice[1:] // alt0, alt1, ...
@@ -2068,7 +2068,7 @@ func init_validate_EXACT() {
 			}
 
 			// Once we handle `$EXACT`, we skip further iteration by setting KeyI to keys.length
-			state.KeyI = state.Keys.Len()
+			state.KeyI = len(state.Keys.List)
 
 			// The parent is assumed to be a slice: ["`$EXACT`", alt0, alt1, ...].
 			parentSlice, ok := state.Parent.([]any)
@@ -2077,16 +2077,16 @@ func init_validate_EXACT() {
 			}
 
 			// Get grandparent and grandkey to replace the structure
-			grandparent := state.Nodes.Get(state.Nodes.Len() - 2)
-			grandkey := state.Path.Get(state.Path.Len() - 2)
+			grandparent := state.Nodes.List[len(state.Nodes.List)-2]
+			grandkey := state.Path.List[len(state.Path.List)-2]
 
 			// Clean up structure by replacing [$EXACT, ...] with current value
 			SetProp(grandparent, grandkey, current)
       state.Parent = current
 
 			// Adjust the path
-			state.Path.Truncate(state.Path.Len() - 1)
-			state.Key = state.Path.Get(state.Path.Len() - 1)
+			state.Path.List = state.Path.List[:len(state.Path.List)-1]
+			state.Key = state.Path.List[len(state.Path.List)-1]
 
 			// The exact values to match are everything after the first element.
 			tvals := parentSlice[1:] // alt0, alt1, ...
@@ -2146,7 +2146,7 @@ func init_validate_EXACT() {
 			})
 
 			prefix := ""
-			if state.Path.Len() <= 1 {
+			if len(state.Path.List) <= 1 {
 				prefix = "value "
 			}
 
@@ -2371,29 +2371,6 @@ func (l *ListRef[T]) Append(elem T) {
 func (l *ListRef[T]) Prepend(elem T) {
 	l.List = append([]T{elem}, l.List...)
 }
-
-func (l *ListRef[T]) Len() int {
-	return len(l.List)
-}
-
-func (l *ListRef[T]) Get(i int) T {
-	return l.List[i]
-}
-
-func (l *ListRef[T]) Set(i int, v T) {
-	l.List[i] = v
-}
-
-func (l *ListRef[T]) Truncate(n int) {
-	l.List = l.List[:n]
-}
-
-func (l *ListRef[T]) CloneList() *ListRef[T] {
-	newList := make([]T, len(l.List))
-	copy(newList, l.List)
-	return &ListRef[T]{List: newList}
-}
-
 
 func _join(vals []any, sep string) string {
 	strVals := make([]string, len(vals))
@@ -2624,17 +2601,17 @@ func _setParentProp(whence string, state *Injection, val any) {
 func _updateAncestors(whence string, state *Injection, target any, tkey any, tval any) {
   ap := SetProp(target, tkey, tval)
   // state.Parent = ap
-	aI := state.Nodes.Len() - 1
+	aI := len(state.Nodes.List) - 1
 
 
 	if -1 < aI {
-		state.Nodes.Set(aI, ap)
+		state.Nodes.List[aI] = ap
 	}
 
 	aI = aI - 1
 	for -1 < aI {
-    ak := state.Path.Get(aI)
-    an := state.Nodes.Get(aI)
+    ak := state.Path.List[aI]
+    an := state.Nodes.List[aI]
     ap = SetProp(an, ak, ap)
 
 		if IsList(an) {

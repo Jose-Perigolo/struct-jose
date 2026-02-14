@@ -692,10 +692,10 @@ func TestStruct(t *testing.T) {
 			store any,
 		) any {
 			p := s.Path
-			if p.Len() == 0 {
+			if len(p.List) == 0 {
 				return ""
 			}
-			last := p.Get(p.Len() - 1)
+			last := p.List[len(p.List)-1]
 			// uppercase the last letter
 			if len(last) > 0 {
 				return string(last[0]-32) + last[1:]
