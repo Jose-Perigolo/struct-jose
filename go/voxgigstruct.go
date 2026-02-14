@@ -187,6 +187,9 @@ func IsList(val any) bool {
 	if val == nil {
 		return false
 	}
+	if _, ok := val.(*ListRef[any]); ok {
+		return true
+	}
 	rv := reflect.ValueOf(val)
 	kind := rv.Kind()
 	return kind == reflect.Slice || kind == reflect.Array
@@ -214,6 +217,8 @@ func IsEmpty(val any) bool {
 	switch vv := val.(type) {
 	case string:
 		return vv == S_MT
+	case *ListRef[any]:
+		return len(vv.List) == 0
 	case []any:
 		return len(vv) == 0
 	case map[string]any:
@@ -233,6 +238,10 @@ func IsFunc(val any) bool {
 func Typify(value any) string {
 	if value == nil {
 		return "null"
+	}
+
+	if _, ok := value.(*ListRef[any]); ok {
+		return "array"
 	}
 
 	val := reflect.ValueOf(value)
@@ -309,17 +318,23 @@ func GetProp(val any, key any, alts ...any) any {
 			}
 		}
 
-		v, ok := val.([]any)
-
-		if !ok {
-			rv := reflect.ValueOf(val)
-			if rv.Kind() == reflect.Slice && 0 <= ki && ki < rv.Len() {
-				out = rv.Index(ki).Interface()
+		if lr, isLR := val.(*ListRef[any]); isLR {
+			if 0 <= ki && ki < len(lr.List) {
+				out = lr.List[ki]
 			}
-
 		} else {
-			if 0 <= ki && ki < len(v) {
-				out = v[ki]
+			v, ok := val.([]any)
+
+			if !ok {
+				rv := reflect.ValueOf(val)
+				if rv.Kind() == reflect.Slice && 0 <= ki && ki < rv.Len() {
+					out = rv.Index(ki).Interface()
+				}
+
+			} else {
+				if 0 <= ki && ki < len(v) {
+					out = v[ki]
+				}
 			}
 		}
 
@@ -364,9 +379,12 @@ func KeysOf(val any) []string {
 		return keys
 
 	} else if IsList(val) {
-		arr := val.([]any)
-		keys := make([]string, len(arr))
-		for i := range arr {
+		list, _ := _asList(val)
+		if list == nil {
+			list = _listify(val)
+		}
+		keys := make([]string, len(list))
+		for i := range list {
 			keys[i] = StrKey(i)
 		}
 		return keys
@@ -401,9 +419,12 @@ func Items(val any) [][2]any {
 		return out
 
 	} else if IsList(val) {
-		arr := val.([]any)
-		out := make([][2]any, 0, len(arr))
-		for i, v := range arr {
+		list, _ := _asList(val)
+		if list == nil {
+			list = _listify(val)
+		}
+		out := make([][2]any, 0, len(list))
+		for i, v := range list {
 			out = append(out, [2]any{i, v})
 		}
 		return out
@@ -491,6 +512,10 @@ func Stringify(val any, maxlen ...int) string {
 		return S_MT
 	}
 
+	if lr, ok := val.(*ListRef[any]); ok {
+		return Stringify(lr.List, maxlen...)
+	}
+
 	b, err := json.Marshal(val)
 	if err != nil {
 		return ""
@@ -520,11 +545,7 @@ func Pathify(val any, from ...int) string {
 	var path []any = nil
 
 	if IsList(val) {
-		list, ok := val.([]any)
-		if !ok {
-			list = _listify(val)
-		}
-		path = list
+		path = _listify(val)
 	} else {
 		str, ok := val.(string)
 		if ok {
@@ -640,6 +661,12 @@ func CloneFlags(val any, flags map[string]bool) any {
 			newMap[key] = CloneFlags(value, flags)
 		}
 		return newMap
+	case *ListRef[any]:
+		newSlice := make([]any, len(v.List))
+		for i, value := range v.List {
+			newSlice[i] = CloneFlags(value, flags)
+		}
+		return &ListRef[any]{List: newSlice}
 	case []any:
 		newSlice := make([]any, len(v))
 		for i, value := range v {
@@ -677,7 +704,6 @@ func SetProp(parent any, key any, newval any) any {
 		}
 
 	} else if IsList(parent) {
-		arr, genarr := parent.([]any)
 
 		// Convert key to integer
 		var ki int
@@ -697,6 +723,32 @@ func SetProp(parent any, key any, newval any) any {
 		default:
 			return parent
 		}
+
+		// ListRef: modify .List in place, return same pointer for reference stability.
+		if lr, isLR := parent.(*ListRef[any]); isLR {
+			if newval == nil {
+				if ki >= 0 && ki < len(lr.List) {
+					copy(lr.List[ki:], lr.List[ki+1:])
+					lr.List = lr.List[:len(lr.List)-1]
+				}
+				return parent
+			}
+			if ki >= 0 {
+				if ki >= len(lr.List) {
+					lr.List = append(lr.List, newval)
+				} else {
+					lr.List[ki] = newval
+				}
+				return parent
+			}
+			if ki < 0 {
+				lr.List = append([]any{newval}, lr.List...)
+				return parent
+			}
+			return parent
+		}
+
+		arr, genarr := parent.([]any)
 
 		// If newval == nil, remove element [shift down].
 
@@ -925,7 +977,7 @@ func GetPathState(
 		}
 	default:
 		if IsList(path) {
-			parts = _resolveStrings(pp.([]any))
+			parts = _resolveStrings(_listify(path))
 		} else {
 			return nil
 		}
@@ -1045,6 +1097,9 @@ func _injectStr(
 		switch fv := found.(type) {
 		case map[string]any, []any:
 			b, _ := json.Marshal(fv)
+			return string(b)
+		case *ListRef[any]:
+			b, _ := json.Marshal(fv.List)
 			return string(b)
 		default:
 			return _stringifyValue(found)
@@ -1396,7 +1451,7 @@ var Transform_MERGE Injector = func(
 		// Remove the $MERGE command from a parent map.
     _setParentProp("MRG", state, nil)
 
-		list, ok := args.([]any)
+		list, ok := _asList(args)
 		if !ok {
 			return state.Key
 		}
@@ -1462,10 +1517,7 @@ var Transform_EACH Injector = func(
 
 	// Create clones of the child template for each value of the current source.
 	if IsList(src) {
-		srcList, ok := src.([]any)
-		if !ok {
-			srcList = _listify(src)
-		}
+		srcList := _listify(src)
 		newlist := make([]any, len(srcList))
 		for i := range srcList {
 			newlist[i] = Clone(child)
@@ -1510,7 +1562,7 @@ var Transform_EACH Injector = func(
 	// _updateAncestors("EACH", state, target, tkey, tval)
   
 	// Return the first element
-	listVal, ok := tval.([]any)
+	listVal, ok := _asList(tval)
 	if ok && len(listVal) > 0 {
 		return listVal[0]
 	}
@@ -1537,7 +1589,7 @@ var Transform_PACK Injector = func(
 		return nil
 	}
 
-	args, ok := parentMap[state.Key].([]any)
+	args, ok := _asList(parentMap[state.Key])
 	if !ok || len(args) < 2 {
 		return nil
 	}
@@ -1567,7 +1619,7 @@ var Transform_PACK Injector = func(
 	var srclist []any
 
 	if IsList(src) {
-		srclist = src.([]any)
+		srclist = _listify(src)
 	} else if IsMap(src) {
 		m := src.(map[string]any)
 		tmp := make([]any, 0, len(m))
@@ -1625,6 +1677,22 @@ var Transform_PACK Injector = func(
 // ---------------------------------------------------------------------
 // Transform function: top-level
 
+// Walk apply function to convert bare lists to ListRefs on input.
+var _wrapLists WalkApply = func(key *string, val any, parent any, path []string) any {
+	if list, ok := val.([]any); ok {
+		return &ListRef[any]{List: list}
+	}
+	return val
+}
+
+// Walk apply function to convert ListRefs back to bare lists on output.
+var _unwrapLists WalkApply = func(key *string, val any, parent any, path []string) any {
+	if lr, ok := val.(*ListRef[any]); ok {
+		return lr.List
+	}
+	return val
+}
+
 func Transform(
 	data any, // source data
 	spec any, // transform specification
@@ -1673,6 +1741,10 @@ func TransformModify(
 		Clone(data),
 	})
 
+	// Walk input data and spec to convert bare lists to ListRefs for reference stability.
+	dataClone = Walk(dataClone, _wrapLists)
+	spec = Walk(spec, _wrapLists)
+
 	// The injection store with transform functions
 	store := map[string]any{
 		// Merged data is at $TOP
@@ -1703,6 +1775,9 @@ func TransformModify(
 	}
 
 	out := InjectDescend(spec, store, modify, store, nil)
+
+	// Walk output to convert ListRefs back to bare lists.
+	out = Walk(out, _unwrapLists)
 
 	return out
 }
@@ -1907,7 +1982,8 @@ var validate_CHILD Injector = func(
 					Typify(current),
 					current,
 				))
-			state.KeyI = len(state.Parent.([]any))
+			parentList := _listify(state.Parent)
+			state.KeyI = len(parentList)
 			return current
 		}
 
@@ -1963,7 +2039,7 @@ func init_validate_ONE() {
 			state.KeyI = len(state.Keys.List)
 
 			// The parent is assumed to be a slice: ["`$ONE`", alt0, alt1, ...].
-			parentSlice, ok := state.Parent.([]any)
+			parentSlice, ok := _asList(state.Parent)
 			if !ok {
 				return nil
 			}
@@ -2071,7 +2147,7 @@ func init_validate_EXACT() {
 			state.KeyI = len(state.Keys.List)
 
 			// The parent is assumed to be a slice: ["`$EXACT`", alt0, alt1, ...].
-			parentSlice, ok := state.Parent.([]any)
+			parentSlice, ok := _asList(state.Parent)
 			if !ok {
 				return nil
 			}
@@ -2469,7 +2545,23 @@ func _resolveStrings(input []any) []string {
 }
 
 
+// Extract a bare []any from either a []any or a *ListRef[any].
+func _asList(val any) ([]any, bool) {
+	if lr, ok := val.(*ListRef[any]); ok {
+		return lr.List, true
+	}
+	if list, ok := val.([]any); ok {
+		return list, true
+	}
+	return nil, false
+}
+
+
 func _listify(src any) []any {
+	if lr, ok := src.(*ListRef[any]); ok {
+		return lr.List
+	}
+
 	if list, ok := src.([]any); ok {
 		return list
 	}
