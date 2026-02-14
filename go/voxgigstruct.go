@@ -1276,7 +1276,7 @@ func InjectDescend(
 		if ok {
 			val = _injectStr(strVal, store, current, state)
 
-      _setParentProp("IV", state, val)
+      SetProp(state.Parent, state.Key, val)
 		}
 	}
 
@@ -1331,7 +1331,7 @@ var injectHandler Injector = func(
     // } else if InjectModeVal == state.Mode && state.Full {
     } else if S_MVAL == state.Mode && state.Full {
 		// Update parent with value. Ensures references remain in node tree.
-    _setParentProp("IH", state, val)
+    SetProp(state.Parent, state.Key, val)
 	}
 
 	return out
@@ -1347,7 +1347,7 @@ var Transform_DELETE Injector = func(
 	ref *string,
 	store any,
 ) any {
-  _setParentProp("DEL", state, nil)
+  SetProp(state.Parent, state.Key, nil)
 	return nil
 }
 
@@ -1363,7 +1363,7 @@ var Transform_COPY Injector = func(
 
 	if !strings.HasPrefix(string(state.Mode), "key") {
 		out = GetProp(current, state.Key)
-    _setParentProp("CP", state, out)
+    SetProp(state.Parent, state.Key, out)
 	}
 
 	return out
@@ -1449,7 +1449,7 @@ var Transform_MERGE Injector = func(
 		}
 
 		// Remove the $MERGE command from a parent map.
-    _setParentProp("MRG", state, nil)
+    SetProp(state.Parent, state.Key, nil)
 
 		list, ok := _asList(args)
 		if !ok {
@@ -1559,7 +1559,6 @@ var Transform_EACH Injector = func(
 	tval = InjectDescend(tval, store, state.Modify, tcur, nil)
 
   state.Parent = tval
-	// _updateAncestors("EACH", state, target, tkey, tval)
   
 	// Return the first element
 	listVal, ok := _asList(tval)
@@ -1967,9 +1966,11 @@ var validate_CHILD Injector = func(
 
 		// If current is nil => empty list default
 		if nil == current {
-			state.Parent = []any{}
-			_updateAncestors("CHILD-A", state, state.Parent, nil, nil)
-      // _updateAncestors("CHILD-A", state, []any{}, nil, nil)
+			if lr, ok := state.Parent.(*ListRef[any]); ok {
+				lr.List = []any{}
+			} else {
+				state.Parent = []any{}
+			}
 			return nil
 		}
 
@@ -1999,9 +2000,11 @@ var validate_CHILD Injector = func(
 		}
 
 		// Replace parent with the new slice
-		state.Parent = newParent
-		_updateAncestors("CHILD-B", state, state.Parent, nil, nil)
-    // _updateAncestors("CHILD-B", state, newParent, nil, nil)
+		if lr, ok := state.Parent.(*ListRef[any]); ok {
+			lr.List = newParent
+		} else {
+			state.Parent = newParent
+		}
 
 		out := GetProp(current, 0)
 		return out
@@ -2051,7 +2054,6 @@ func init_validate_ONE() {
 			// Clean up structure by replacing [$ONE, ...] with current value
 			SetProp(grandparent, grandkey, current)
       state.Parent = current
-      // _updateAncestors("ONE",state,grandparent,grandkey,current)
 
 			// Adjust the path
 			state.Path.List = state.Path.List[:len(state.Path.List)-1]
@@ -2675,45 +2677,6 @@ func _stringifyValue(v any) string {
 }
 
 
-// Set state.Key property of state.Parent node, ensuring reference consistency
-// when needed by implementation language.
-func _setParentProp(whence string, state *Injection, val any) {
-  parent := SetProp(state.Parent, state.Key, val)
-  state.Parent = parent
-  fixAncestors := IsList(parent) // && len(parent.([]any)) != len(state.Parent.([]any))
-  
-  // List references are not stable in Go.
-  if fixAncestors {
-		_updateAncestors("SPP", state, parent, nil, nil)
-	}
-
-}
-
-
-func _updateAncestors(whence string, state *Injection, target any, tkey any, tval any) {
-  ap := SetProp(target, tkey, tval)
-  // state.Parent = ap
-	aI := len(state.Nodes.List) - 1
-
-
-	if -1 < aI {
-		state.Nodes.List[aI] = ap
-	}
-
-	aI = aI - 1
-	for -1 < aI {
-    ak := state.Path.List[aI]
-    an := state.Nodes.List[aI]
-    ap = SetProp(an, ak, ap)
-
-		if IsList(an) {
-	 		aI = aI - 1
-		} else {
-			aI = -1
-		}
-	}
-
-}
 
 
 // DEBUG
