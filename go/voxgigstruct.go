@@ -86,7 +86,6 @@ const (
 	S_array    = "array"
 	S_list     = "list"
 	S_map      = "map"
-	// S_base     = "base"
 	S_boolean  = "boolean"
 	S_decimal  = "decimal"
 	S_integer  = "integer"
@@ -102,11 +101,16 @@ const (
 	S_key      = "key"
 	S_parent   = "parent"
 	S_MT       = ""
+	S_SP       = " "
 	S_BT       = "`"
 	S_DS       = "$"
 	S_DT       = "."
 	S_CN       = ":"
 	S_KEY      = "KEY"
+	S_base     = "base"
+	S_BEXACT   = "`$EXACT`"
+	S_BOPEN    = "`$OPEN`"
+	S_VIZ      = ": "
 )
 
 // Type bits - using bit positions from 31 downward, matching the TS implementation.
@@ -151,6 +155,15 @@ var TYPENAME = [...]string{
 	S_scalar,
 	S_node,
 }
+
+// Sentinel values for control flow in inject/transform.
+type _sentinel struct{ name string }
+
+var SKIP = &_sentinel{"SKIP"}
+var DELETE = &_sentinel{"DELETE"}
+
+// Regex matching integer keys (including negative).
+var reIntegerKey = regexp.MustCompile(`^[-0-9]+$`)
 
 // The standard undefined value for this language.
 // NOTE: `nil` must be used directly.
@@ -286,6 +299,14 @@ func IsFunc(val any) bool {
 	return reflect.ValueOf(val).Kind() == reflect.Func
 }
 
+// Get a defined value. Returns alt if val is nil.
+func GetDef(val any, alt any) any {
+	if nil == val {
+		return alt
+	}
+	return val
+}
+
 // Determine the type of a value as a bitset.
 // Use bitwise AND to test: 0 < (T_string & Typify(val))
 // Use Typename to get the string name.
@@ -350,6 +371,233 @@ func Typename(t int) string {
 		return TYPENAME[idx]
 	}
 	return S_any
+}
+
+// The integer size of the value. For lists and maps, the number of entries.
+// For strings, the length. For numbers, the integer part.
+// For booleans, true is 1 and false is 0. For all other values, 0.
+func Size(val any) int {
+	if IsList(val) {
+		list, ok := _asList(val)
+		if ok {
+			return len(list)
+		}
+		return len(_listify(val))
+	} else if IsMap(val) {
+		return len(val.(map[string]any))
+	}
+
+	switch v := val.(type) {
+	case string:
+		return len(v)
+	case bool:
+		if v {
+			return 1
+		}
+		return 0
+	default:
+		f, err := _toFloat64(val)
+		if err == nil {
+			return int(math.Floor(f))
+		}
+		return 0
+	}
+}
+
+// Extract part of a list or string into a new value, from the start
+// point to the end point. If no end is specified, extract to the
+// full length. Negative arguments count from the end. For numbers,
+// perform min and max bounding (start inclusive, end exclusive).
+func Slice(val any, args ...any) any {
+	var startP, endP *int
+	var mutate bool
+
+	if len(args) > 0 && args[0] != nil {
+		if f, err := _toFloat64(args[0]); err == nil {
+			i := int(f)
+			startP = &i
+		}
+	}
+	if len(args) > 1 && args[1] != nil {
+		if f, err := _toFloat64(args[1]); err == nil {
+			i := int(f)
+			endP = &i
+		}
+	}
+	if len(args) > 2 {
+		if b, ok := args[2].(bool); ok {
+			mutate = b
+		}
+	}
+
+	// Number case: clamp between start (inclusive) and end-1 (exclusive->inclusive).
+	if _, ok := val.(string); !ok && !IsNode(val) {
+		if f, err := _toFloat64(val); err == nil {
+			start := math.MinInt64
+			if startP != nil {
+				start = *startP
+			}
+			end := math.MaxInt64
+			if endP != nil {
+				end = *endP - 1
+			}
+			result := int(math.Min(math.Max(f, float64(start)), float64(end)))
+			return result
+		}
+	}
+
+	vlen := Size(val)
+
+	if endP != nil && startP == nil {
+		zero := 0
+		startP = &zero
+	}
+
+	if startP == nil {
+		return val
+	}
+
+	start := *startP
+	end := vlen
+
+	if start < 0 {
+		end = vlen + start
+		if end < 0 {
+			end = 0
+		}
+		start = 0
+	} else if endP != nil {
+		end = *endP
+		if end < 0 {
+			end = vlen + end
+			if end < 0 {
+				end = 0
+			}
+		} else if vlen < end {
+			end = vlen
+		}
+	}
+
+	if vlen < start {
+		start = vlen
+	}
+
+	if start >= 0 && start <= end && end <= vlen {
+		if IsList(val) {
+			list, _ := _asList(val)
+			if list == nil {
+				list = _listify(val)
+			}
+			if mutate {
+				for i, j := 0, start; j < end; i, j = i+1, j+1 {
+					list[i] = list[j]
+				}
+				list = list[:end-start]
+				if lr, ok := val.(*ListRef[any]); ok {
+					lr.List = list
+					return lr
+				}
+				return list
+			}
+			return append([]any{}, list[start:end]...)
+		} else if s, ok := val.(string); ok {
+			return s[start:end]
+		}
+	} else {
+		if IsList(val) {
+			return []any{}
+		} else if _, ok := val.(string); ok {
+			return S_MT
+		}
+	}
+
+	return val
+}
+
+// String padding. Positive padding right-pads, negative left-pads.
+// Default padding is 44, default pad character is space.
+func Pad(str any, args ...any) string {
+	var s string
+	if ss, ok := str.(string); ok {
+		s = ss
+	} else {
+		s = Stringify(str)
+	}
+
+	padding := 44
+	if len(args) > 0 && args[0] != nil {
+		if f, err := _toFloat64(args[0]); err == nil {
+			padding = int(f)
+		}
+	}
+
+	padchar := S_SP
+	if len(args) > 1 && args[1] != nil {
+		if pc, ok := args[1].(string); ok && len(pc) > 0 {
+			padchar = string(pc[0])
+		}
+	}
+
+	if padding >= 0 {
+		for len(s) < padding {
+			s += padchar
+		}
+	} else {
+		target := -padding
+		for len(s) < target {
+			s = padchar + s
+		}
+	}
+
+	return s
+}
+
+// Get a list element. The key should be an integer, or a string
+// that parses to an integer. Negative integers count from the end.
+func GetElem(val any, key any, alts ...any) any {
+	var alt any
+	if len(alts) > 0 {
+		alt = alts[0]
+	}
+
+	if nil == val || nil == key {
+		return alt
+	}
+
+	var out any
+
+	if IsList(val) {
+		ks := StrKey(key)
+		if reIntegerKey.MatchString(ks) {
+			nkey, err := strconv.Atoi(ks)
+			if err == nil {
+				list, ok := _asList(val)
+				if !ok {
+					list = _listify(val)
+				}
+				if nkey < 0 {
+					nkey = len(list) + nkey
+				}
+				if nkey >= 0 && nkey < len(list) {
+					out = list[nkey]
+				}
+			}
+		}
+	}
+
+	if nil == out {
+		if 0 < (T_function & Typify(alt)) {
+			fn := reflect.ValueOf(alt)
+			results := fn.Call(nil)
+			if len(results) > 0 {
+				return results[0].Interface()
+			}
+			return nil
+		}
+		return alt
+	}
+
+	return out
 }
 
 // Safely get a property of a node. Nil arguments return nil.
@@ -507,6 +755,40 @@ func Items(val any) [][2]any {
 	}
 
 	return make([][2]any, 0, 0)
+}
+
+// Flatten a nested list to a given depth (default 1).
+// Non-list inputs are returned as-is.
+func Flatten(list any, depths ...int) any {
+	if !IsList(list) {
+		return list
+	}
+
+	depth := 1
+	if len(depths) > 0 {
+		depth = depths[0]
+	}
+
+	arr, ok := _asList(list)
+	if !ok {
+		arr = _listify(list)
+	}
+
+	return _flattenDepth(arr, depth)
+}
+
+func _flattenDepth(arr []any, depth int) []any {
+	result := make([]any, 0)
+	for _, item := range arr {
+		if depth > 0 {
+			if sub, ok := _asList(item); ok {
+				result = append(result, _flattenDepth(sub, depth-1)...)
+				continue
+			}
+		}
+		result = append(result, item)
+	}
+	return result
 }
 
 // Escape regular expression.
@@ -758,6 +1040,85 @@ func CloneFlags(val any, flags map[string]bool) any {
 	default:
 		return v
 	}
+}
+
+// Define a JSON Object from alternating key-value arguments.
+// jo("a", 1, "b", 2) => {"a": 1, "b": 2}
+func Jo(kv ...any) map[string]any {
+	o := make(map[string]any)
+	kvsize := len(kv)
+	for i := 0; i < kvsize; i += 2 {
+		k := GetProp(kv, i, S_DS+S_KEY+strconv.Itoa(i))
+		ks, ok := k.(string)
+		if !ok {
+			ks = Stringify(k)
+		}
+		o[ks] = GetProp(kv, i+1)
+	}
+	return o
+}
+
+// Define a JSON Array from arguments.
+// ja(1, "x", true) => [1, "x", true]
+func Ja(v ...any) []any {
+	a := make([]any, len(v))
+	for i := 0; i < len(v); i++ {
+		a[i] = GetProp(v, i)
+	}
+	return a
+}
+
+// Safely delete a property from a map or list element.
+// For maps, the property is deleted. For lists, the element at the
+// index is removed and remaining elements are shifted down.
+// Returns the (possibly modified) parent.
+func DelProp(parent any, key any) any {
+	if !IsKey(key) {
+		return parent
+	}
+
+	if IsMap(parent) {
+		ks := StrKey(key)
+		delete(parent.(map[string]any), ks)
+	} else if IsList(parent) {
+		ks := StrKey(key)
+		ki, err := _parseInt(ks)
+		if err != nil {
+			return parent
+		}
+		ki = int(math.Floor(float64(ki)))
+
+		if lr, isLR := parent.(*ListRef[any]); isLR {
+			psize := len(lr.List)
+			if 0 <= ki && ki < psize {
+				copy(lr.List[ki:], lr.List[ki+1:])
+				lr.List = lr.List[:psize-1]
+			}
+			return parent
+		}
+
+		arr, genarr := parent.([]any)
+		if !genarr {
+			rv := reflect.ValueOf(parent)
+			arr = make([]any, rv.Len())
+			for i := 0; i < rv.Len(); i++ {
+				arr[i] = rv.Index(i).Interface()
+			}
+		}
+
+		psize := len(arr)
+		if 0 <= ki && ki < psize {
+			copy(arr[ki:], arr[ki+1:])
+			arr = arr[:psize-1]
+		}
+
+		if !genarr {
+			return _makeArrayType(arr, parent)
+		}
+		return arr
+	}
+
+	return parent
 }
 
 // Safely set a property. Undefined arguments and invalid keys are ignored.
@@ -1113,6 +1474,61 @@ func GetPathState(
 	}
 
 	return val
+}
+
+// Set a value at a path inside a store. Missing intermediate path
+// parts are created (maps for string keys, lists for numeric keys).
+// String paths are split on ".". If val is the DELETE sentinel,
+// the final key is deleted instead of set.
+func SetPath(store any, path any, val any, injdefs ...map[string]any) any {
+	pathType := Typify(path)
+
+	var parts []any
+	if 0 < (T_list & pathType) {
+		parts = _listify(path)
+	} else if 0 < (T_string & pathType) {
+		splitParts := strings.Split(path.(string), S_DT)
+		parts = make([]any, len(splitParts))
+		for i, s := range splitParts {
+			parts[i] = s
+		}
+	} else if 0 < (T_number & pathType) {
+		parts = []any{path}
+	} else {
+		return nil
+	}
+
+	var base any
+	if len(injdefs) > 0 && injdefs[0] != nil {
+		base = GetProp(injdefs[0], S_base)
+	}
+
+	numparts := len(parts)
+	parent := GetProp(store, base, store)
+
+	for pI := 0; pI < numparts-1; pI++ {
+		partKey := GetElem(parts, pI)
+		nextParent := GetProp(parent, partKey)
+		if !IsNode(nextParent) {
+			nextPartKey := GetElem(parts, pI+1)
+			if 0 < (T_number & Typify(nextPartKey)) {
+				nextParent = []any{}
+			} else {
+				nextParent = map[string]any{}
+			}
+			SetProp(parent, partKey, nextParent)
+		}
+		parent = nextParent
+	}
+
+	lastKey := GetElem(parts, -1)
+	if val == DELETE {
+		DelProp(parent, lastKey)
+	} else {
+		SetProp(parent, lastKey, val)
+	}
+
+	return parent
 }
 
 // Inject store values into a string. Not a public utility - used by
@@ -2488,6 +2904,312 @@ func ValidateCollect(
 	}
 
 	return out, err
+}
+
+
+// Placement names for injection modes.
+var PLACEMENT = map[string]string{
+	S_MVAL:     "value",
+	S_MKEYPRE:  S_key,
+	S_MKEYPOST: S_key,
+}
+
+// Validate that an injector is placed in a valid mode and parent type.
+func CheckPlacement(modes []string, ijname string, parentTypes int, state *Injection) bool {
+	modeValid := false
+	for _, m := range modes {
+		if m == state.Mode {
+			modeValid = true
+			break
+		}
+	}
+	if !modeValid {
+		expected := make([]string, len(modes))
+		for i, m := range modes {
+			expected[i] = PLACEMENT[m]
+		}
+		state.Errs.Append("$" + ijname + ": invalid placement as " + PLACEMENT[state.Mode] +
+			", expected: " + strings.Join(expected, ",") + ".")
+		return false
+	}
+	if !IsEmpty(parentTypes) {
+		ptype := Typify(state.Parent)
+		if 0 == (parentTypes & ptype) {
+			state.Errs.Append("$" + ijname + ": invalid placement in parent " + Typename(ptype) +
+				", expected: " + Typename(parentTypes) + ".")
+			return false
+		}
+	}
+	return true
+}
+
+// Validate and extract injector arguments against expected type bitmasks.
+// Returns a slice where [0] is nil on success or an error string on failure,
+// and [1..N] are the validated arguments.
+func InjectorArgs(argTypes []int, args []any) []any {
+	numargs := len(argTypes)
+	found := make([]any, 1+numargs)
+	found[0] = nil
+	for argI := 0; argI < numargs; argI++ {
+		arg := args[argI]
+		argType := Typify(arg)
+		if 0 == (argTypes[argI] & argType) {
+			found[0] = "invalid argument: " + Stringify(arg, 22) +
+				" (" + Typename(argType) + " at position " + strconv.Itoa(1+argI) +
+				") is not of type: " + Typename(argTypes[argI]) + "."
+			break
+		}
+		found[1+argI] = arg
+	}
+	return found
+}
+
+
+// Select helpers - internal injectors for query matching.
+
+var select_AND Injector = func(
+	state *Injection,
+	val any,
+	current any,
+	ref *string,
+	store any,
+) any {
+	if S_MKEYPRE == state.Mode {
+		terms := GetProp(state.Parent, state.Key)
+
+		pathList := state.Path.List
+		ppath := pathList[:len(pathList)-1]
+		point := GetPath(ppath, store)
+
+		vstore := Merge([]any{map[string]any{}, store})
+		SetProp(vstore, S_DTOP, point)
+
+		termList, _ := _asList(terms)
+		for _, term := range termList {
+			terrs := ListRefCreate[any]()
+			vstoreMap, _ := vstore.(map[string]any)
+			ValidateCollect(point, term, vstoreMap, terrs)
+			if 0 != len(terrs.List) {
+				state.Errs.Append("AND:" + Pathify(ppath) + S_VIZ +
+					Stringify(point) + " fail:" + Stringify(terms))
+			}
+		}
+
+		if len(pathList) >= 2 {
+			gkey := pathList[len(pathList)-2]
+			gp := state.Nodes.List[len(state.Nodes.List)-2]
+			SetProp(gp, gkey, point)
+		}
+	}
+	return nil
+}
+
+var select_OR Injector = func(
+	state *Injection,
+	val any,
+	current any,
+	ref *string,
+	store any,
+) any {
+	if S_MKEYPRE == state.Mode {
+		terms := GetProp(state.Parent, state.Key)
+
+		pathList := state.Path.List
+		ppath := pathList[:len(pathList)-1]
+		point := GetPath(ppath, store)
+
+		vstore := Merge([]any{map[string]any{}, store})
+		SetProp(vstore, S_DTOP, point)
+
+		termList, _ := _asList(terms)
+		for _, term := range termList {
+			terrs := ListRefCreate[any]()
+			vstoreMap, _ := vstore.(map[string]any)
+			ValidateCollect(point, term, vstoreMap, terrs)
+			if 0 == len(terrs.List) {
+				if len(pathList) >= 2 {
+					gkey := pathList[len(pathList)-2]
+					gp := state.Nodes.List[len(state.Nodes.List)-2]
+					SetProp(gp, gkey, point)
+				}
+				return nil
+			}
+		}
+
+		state.Errs.Append("OR:" + Pathify(ppath) + S_VIZ +
+			Stringify(point) + " fail:" + Stringify(terms))
+	}
+	return nil
+}
+
+var select_NOT Injector = func(
+	state *Injection,
+	val any,
+	current any,
+	ref *string,
+	store any,
+) any {
+	if S_MKEYPRE == state.Mode {
+		term := GetProp(state.Parent, state.Key)
+
+		pathList := state.Path.List
+		ppath := pathList[:len(pathList)-1]
+		point := GetPath(ppath, store)
+
+		vstore := Merge([]any{map[string]any{}, store})
+		SetProp(vstore, S_DTOP, point)
+
+		terrs := ListRefCreate[any]()
+		vstoreMap, _ := vstore.(map[string]any)
+		ValidateCollect(point, term, vstoreMap, terrs)
+
+		if 0 == len(terrs.List) {
+			state.Errs.Append("NOT:" + Pathify(ppath) + S_VIZ +
+				Stringify(point) + " fail:" + Stringify(term))
+		}
+
+		if len(pathList) >= 2 {
+			gkey := pathList[len(pathList)-2]
+			gp := state.Nodes.List[len(state.Nodes.List)-2]
+			SetProp(gp, gkey, point)
+		}
+	}
+	return nil
+}
+
+var select_CMP Injector = func(
+	state *Injection,
+	val any,
+	current any,
+	ref *string,
+	store any,
+) any {
+	if S_MKEYPRE == state.Mode {
+		term := GetProp(state.Parent, state.Key)
+
+		pathList := state.Path.List
+		ppath := pathList[:len(pathList)-1]
+		point := GetPath(ppath, store)
+
+		pass := false
+		refStr := ""
+		if ref != nil {
+			refStr = *ref
+		}
+
+		pf, pErr := _toFloat64(point)
+		tf, tErr := _toFloat64(term)
+
+		switch refStr {
+		case "$GT":
+			if pErr == nil && tErr == nil {
+				pass = pf > tf
+			}
+		case "$LT":
+			if pErr == nil && tErr == nil {
+				pass = pf < tf
+			}
+		case "$GTE":
+			if pErr == nil && tErr == nil {
+				pass = pf >= tf
+			}
+		case "$LTE":
+			if pErr == nil && tErr == nil {
+				pass = pf <= tf
+			}
+		case "$LIKE":
+			if ts, ok := term.(string); ok {
+				re, err := regexp.Compile(ts)
+				if err == nil {
+					pass = re.MatchString(Stringify(point))
+				}
+			}
+		}
+
+		if pass {
+			if len(pathList) >= 2 {
+				gkey := pathList[len(pathList)-2]
+				gp := state.Nodes.List[len(state.Nodes.List)-2]
+				SetProp(gp, gkey, point)
+			}
+		} else {
+			state.Errs.Append("CMP: " + Pathify(ppath) + S_VIZ +
+				Stringify(point) + " fail:" + refStr + " " + Stringify(term))
+		}
+	}
+	return nil
+}
+
+
+// Select children from a node that match a query.
+// Uses validate internally with query operators ($AND, $OR, $NOT,
+// $GT, $LT, $GTE, $LTE, $LIKE).
+// For maps, children are values (tagged with $KEY). For lists, children are elements.
+func Select(children any, query any) []any {
+	if !IsNode(children) {
+		return []any{}
+	}
+
+	var childList []any
+
+	if IsMap(children) {
+		pairs := Items(children)
+		childList = make([]any, len(pairs))
+		for i, pair := range pairs {
+			child := pair[1]
+			if IsMap(child) {
+				SetProp(child, "$KEY", pair[0])
+			}
+			childList[i] = child
+		}
+	} else {
+		list, _ := _asList(children)
+		if list == nil {
+			list = _listify(children)
+		}
+		childList = make([]any, len(list))
+		for i, child := range list {
+			if IsMap(child) {
+				SetProp(child, "$KEY", i)
+			}
+			childList[i] = child
+		}
+	}
+
+	results := []any{}
+	extra := map[string]any{
+		"$AND":  select_AND,
+		"$OR":   select_OR,
+		"$NOT":  select_NOT,
+		"$GT":   select_CMP,
+		"$LT":   select_CMP,
+		"$GTE":  select_CMP,
+		"$LTE":  select_CMP,
+		"$LIKE": select_CMP,
+	}
+
+	q := Clone(query)
+
+	// Mark all map nodes as open so extra keys don't fail validation.
+	Walk(q, func(key *string, v any, parent any, path []string) any {
+		if IsMap(v) {
+			m := v.(map[string]any)
+			if _, has := m[S_BOPEN]; !has {
+				m[S_BOPEN] = true
+			}
+		}
+		return v
+	})
+
+	for _, child := range childList {
+		errs := ListRefCreate[any]()
+		ValidateCollect(child, Clone(q), extra, errs)
+		if 0 == len(errs.List) {
+			results = append(results, child)
+		}
+	}
+
+	return results
 }
 
 
