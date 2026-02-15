@@ -1641,414 +1641,379 @@ end
 
 
 -- Delete a key from a map or list.
--- @param state (table) The injection state
--- @return (nil) Always returns nil
-local function transform_DELETE(state)
-  local key, parent = state.key, state.parent
-  setprop(parent, key, NONE)
+local function transform_DELETE(inj)
+  inj:setval(NONE)
   return NONE
 end
 
--- Copy value from source data.
--- @param state (table) The injection state
--- @param _val (any) The current value (unused)
--- @param current (any) The current context
--- @return (any) The copied value
-local function transform_COPY(state, _val, current)
-  local mode, key, parent = state.mode, state.key, state.parent
 
-  local out = key
-  if mode ~= S_MKEYPRE and mode ~= S_MKEYPOST then
-    out = getprop(current, key)
-    setprop(parent, key, out)
+-- Copy value from source data.
+local function transform_COPY(inj, _val)
+  if S_MVAL ~= inj.mode then
+    return NONE
+  end
+
+  local out = getprop(inj.dparent, inj.key)
+  inj:setval(out)
+  return out
+end
+
+
+-- As a value, inject the key of the parent node.
+local function transform_KEY(inj)
+  local mode, path, parent = inj.mode, inj.path, inj.parent
+
+  if S_MVAL ~= mode then
+    return NONE
+  end
+
+  -- Key is defined by $KEY meta property.
+  local keyspec = getprop(parent, S_BKEY)
+  if keyspec ~= NONE then
+    delprop(parent, S_BKEY)
+    return getprop(inj.dparent, keyspec)
+  end
+
+  return getprop(getprop(parent, S_BANNO), S_KEY, getelem(path, -2))
+end
+
+
+-- Store annotation data about a node.
+local function transform_ANNO(inj)
+  delprop(inj.parent, S_BANNO)
+  return NONE
+end
+
+
+-- Merge a list of objects into the current object.
+local function transform_MERGE(inj)
+  local mode, key, parent = inj.mode, inj.key, inj.parent
+
+  local out = NONE
+
+  if S_MKEYPRE == mode then
+    out = key
+
+  elseif S_MKEYPOST == mode then
+    out = key
+
+    local args = getprop(parent, key)
+    if not islist(args) then
+      args = { args }
+      setmetatable(args, { __jsontype = "array" })
+    end
+
+    -- Remove the $MERGE command from parent.
+    inj:setval(NONE)
+
+    local mergelist = flatten({ { parent }, args, { clone(parent) } })
+    setmetatable(mergelist, { __jsontype = "array" })
+    merge(mergelist)
   end
 
   return out
 end
 
 
--- As a value, inject the key of the parent node.
--- As a key, defined the name of the key property in the source object.
--- @param state (table) The injection state
--- @param _val (any) The current value (unused)
--- @param current (any) The current context
--- @return (any) The key value
-local function transform_KEY(state, _val, current)
-  local mode, path, parent = state.mode, state.path, state.parent
+-- Helper: injectChild
+local function injectChild(child, store, inj)
+  local cinj = inj
 
-  -- Do nothing unless in val mode
-  if mode ~= S_MVAL then
-    return NONE
-  end
-
-  -- Key is defined by $KEY meta property
-  local keyspec = getprop(parent, S_DKEY)
-  if keyspec ~= NONE then
-    setprop(parent, S_DKEY, NONE)
-    return getprop(current, keyspec)
-  end
-
-  -- Try to get metadata from the parent metatable
-  local mt = getmetatable(parent)
-  if mt and mt.__metadata and mt.__metadata[S_KEY] then
-    return mt.__metadata[S_KEY]
-  end
-
-  -- If not in parent, try to find it in the current object
-  if current and type(current) == "table" then
-    -- First try current itself
-    mt = getmetatable(current)
-    if mt and mt.__metadata and mt.__metadata[S_KEY] then
-      return mt.__metadata[S_KEY]
-    end
-
-    -- Then try current[$TOP] if it exists
-    local current_array = getprop(current, S_DTOP)
-    if current_array and islist(current_array) and #current_array > 0 then
-      -- Get the index from the path
-      local idx_str = path[#path - 2]
-      local idx = tonumber(idx_str)
-      if idx and idx >= 0 and idx < #current_array then
-        local item = current_array[idx + 1] -- Convert to 1-based index
-        if item then
-          mt = getmetatable(item)
-          if mt and mt.__metadata and mt.__metadata[S_KEY] then
-            return mt.__metadata[S_KEY]
-          end
-        end
-      end
-    end
-  end
-
-  -- Fallback to the original approach as a last resort
-  return getprop(getprop(parent, S_DMETA), S_KEY, getprop(path, #path - 2))
-end
-
-
--- Store meta data about a node.  Does nothing itself, just used by
--- other injectors, and is removed when called.
--- @param state (table) The injection state
--- @return (nil) Always returns nil
-local function transform_META(state)
-  local parent = state.parent
-  setprop(parent, S_DMETA, NONE)
-  return NONE
-end
-
-
--- Merge a list of objects into the current object.
--- Must be a key in an object. The value is merged over the current object.
--- If the value is an array, the elements are first merged using `merge`.
--- If the value is the empty string, merge the top level store.
--- Format: { '`$MERGE`': '`source-path`' | ['`source-paths`', ...] }
--- @param state (table) The injection state
--- @param _val (any) The current value (unused)
--- @param current (any) The current context
--- @return (any) The key or nil depending on mode
-local function transform_MERGE(state, _val, current)
-  local mode, key, parent = state.mode, state.key, state.parent
-
-  if mode == S_MKEYPRE then
-    return key
-  end
-
-  -- Operate after child values have been transformed.
-  if mode == S_MKEYPOST then
-    local args = getprop(parent, key)
-
-    if args == S_MT then
-      args = { current["$TOP"] }
+  if nil ~= inj.prior then
+    if nil ~= inj.prior.prior then
+      cinj = inj.prior.prior:child(inj.prior.keyI, inj.prior.keys)
+      cinj.val = child
+      setprop(cinj.parent, inj.prior.key, child)
     else
-      if islist(args) then
-        -- Keep args as a list
-      else
-        args = { args }
-      end
+      cinj = inj.prior:child(inj.keyI, inj.keys)
+      cinj.val = child
+      setprop(cinj.parent, inj.key, child)
     end
-
-    -- Add metadata for array
-    if islist(args) then
-      setmetatable(args, {
-        __jsontype = "array"
-      })
-    end
-
-    -- Remove the $MERGE command from a parent map.
-    setprop(parent, key, NONE)
-
-    -- Build the mergelist explicitly
-    local mergelist = { parent } -- Start with parent
-
-    -- Add all items from args
-    if islist(args) then
-      for i = 1, #args do
-        table.insert(mergelist, args[i])
-      end
-    else
-      table.insert(mergelist, args)
-    end
-
-    table.insert(mergelist, clone(parent)) -- End with parent clone
-
-    -- Apply the metadata
-    setmetatable(mergelist, {
-      __jsontype = "array"
-    })
-
-    -- Perform the merge
-    merge(mergelist)
-
-    return key
   end
 
-  return NONE
+  inject(child, store, cinj)
+  return cinj
 end
 
 
 -- Convert a node to a list.
 -- Format: ['`$EACH`', '`source-path-of-node`', child-template]
--- @param state (table) The injection state
--- @param _val (any) The current value (unused)
--- @param current (any) The current context
--- @param _ref (string) The reference string (unused)
--- @param store (table) The data store
--- @return (any) The first item or nil
-local function transform_EACH(state, _val, current, _ref, store)
-  local mode, keys, path, parent, nodes = state.mode, state.keys, state.path,
-      state.parent, state.nodes
-
-  -- Remove arguments to avoid spurious processing.
-  if keys then
-    while #keys > 1 do
-      table.remove(keys)
-    end
-  end
-
-  if S_MVAL ~= mode then
+local function transform_EACH(inj, _val, _ref, store)
+  if S_MVAL ~= inj.mode then
     return NONE
   end
 
+  -- Remove remaining keys to avoid spurious processing.
+  local trimmed = slice(inj.keys, 0, 1)
+  -- Replace keys in-place
+  for i = #inj.keys, 1, -1 do inj.keys[i] = nil end
+  for i, v in ipairs(trimmed) do inj.keys[i] = v end
+
   -- Get arguments: ['`$EACH`', 'source-path', child-template]
-  local srcpath = parent[2]
-  local child = clone(parent[3])
+  local srcpath = getprop(inj.parent, 1)
+  local child = clone(getprop(inj.parent, 2))
 
-  -- Source data
-  local src = getpath(srcpath, store, current, state)
+  -- Source data.
+  local srcstore = getprop(store, inj.base, store)
+  local src = getpath(srcstore, srcpath, inj)
+  local srctype = typify(src)
 
-  -- Find the target key and parent to update
-  local tkey = path[#path - 1]
-  local target = nodes[#nodes - 1]
+  local tcur = {}
+  local tval = {}
+  setmetatable(tval, { __jsontype = "array" })
 
-  -- Create parallel arrays for templates and source values
-  local tval = {} -- Templates
-  setmetatable(tval, {
-    __jsontype = "array"
-  })
-  local tcur = {} -- Source values
-  setmetatable(tcur, {
-    __jsontype = "array"
-  })
+  local tkey = getelem(inj.path, -2)
+  local target = getelem(inj.nodes, -2, function() return getelem(inj.nodes, -1) end)
 
-  -- Extract values from source object/array with deterministic ordering
-  if src ~= nil then
-    if islist(src) then
-      -- For arrays, create a template for each source item
-      for i = 1, #src do
-        local copy_child = clone(child)
-        -- Add metadata with KEY for each item
-        copy_child[S_DMETA] = {
-          [S_KEY] = tostring(i - 1) -- Use 0-based index to match JS/Go
-        }
-
-        -- Use metatables to store metadata
-        local mt = {
-          __jsontype = "object",
-          __metadata = {
-            [S_KEY] = tostring(i - 1)
-          }
-        }
-        setmetatable(copy_child, mt)
-
-        table.insert(tval, copy_child)
-        -- Add the corresponding source value to tcur
-        table.insert(tcur, src[i])
-      end
-    elseif ismap(src) then
-      -- For maps, extract values in key-sorted order for deterministic behavior
-      local sortedKeys = {}
-      for k in pairs(src) do
-        table.insert(sortedKeys, k)
-      end
-      table.sort(sortedKeys) -- Sort keys alphabetically
-
-      for _, k in ipairs(sortedKeys) do
-        local copy_child = clone(child)
-        -- Keep regular metadata for backward compatibility
-        copy_child[S_DMETA] = {
-          [S_KEY] = k -- Use the map key (e.g., "a")
-        }
-
-        -- Use metatables to store metadata
-        local mt = {
-          __jsontype = "object",
-          __metadata = {
-            [S_KEY] = k
-          }
-        }
-        setmetatable(copy_child, mt)
-
-        table.insert(tval, copy_child)
-        table.insert(tcur, src[k])
-      end
+  -- Create clones of the child template for each value of the source.
+  if 0 < (T_list & srctype) then
+    for _, item in ipairs(items(src)) do
+      table.insert(tval, clone(child))
+    end
+  elseif 0 < (T_map & srctype) then
+    for _, item in ipairs(items(src)) do
+      local merged = merge({ clone(child), { [S_BANNO] = { KEY = item[1] } } }, 1)
+      table.insert(tval, merged)
     end
   end
 
-  -- Wrap source values exactly as TypeScript/Go do
-  tcur = {
-    [S_DTOP] = tcur
-  }
+  local rval = {}
+  setmetatable(rval, { __jsontype = "array" })
 
-  -- Process templates with source values
-  tval = inject(tval, store, state.modify, tcur)
+  if 0 < size(tval) then
+    -- Get source values
+    local srcvals = {}
+    setmetatable(srcvals, { __jsontype = "array" })
+    if islist(src) then
+      for i = 1, #src do table.insert(srcvals, src[i]) end
+    elseif ismap(src) then
+      for _, item in ipairs(items(src)) do
+        table.insert(srcvals, item[2])
+      end
+    end
 
-  _updateAncestors(state, target, tkey, tval)
+    local ckey = getelem(inj.path, -2)
+    local tpath = slice(inj.path, -1)
 
-  -- Return first entry if available
-  if #tval > 0 then
-    return tval[1]
-  else
-    return nil
+    -- Split srcpath into parts
+    local srcparts = {}
+    if type(srcpath) == S_string then
+      for p in srcpath:gmatch("([^%.]+)") do
+        table.insert(srcparts, p)
+      end
+    end
+    local dpath = flatten({ S_DTOP, srcparts, '$:' .. tostring(ckey) })
+
+    tcur = { [ckey] = srcvals }
+
+    if 1 < size(tpath) then
+      local pkey = getelem(inj.path, -3, S_DTOP)
+      tcur = { [pkey] = tcur }
+      table.insert(dpath, '$:' .. tostring(pkey))
+    end
+
+    local tinj = inj:child(0, { ckey })
+    tinj.path = tpath
+    tinj.nodes = slice(inj.nodes, -1)
+    tinj.parent = getelem(tinj.nodes, -1)
+    setprop(tinj.parent, ckey, tval)
+    tinj.val = tval
+    tinj.dpath = dpath
+    tinj.dparent = tcur
+
+    inject(tval, store, tinj)
+    rval = tinj.val
   end
+
+  setprop(target, tkey, rval)
+
+  -- Prevent callee from damaging first list entry.
+  return getelem(rval, 0)
 end
 
 
--- Convert a node to a map
+-- Convert a node to a map.
 -- Format: { '`$PACK`':['`source-path`', child-template]}
--- @param state (table) The injection state
--- @param _val (any) The current value (unused)
--- @param current (any) The current context
--- @param _ref (string) The reference string (unused)
--- @param store (table) The data store
--- @return (nil) Always returns nil
-local function transform_PACK(state, _val, current, _ref, store)
-  local mode, key, path, parent, nodes = state.mode, state.key, state.path,
-      state.parent, state.nodes
+local function transform_PACK(inj, _val, _ref, store)
+  local mode, key, path, parent, nodes = inj.mode, inj.key, inj.path,
+      inj.parent, inj.nodes
 
-  -- Defensive context checks
-  if S_MKEYPRE ~= mode or type(key) ~= S_string or path == nil or nodes == nil then
+  if S_MKEYPRE ~= mode then
     return NONE
   end
 
-  -- Get arguments
-  local args = parent[key]
-  local srcpath = args[1]      -- Path to source data
-  local child = clone(args[2]) -- Child template
+  -- Get arguments.
+  local args = getprop(parent, key)
+  local srcpath = getprop(args, 0)
+  local origchildspec = getprop(args, 1)
 
-  -- Find key and target node
-  local keyprop = child[S_DKEY]
-  local tkey = path[#path - 1]
-  local target = nodes[#path - 1] or nodes[#path]
+  -- Find key and target node.
+  local tkey = getelem(path, -2)
+  local pathsize = size(path)
+  local target = getelem(nodes, pathsize - 2, function()
+    return getelem(nodes, pathsize - 1)
+  end)
 
   -- Source data
-  local src = getpath(srcpath, store, current, state)
+  local srcstore = getprop(store, inj.base, store)
+  local src = getpath(srcstore, srcpath, inj)
 
-  -- Prepare source as a list
-  local srclist = {}
-  if islist(src) then
-    srclist = src
-  elseif ismap(src) then
-    -- Transform map to array with metadata, similar to TypeScript's reduce
-    for k, v in pairs(src) do
-      -- Add metadata directly on the original value
-      if v[S_DMETA] == nil then
-        v[S_DMETA] = {}
+  -- Prepare source as a list.
+  if not islist(src) then
+    if ismap(src) then
+      local newsrc = {}
+      setmetatable(newsrc, { __jsontype = "array" })
+      for _, item in ipairs(items(src)) do
+        setprop(item[2], S_BANNO, { KEY = item[1] })
+        table.insert(newsrc, item[2])
       end
-      v[S_DMETA][S_KEY] = k
-
-      -- Lua specific: Also add to metatable to ensure KEY retrieval works
-      setmetatable(v, {
-        __jsontype = "object",
-        __metadata = {
-          [S_KEY] = k
-        }
-      })
-
-      table.insert(srclist, v)
+      src = newsrc
+    else
+      src = NONE
     end
-  else
+  end
+
+  if src == nil then
     return NONE
   end
 
-  if #srclist == 0 then
-    return NONE
-  end
+  -- Get keypath.
+  local keypath = getprop(origchildspec, S_BKEY)
+  delprop(origchildspec, S_BKEY)
 
-  -- Get key if specified
-  local childkey = getprop(child, S_DKEY)
-  local keyname = childkey == NONE and keyprop or childkey
-  setprop(child, S_DKEY, NONE)
+  local child = getprop(origchildspec, S_BVAL, origchildspec)
 
-  -- Build target object using same pattern as TypeScript
+  -- Build parallel target object.
   local tval = {}
-  for _, n in ipairs(srclist) do
-    local kn = getprop(n, keyname)
-    if kn ~= NONE then
-      setprop(tval, kn, clone(child))
-      local nchild = getprop(tval, kn)
-      setprop(nchild, S_DMETA, getprop(n, S_DMETA))
 
-      -- Lua specific: Set metatable to ensure KEY retrieval works
-      setmetatable(nchild, {
-        __jsontype = "object",
-        __metadata = getprop(n, S_DMETA)
-      })
+  for _, item in ipairs(items(src)) do
+    local srckey = item[1]
+    local srcnode = item[2]
+
+    local kn = srckey
+    if NONE ~= keypath then
+      if type(keypath) == S_string and keypath:sub(1, 1) == S_BT then
+        kn = inject(keypath, merge({ {}, store, { [S_DTOP] = srcnode } }, 1))
+      else
+        kn = getpath(srcnode, keypath, inj)
+      end
+    end
+
+    local tchild = clone(child)
+    setprop(tval, kn, tchild)
+
+    local anno = getprop(srcnode, S_BANNO)
+    if NONE == anno then
+      delprop(tchild, S_BANNO)
+    else
+      setprop(tchild, S_BANNO, anno)
     end
   end
 
-  -- Build parallel source object exactly like TypeScript
-  local tcurrent = {}
-  for _, n in ipairs(srclist) do
-    local kn = getprop(n, keyname)
-    if kn ~= NONE then
-      setprop(tcurrent, kn, n)
+  local rval = {}
+
+  if not isempty(tval) then
+    -- Build parallel source object.
+    local tsrc = {}
+    for srcI, item in ipairs(items(src)) do
+      local srcnode = item[2]
+      local kn
+      if keypath == nil then
+        kn = srcI - 1  -- 0-based
+      elseif type(keypath) == S_string and keypath:sub(1, 1) == S_BT then
+        kn = inject(keypath, merge({ {}, store, { [S_DTOP] = srcnode } }, 1))
+      else
+        kn = getpath(srcnode, keypath, inj)
+      end
+      setprop(tsrc, kn, srcnode)
     end
+
+    local tpath = slice(inj.path, -1)
+    local ckey = getelem(inj.path, -2)
+
+    local srcparts = {}
+    if type(srcpath) == S_string then
+      for p in srcpath:gmatch("([^%.]+)") do
+        table.insert(srcparts, p)
+      end
+    end
+    local dpath = flatten({ S_DTOP, srcparts, '$:' .. tostring(ckey) })
+
+    local tcur = { [ckey] = tsrc }
+
+    if 1 < size(tpath) then
+      local pkey = getelem(inj.path, -3, S_DTOP)
+      tcur = { [pkey] = tcur }
+      table.insert(dpath, '$:' .. tostring(pkey))
+    end
+
+    local tinj = inj:child(0, { ckey })
+    tinj.path = tpath
+    tinj.nodes = slice(inj.nodes, -1)
+    tinj.parent = getelem(tinj.nodes, -1)
+    tinj.val = tval
+    tinj.dpath = dpath
+    tinj.dparent = tcur
+
+    inject(tval, store, tinj)
+    rval = tinj.val
   end
 
-  -- Wrap in $TOP exactly like TypeScript
-  tcurrent = {
-    [S_DTOP] = tcurrent
-  }
+  setprop(target, tkey, rval)
 
-  -- Process the structure
-  tval = inject(tval, store, state.modify, tcurrent)
-
-  _updateAncestors(state, target, tkey, tval)
-
-  -- Drop transform key
+  -- Drop transform key.
   return NONE
 end
 
 
--- Transform data using spec.
--- Only operates on static JSON-like data.
--- Arrays are treated as if they are objects with indices as keys.
--- @param data (any) Source data to transform into new data (original not mutated)
--- @param spec (any) Transform specification; output follows this shape
--- @param extra (any) Additional store of data and transforms
--- @param modify (function) Optionally modify individual values
--- @return (any) The transformed data
-local function transform(data, spec, extra, modify)
-  -- Clone the spec so that the clone can be modified in place as the transform result
-  spec = clone(spec)
+-- Apply a function to a value.
+-- Format: ['`$APPLY`', function, child]
+local function transform_APPLY(inj, _val, _ref, store)
+  if S_MVAL ~= inj.mode then
+    return NONE
+  end
 
-  -- Split extra transforms from extra data
+  local apply = getprop(inj.parent, 1)
+  local child = getprop(inj.parent, 2)
+
+  if not isfunc(apply) then
+    return NONE
+  end
+
+  local tkey = getelem(inj.path, -2)
+  local target = getelem(inj.nodes, -2, function() return getelem(inj.nodes, -1) end)
+
+  local cinj = injectChild(child, store, inj)
+  local resolved = cinj.val
+
+  local out = apply(resolved, store, cinj)
+
+  setprop(target, tkey, out)
+  return out
+end
+
+
+-- Transform data using spec.
+-- @param data (any) Source data to transform
+-- @param spec (any) Transform specification
+-- @param injdef (table) Optional injection definition with modify, extra, errs
+-- @return (any) The transformed data
+local function transform(data, spec, injdef)
+  local origspec = spec
+  spec = clone(origspec)
+
+  local extra = injdef and injdef.extra or NONE
+  local collect = injdef ~= nil and injdef.errs ~= nil
+  local errs = (injdef and injdef.errs) or {}
+
   local extraTransforms = {}
-  local extraData = {}
+  local extraData = NONE
 
   if extra ~= nil then
+    extraData = {}
     for _, item in ipairs(items(extra)) do
       local k, v = item[1], item[2]
-      if type(k) == 'string' and k:sub(1, 1) == S_DS then
+      if type(k) == S_string and k:sub(1, 1) == S_DS then
         extraTransforms[k] = v
       else
         extraData[k] = v
@@ -2056,58 +2021,41 @@ local function transform(data, spec, extra, modify)
     end
   end
 
-  local merge_first_item = nil
-  if not isempty(extraData) then
-    merge_first_item = clone(extraData)
-  end
-
-  local merge_data = { merge_first_item, clone(data) }
-  setmetatable(merge_data, {
-    __jsontype = "array"
+  local dataClone = merge({
+    isempty(extraData) and NONE or clone(extraData),
+    clone(data),
   })
 
-  local dataClone = merge(merge_data)
+  -- Define a top level store that provides transform operations.
+  local store = merge({
+    {
+      [S_DTOP] = dataClone,
 
-  -- Define a top level store that provides transform operations
-  local store = {
-    -- The inject function recognises this special location for the root of the source data.
-    -- This exactly matches TypeScript and Go
-    [S_DTOP] = dataClone,
+      [S_DSPEC] = function() return origspec end,
 
-    -- Escape backtick (works inside backticks too)
-    [S_DS .. 'BT'] = function()
-      return S_BT
-    end,
+      ['$BT'] = function() return S_BT end,
+      ['$DS'] = function() return S_DS end,
+      ['$WHEN'] = function() return os.date('!%Y-%m-%dT%H:%M:%S.000Z') end,
 
-    -- Escape dollar sign (works inside backticks too)
-    [S_DS .. 'DS'] = function()
-      return S_DS
-    end,
+      ['$DELETE'] = transform_DELETE,
+      ['$COPY'] = transform_COPY,
+      ['$KEY'] = transform_KEY,
+      ['$ANNO'] = transform_ANNO,
+      ['$MERGE'] = transform_MERGE,
+      ['$EACH'] = transform_EACH,
+      ['$PACK'] = transform_PACK,
+      ['$APPLY'] = transform_APPLY,
+    },
+    extraTransforms,
+    { ['$ERRS'] = errs },
+  }, 1)
 
-    -- Insert current date and time as an ISO string
-    [S_DS .. 'WHEN'] = function()
-      return os.date('!%Y-%m-%dT%H:%M:%S.000Z')
-    end,
+  local out = inject(spec, store, injdef)
 
-    -- Built-in transform functions
-    [S_DS .. 'DELETE'] = transform_DELETE,
-    [S_DS .. 'COPY'] = transform_COPY,
-    [S_DS .. 'KEY'] = transform_KEY,
-    [S_DS .. 'META'] = transform_META,
-    [S_DS .. 'MERGE'] = transform_MERGE,
-    [S_DS .. 'EACH'] = transform_EACH,
-    [S_DS .. 'PACK'] = transform_PACK
-  }
-
-  -- Add custom extra transforms, if any
-  for k, v in pairs(extraTransforms) do
-    store[k] = v
+  local generr = 0 < size(errs) and not collect
+  if generr then
+    error(table.concat(errs, ' | '))
   end
-
-  -- Build the transformed structure
-  -- In Go, this passes 'nil' for the state parameter explicitly
-  -- In Lua, we let inject handle creating the state
-  local out = inject(spec, store, modify, store)
 
   return out
 end
