@@ -126,6 +126,41 @@ func MakeRunner(testfile string, client Client) func(name string, store any) (*R
 			for _, entryVal := range testset {
 				entry := resolveEntry(entryVal, flags)
 
+				// Go cannot distinguish absent values from nil (JSON null).
+				// Skip entries where "in" or "out" is missing and the expected
+				// result is T_noval, as this represents a concept (undefined)
+				// that does not exist in Go.
+				_, hasIn := entry["in"]
+				_, hasOut := entry["out"]
+				if !hasIn || !hasOut {
+					if outVal, ok := entry["out"]; ok {
+						if outNum, ok := outVal.(int); ok && outNum == voxgigstruct.T_noval {
+							continue
+						}
+					}
+				}
+
+				// When null flag is false, skip entries where in values are nil,
+				// since Go cannot distinguish absent/undefined from nil.
+				if !flags["null"] {
+					if inMap, ok := entry["in"].(map[string]any); ok {
+						skipEntry := false
+						for _, v := range inMap {
+							if v == nil {
+								skipEntry = true
+								break
+							}
+						}
+						if skipEntry {
+							continue
+						}
+					}
+					// Also skip when out is nil (nil/undefined distinction).
+					if entry["out"] == nil {
+						continue
+					}
+				}
+
 				testpack, err := resolveTestPack(name, entry, subject, client, clients)
 				if err != nil {
 					// No debug output
@@ -133,6 +168,7 @@ func MakeRunner(testfile string, client Client) func(name string, store any) (*R
 				}
 
 				args := resolveArgs(entry, testpack)
+				entry["args"] = args
 
 				res, err := testpack.Subject(args...)
 
@@ -409,9 +445,10 @@ func checkResult(
 		pass, err := MatchNode(
 			entry["match"],
 			map[string]any{
-				"in":  entry["in"],
-				"out": entry["res"],
-				"ctx": entry["ctx"],
+				"in":   entry["in"],
+				"out":  entry["res"],
+				"ctx":  entry["ctx"],
+				"args": entry["args"],
 			},
 			structUtils,
 		)
