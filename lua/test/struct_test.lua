@@ -321,15 +321,12 @@ describe("struct", function()
 
 
   test("minor-typify", function()
-    -- Lua cannot distinguish JSON null from undefined (both are nil).
-    -- Filter out the null test entry since Lua maps both null and
-    -- undefined to nil, making it impossible to distinguish them.
+    -- Filter out JSON null 'in' entries: Lua typify(nil) returns T_null,
+    -- but TS typify(null) returns T_scalar|T_null.
     local filtered = { set = {} }
     setmetatable(filtered.set, { __jsontype = "array" })
     for _, entry in ipairs(minorSpec.typify.set) do
-      -- Skip entries where 'in' is JSON null (sentinel table from dkjson)
-      -- or absent (nil), because Lua treats both the same as nil.
-      if entry["in"] ~= nil and entry["in"] ~= JSON_NULL then
+      if entry["in"] ~= JSON_NULL then
         table.insert(filtered.set, entry)
       end
     end

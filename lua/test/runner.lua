@@ -95,6 +95,19 @@ local function makeRunner(testfile, client)
     local function runsetflags(testspec, flags, testsubject)
       subject = testsubject or subject
       flags = resolveFlags(flags)
+
+      -- Lua has no undefined value; skip entries where 'in' or 'out' is absent.
+      -- Must check before fixJSON since fixJSON may convert JSON_NULL to nil.
+      local rawset = testspec.set
+      local filteredset = {}
+      setmetatable(filteredset, getmetatable(rawset) or { __jsontype = "array" })
+      for _, entry in ipairs(rawset) do
+        if entry["in"] ~= nil or entry.args ~= nil or entry.ctx ~= nil then
+          table.insert(filteredset, entry)
+        end
+      end
+      testspec = { set = filteredset }
+
       local testspecmap = fixJSON(testspec, flags)
 
       local testset = testspecmap.set

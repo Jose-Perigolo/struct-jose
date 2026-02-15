@@ -345,9 +345,7 @@ end
 -- @return (number) The type as a bit flag
 local function typify(value)
   if value == nil then
-    -- In Lua, nil represents both JS undefined (absent) and JS null.
-    -- Include T_null so that $NULL validation passes for nil values.
-    return T_noval | T_null
+    return T_null
   end
 
   local luatype = type(value)
@@ -2448,6 +2446,11 @@ local function validate_TYPE(inj, _val, ref)
       typev = 1 << (32 - i)
       break
     end
+  end
+
+  -- Lua has no undefined; $NIL is equivalent to $NULL.
+  if tname == S_nil then
+    typev = typev | T_null
   end
 
   local out = getprop(inj.dparent, inj.key)
