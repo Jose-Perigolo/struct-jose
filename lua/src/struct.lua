@@ -2062,23 +2062,19 @@ end
 
 
 -- A required string value. NOTE: Rejects empty strings.
--- @param state (table) The validation state
--- @param val (any) The value to validate
--- @param current (any) The current context
--- @return (string|nil) The validated string or nil
-local function validate_STRING(state, _val, current)
-  local out = getprop(current, state.key)
+local function validate_STRING(inj)
+  local out = getprop(inj.dparent, inj.key)
 
   local t = typify(out)
-  if S_string ~= t then
-    local msg = _invalidTypeMsg(state.path, S_string, t, out, 'V1010')
-    table.insert(state.errs, msg)
+  if 0 == (T_string & t) then
+    local msg = _invalidTypeMsg(inj.path, S_string, t, out, 'V1010')
+    table.insert(inj.errs, msg)
     return NONE
   end
 
   if S_MT == out then
-    local msg = 'Empty string at ' .. pathify(state.path, 1)
-    table.insert(state.errs, msg)
+    local msg = 'Empty string at ' .. pathify(inj.path, 1)
+    table.insert(inj.errs, msg)
     return NONE
   end
 
@@ -2086,89 +2082,24 @@ local function validate_STRING(state, _val, current)
 end
 
 
--- A required number value (int or float).
--- @param state (table) The validation state
--- @param _val (any) The value to validate (unused)
--- @param current (any) The current context
--- @return (number|nil) The validated number or nil
-local function validate_NUMBER(state, _val, current)
-  local out = getprop(current, state.key)
+-- A generic type validator. Ref is used to determine which type to check.
+local function validate_TYPE(inj, _val, ref)
+  local tname = slice(ref, 1):lower()
 
-  local t = typify(out)
-  if S_number ~= t then
-    table.insert(state.errs, _invalidTypeMsg(state.path, S_number, t, out, 'V1020'))
-    return NONE
+  -- Find type index in TYPENAME
+  local typev = 0
+  for i, tn in ipairs(TYPENAME) do
+    if tn == tname then
+      typev = 1 << (32 - i)
+      break
+    end
   end
 
-  return out
-end
-
-
--- A required boolean value.
--- @param state (table) The validation state
--- @param _val (any) The value to validate (unused)
--- @param current (any) The current context
--- @return (boolean|nil) The validated boolean or nil
-local function validate_BOOLEAN(state, _val, current)
-  local out = getprop(current, state.key)
+  local out = getprop(inj.dparent, inj.key)
 
   local t = typify(out)
-  if S_boolean ~= t then
-    table.insert(state.errs, _invalidTypeMsg(state.path, S_boolean, t, out, 'V1030'))
-    return NONE
-  end
-
-  return out
-end
-
-
--- A required object (map) value (contents not validated).
--- @param state (table) The validation state
--- @param _val (any) The value to validate (unused)
--- @param current (any) The current context
--- @return (table|nil) The validated object or nil
-local function validate_OBJECT(state, _val, current)
-  local out = getprop(current, state.key)
-
-  local t = typify(out)
-  if t ~= S_object then
-    table.insert(state.errs, _invalidTypeMsg(state.path, S_object, t, out, 'V1040'))
-    return NONE
-  end
-
-  return out
-end
-
-
--- A required array (list) value (contents not validated).
--- @param state (table) The validation state
--- @param _val (any) The value to validate (unused)
--- @param current (any) The current context
--- @return (table|nil) The validated array or nil
-local function validate_ARRAY(state, _val, current)
-  local out = getprop(current, state.key)
-
-  local t = typify(out)
-  if t ~= S_array then
-    table.insert(state.errs, _invalidTypeMsg(state.path, S_array, t, out, 'V1050'))
-    return NONE
-  end
-
-  return out
-end
-
-
--- A required function value.
--- @param state (table) The validation state
--- @param _val (any) The value to validate (unused)
--- @param current (any) The current context
--- @return (function|nil) The validated function or nil
-local function validate_FUNCTION(state, _val, current)
-  local out = getprop(current, state.key)
-
-  local t = typify(out)
-  if S_function ~= t then
-    table.insert(state.errs, _invalidTypeMsg(state.path, S_function, t, out, 'V1060'))
+  if 0 == (t & typev) then
+    table.insert(inj.errs, _invalidTypeMsg(inj.path, tname, t, out, 'V1001'))
     return NONE
   end
 
@@ -2177,40 +2108,32 @@ end
 
 
 -- Allow any value.
--- @param state (table) The validation state
--- @param _val (any) The value to validate (unused)
--- @param current (any) The current context
--- @return (any) The value as is
-local function validate_ANY(state, _val, current)
-  return getprop(current, state.key)
+local function validate_ANY(inj)
+  local out = getprop(inj.dparent, inj.key)
+  return out
 end
 
 
 -- Specify child values for map or list.
 -- Map syntax: {'`$CHILD`': child-template }
 -- List syntax: ['`$CHILD`', child-template ]
--- @param state (table) The validation state
--- @param _val (any) The value to validate (unused)
--- @param current (any) The current context
--- @return (any) Depends on context
-local function validate_CHILD(state, _val, current)
-  local mode, key, parent, keys, path = state.mode, state.key, state.parent,
-      state.keys, state.path
+local function validate_CHILD(inj)
+  local mode, key, parent, keys, path = inj.mode, inj.key, inj.parent,
+      inj.keys, inj.path
 
   -- Map syntax.
   if S_MKEYPRE == mode then
     local childtm = getprop(parent, key)
 
     -- Get corresponding current object.
-    local pkey = getprop(path, #path - 2)
-    local tval = getprop(current, pkey)
+    local pkey = getelem(path, -2)
+    local tval = getprop(inj.dparent, pkey)
 
     if NONE == tval then
       tval = {}
     elseif not ismap(tval) then
-      local msg = _invalidTypeMsg(table.move(state.path, 1, #state.path - 1, 1,
-        {}), S_object, typify(tval), tval, 'V1070')
-      table.insert(state.errs, msg)
+      table.insert(inj.errs, _invalidTypeMsg(
+        slice(inj.path, 0, -1), S_object, typify(tval), tval, 'V0220'))
       return NONE
     end
 
@@ -2218,12 +2141,12 @@ local function validate_CHILD(state, _val, current)
     for _, ckey in ipairs(ckeys) do
       setprop(parent, ckey, clone(childtm))
 
-      -- NOTE: modifying state! This extends the child value loop in inject.
+      -- NOTE: modifying inj! This extends the child value loop in inject.
       table.insert(keys, ckey)
     end
 
     -- Remove $CHILD to cleanup output.
-    _setparentprop(state, NONE)
+    inj:setval(NONE)
     return NONE
   end
 
@@ -2231,39 +2154,34 @@ local function validate_CHILD(state, _val, current)
   if S_MVAL == mode then
     if not islist(parent) then
       -- $CHILD was not inside a list.
-      table.insert(state.errs, 'Invalid $CHILD as value')
+      table.insert(inj.errs, 'Invalid $CHILD as value')
       return NONE
     end
 
     local childtm = getprop(parent, 1)
 
-    if NONE == current then
+    if NONE == inj.dparent then
       -- Empty list as default.
-      for i = 1, #parent do
-        parent[i] = nil
-      end
+      slice(parent, 0, 0, true)
       return NONE
     end
 
-    if not islist(current) then
-      local msg = _invalidTypeMsg(table.move(state.path, 1, #state.path - 1, 1,
-        {}), S_array, typify(current), current, 'V0230')
-      table.insert(state.errs, msg)
-      state.keyI = #parent
-      return current
+    if not islist(inj.dparent) then
+      local msg = _invalidTypeMsg(
+        slice(inj.path, 0, -1), S_list, typify(inj.dparent), inj.dparent, 'V0230')
+      table.insert(inj.errs, msg)
+      inj.keyI = size(parent)
+      return inj.dparent
     end
 
-    -- Clone children and reset state key index.
-    -- The inject child loop will now iterate over the cloned children,
-    -- validating them against the current list values.
-    for i = 1, #current do
+    -- Clone children and reset inj key index.
+    for i = 1, #inj.dparent do
       parent[i] = clone(childtm)
     end
-    for i = #current + 1, #parent do
-      parent[i] = nil
-    end
-    state.keyI = 0
-    local out = getprop(current, 0)
+    slice(parent, 0, #inj.dparent, true)
+    inj.keyI = 0
+
+    local out = getprop(inj.dparent, 0)
     return out
   end
 
@@ -2279,145 +2197,112 @@ local validate
 
 -- Match at least one of the specified shapes.
 -- Syntax: ['`$ONE`', alt0, alt1, ...]
--- @param state (table) The validation state
--- @param _val (any) The value to validate (unused)
--- @param current (any) The current context
--- @param _ref (string) The reference string (unused)
--- @param store (table) The data store
--- @return (nil) Does not return a value directly
-local function validate_ONE(state, _val, current, _ref, store)
-  local mode, parent, path, keyI, nodes = state.mode, state.parent, state.path,
-      state.keyI, state.nodes
+local function validate_ONE(inj, _val, _ref, store)
+  local mode, parent, keyI = inj.mode, inj.parent, inj.keyI
 
   -- Only operate in val mode, since parent is a list.
   if S_MVAL == mode then
     if not islist(parent) or 0 ~= keyI then
-      table.insert(state.errs,
-        'The $ONE validator at field ' .. pathify(state.path, 1, 1) ..
+      table.insert(inj.errs,
+        'The $ONE validator at field ' .. pathify(inj.path, 1, 1) ..
         ' must be the first element of an array.')
       return
     end
 
-    -- Skip further iteration in the validator
-    state.keyI = #state.keys
-
-    local grandparent = nodes[#nodes - 1]
-    local grandkey = path[#path - 1]
+    inj.keyI = size(inj.keys)
 
     -- Clean up structure, replacing [$ONE, ...] with current
-    setprop(grandparent, grandkey, current)
-    state.path = { table.unpack(state.path, 1, #state.path - 1) }
-    state.key = state.path[#state.path]
+    inj:setval(inj.dparent, 2)
 
-    -- Create tvals array from parent elements starting at index 2
-    local tvals = {}
-    for i = 2, #parent do
-      table.insert(tvals, parent[i])
-    end
+    inj.path = slice(inj.path, 0, -1)
+    inj.key = getelem(inj.path, -1)
 
-    if 0 == #tvals then
-      table.insert(state.errs,
-        'The $ONE validator at field ' .. pathify(state.path, 1, 1) ..
+    local tvals = slice(parent, 1)
+    if 0 == size(tvals) then
+      table.insert(inj.errs,
+        'The $ONE validator at field ' .. pathify(inj.path, 1, 1) ..
         ' must have at least one argument.')
       return
     end
 
     -- See if we can find a match.
     for _, tval in ipairs(tvals) do
-      -- If match, then errs.length = 0
       local terrs = {}
-      setmetatable(terrs, {
-        __jsontype = "array"
+      setmetatable(terrs, { __jsontype = "array" })
+
+      local vstore = merge({ {}, store }, 1)
+      vstore["$TOP"] = inj.dparent
+
+      local vcurrent = validate(inj.dparent, tval, {
+        extra = vstore,
+        errs = terrs,
+        meta = inj.meta,
       })
 
-      local vstore = {}
-      for k, v in pairs(store) do
-        vstore[k] = v
-      end
-      vstore["$TOP"] = current
-      local vcurrent = validate(current, tval, vstore, terrs)
-      setprop(grandparent, grandkey, vcurrent)
+      inj:setval(vcurrent, -2)
 
-      -- Important: Only set the parent if validation succeeds
-      if #terrs == 0 then
+      -- Accept current value if there was a match
+      if 0 == size(terrs) then
         return
       end
     end
 
     -- There was no match.
-    -- Build validation description
     local valdesc = {}
     for _, v in ipairs(tvals) do
       table.insert(valdesc, stringify(v))
     end
     local valdesc_str = table.concat(valdesc, ', ')
-    -- Replace `$WORD` with word in lowercase
     valdesc_str = valdesc_str:gsub('`%$([A-Z]+)`', function(p1)
       return string.lower(p1)
     end)
 
-    -- Add error message
-    table.insert(state.errs,
-      _invalidTypeMsg(state.path,
-        (#tvals > 1 and 'one of ' or '') .. valdesc_str, typify(current),
-        current, 'V0210'))
+    table.insert(inj.errs,
+      _invalidTypeMsg(inj.path,
+        (1 < size(tvals) and 'one of ' or '') .. valdesc_str, typify(inj.dparent),
+        inj.dparent, 'V0210'))
   end
 end
 
 
 -- Match exactly one of the specified values.
 -- Syntax: ['`$EXACT`', val1, val2, ...]
--- @param state (table) The validation state
--- @param _val (any) The value to validate (unused)
--- @param current (any) The current context
--- @param _ref (string) The reference string (unused)
--- @param _store (table) The data store
--- @return (nil) Does not return a value directly
-local function validate_EXACT(state, _val, current, _ref, _store)
-  local mode, parent, path, key, keyI, nodes = state.mode, state.parent, state.path,
-      state.key, state.keyI, state.nodes
+local function validate_EXACT(inj)
+  local mode, parent, key, keyI = inj.mode, inj.parent, inj.key, inj.keyI
 
   -- Only operate in val mode, since parent is a list.
   if S_MVAL == mode then
     if not islist(parent) or 0 ~= keyI then
-      table.insert(state.errs, 'The $EXACT validator at field ' ..
-        pathify(state.path, 1, 1) ..
+      table.insert(inj.errs, 'The $EXACT validator at field ' ..
+        pathify(inj.path, 1, 1) ..
         ' must be the first element of an array.')
       return
     end
 
-    state.keyI = #state.keys
+    inj.keyI = size(inj.keys)
 
-    local grandparent = nodes[#nodes - 1]
-    local grandkey = path[#path - 1]
+    -- Clean up structure, replacing [$EXACT, ...] with current data parent
+    inj:setval(inj.dparent, 2)
 
-    -- Clean up structure, replacing [$EXACT, ...] with current
-    setprop(grandparent, grandkey, current)
-    state.path = { table.unpack(state.path, 1, #state.path - 1) }
-    state.key = state.path[#state.path]
+    inj.path = slice(inj.path, 0, -1)
+    inj.key = getelem(inj.path, -1)
 
-    -- Create tvals array from parent elements starting at index 2
-    local tvals = {}
-    for i = 2, #parent do
-      table.insert(tvals, parent[i])
-    end
-
-    if #tvals == 0 then
-      table.insert(state.errs, 'The $EXACT validator at field ' ..
-        pathify(state.path, 1, 1) ..
+    local tvals = slice(parent, 1)
+    if 0 == size(tvals) then
+      table.insert(inj.errs, 'The $EXACT validator at field ' ..
+        pathify(inj.path, 1, 1) ..
         ' must have at least one argument.')
       return
     end
 
     -- See if we can find an exact value match.
     local currentstr = nil
-
     for _, tval in ipairs(tvals) do
-      local exactmatch = tval == current
+      local exactmatch = tval == inj.dparent
 
       if not exactmatch and isnode(tval) then
         if currentstr == nil then
-          currentstr = stringify(current)
+          currentstr = stringify(inj.dparent)
         end
         local tvalstr = stringify(tval)
         exactmatch = tvalstr == currentstr
@@ -2428,48 +2313,48 @@ local function validate_EXACT(state, _val, current, _ref, _store)
       end
     end
 
-    -- If no match was found, report the error
     local valdesc = {}
     for _, v in ipairs(tvals) do
       table.insert(valdesc, stringify(v))
     end
     local valdesc_str = table.concat(valdesc, ', ')
 
-    table.insert(state.errs, _invalidTypeMsg(
-      state.path,
-      (#state.path > 1 and '' or 'value ') ..
-      'exactly equal to ' .. (#tvals == 1 and '' or 'one of ') .. valdesc_str,
-      typify(current), current, 'V0110'))
+    table.insert(inj.errs, _invalidTypeMsg(
+      inj.path,
+      (1 < size(inj.path) and '' or 'value ') ..
+      'exactly equal to ' .. (1 == size(tvals) and '' or 'one of ') .. valdesc_str,
+      typify(inj.dparent), inj.dparent, 'V0110'))
   else
-    setprop(parent, key, NONE)
+    delprop(parent, key)
   end
 end
 
 
 -- This is the "modify" argument to inject. Use this to perform
 -- generic validation. Runs *after* any special commands.
--- @param pval (any) Property value from spec
--- @param key (any) The key being validated
--- @param parent (table) The parent object
--- @param state (table) The validation state
--- @param current (any) The current context
--- @param _store (table) The data store (unused)
-_validation = function(pval, key, parent, state, current, _store)
-  if NONE == state then
+_validation = function(pval, key, parent, inj)
+  if NONE == inj then
     return
   end
 
-  -- Current val to verify.
-  local cval = getprop(current, key)
+  if SKIP == pval then
+    return
+  end
 
-  if NONE == cval or NONE == state then
+  -- select needs exact matches
+  local exact = getprop(inj.meta, S_BEXACT, false)
+
+  -- Current val to verify.
+  local cval = getprop(inj.dparent, key)
+
+  if NONE == inj or (not exact and NONE == cval) then
     return
   end
 
   local ptype = typify(pval)
 
   -- Delete any special commands remaining.
-  if S_string == ptype and string.find(pval, S_DS, 1, true) then
+  if 0 < (T_string & ptype) and string.find(pval, S_DS, 1, true) then
     return
   end
 
@@ -2477,13 +2362,13 @@ _validation = function(pval, key, parent, state, current, _store)
 
   -- Type mismatch.
   if ptype ~= ctype and NONE ~= pval then
-    table.insert(state.errs, _invalidTypeMsg(state.path, ptype, ctype, cval, 'V0010'))
+    table.insert(inj.errs, _invalidTypeMsg(inj.path, typename(ptype), ctype, cval, 'V0010'))
     return
   end
 
   if ismap(cval) then
     if not ismap(pval) then
-      table.insert(state.errs, _invalidTypeMsg(state.path, ptype, ctype, cval, 'V0020'))
+      table.insert(inj.errs, _invalidTypeMsg(inj.path, typename(ptype), ctype, cval, 'V0020'))
       return
     end
 
@@ -2491,13 +2376,8 @@ _validation = function(pval, key, parent, state, current, _store)
     local pkeys = keysof(pval)
 
     -- Empty spec object {} means object can be open (any keys).
-    if #pkeys > 0 and getprop(pval, '`$OPEN`') ~= true then
+    if 0 < size(pkeys) and true ~= getprop(pval, '`$OPEN`') then
       local badkeys = {}
-      setmetatable(badkeys, {
-        __jsontype = {
-          type = 'array'
-        }
-      })
 
       for _, ckey in ipairs(ckeys) do
         if not haskey(pval, ckey) then
@@ -2506,21 +2386,28 @@ _validation = function(pval, key, parent, state, current, _store)
       end
 
       -- Closed object, so reject extra keys not in shape.
-      if #badkeys > 0 then
-        local msg = 'Unexpected keys at field ' .. pathify(state.path, 1) .. ': ' ..
-            table.concat(badkeys, ', ')
-        table.insert(state.errs, msg)
+      if 0 < size(badkeys) then
+        local msg =
+          'Unexpected keys at field ' .. pathify(inj.path, 1) .. S_VIZ .. table.concat(badkeys, ', ')
+        table.insert(inj.errs, msg)
       end
     else
       -- Object is open, so merge in extra keys.
       merge({ pval, cval })
       if isnode(pval) then
-        setprop(pval, '`$OPEN`', NONE)
+        delprop(pval, '`$OPEN`')
       end
     end
   elseif islist(cval) then
     if not islist(pval) then
-      table.insert(state.errs, _invalidTypeMsg(state.path, ptype, ctype, cval, 'V0030'))
+      table.insert(inj.errs, _invalidTypeMsg(inj.path, typename(ptype), ctype, cval, 'V0030'))
+    end
+  elseif exact then
+    if cval ~= pval then
+      local pathmsg = 1 < size(inj.path)
+        and ('at field ' .. pathify(inj.path, 1) .. S_VIZ) or S_MT
+      table.insert(inj.errs, 'Value ' .. pathmsg .. tostring(cval) ..
+        ' should equal ' .. tostring(pval) .. '.')
     end
   else
     -- Spec value was a default, copy over data
@@ -2544,57 +2431,65 @@ end
 -- @param extra (any) Additional custom checks
 -- @param collecterrs (table) Optional array to collect error messages
 -- @return (any) The validated data
-validate = function(data, spec, extra, collecterrs)
-  local errs = collecterrs or {}
-  setmetatable(errs, {
-    __jsontype = "array"
+validate = function(data, spec, injdef)
+  local extra = injdef and injdef.extra or nil
+
+  local collect = injdef ~= nil and injdef.errs ~= nil
+  local errs = (injdef and injdef.errs) or {}
+  setmetatable(errs, { __jsontype = "array" })
+
+  local store = merge({
+    {
+      -- Remove the transform commands.
+      ["$DELETE"] = false,
+      ["$COPY"] = false,
+      ["$KEY"] = false,
+      ["$META"] = false,
+      ["$MERGE"] = false,
+      ["$EACH"] = false,
+      ["$PACK"] = false,
+
+      -- Validation functions
+      ["$STRING"] = validate_STRING,
+      ["$NUMBER"] = validate_TYPE,
+      ["$INTEGER"] = validate_TYPE,
+      ["$DECIMAL"] = validate_TYPE,
+      ["$BOOLEAN"] = validate_TYPE,
+      ["$NULL"] = validate_TYPE,
+      ["$NIL"] = validate_TYPE,
+      ["$MAP"] = validate_TYPE,
+      ["$LIST"] = validate_TYPE,
+      ["$FUNCTION"] = validate_TYPE,
+      ["$INSTANCE"] = validate_TYPE,
+      ["$ANY"] = validate_ANY,
+      ["$CHILD"] = validate_CHILD,
+      ["$ONE"] = validate_ONE,
+      ["$EXACT"] = validate_EXACT,
+    },
+
+    getdef(extra, {}),
+
+    -- A special top level value to collect errors.
+    {
+      ["$ERRS"] = errs,
+    }
+  }, 1)
+
+  local meta = (injdef and injdef.meta) or {}
+  setprop(meta, S_BEXACT, getprop(meta, S_BEXACT, false))
+
+  local out = transform(data, spec, {
+    meta = meta,
+    extra = store,
+    modify = _validation,
+    handler = _validatehandler,
+    errs = errs,
   })
 
-  -- Create the store with validation functions and commands
-  local store = {
-    -- Remove the transform commands.
-    ["$DELETE"] = nil,
-    ["$COPY"] = nil,
-    ["$KEY"] = nil,
-    ["$META"] = nil,
-    ["$MERGE"] = nil,
-    ["$EACH"] = nil,
-    ["$PACK"] = nil,
-
-    -- Validation functions
-    ["$STRING"] = validate_STRING,
-    ["$NUMBER"] = validate_NUMBER,
-    ["$BOOLEAN"] = validate_BOOLEAN,
-    ["$OBJECT"] = validate_OBJECT,
-    ["$ARRAY"] = validate_ARRAY,
-    ["$FUNCTION"] = validate_FUNCTION,
-    ["$ANY"] = validate_ANY,
-    ["$CHILD"] = validate_CHILD,
-    ["$ONE"] = validate_ONE,
-    ["$EXACT"] = validate_EXACT
-  }
-
-  -- Merge in any extra validators/commands
-  if extra then
-    -- Check if extra is a table; if not, assume it's a string from a test
-    if type(extra) == "table" then
-      for k, v in pairs(extra) do
-        store[k] = v
-      end
-    end
-    -- If extra is not a table, simply ignore it
-  end
-
-  if errs then
-    store["$ERRS"] = errs
-  end
-
-  local out = transform(data, spec, store, _validation)
-
-  local generr = #errs > 0 and collecterrs == nil
+  local generr = (0 < size(errs) and not collect)
 
   if generr then
-    error('Invalid data: ' .. table.concat(errs, ' | '))
+    error(table.concat(errs, ' | '))
   end
 
   return out
@@ -2631,6 +2526,32 @@ _injecthandler = function(inj, val, ref, store)
   -- Update parent with value. Ensures references remain in node tree.
   elseif S_MVAL == inj.mode and inj.full then
     inj:setval(val)
+  end
+
+  return out
+end
+
+
+-- Validate handler - intercepts meta paths for validation.
+_validatehandler = function(inj, val, ref, store)
+  local out = val
+
+  -- Check for meta path syntax: field$=value or field$~value
+  local m = ref:match("^([^$]+)%$([=~])(.+)$")
+  local ismetapath = m ~= nil
+
+  if ismetapath then
+    local eq = ref:match("^[^$]+%$(.)") -- '=' or '~'
+    if '=' == eq then
+      inj:setval({ S_BEXACT, val })
+    else
+      inj:setval(val)
+    end
+    inj.keyI = -1
+
+    out = SKIP
+  else
+    out = _injecthandler(inj, val, ref, store)
   end
 
   return out
