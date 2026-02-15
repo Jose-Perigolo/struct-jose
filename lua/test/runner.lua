@@ -7,6 +7,9 @@ local NULLMARK = "__NULL__"     -- Value is JSON null
 local UNDEFMARK = "__UNDEF__"   -- Value is not present (thus undefined)
 local EXISTSMARK = "__EXISTS__" -- Value exists (not undefined)
 
+-- Unique sentinel for JSON null (distinguishes from the literal string "null")
+local JSON_NULL = setmetatable({}, { __tostring = function() return "null" end })
+
 
 ----------------------------------------------------------
 -- Utility Functions
@@ -92,6 +95,19 @@ local function makeRunner(testfile, client)
     local function runsetflags(testspec, flags, testsubject)
       subject = testsubject or subject
       flags = resolveFlags(flags)
+
+      -- Lua has no undefined value; skip entries where 'in' or 'out' is absent.
+      -- Must check before fixJSON since fixJSON may convert JSON_NULL to nil.
+      local rawset = testspec.set
+      local filteredset = {}
+      setmetatable(filteredset, getmetatable(rawset) or { __jsontype = "array" })
+      for _, entry in ipairs(rawset) do
+        if entry["in"] ~= nil or entry.args ~= nil or entry.ctx ~= nil then
+          table.insert(filteredset, entry)
+        end
+      end
+      testspec = { set = filteredset }
+
       local testspecmap = fixJSON(testspec, flags)
 
       local testset = testspecmap.set
@@ -106,7 +122,7 @@ local function makeRunner(testfile, client)
           res = fixJSON(res, flags)
           entry.res = res
 
-          checkResult(entry, res, structUtils)
+          checkResult(entry, args, res, structUtils)
         end)
 
         if not success then
@@ -144,7 +160,7 @@ end
 -- @return (table) The resolved test specification
 resolveSpec = function(name, testfile)
   local alltests = json.decode(readFileSync(join(lfs.currentdir(), testfile)),
-    1, "null")
+    1, JSON_NULL)
   local spec =
       (alltests.primary and alltests.primary[name]) or (alltests[name]) or
       alltests
@@ -214,15 +230,23 @@ end
 
 -- Check the result of a test against expectations
 -- @param entry (table) The test entry
+-- @param args (table) The test arguments
 -- @param res (any) The test result
 -- @param structUtils (table) Structure utility functions
-checkResult = function(entry, res, structUtils)
+checkResult = function(entry, args, res, structUtils)
   local matched = false
+
+  -- If expected error but none thrown, fail
+  if entry.err then
+    fail('Expected error did not occur: ' .. structUtils.stringify(entry.err))
+    return
+  end
 
   -- If there's a match pattern, verify it first
   if entry.match then
     local result = {
       ["in"] = entry["in"],
+      args = args,
       out = entry.res,
       ctx = entry.ctx
     }
@@ -242,10 +266,11 @@ checkResult = function(entry, res, structUtils)
     return
   end
 
-  -- Otherwise, verify deep equality
+  -- Otherwise, verify deep equality.
+  -- Round-trip through JSON to normalize (matches TS behavior).
   if res ~= nil then
     local json_str = json.encode(res)
-    local decoded = json.decode(json_str, 1, "null")
+    local decoded = json.decode(json_str, 1, JSON_NULL)
     deepEqual(decoded, out)
   else
     deepEqual(res, out)
@@ -358,7 +383,7 @@ match = function(check, base, structUtils)
 
   structUtils.walk(check, function(_key, val, _parent, path)
     if not structUtils.isnode(val) then
-      local baseval = structUtils.getpath(path, base)
+      local baseval = structUtils.getpath(base, path)
 
       -- Direct match check
       if baseval == val then
@@ -423,31 +448,82 @@ matchval = function(check, base, structUtils)
 end
 
 
--- Transform null values in JSON data according to flags
+-- Transform null values in JSON data according to flags.
+-- dkjson decodes JSON null as the Lua string "null".
+-- When flags.null is true, convert "null" to NULLMARK ("__NULL__").
+-- When flags.null is false, convert "null" to nil (native Lua null).
 -- @param val (any) The value to process
 -- @param flags (table) Processing flags including null handling
 -- @return (any) The processed value
 fixJSON = function(val, flags)
-  if val == nil or val == "null" then
-    return flags.null and NULLMARK or val
+  -- Handle JSON_NULL sentinel and Lua nil.
+  if val == JSON_NULL or val == nil then
+    if flags.null then
+      return NULLMARK
+    else
+      return nil
+    end
   end
 
-  local function replacer(v)
-    if (v == nil or v == "null") and flags.null then
-      return NULLMARK
-    elseif type(v) == "table" then
-      local result = {}
-      for k, value in pairs(v) do
-        result[k] = replacer(value)
-      end
+  local function isarray(t)
+    if type(t) ~= "table" then return false end
+    if t == JSON_NULL then return false end
+    local mt = getmetatable(t)
+    if mt and mt.__jsontype == "array" then return true end
+    local count = 0
+    local max = 0
+    for k in pairs(t) do
+      if type(k) ~= "number" then return false end
+      if k > max then max = k end
+      count = count + 1
+    end
+    return count > 0 and max == count
+  end
 
-      -- Preserve the metatable if it exists
-      local mt = getmetatable(v)
-      if mt then
-        setmetatable(result, mt)
+  -- In arrays, we need to preserve null as a value (not nil which creates holes).
+  -- Use "null" string as a stand-in for JS null in arrays when flags.null=false.
+  local function replacer(v, in_array)
+    if v == JSON_NULL or v == nil then
+      if flags.null then
+        return NULLMARK
+      elseif in_array then
+        -- Preserve null in arrays as the string "null" to avoid nil holes.
+        -- Matches JS behavior where String(null) === "null".
+        return "null"
+      else
+        return nil
       end
-
-      return result
+    elseif type(v) == "table" and v ~= JSON_NULL then
+      if isarray(v) then
+        local result = {}
+        local mt = getmetatable(v)
+        if mt then
+          setmetatable(result, mt)
+        elseif #v > 0 then
+          setmetatable(result, { __jsontype = "array" })
+        end
+        for i = 1, #v do
+          local newval = replacer(v[i], true)
+          if newval ~= nil then
+            table.insert(result, newval)
+          end
+        end
+        return result
+      else
+        -- For maps, process each value
+        local result = {}
+        for k, value in pairs(v) do
+          local newval = replacer(value, false)
+          if newval ~= nil then
+            result[k] = newval
+          end
+        end
+        local mt = getmetatable(v)
+        if mt then
+          setmetatable(result, mt)
+        end
+        return result
+      end
     else
       return v
     end
@@ -474,6 +550,7 @@ end
 return {
   NULLMARK = NULLMARK,
   EXISTSMARK = EXISTSMARK,
+  JSON_NULL = JSON_NULL,
   nullModifier = nullModifier,
   makeRunner = makeRunner
 }

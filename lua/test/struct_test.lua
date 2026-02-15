@@ -3,8 +3,8 @@ package.path = package.path .. ";./test/?.lua"
 local assert = require("luassert")
 
 local runnerModule = require("runner")
-local makeRunner, nullModifier, NULLMARK = runnerModule.makeRunner,
-    runnerModule.nullModifier, runnerModule.NULLMARK
+local makeRunner, nullModifier, NULLMARK, JSON_NULL = runnerModule.makeRunner,
+    runnerModule.nullModifier, runnerModule.NULLMARK, runnerModule.JSON_NULL
 
 local SDK = require("sdk").SDK
 
@@ -48,8 +48,10 @@ describe("struct", function()
   local struct_util = client:utility().struct
   -- Extract test specifications for different function groups
   local clone = struct_util.clone
+  local delprop = struct_util.delprop
   local escre = struct_util.escre
   local escurl = struct_util.escurl
+  local getelem = struct_util.getelem
   local getpath = struct_util.getpath
   local getprop = struct_util.getprop
 
@@ -64,11 +66,17 @@ describe("struct", function()
   local isnode = struct_util.isnode
   local items = struct_util.items
   local joinurl = struct_util.joinurl
+  local jsonify = struct_util.jsonify
 
   local keysof = struct_util.keysof
   local merge = struct_util.merge
+  local pad = struct_util.pad
   local pathify = struct_util.pathify
+  local select_fn = struct_util.select
+  local setpath = struct_util.setpath
   local setprop = struct_util.setprop
+  local size = struct_util.size
+  local slice = struct_util.slice
   local strkey = struct_util.strkey
 
   local stringify = struct_util.stringify
@@ -84,12 +92,15 @@ describe("struct", function()
   local injectSpec = spec.inject
   local transformSpec = spec.transform
   local validateSpec = spec.validate
+  local selectSpec = spec.select
 
   -- Basic existence tests
   test("exists", function()
     assert.equal("function", type(clone))
+    assert.equal("function", type(delprop))
     assert.equal("function", type(escre))
     assert.equal("function", type(escurl))
+    assert.equal("function", type(getelem))
     assert.equal("function", type(getprop))
     assert.equal("function", type(getpath))
 
@@ -104,11 +115,17 @@ describe("struct", function()
     assert.equal("function", type(isnode))
     assert.equal("function", type(items))
     assert.equal("function", type(joinurl))
+    assert.equal("function", type(jsonify))
 
     assert.equal("function", type(keysof))
     assert.equal("function", type(merge))
+    assert.equal("function", type(pad))
     assert.equal("function", type(pathify))
+    assert.equal("function", type(select_fn))
+    assert.equal("function", type(setpath))
     assert.equal("function", type(setprop))
+    assert.equal("function", type(size))
+    assert.equal("function", type(slice))
     assert.equal("function", type(strkey))
 
     assert.equal("function", type(stringify))
@@ -304,9 +321,94 @@ describe("struct", function()
 
 
   test("minor-typify", function()
-    runsetflags(minorSpec.typify, {
+    -- Filter out JSON null 'in' entries: Lua typify(nil) returns T_null,
+    -- but TS typify(null) returns T_scalar|T_null.
+    local filtered = { set = {} }
+    setmetatable(filtered.set, { __jsontype = "array" })
+    for _, entry in ipairs(minorSpec.typify.set) do
+      if entry["in"] ~= JSON_NULL then
+        table.insert(filtered.set, entry)
+      end
+    end
+    runsetflags(filtered, {
       null = false
     }, typify)
+  end)
+
+
+  test("minor-getelem", function()
+    runsetflags(minorSpec.getelem, {
+      null = false
+    }, function(vin)
+      if vin.alt == nil then
+        return getelem(vin.val, vin.key)
+      else
+        return getelem(vin.val, vin.key, vin.alt)
+      end
+    end)
+  end)
+
+
+  test("minor-size", function()
+    runsetflags(minorSpec.size, {
+      null = false
+    }, size)
+  end)
+
+
+  test("minor-slice", function()
+    runsetflags(minorSpec.slice, {
+      null = false
+    }, function(vin)
+      return slice(vin.val, vin.start, vin['end'])
+    end)
+  end)
+
+
+  test("minor-pad", function()
+    runsetflags(minorSpec.pad, {
+      null = false
+    }, function(vin)
+      return pad(vin.val, vin.pad, vin.char)
+    end)
+  end)
+
+
+  test("minor-setpath", function()
+    runsetflags(minorSpec.setpath, {
+      null = false
+    }, function(vin)
+      return setpath(vin.store, vin.path, vin.val)
+    end)
+  end)
+
+
+  test("minor-delprop", function()
+    runset(minorSpec.delprop, function(vin)
+      return delprop(vin.parent, vin.key)
+    end)
+  end)
+
+
+  test("minor-edge-delprop", function()
+    local strarr0 = { "a", "b", "c", "d", "e" }
+    local strarr1 = { "a", "b", "c", "d", "e" }
+    assert.same({ "a", "b", "d", "e" }, delprop(strarr0, 2))
+    assert.same({ "a", "b", "d", "e" }, delprop(strarr1, "2"))
+
+    local intarr0 = { 2, 3, 5, 7, 11 }
+    local intarr1 = { 2, 3, 5, 7, 11 }
+    assert.same({ 2, 3, 7, 11 }, delprop(intarr0, 2))
+    assert.same({ 2, 3, 7, 11 }, delprop(intarr1, "2"))
+  end)
+
+
+  test("minor-jsonify", function()
+    runsetflags(minorSpec.jsonify, {
+      null = false
+    }, function(vin)
+      return jsonify(vin.val, vin.flags)
+    end)
   end)
 
 
@@ -316,18 +418,38 @@ describe("struct", function()
 
   test("walk-log", function()
     local test = clone(walkSpec.log)
-    local log = array()
 
-    -- Log handler function for walk test
     local function walklog(key, val, parent, path)
-      table.insert(log,
-        "k=" .. stringify(key) .. ", v=" .. stringify(val) .. ", p=" ..
-        stringify(parent) .. ", t=" .. pathify(path))
-      return val
+      return "k=" .. stringify(key) .. ", v=" .. stringify(val) .. ", p=" ..
+        stringify(parent) .. ", t=" .. pathify(path)
     end
 
-    walk(test["in"], walklog)
-    assert.same(log, test.out)
+    -- Test before callback
+    local logb = array()
+    local function walklog_before(key, val, parent, path)
+      table.insert(logb, walklog(key, val, parent, path))
+      return val
+    end
+    walk(test["in"], walklog_before)
+    assert.same(logb, test.out.before)
+
+    -- Test after callback
+    local loga = array()
+    local function walklog_after(key, val, parent, path)
+      table.insert(loga, walklog(key, val, parent, path))
+      return val
+    end
+    walk(test["in"], nil, walklog_after)
+    assert.same(loga, test.out.after)
+
+    -- Test both callbacks
+    local logba = array()
+    local function walklog_both(key, val, parent, path)
+      table.insert(logba, walklog(key, val, parent, path))
+      return val
+    end
+    walk(test["in"], walklog_both, walklog_both)
+    assert.same(logba, test.out.both)
   end)
 
 
@@ -341,6 +463,61 @@ describe("struct", function()
     end
     runset(walkSpec.basic, function(vin)
       return walk(vin, walkpath)
+    end)
+  end)
+
+
+  test("walk-depth", function()
+    runsetflags(walkSpec.depth, { null = false }, function(vin)
+      local top = nil
+      local cur = nil
+      local function copy(key, val, _parent, _path)
+        if key == nil or isnode(val) then
+          local child = islist(val) and array() or object()
+          if key == nil then
+            top = child
+            cur = child
+          else
+            cur[key] = child
+            cur = child
+          end
+        else
+          cur[key] = val
+        end
+        return val
+      end
+      walk(vin.src, copy, nil, vin.maxdepth)
+      return top
+    end)
+  end)
+
+
+  test("walk-copy", function()
+    local cur
+
+    local function walkcopy(key, val, _parent, path)
+      if key == nil then
+        cur = {}
+        cur[0] = ismap(val) and object() or islist(val) and array() or val
+        return val
+      end
+
+      local v = val
+      local i = size(path)
+
+      if isnode(v) then
+        v = ismap(v) and object() or array()
+        cur[i] = v
+      end
+
+      setprop(cur[i - 1], key, v)
+
+      return val
+    end
+
+    runset(walkSpec.copy, function(vin)
+      walk(vin, walkcopy)
+      return cur[0]
     end)
   end)
 
@@ -394,49 +571,61 @@ describe("struct", function()
   end)
 
 
+  test("merge-depth", function()
+    runset(mergeSpec.depth, function(vin)
+      return merge(vin.val, vin.depth)
+    end)
+  end)
+
+
   ----------------------------------------------------------
   -- GetPath Tests
   ----------------------------------------------------------
 
   test("getpath-basic", function()
     runset(getpathSpec.basic, function(vin)
-      return getpath(vin.path, vin.store)
+      return getpath(vin.store, vin.path)
     end)
   end)
 
 
-  test("getpath-current", function()
-    runset(getpathSpec.current, function(vin)
-      return getpath(vin.path, vin.store, vin.current)
+  test("getpath-relative", function()
+    runset(getpathSpec.relative, function(vin)
+      local dpath = vin.dpath
+      if type(dpath) == 'string' then
+        -- Split dpath string into array
+        local parts = {}
+        for part in dpath:gmatch('[^%.]+') do
+          table.insert(parts, part)
+        end
+        dpath = parts
+      end
+      return getpath(vin.store, vin.path, { dparent = vin.dparent, dpath = dpath })
     end)
   end)
 
 
-  test("getpath-state", function()
-    -- Create state object for getpath testing
-    local state = {
-      handler = function(state, val, _current, _ref, _store)
-        local out = state.meta.step .. ':' .. val
-        state.meta.step = state.meta.step + 1
-        return out
-      end,
-      meta = {
-        step = 0
-      },
-      mode = 'val',
-      full = false,
-      keyI = 0,
-      keys = { '$TOP' },
-      key = '$TOP',
-      val = '',
-      parent = {},
-      path = array('$TOP'),
-      nodes = array({}),
-      base = '$TOP',
-      errs = array()
-    }
-    runset(spec.getpath.state, function(vin)
-      return getpath(vin.path, vin.store, vin.current, state)
+  test("getpath-special", function()
+    runset(spec.getpath.special, function(vin)
+      return getpath(vin.store, vin.path, vin.inj)
+    end)
+  end)
+
+
+  test("getpath-handler", function()
+    runset(spec.getpath.handler, function(vin)
+      return getpath(
+        {
+          ["$TOP"] = vin.store,
+          ["$FOO"] = function() return 'foo' end,
+        },
+        vin.path,
+        {
+          handler = function(_inj, val, _cur, _ref)
+            return val()
+          end
+        }
+      )
     end)
   end)
 
@@ -453,7 +642,7 @@ describe("struct", function()
 
   test("inject-string", function()
     runset(injectSpec.string, function(vin)
-      local result = inject(vin.val, vin.store, nullModifier, vin.current)
+      local result = inject(vin.val, vin.store, { modify = nullModifier })
       return result
     end)
   end)
@@ -472,48 +661,71 @@ describe("struct", function()
 
   test("transform-basic", function()
     local test = clone(transformSpec.basic)
-    assert.same(transform(test['in'].data, test['in'].spec, test['in'].store),
+    assert.same(transform(test['in'].data, test['in'].spec),
       test.out)
   end)
 
 
   test("transform-paths", function()
     runset(transformSpec.paths, function(vin)
-      return transform(vin.data, vin.spec, vin.store)
+      return transform(vin.data, vin.spec)
     end)
   end)
 
 
   test("transform-cmds", function()
     runset(transformSpec.cmds, function(vin)
-      return transform(vin.data, vin.spec, vin.store)
+      return transform(vin.data, vin.spec)
     end)
   end)
 
 
   test("transform-each", function()
     runset(transformSpec.each, function(vin)
-      return transform(vin.data, vin.spec, vin.store)
+      return transform(vin.data, vin.spec)
     end)
   end)
 
 
   test("transform-pack", function()
     runset(transformSpec.pack, function(vin)
-      return transform(vin.data, vin.spec, vin.store)
+      return transform(vin.data, vin.spec)
+    end)
+  end)
+
+
+  test("transform-ref", function()
+    runset(transformSpec.ref, function(vin)
+      return transform(vin.data, vin.spec)
+    end)
+  end)
+
+
+  test("transform-format", function()
+    runsetflags(transformSpec.format, { null = false }, function(vin)
+      return transform(vin.data, vin.spec)
+    end)
+  end)
+
+
+  test("transform-apply", function()
+    runset(transformSpec.apply, function(vin)
+      return transform(vin.data, vin.spec)
     end)
   end)
 
 
   test("transform-modify", function()
     runset(transformSpec.modify, function(vin)
-      return transform(vin.data, vin.spec, vin.store, function(val, key, parent)
-        -- Modify string values by adding '@' prefix
-        if key ~= nil and parent ~= nil and type(val) == "string" then
-          parent[key] = "@" .. val
-          val = parent[key]
+      return transform(vin.data, vin.spec, {
+        modify = function(val, key, parent)
+          -- Modify string values by adding '@' prefix
+          if key ~= nil and parent ~= nil and type(val) == "string" then
+            parent[key] = "@" .. val
+            val = parent[key]
+          end
         end
-      end)
+      })
     end)
   end)
 
@@ -527,11 +739,13 @@ describe("struct", function()
       b = '`$COPY`',
       c = '`$UPPER`'
     }, {
-      b = 2,
-      ["$UPPER"] = function(state)
-        local path = state.path
-        return ('' .. tostring(getprop(path, #path - 1))):upper()
-      end
+      extra = {
+        b = 2,
+        ["$UPPER"] = function(inj)
+          local path = inj.path
+          return ('' .. tostring(getprop(path, #path - 1))):upper()
+        end
+      }
     }), {
       x = 1,
       b = 2,
@@ -578,7 +792,7 @@ describe("struct", function()
   ----------------------------------------------------------
 
   test("validate-basic", function()
-    runset(validateSpec.basic, function(vin)
+    runsetflags(validateSpec.basic, { null = false }, function(vin)
       return validate(vin.data, vin.spec)
     end)
   end)
@@ -612,24 +826,31 @@ describe("struct", function()
   end)
 
 
+  test("validate-special", function()
+    runset(validateSpec.special, function(vin)
+      return validate(vin.data, vin.spec, vin.inj)
+    end)
+  end)
+
+
   test("validate-custom", function()
     -- Test custom validation functions
     local errs = array()
     local extra = {
-      ["$INTEGER"] = function(state, _val, current)
-        local key = state.key
-        local out = getprop(current, key)
+      ["$INTEGER"] = function(inj)
+        local key = inj.key
+        local out = getprop(inj.dparent, key)
 
         local t = type(out)
         -- Verify the value is an integer
         if (t ~= "number") and (math.type(out) ~= "integer") then
-          -- Build path string from state.path elements, starting at index 2
+          -- Build path string from inj.path elements, starting at index 2
           local path_parts = {}
-          for i = 2, #state.path do
-            table.insert(path_parts, tostring(state.path[i]))
+          for i = 2, #inj.path do
+            table.insert(path_parts, tostring(inj.path[i]))
           end
           local path_str = table.concat(path_parts, ".")
-          table.insert(state.errs, "Not an integer at " .. path_str .. ": " ..
+          table.insert(inj.errs, "Not an integer at " .. path_str .. ": " ..
             tostring(out))
           return nil
         end
@@ -643,14 +864,46 @@ describe("struct", function()
 
     local out = validate({
       a = 1
-    }, shape, extra, errs)
+    }, shape, { extra = extra, errs = errs })
     assert.same({
       a = 1
     }, out)
     assert.equal(0, #errs)
 
-    out = validate({ a = "A" }, shape, extra, errs)
+    out = validate({ a = "A" }, shape, { extra = extra, errs = errs })
     assert.same({ a = "A" }, out)
     assert.same(array("Not an integer at a: A"), errs)
+  end)
+
+
+  ----------------------------------------------------------
+  -- Select Tests
+  ----------------------------------------------------------
+
+  test("select-basic", function()
+    runset(selectSpec.basic, function(vin)
+      return select_fn(vin.obj, vin.query)
+    end)
+  end)
+
+
+  test("select-operators", function()
+    runset(selectSpec.operators, function(vin)
+      return select_fn(vin.obj, vin.query)
+    end)
+  end)
+
+
+  test("select-edge", function()
+    runset(selectSpec.edge, function(vin)
+      return select_fn(vin.obj, vin.query)
+    end)
+  end)
+
+
+  test("select-alts", function()
+    runset(selectSpec.alts, function(vin)
+      return select_fn(vin.obj, vin.query)
+    end)
   end)
 end)
