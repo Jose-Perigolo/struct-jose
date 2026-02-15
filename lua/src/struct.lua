@@ -384,7 +384,7 @@ end
 -- @return (any) The property value or alternative
 local function getprop(val, key, alt)
   -- Handle nil arguments
-  if val == UNDEF or key == UNDEF then
+  if val == NONE or key == NONE then
     return alt
   end
 
@@ -463,7 +463,7 @@ end
 -- @param key (any) The key to convert
 -- @return (string) The string representation of the key
 local function strkey(key)
-  if key == UNDEF or key == S_null then
+  if key == NONE or key == S_null then
     return S_MT
   end
 
@@ -516,7 +516,7 @@ end
 -- @param key (any) The key to check
 -- @return (boolean) True if key exists in val
 local function haskey(val, key)
-  return getprop(val, key) ~= UNDEF
+  return getprop(val, key) ~= NONE
 end
 
 
@@ -572,6 +572,129 @@ local function escurl(s)
     return string.format("%%%02X", string.byte(c))
   end)
   return result
+end
+
+
+-- Return a sub-array. Start and end are 0-based, end is exclusive.
+local function slice(val, start, endidx)
+  if not islist(val) then
+    if S_string == type(val) then
+      start = start or 0
+      endidx = endidx or #val
+      return string.sub(val, start + 1, endidx)
+    end
+    return {}
+  end
+  local len = #val
+  start = start or 0
+  endidx = endidx or len
+
+  if start < 0 then start = len + start end
+  if endidx < 0 then endidx = len + endidx end
+
+  local result = {}
+  setmetatable(result, { __jsontype = "array" })
+  for i = start + 1, endidx do
+    if i >= 1 and i <= len then
+      table.insert(result, val[i])
+    end
+  end
+  return result
+end
+
+
+-- Flatten nested lists to a given depth.
+local function flatten(val, depth)
+  if not islist(val) then
+    return val
+  end
+  depth = depth or 1
+  local result = {}
+  setmetatable(result, { __jsontype = "array" })
+
+  for _, item in ipairs(val) do
+    if islist(item) and depth > 0 then
+      local sub = flatten(item, depth - 1)
+      for _, v in ipairs(sub) do
+        table.insert(result, v)
+      end
+    else
+      table.insert(result, item)
+    end
+  end
+  return result
+end
+
+
+-- Pad a string or number.
+local function pad(val, padlen, padchar)
+  padlen = padlen or 0
+  padchar = padchar or S_SP
+  val = tostring(val or S_MT)
+  while #val < padlen do
+    val = padchar .. val
+  end
+  return val
+end
+
+
+-- Delete a property from a node.
+local function delprop(parent, key)
+  if not iskey(key) then
+    return parent
+  end
+
+  if ismap(parent) then
+    key = tostring(key)
+    parent[key] = nil
+  elseif islist(parent) then
+    local keyI = tonumber(key)
+    if keyI ~= nil then
+      keyI = math.floor(keyI)
+      -- Convert 0-based to 1-based
+      local luaIndex = keyI + 1
+      if luaIndex >= 1 and luaIndex <= #parent then
+        table.remove(parent, luaIndex)
+      end
+    end
+  end
+
+  return parent
+end
+
+
+-- Build a JSON map from alternating key, value arguments.
+local function jm(...)
+  local args = { ... }
+  local out = {}
+  local i = 1
+  while i <= #args do
+    local k = args[i]
+    local v = nil
+    if i + 1 <= #args then
+      v = args[i + 1]
+    end
+    -- Keys must be strings
+    if type(k) ~= S_string then
+      -- Stringify non-string keys
+      k = tostring(k)
+    end
+    out[k] = v
+    i = i + 2
+  end
+  return out
+end
+
+
+-- Build a JSON tuple (list) from arguments.
+local function jt(...)
+  local args = { ... }
+  local out = {}
+  setmetatable(out, { __jsontype = "array" })
+  for _, v in ipairs(args) do
+    table.insert(out, v)
+  end
+  return out
 end
 
 
@@ -632,97 +755,152 @@ end
 
 
 -- Safely stringify a value for humans (NOT JSON!)
+-- Strings are returned as-is (not quoted).
 -- @param val (any) The value to stringify
 -- @param maxlen (number) Optional maximum length for result
+-- @param pretty (boolean) Optional pretty mode with ANSI colors
 -- @return (string) String representation of the value
-local function stringify(val, maxlen)
-  -- Handle nil case
+local function stringify(val, maxlen, pretty)
+  local valstr = S_MT
+  pretty = pretty and true or false
+
   if val == nil then
-    return S_MT
+    return pretty and '<>' or valstr
   end
 
-  local function sort_keys(t)
-    local keys = {}
-    for k in pairs(t) do
-      table.insert(keys, k)
-    end
-    table.sort(keys)
-    return keys
-  end
-
-  local function serialize(obj, seen)
-    seen = seen or {}
-
-    -- Handle cycles in tables
-    if seen[obj] then
-      return "..."
-    end
-
-    local obj_type = type(obj)
-
-    -- Handle basic types
-    if obj_type == "string" then
-      return string.format("%q", obj)
-    elseif obj_type == "number" or obj_type == "boolean" then
-      return tostring(obj)
-    elseif obj_type ~= "table" then
-      return tostring(obj)
-    end
-
-    -- Mark this table as seen
-    seen[obj] = true
-
-    -- Handle tables (arrays and objects)
-    local parts = {}
-    local is_array = islist(obj)
-
-    if is_array then
-      -- Array-like tables
-      for i = 1, #obj do
-        table.insert(parts, serialize(obj[i], seen))
-      end
-    else
-      -- Object-like tables
-      local keys = sort_keys(obj)
-      for _, k in ipairs(keys) do
-        local v = obj[k]
-        table.insert(parts, string.format("%s:%s", k, serialize(v, seen)))
-      end
-    end
-
-    -- Remove the seen mark
-    seen[obj] = nil
-
-    if is_array then
-      return "[" .. table.concat(parts, ",") .. "]"
-    else
-      return "{" .. table.concat(parts, ",") .. "}"
-    end
-  end
-
-  -- Main stringify logic
-  local str = ""
-  local success, result = pcall(function()
-    return serialize(val)
-  end)
-
-  if success then
-    str = result
+  if type(val) == S_string then
+    valstr = val
   else
-    str = S_MT .. tostring(val)
-  end
+    local function sort_keys(t)
+      local keys = {}
+      for k in pairs(t) do
+        table.insert(keys, k)
+      end
+      table.sort(keys)
+      return keys
+    end
 
-  -- Remove quotes
-  str = str:gsub('"', '')
+    local function serialize(obj, seen)
+      seen = seen or {}
+
+      if type(obj) == 'table' and seen[obj] then
+        return '...'
+      end
+
+      local obj_type = type(obj)
+
+      if obj == nil then
+        return 'null'
+      elseif obj_type == S_number then
+        if obj ~= obj then return 'null' end  -- NaN
+        -- Use integer representation for whole numbers
+        if obj % 1 == 0 then
+          return string.format('%d', obj)
+        end
+        return tostring(obj)
+      elseif obj_type == S_boolean then
+        return tostring(obj)
+      elseif obj_type == S_function then
+        return 'null'
+      elseif obj_type ~= 'table' then
+        return tostring(obj)
+      end
+
+      seen[obj] = true
+
+      local parts = {}
+      local is_arr = islist(obj)
+
+      if is_arr then
+        for i = 1, #obj do
+          table.insert(parts, serialize(obj[i], seen))
+        end
+      else
+        local keys = sort_keys(obj)
+        for _, k in ipairs(keys) do
+          table.insert(parts, k .. S_CN .. serialize(obj[k], seen))
+        end
+      end
+
+      seen[obj] = nil
+
+      if is_arr then
+        return S_OS .. table.concat(parts, ',') .. S_CS
+      else
+        return '{' .. table.concat(parts, ',') .. '}'
+      end
+    end
+
+    local success, result = pcall(function()
+      return serialize(val)
+    end)
+
+    if success then
+      valstr = result
+    else
+      valstr = '__STRINGIFY_FAILED__'
+    end
+  end
 
   -- Handle maxlen
-  if maxlen and maxlen > 0 then
-    if #str > maxlen then
-      if maxlen >= 3 then
-        str = string.sub(str, 1, maxlen - 3) .. "..."
+  if maxlen ~= nil and maxlen > -1 then
+    if maxlen < #valstr then
+      valstr = string.sub(valstr, 1, maxlen - 3) .. '...'
+    end
+  end
+
+  if pretty then
+    local c = { 81, 118, 213, 39, 208, 201, 45, 190, 129, 51, 160, 121, 226, 33, 207, 69 }
+    local r = '\x1b[0m'
+    local d = 0
+    local function cc(n) return '\x1b[38;5;' .. n .. 'm' end
+    local o = cc(c[1])
+    local t = o
+    for i = 1, #valstr do
+      local ch = valstr:sub(i, i)
+      if ch == '{' or ch == S_OS then
+        d = d + 1
+        o = cc(c[(d % #c) + 1])
+        t = t .. o .. ch
+      elseif ch == '}' or ch == S_CS then
+        t = t .. o .. ch
+        d = d - 1
+        o = cc(c[(d % #c) + 1])
       else
-        str = string.sub(str, 1, maxlen)
+        t = t .. o .. ch
       end
+    end
+    return t .. r
+  end
+
+  return valstr
+end
+
+
+-- Convert a value to JSON string representation.
+local function jsonify(val, flags)
+  local str = S_null
+
+  if val ~= nil then
+    local ok, result = pcall(function()
+      local dkjson = require("dkjson")
+      local indent = getprop(flags, 'indent', 2)
+      if indent == 0 then
+        return dkjson.encode(val)
+      end
+
+      -- For indented output, use dkjson's indentation
+      local jsonstr = dkjson.encode(val, { indent = true, keyorder = nil })
+      if jsonstr == nil then
+        return S_null
+      end
+      return jsonstr
+    end)
+
+    if ok and result ~= nil then
+      str = result
+    else
+      str = '__JSONIFY_FAILED__'
     end
   end
 
@@ -736,8 +914,8 @@ end
 -- @param endin (number) Optional end index
 -- @return (string) Formatted path string
 local function pathify(val, startin, endin)
-  local pathstr = UNDEF
-  local path = UNDEF
+  local pathstr = NONE
+  local path = NONE
 
   -- Convert input to path array
   if islist(val) then
@@ -758,7 +936,7 @@ local function pathify(val, startin, endin)
   local start = startin == nil and 0 or startin >= 0 and startin or 0
   local endidx = endin == nil and 0 or endin >= 0 and endin or 0
 
-  if path ~= UNDEF and start >= 0 then
+  if path ~= NONE and start >= 0 then
     -- Slice path array from start to end
     local sliced = {}
     for i = start + 1, #path - endidx do
@@ -796,9 +974,9 @@ local function pathify(val, startin, endin)
   end
 
   -- Handle unknown paths
-  if pathstr == UNDEF then
+  if pathstr == NONE then
     pathstr = '<unknown-path'
-    if val == UNDEF then
+    if val == NONE then
       pathstr = pathstr .. S_MT
     else
       pathstr = pathstr .. (S_CN .. stringify(val, 47))
@@ -807,6 +985,57 @@ local function pathify(val, startin, endin)
   end
 
   return pathstr
+end
+
+
+-- Set a value deep inside a node at a key path.
+local function setpath(store, path, val, injdef)
+  local pathType = typify(path)
+
+  local parts
+  if 0 < (T_list & pathType) then
+    parts = path
+  elseif 0 < (T_string & pathType) then
+    parts = {}
+    for part in string.gmatch(path, "([^%.]+)") do
+      table.insert(parts, part)
+    end
+  elseif 0 < (T_number & pathType) then
+    parts = { path }
+    setmetatable(parts, { __jsontype = "array" })
+  else
+    return NONE
+  end
+
+  local base = getprop(injdef, S_base)
+  local numparts = size(parts)
+  local parent = getprop(store, base, store)
+
+  for pI = 0, numparts - 2 do
+    local partKey = getelem(parts, pI)
+    local nextParent = getprop(parent, partKey)
+    if not isnode(nextParent) then
+      local nextKey = getelem(parts, pI + 1)
+      if 0 < (T_number & typify(nextKey)) then
+        nextParent = {}
+        setmetatable(nextParent, { __jsontype = "array" })
+      else
+        nextParent = {}
+      end
+      setprop(parent, partKey, nextParent)
+    end
+    parent = nextParent
+  end
+
+  local lastKey = getelem(parts, -1)
+
+  if type(val) == 'table' and val['`$DELETE`'] then
+    delprop(parent, lastKey)
+  else
+    setprop(parent, lastKey, val)
+  end
+
+  return parent
 end
 
 
@@ -900,7 +1129,7 @@ local function setprop(parent, key, val)
 
   if ismap(parent) then
     key = tostring(key)
-    if val == UNDEF then
+    if val == NONE then
       parent[key] = nil -- Use nil to properly remove the key
     else
       parent[key] = val
@@ -921,7 +1150,7 @@ local function setprop(parent, key, val)
     keyI = math.floor(keyI)
 
     -- Delete list element at position keyI, shifting later elements down
-    if val == UNDEF then
+    if val == NONE then
       -- TypeScript is 0-indexed, Lua is 1-indexed
       -- Convert from JavaScript 0-based indexing to Lua 1-based indexing
       local luaIndex = keyI + 1
@@ -1002,7 +1231,7 @@ end
 -- @param val (any) Array of values to merge
 -- @return (any) The merged result
 local function merge(val)
-  local out = UNDEF
+  local out = NONE
 
   -- Handle edge cases
   if not islist(val) then
@@ -1013,7 +1242,7 @@ local function merge(val)
   local lenlist = #list
 
   if lenlist == 0 then
-    return UNDEF
+    return NONE
   elseif lenlist == 1 then
     return list[1]
   end
@@ -1046,7 +1275,7 @@ local function merge(val)
           -- Get the current value at the current path in obj
           local lenpath = #path
           cI = lenpath
-          if cur[cI] == UNDEF then
+          if cur[cI] == NONE then
             local pathSlice = {}
             for i = 1, lenpath - 1 do
               table.insert(pathSlice, path[i])
@@ -1070,7 +1299,7 @@ local function merge(val)
           -- `walk` traverses leaves before nodes.
           if isnode(val) and not isempty(val) then
             setprop(cur[cI], key, cur[cI + 1])
-            cur[cI + 1] = UNDEF
+            cur[cI + 1] = NONE
           else
             -- Scalar child
             setprop(cur[cI], key, val)
@@ -1180,7 +1409,7 @@ local function inject(val, store, modify, current, state)
   local valtype = type(val)
 
   -- Create state if at root of injection
-  if state == UNDEF then
+  if state == NONE then
     local parent = {}
     parent[S_DTOP] = val
 
@@ -1204,7 +1433,7 @@ local function inject(val, store, modify, current, state)
   end
 
   -- Resolve current node in store for local paths
-  if current == UNDEF then
+  if current == NONE then
     current = {
       ["$TOP"] = store
     }
@@ -1286,7 +1515,7 @@ local function inject(val, store, modify, current, state)
       nodekeys = childstate.keys
 
       -- Process if prekey is defined
-      if prekey ~= UNDEF then
+      if prekey ~= NONE then
         childstate.val = getprop(val, prekey)
         childval = childstate.val
         childstate.mode = S_MVAL
@@ -1335,8 +1564,8 @@ end
 -- @return (nil) Always returns nil
 local function transform_DELETE(state)
   local key, parent = state.key, state.parent
-  setprop(parent, key, UNDEF)
-  return UNDEF
+  setprop(parent, key, NONE)
+  return NONE
 end
 
 -- Copy value from source data.
@@ -1368,13 +1597,13 @@ local function transform_KEY(state, _val, current)
 
   -- Do nothing unless in val mode
   if mode ~= S_MVAL then
-    return UNDEF
+    return NONE
   end
 
   -- Key is defined by $KEY meta property
   local keyspec = getprop(parent, S_DKEY)
-  if keyspec ~= UNDEF then
-    setprop(parent, S_DKEY, UNDEF)
+  if keyspec ~= NONE then
+    setprop(parent, S_DKEY, NONE)
     return getprop(current, keyspec)
   end
 
@@ -1421,8 +1650,8 @@ end
 -- @return (nil) Always returns nil
 local function transform_META(state)
   local parent = state.parent
-  setprop(parent, S_DMETA, UNDEF)
-  return UNDEF
+  setprop(parent, S_DMETA, NONE)
+  return NONE
 end
 
 
@@ -1464,7 +1693,7 @@ local function transform_MERGE(state, _val, current)
     end
 
     -- Remove the $MERGE command from a parent map.
-    setprop(parent, key, UNDEF)
+    setprop(parent, key, NONE)
 
     -- Build the mergelist explicitly
     local mergelist = { parent } -- Start with parent
@@ -1491,7 +1720,7 @@ local function transform_MERGE(state, _val, current)
     return key
   end
 
-  return UNDEF
+  return NONE
 end
 
 
@@ -1515,7 +1744,7 @@ local function transform_EACH(state, _val, current, _ref, store)
   end
 
   if S_MVAL ~= mode then
-    return UNDEF
+    return NONE
   end
 
   -- Get arguments: ['`$EACH`', 'source-path', child-template]
@@ -1626,7 +1855,7 @@ local function transform_PACK(state, _val, current, _ref, store)
 
   -- Defensive context checks
   if S_MKEYPRE ~= mode or type(key) ~= S_string or path == nil or nodes == nil then
-    return UNDEF
+    return NONE
   end
 
   -- Get arguments
@@ -1666,23 +1895,23 @@ local function transform_PACK(state, _val, current, _ref, store)
       table.insert(srclist, v)
     end
   else
-    return UNDEF
+    return NONE
   end
 
   if #srclist == 0 then
-    return UNDEF
+    return NONE
   end
 
   -- Get key if specified
   local childkey = getprop(child, S_DKEY)
-  local keyname = childkey == UNDEF and keyprop or childkey
-  setprop(child, S_DKEY, UNDEF)
+  local keyname = childkey == NONE and keyprop or childkey
+  setprop(child, S_DKEY, NONE)
 
   -- Build target object using same pattern as TypeScript
   local tval = {}
   for _, n in ipairs(srclist) do
     local kn = getprop(n, keyname)
-    if kn ~= UNDEF then
+    if kn ~= NONE then
       setprop(tval, kn, clone(child))
       local nchild = getprop(tval, kn)
       setprop(nchild, S_DMETA, getprop(n, S_DMETA))
@@ -1699,7 +1928,7 @@ local function transform_PACK(state, _val, current, _ref, store)
   local tcurrent = {}
   for _, n in ipairs(srclist) do
     local kn = getprop(n, keyname)
-    if kn ~= UNDEF then
+    if kn ~= NONE then
       setprop(tcurrent, kn, n)
     end
   end
@@ -1715,7 +1944,7 @@ local function transform_PACK(state, _val, current, _ref, store)
   _updateAncestors(state, target, tkey, tval)
 
   -- Drop transform key
-  return UNDEF
+  return NONE
 end
 
 
@@ -1815,13 +2044,13 @@ local function validate_STRING(state, _val, current)
   if S_string ~= t then
     local msg = _invalidTypeMsg(state.path, S_string, t, out, 'V1010')
     table.insert(state.errs, msg)
-    return UNDEF
+    return NONE
   end
 
   if S_MT == out then
     local msg = 'Empty string at ' .. pathify(state.path, 1)
     table.insert(state.errs, msg)
-    return UNDEF
+    return NONE
   end
 
   return out
@@ -1839,7 +2068,7 @@ local function validate_NUMBER(state, _val, current)
   local t = typify(out)
   if S_number ~= t then
     table.insert(state.errs, _invalidTypeMsg(state.path, S_number, t, out, 'V1020'))
-    return UNDEF
+    return NONE
   end
 
   return out
@@ -1857,7 +2086,7 @@ local function validate_BOOLEAN(state, _val, current)
   local t = typify(out)
   if S_boolean ~= t then
     table.insert(state.errs, _invalidTypeMsg(state.path, S_boolean, t, out, 'V1030'))
-    return UNDEF
+    return NONE
   end
 
   return out
@@ -1875,7 +2104,7 @@ local function validate_OBJECT(state, _val, current)
   local t = typify(out)
   if t ~= S_object then
     table.insert(state.errs, _invalidTypeMsg(state.path, S_object, t, out, 'V1040'))
-    return UNDEF
+    return NONE
   end
 
   return out
@@ -1893,7 +2122,7 @@ local function validate_ARRAY(state, _val, current)
   local t = typify(out)
   if t ~= S_array then
     table.insert(state.errs, _invalidTypeMsg(state.path, S_array, t, out, 'V1050'))
-    return UNDEF
+    return NONE
   end
 
   return out
@@ -1911,7 +2140,7 @@ local function validate_FUNCTION(state, _val, current)
   local t = typify(out)
   if S_function ~= t then
     table.insert(state.errs, _invalidTypeMsg(state.path, S_function, t, out, 'V1060'))
-    return UNDEF
+    return NONE
   end
 
   return out
@@ -1947,13 +2176,13 @@ local function validate_CHILD(state, _val, current)
     local pkey = getprop(path, #path - 2)
     local tval = getprop(current, pkey)
 
-    if UNDEF == tval then
+    if NONE == tval then
       tval = {}
     elseif not ismap(tval) then
       local msg = _invalidTypeMsg(table.move(state.path, 1, #state.path - 1, 1,
         {}), S_object, typify(tval), tval, 'V1070')
       table.insert(state.errs, msg)
-      return UNDEF
+      return NONE
     end
 
     local ckeys = keysof(tval)
@@ -1965,8 +2194,8 @@ local function validate_CHILD(state, _val, current)
     end
 
     -- Remove $CHILD to cleanup output.
-    _setparentprop(state, UNDEF)
-    return UNDEF
+    _setparentprop(state, NONE)
+    return NONE
   end
 
   -- List syntax.
@@ -1974,17 +2203,17 @@ local function validate_CHILD(state, _val, current)
     if not islist(parent) then
       -- $CHILD was not inside a list.
       table.insert(state.errs, 'Invalid $CHILD as value')
-      return UNDEF
+      return NONE
     end
 
     local childtm = getprop(parent, 1)
 
-    if UNDEF == current then
+    if NONE == current then
       -- Empty list as default.
       for i = 1, #parent do
         parent[i] = nil
       end
-      return UNDEF
+      return NONE
     end
 
     if not islist(current) then
@@ -2009,7 +2238,7 @@ local function validate_CHILD(state, _val, current)
     return out
   end
 
-  return UNDEF
+  return NONE
 end
 
 
@@ -2183,7 +2412,7 @@ local function validate_EXACT(state, _val, current, _ref, _store)
       'exactly equal to ' .. (#tvals == 1 and '' or 'one of ') .. valdesc_str,
       typify(current), current, 'V0110'))
   else
-    setprop(parent, key, UNDEF)
+    setprop(parent, key, NONE)
   end
 end
 
@@ -2197,14 +2426,14 @@ end
 -- @param current (any) The current context
 -- @param _store (table) The data store (unused)
 _validation = function(pval, key, parent, state, current, _store)
-  if UNDEF == state then
+  if NONE == state then
     return
   end
 
   -- Current val to verify.
   local cval = getprop(current, key)
 
-  if UNDEF == cval or UNDEF == state then
+  if NONE == cval or NONE == state then
     return
   end
 
@@ -2218,7 +2447,7 @@ _validation = function(pval, key, parent, state, current, _store)
   local ctype = typify(cval)
 
   -- Type mismatch.
-  if ptype ~= ctype and UNDEF ~= pval then
+  if ptype ~= ctype and NONE ~= pval then
     table.insert(state.errs, _invalidTypeMsg(state.path, ptype, ctype, cval, 'V0010'))
     return
   end
@@ -2257,7 +2486,7 @@ _validation = function(pval, key, parent, state, current, _store)
       -- Object is open, so merge in extra keys.
       merge({ pval, cval })
       if isnode(pval) then
-        setprop(pval, '`$OPEN`', UNDEF)
+        setprop(pval, '`$OPEN`', NONE)
       end
     end
   elseif islist(cval) then
@@ -2400,7 +2629,7 @@ end
 -- @return (any) The processed value
 _injecthandler = function(state, val, current, ref, store)
   -- Check if it's a command by checking if it's a function and starts with $
-  local iscmd = isfunc(val) and (UNDEF == ref or ref:sub(1, 1) == S_DS)
+  local iscmd = isfunc(val) and (NONE == ref or ref:sub(1, 1) == S_DS)
 
   -- Handle commands with numeric suffixes (e.g., $COPY2, $MERGE3)
   if ref and not iscmd then
@@ -2483,7 +2712,7 @@ _injectstr = function(val, store, current, state)
     local found = getpath(ref, store, current, state)
 
     -- Ensure inject value is a string.
-    if found == UNDEF then
+    if found == NONE then
       return S_MT
     elseif type(found) == "table" then
       -- Handle maps and arrays (tables in Lua) by converting to JSON
