@@ -2496,6 +2496,199 @@ validate = function(data, spec, injdef)
 end
 
 
+-- Select query operators
+-- ======================
+
+
+local function select_AND(inj, _val, _ref, store)
+  if S_MKEYPRE == inj.mode then
+    local terms = getprop(inj.parent, inj.key)
+
+    local ppath = slice(inj.path, 0, -1)
+    local point = getpath(store, ppath)
+
+    local vstore = merge({ {}, store }, 1)
+    vstore["$TOP"] = point
+
+    for _, term in ipairs(terms) do
+      local terrs = {}
+
+      validate(point, term, {
+        extra = vstore,
+        errs = terrs,
+        meta = inj.meta,
+      })
+
+      if 0 ~= size(terrs) then
+        table.insert(inj.errs,
+          'AND:' .. pathify(ppath) .. S_VIZ .. stringify(point) .. ' fail:' .. stringify(terms))
+      end
+    end
+
+    local gkey = getelem(inj.path, -2)
+    local gp = getelem(inj.nodes, -2)
+    setprop(gp, gkey, point)
+  end
+end
+
+
+local function select_OR(inj, _val, _ref, store)
+  if S_MKEYPRE == inj.mode then
+    local terms = getprop(inj.parent, inj.key)
+
+    local ppath = slice(inj.path, 0, -1)
+    local point = getpath(store, ppath)
+
+    local vstore = merge({ {}, store }, 1)
+    vstore["$TOP"] = point
+
+    for _, term in ipairs(terms) do
+      local terrs = {}
+
+      validate(point, term, {
+        extra = vstore,
+        errs = terrs,
+        meta = inj.meta,
+      })
+
+      if 0 == size(terrs) then
+        local gkey = getelem(inj.path, -2)
+        local gp = getelem(inj.nodes, -2)
+        setprop(gp, gkey, point)
+
+        return
+      end
+    end
+
+    table.insert(inj.errs,
+      'OR:' .. pathify(ppath) .. S_VIZ .. stringify(point) .. ' fail:' .. stringify(terms))
+  end
+end
+
+
+local function select_NOT(inj, _val, _ref, store)
+  if S_MKEYPRE == inj.mode then
+    local term = getprop(inj.parent, inj.key)
+
+    local ppath = slice(inj.path, 0, -1)
+    local point = getpath(store, ppath)
+
+    local vstore = merge({ {}, store }, 1)
+    vstore["$TOP"] = point
+
+    local terrs = {}
+
+    validate(point, term, {
+      extra = vstore,
+      errs = terrs,
+      meta = inj.meta,
+    })
+
+    if 0 == size(terrs) then
+      table.insert(inj.errs,
+        'NOT:' .. pathify(ppath) .. S_VIZ .. stringify(point) .. ' fail:' .. stringify(term))
+    end
+
+    local gkey = getelem(inj.path, -2)
+    local gp = getelem(inj.nodes, -2)
+    setprop(gp, gkey, point)
+  end
+end
+
+
+local function select_CMP(inj, _val, ref, store)
+  if S_MKEYPRE == inj.mode then
+    local term = getprop(inj.parent, inj.key)
+    local gkey = getelem(inj.path, -2)
+
+    local ppath = slice(inj.path, 0, -1)
+    local point = getpath(store, ppath)
+
+    local pass = false
+
+    if '$GT' == ref and point > term then
+      pass = true
+    elseif '$LT' == ref and point < term then
+      pass = true
+    elseif '$GTE' == ref and point >= term then
+      pass = true
+    elseif '$LTE' == ref and point <= term then
+      pass = true
+    elseif '$LIKE' == ref and stringify(point):match(term) then
+      pass = true
+    end
+
+    if pass then
+      local gp = getelem(inj.nodes, -2)
+      setprop(gp, gkey, point)
+    else
+      table.insert(inj.errs, 'CMP: ' .. pathify(ppath) .. S_VIZ .. stringify(point) ..
+        ' fail:' .. ref .. ' ' .. stringify(term))
+    end
+  end
+
+  return NONE
+end
+
+
+-- Select children matching a query.
+local function select_fn(children, query)
+  if not isnode(children) then
+    return {}
+  end
+
+  if ismap(children) then
+    local child_list = {}
+    for _, entry in ipairs(items(children)) do
+      setprop(entry[2], S_DKEY, entry[1])
+      table.insert(child_list, entry[2])
+    end
+    children = child_list
+  else
+    for i, n in ipairs(children) do
+      setprop(n, S_DKEY, i - 1)
+    end
+  end
+
+  local results = {}
+  local injdef = {
+    errs = {},
+    meta = { [S_BEXACT] = true },
+    extra = {
+      ["$AND"] = select_AND,
+      ["$OR"] = select_OR,
+      ["$NOT"] = select_NOT,
+      ["$GT"] = select_CMP,
+      ["$LT"] = select_CMP,
+      ["$GTE"] = select_CMP,
+      ["$LTE"] = select_CMP,
+      ["$LIKE"] = select_CMP,
+    }
+  }
+
+  local q = clone(query)
+
+  walk(q, function(_k, v)
+    if ismap(v) then
+      setprop(v, '`$OPEN`', getprop(v, '`$OPEN`', true))
+    end
+    return v
+  end)
+
+  for _, child in ipairs(children) do
+    injdef.errs = {}
+
+    validate(child, clone(q), injdef)
+
+    if 0 == size(injdef.errs) then
+      table.insert(results, child)
+    end
+  end
+
+  return results
+end
+
+
 -- Internal utilities
 -- ==================
 
@@ -2623,8 +2816,12 @@ end
 -- Define the StructUtility "class"
 local StructUtility = {
   clone = clone,
+  delprop = delprop,
   escre = escre,
   escurl = escurl,
+  flatten = flatten,
+  getdef = getdef,
+  getelem = getelem,
   getpath = getpath,
   getprop = getprop,
   haskey = haskey,
@@ -2637,13 +2834,20 @@ local StructUtility = {
   isnode = isnode,
   items = items,
   joinurl = joinurl,
+  jsonify = jsonify,
   keysof = keysof,
   merge = merge,
+  pad = pad,
   pathify = pathify,
+  select = select_fn,
+  setpath = setpath,
   setprop = setprop,
+  size = size,
+  slice = slice,
   strkey = strkey,
   stringify = stringify,
   transform = transform,
+  typename = typename,
   typify = typify,
   validate = validate,
   walk = walk,
@@ -2660,8 +2864,12 @@ end
 return {
   StructUtility = StructUtility,
   clone = clone,
+  delprop = delprop,
   escre = escre,
   escurl = escurl,
+  flatten = flatten,
+  getdef = getdef,
+  getelem = getelem,
   getpath = getpath,
   getprop = getprop,
   haskey = haskey,
@@ -2674,14 +2882,41 @@ return {
   isnode = isnode,
   items = items,
   joinurl = joinurl,
+  jsonify = jsonify,
   keysof = keysof,
   merge = merge,
+  pad = pad,
   pathify = pathify,
+  select = select_fn,
+  setpath = setpath,
   setprop = setprop,
+  size = size,
+  slice = slice,
   strkey = strkey,
   stringify = stringify,
   transform = transform,
+  typename = typename,
   typify = typify,
   validate = validate,
   walk = walk,
+
+  -- Type flag constants
+  T_any = T_any,
+  T_noval = T_noval,
+  T_boolean = T_boolean,
+  T_decimal = T_decimal,
+  T_integer = T_integer,
+  T_number = T_number,
+  T_string = T_string,
+  T_function = T_function,
+  T_null = T_null,
+  T_list = T_list,
+  T_map = T_map,
+  T_instance = T_instance,
+  T_scalar = T_scalar,
+  T_node = T_node,
+
+  -- Markers
+  DELETE = DELETE,
+  SKIP = SKIP,
 }
