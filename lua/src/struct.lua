@@ -1112,12 +1112,9 @@ end
 
 
 -- Safely set a property. Undefined arguments and invalid keys are ignored.
--- Returns the (possible modified) parent.
--- If the value is undefined it the key will be deleted from the parent.
+-- Returns the (possibly modified) parent.
 -- If the parent is a list, and the key is negative, prepend the value.
 -- NOTE: If the key is above the list size, append the value; below, prepend.
--- If the value is undefined, remove the list element at index key, and shift the
--- remaining elements down. These rules avoids "holes" in the list.
 -- @param parent (table) The parent object or array
 -- @param key (any) The key to set
 -- @param val (any) The value to set
@@ -1129,19 +1126,10 @@ local function setprop(parent, key, val)
 
   if ismap(parent) then
     key = tostring(key)
-    if val == NONE then
-      parent[key] = nil -- Use nil to properly remove the key
-    else
-      parent[key] = val
-    end
+    parent[key] = val
   elseif islist(parent) then
     -- Ensure key is an integer
     local keyI = tonumber(key)
-    setmetatable(parent, {
-      __jsontype = {
-        type = 'array'
-      }
-    })
 
     if keyI == nil then
       return parent
@@ -1149,33 +1137,17 @@ local function setprop(parent, key, val)
 
     keyI = math.floor(keyI)
 
-    -- Delete list element at position keyI, shifting later elements down
-    if val == NONE then
-      -- TypeScript is 0-indexed, Lua is 1-indexed
-      -- Convert from JavaScript 0-based indexing to Lua 1-based indexing
+    -- Set or append value at position keyI
+    if keyI >= 0 then
+      -- Convert from 0-based indexing to Lua 1-based indexing
       local luaIndex = keyI + 1
 
-      if luaIndex >= 1 and luaIndex <= #parent then
-        -- Shift elements down
-        for i = luaIndex, #parent - 1 do
-          parent[i] = parent[i + 1]
-        end
-        -- Remove the last element
-        parent[#parent] = nil
+      -- Clamp: if index is beyond current length, append to end
+      if luaIndex > #parent + 1 then
+        luaIndex = #parent + 1
       end
-      -- Set or append value at position keyI
-    elseif keyI >= 0 then -- TypeScript checks (0 <= keyI)
-      -- Convert from JavaScript 0-based indexing to Lua 1-based indexing
-      local luaIndex = keyI + 1
-
-      -- If index is beyond current length, append to end
-      if #parent < luaIndex then
-        parent[#parent + 1] = val
-      else
-        -- Otherwise set at the specific index
-        parent[luaIndex] = val
-      end
-      -- Prepend value if keyI is negative
+      parent[luaIndex] = val
+    -- Prepend value if keyI is negative
     else
       table.insert(parent, 1, val)
     end
