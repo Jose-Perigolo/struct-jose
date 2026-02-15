@@ -1425,63 +1425,146 @@ getpath = function(store, path, injdef)
 end
 
 
--- Inject values from a data store into a node recursively, resolving
--- paths against the store, or current if they are local. THe modify
--- argument allows custom modification of the result.  The state
--- (InjectState) argument is used to maintain recursive state.
+-- Injection "class" for managing injection state.
+-- Methods: descend, child, setval
+
+local Injection = {}
+Injection.__index = Injection
+
+function Injection:new(val, parent)
+  local o = {
+    mode = S_MVAL,
+    full = false,
+    keyI = 0,
+    keys = { S_DTOP },
+    key = S_DTOP,
+    val = val,
+    parent = parent,
+    path = { S_DTOP },
+    nodes = { parent },
+    handler = _injecthandler,
+    errs = {},
+    meta = {},
+    dparent = NONE,
+    dpath = { S_DTOP },
+    base = S_DTOP,
+    modify = NONE,
+    prior = NONE,
+    extra = NONE,
+  }
+  setmetatable(o, self)
+  return o
+end
+
+
+function Injection:descend()
+  if self.meta.__d == nil then self.meta.__d = 0 end
+  self.meta.__d = self.meta.__d + 1
+
+  local parentkey = getelem(self.path, -2)
+
+  if NONE == self.dparent then
+    if 1 < size(self.dpath) then
+      self.dpath = flatten({ self.dpath, parentkey })
+    end
+  else
+    if parentkey ~= nil then
+      self.dparent = getprop(self.dparent, parentkey)
+
+      local lastpart = getelem(self.dpath, -1)
+      if lastpart == '$:' .. tostring(parentkey) then
+        self.dpath = slice(self.dpath, -1)
+      else
+        self.dpath = flatten({ self.dpath, parentkey })
+      end
+    end
+  end
+
+  return self.dparent
+end
+
+
+function Injection:child(keyI, keys)
+  local key = strkey(keys[keyI + 1])  -- Lua 1-based
+  local val = self.val
+
+  local cinj = Injection:new(getprop(val, key), val)
+  cinj.keyI = keyI
+  cinj.keys = keys
+  cinj.key = key
+
+  cinj.path = flatten({ getdef(self.path, {}), key })
+  cinj.nodes = flatten({ getdef(self.nodes, {}), { val } })
+
+  cinj.mode = self.mode
+  cinj.handler = self.handler
+  cinj.modify = self.modify
+  cinj.base = self.base
+  cinj.meta = self.meta
+  cinj.errs = self.errs
+  cinj.prior = self
+
+  cinj.dpath = flatten({ self.dpath })
+  cinj.dparent = self.dparent
+
+  return cinj
+end
+
+
+function Injection:setval(val, ancestor)
+  if ancestor == nil or ancestor < 2 then
+    if NONE == val then
+      delprop(self.parent, self.key)
+    else
+      setprop(self.parent, self.key, val)
+    end
+  else
+    local aval = getelem(self.nodes, 0 - ancestor)
+    local akey = getelem(self.path, 0 - ancestor)
+    if NONE == val then
+      delprop(aval, akey)
+    else
+      setprop(aval, akey, val)
+    end
+  end
+  return self.parent
+end
+
+
+-- Inject values from a data store into a node recursively.
 -- @param val (any) The value to inject into
 -- @param store (table) The data store
--- @param modify (function) Optional modifier function
--- @param current (any) Current context
--- @param state (table) The injection state
+-- @param injdef (table) Optional injection definition
 -- @return (any) The injected result
-local function inject(val, store, modify, current, state)
+local function inject(val, store, injdef)
   local valtype = type(val)
+  local inj = injdef
 
-  -- Create state if at root of injection
-  if state == NONE then
-    local parent = {}
-    parent[S_DTOP] = val
+  -- Create state if at root of injection.
+  if NONE == injdef or (injdef and injdef.mode == nil) then
+    local parent = { [S_DTOP] = val }
+    inj = Injection:new(val, parent)
+    inj.dparent = store
+    inj.errs = getprop(store, S_DERRS, {})
+    inj.meta.__d = 0
 
-    -- Set up state starting in the virtual parent
-    state = {
-      mode = S_MVAL,
-      full = false,
-      keyI = 0,
-      keys = { S_DTOP },
-      key = S_DTOP,
-      val = val,
-      parent = parent,
-      path = { S_DTOP },
-      nodes = { parent },
-      handler = _injecthandler,
-      base = S_DTOP,
-      modify = modify,
-      errs = getprop(store, S_DERRS, {}),
-      meta = {}
-    }
+    if NONE ~= injdef then
+      inj.modify = injdef.modify ~= nil and injdef.modify or inj.modify
+      inj.extra = injdef.extra ~= nil and injdef.extra or inj.extra
+      inj.meta = injdef.meta ~= nil and injdef.meta or inj.meta
+      inj.handler = injdef.handler ~= nil and injdef.handler or inj.handler
+    end
   end
 
-  -- Resolve current node in store for local paths
-  if current == NONE then
-    current = {
-      ["$TOP"] = store
-    }
-  else
-    local parentkey = getprop(state.path, #state.path - 2)
-    current = parentkey == nil and current or getprop(current, parentkey)
-  end
+  inj:descend()
 
   -- Descend into node.
   if isnode(val) then
-    -- Get sorted keys
-    local nodekeys = {}
+    local nodekeys
 
     if ismap(val) then
-      -- First get keys that don't include S_DS
       local regular_keys = {}
       local ds_keys = {}
-
       for k, _ in pairs(val) do
         if type(k) == S_string and k:find(S_DS) then
           table.insert(ds_keys, k)
@@ -1489,103 +1572,71 @@ local function inject(val, store, modify, current, state)
           table.insert(regular_keys, k)
         end
       end
-
       table.sort(regular_keys)
       table.sort(ds_keys)
-
-      -- Combine the keys (regular first, then $ keys)
-      for _, k in ipairs(regular_keys) do
-        table.insert(nodekeys, k)
-      end
-
-      for _, k in ipairs(ds_keys) do
-        table.insert(nodekeys, k)
-      end
+      nodekeys = flatten({ regular_keys, ds_keys })
     else
-      -- For lists, use indices
+      nodekeys = {}
       for i = 1, #val do
-        table.insert(nodekeys, tostring(i - 1)) -- Adjust for 0-based indexing
+        table.insert(nodekeys, i - 1)  -- 0-based indices
       end
     end
 
-    -- Process each key
     local nkI = 0
     while nkI < #nodekeys do
-      local nodekey = nodekeys[nkI + 1]
-
-      local childpath = { table.unpack(state.path) }
-      table.insert(childpath, nodekey)
-
-      local childnodes = { table.unpack(state.nodes) }
-      table.insert(childnodes, val)
-
-      local childval = getprop(val, nodekey)
-
-      local childstate = {
-        mode = S_MKEYPRE,
-        full = false,
-        keyI = nkI,
-        keys = nodekeys,
-        key = nodekey,
-        val = childval,
-        parent = val,
-        path = childpath,
-        nodes = childnodes,
-        handler = _injecthandler,
-        base = state.base,
-        errs = state.errs,
-        meta = state.meta
-      }
+      local childinj = inj:child(nkI, nodekeys)
+      local nodekey = childinj.key
+      childinj.mode = S_MKEYPRE
 
       -- Perform key:pre mode injection
-      local prekey = _injectstr(nodekey, store, current, childstate)
+      local prekey = _injectstr(nodekey, store, childinj)
 
-      -- Update in case of modification
-      nkI = childstate.keyI
-      nodekeys = childstate.keys
+      -- The injection may modify child processing.
+      nkI = childinj.keyI
+      nodekeys = childinj.keys
 
-      -- Process if prekey is defined
+      -- Prevent further processing by returning undefined prekey
       if prekey ~= NONE then
-        childstate.val = getprop(val, prekey)
-        childval = childstate.val
-        childstate.mode = S_MVAL
+        childinj.val = getprop(val, prekey)
+        childinj.mode = S_MVAL
 
         -- Perform val mode injection
-        inject(childval, store, modify, current, childstate)
+        inject(childinj.val, store, childinj)
 
-        -- Update again
-        nkI = childstate.keyI
-        nodekeys = childstate.keys
+        -- The injection may modify child processing.
+        nkI = childinj.keyI
+        nodekeys = childinj.keys
 
         -- Perform key:post mode injection
-        childstate.mode = S_MKEYPOST
-        _injectstr(nodekey, store, current, childstate)
+        childinj.mode = S_MKEYPOST
+        _injectstr(nodekey, store, childinj)
 
-        -- Final update
-        nkI = childstate.keyI
-        nodekeys = childstate.keys
+        nkI = childinj.keyI
+        nodekeys = childinj.keys
       end
 
       nkI = nkI + 1
     end
-  elseif valtype == S_string then
-    -- Inject paths into string scalars
-    state.mode = S_MVAL
-    val = _injectstr(val, store, current, state)
 
-    setprop(state.parent, state.key, val)
+  elseif S_string == valtype then
+    inj.mode = S_MVAL
+    val = _injectstr(val, store, inj)
+    if SKIP ~= val then
+      inj:setval(val)
+    end
   end
 
   -- Custom modification
-  if modify then
-    local mkey = state.key
-    local mparent = state.parent
+  if inj.modify and SKIP ~= val then
+    local mkey = inj.key
+    local mparent = inj.parent
     local mval = getprop(mparent, mkey)
-    modify(mval, mkey, mparent, state, current, store)
+    inj.modify(mval, mkey, mparent, inj, store)
   end
 
-  -- Return the processed value
-  return getprop(state.parent, S_DTOP)
+  inj.val = val
+
+  return getprop(inj.parent, S_DTOP)
 end
 
 
@@ -2606,181 +2657,94 @@ end
 -- ==================
 
 
--- Set  state.key property of state.parent node, ensuring reference consistency
--- when needed by implementation language.
--- @param state (table) The injection state
--- @param val (any) The value to set
--- @return (any) The modified parent
-_setparentprop = function(state, val)
-  setprop(state.parent, state.key, val)
-end
-
-
--- Update all references to target in state.nodes.
--- @param state (table) The injection state
--- @param target (any) The target node to update
--- @param tkey (string) The key to set in the target
--- @param tval (any) The value to set in the target
-_updateAncestors = function(_state, target, tkey, tval)
-  -- SetProp is sufficient in Lua as target reference remains consistent
-  -- even for lists.
-  setprop(target, tkey, tval)
-end
-
-
 -- Build a type validation error message.
--- @param path (any) Path to the invalid value
--- @param needtype (string) Expected type
--- @param vt (string) Actual type
--- @param v (any) The invalid value
--- @param whence (string) The source of the error
--- @return (string) Formatted error message
-_invalidTypeMsg = function(path, needtype, vt, v, whence)
-  local vs = (v == nil or v == "null") and 'no value' or stringify(v)
+_invalidTypeMsg = function(path, needtype, vt, v, _whence)
+  local vs = (v == nil or v == S_null) and 'no value' or stringify(v)
+  local vtname = type(vt) == S_number and typename(vt) or tostring(vt)
+
   local msg = 'Expected ' .. (1 < #path and ('field ' .. pathify(path, 1)
-    .. ' to be ') or '') .. needtype .. ', but found ' .. ((v ~= nil and v ~= "null")
-    and (vt .. ': ') or '') .. vs
+    .. ' to be ') or '') .. needtype .. ', but found ' .. ((v ~= nil and v ~= S_null)
+    and (vtname .. S_VIZ) or '') .. vs
 
-  -- Uncomment to help debug validation errors.
-  -- msg = msg .. ' [' .. whence .. ']'
   msg = msg .. '.'
-
   return msg
 end
 
 
--- Default inject handler for transforms. If the path resolves to a function,
--- call the function passing the injection state. This is how transforms operate.
--- @param state (table) The injection state
--- @param val (any) The value being injected
--- @param current (any) The current context
--- @param ref (string) The reference string
--- @param store (table) The data store
--- @return (any) The processed value
-_injecthandler = function(state, val, current, ref, store)
-  -- Check if it's a command by checking if it's a function and starts with $
-  local iscmd = isfunc(val) and (NONE == ref or ref:sub(1, 1) == S_DS)
-
-  -- Handle commands with numeric suffixes (e.g., $COPY2, $MERGE3)
-  if ref and not iscmd then
-    -- Extract the base command name without numeric suffix
-    local base_command = ref:match("^(%$[A-Z]+)%d*$")
-
-    if base_command and store[base_command] then
-      val = store[base_command]
-      iscmd = true
-    end
-  end
+-- Default inject handler for transforms.
+_injecthandler = function(inj, val, ref, store)
+  local out = val
+  local iscmd = isfunc(val) and (NONE == ref or (type(ref) == S_string and ref:sub(1, 1) == S_DS))
 
   -- Only call val function if it is a special command ($NAME format).
   if iscmd then
-    -- Execute the command function
-    val = val(state, val, current, ref, store)
+    out = val(inj, val, ref, store)
 
-    -- Update parent with value. Ensures references remain in node tree.
-  elseif S_MVAL == state.mode and state.full then
-    setprop(state.parent, state.key, val)
+  -- Update parent with value. Ensures references remain in node tree.
+  elseif S_MVAL == inj.mode and inj.full then
+    inj:setval(val)
   end
 
-  return val
+  return out
 end
 
 
--- Inject store values into a string. Not a public utility - used by
--- `inject`.  Inject are marked with `path` where path is resolved
--- with getpath against the store or current (if defined)
--- arguments. See `getpath`.  Custom injection handling can be
--- provided by state.handler (this is used for transform functions).
--- The path can also have the special syntax $NAME999 where NAME is
--- upper case letters only, and 999 is any digits, which are
--- discarded. This syntax specifies the name of a transform, and
--- optionally allows transforms to be ordered by alphanumeric sorting.
--- @param val (string) The string to inject into
--- @param store (table) The data store
--- @param current (any) Current context
--- @param state (table) The injection state
--- @return (any) The injected result
-_injectstr = function(val, store, current, state)
+-- Inject store values into a string.
+_injectstr = function(val, store, inj)
   -- Can't inject into non-strings
-  if type(val) ~= S_string then
+  if type(val) ~= S_string or val == S_MT then
     return S_MT
   end
 
-  -- Pattern examples: "`a.b.c`", "`$NAME`", "`$NAME1`"
-  -- Match for full value wrapped in backticks
+  local out = val
+
+  -- Full value wrapped in backticks
   local full_match = val:match("^`([^`]+)`$")
 
-  -- Full string of the val is an injection.
   if full_match then
-    if state then
-      state.full = true
+    if inj then
+      inj.full = true
     end
 
     local pathref = full_match
 
-    -- Special escapes inside injection.
     if #pathref > 3 then
       pathref = pathref:gsub("%$BT", S_BT):gsub("%$DS", S_DS)
     end
 
-    -- Get the extracted path reference.
-    local out = getpath(pathref, store, current, state)
-    return out
-  end
-
-  -- Handle partial injections in the string
-  local out = val:gsub("`([^`]+)`", function(ref)
-    -- Special escapes inside injection.
-    if #ref > 3 then
-      ref = ref:gsub("%$BT", S_BT):gsub("%$DS", S_DS)
-    end
-
-    if state then
-      state.full = false
-    end
-
-    local found = getpath(ref, store, current, state)
-
-    -- Ensure inject value is a string.
-    if found == NONE then
-      return S_MT
-    elseif type(found) == "table" then
-      -- Handle maps and arrays (tables in Lua) by converting to JSON
-      local dkjson = require("dkjson")
-
-      -- Ensure proper encoding based on the table type
-      local mt = getmetatable(found)
-      if mt and mt.__jsontype then
-        -- Use the existing jsontype from metatable
-      elseif islist(found) then
-        -- Set array jsontype for list-like tables
-        setmetatable(found, {
-          __jsontype = "array"
-        })
-      elseif ismap(found) then
-        -- Set object jsontype for map-like tables
-        setmetatable(found, {
-          __jsontype = "object"
-        })
+    out = getpath(store, pathref, inj)
+  else
+    -- Check for partial injections within the string.
+    out = val:gsub("`([^`]+)`", function(ref)
+      if #ref > 3 then
+        ref = ref:gsub("%$BT", S_BT):gsub("%$DS", S_DS)
       end
 
-      -- Convert to JSON
-      local ok, result = pcall(dkjson.encode, found)
-      if ok and result then
-        return result
+      if inj then
+        inj.full = false
+      end
+
+      local found = getpath(store, ref, inj)
+
+      if found == NONE then
+        return S_MT
+      elseif type(found) == S_string then
+        return found
+      elseif type(found) == 'table' then
+        local dkjson = require("dkjson")
+        local ok, result = pcall(dkjson.encode, found)
+        if ok and result then return result end
+        return islist(found) and '[...]' or '{...}'
       else
-        -- More graceful fallback
-        return (islist(found) and "[...]" or "{...}")
+        return tostring(found)
       end
-    else
-      return tostring(found)
-    end
-  end)
+    end)
 
-  -- Also call the state handler on the entire string
-  if state ~= nil and isfunc(state.handler) then
-    state.full = true
-    out = state.handler(state, out, current, val, store)
+    -- Also call the inj handler on the entire string.
+    if nil ~= inj and isfunc(inj.handler) then
+      inj.full = true
+      out = inj.handler(inj, out, val, store)
+    end
   end
 
   return out
