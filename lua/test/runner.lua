@@ -358,7 +358,7 @@ match = function(check, base, structUtils)
 
   structUtils.walk(check, function(_key, val, _parent, path)
     if not structUtils.isnode(val) then
-      local baseval = structUtils.getpath(path, base)
+      local baseval = structUtils.getpath(base, path)
 
       -- Direct match check
       if baseval == val then
