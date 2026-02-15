@@ -345,7 +345,9 @@ end
 -- @return (number) The type as a bit flag
 local function typify(value)
   if value == nil then
-    return T_noval
+    -- In Lua, nil represents both JS undefined (absent) and JS null.
+    -- Include T_null so that $NULL validation passes for nil values.
+    return T_noval | T_null
   end
 
   local luatype = type(value)
@@ -577,6 +579,10 @@ end
 
 
 -- Return a sub-array. Start and end are 0-based, end is exclusive.
+-- For numbers: clamp between start and end-1.
+-- For strings: substring from start to end.
+-- For lists: sub-list from start to end.
+-- For other types: return val unchanged (if no start given).
 local function slice(val, start, endidx, mutate)
   -- Number clamping: slice(num, min) or slice(num, min, max)
   if S_number == type(val) then
@@ -585,71 +591,69 @@ local function slice(val, start, endidx, mutate)
     return math.min(math.max(val, minv), maxv)
   end
 
-  if S_string == type(val) then
-    local vlen = #val
-    start = start or 0
-    endidx = endidx or vlen
-    if start < 0 then
-      endidx = vlen + start
-      if endidx < 0 then endidx = 0 end
-      start = 0
-    elseif endidx < 0 then
-      endidx = vlen + endidx
-      if endidx < 0 then endidx = 0 end
-    end
-    return string.sub(val, start + 1, endidx)
-  end
-
-  if not islist(val) then
-    return {}
-  end
-
-  local vlen = #val
+  local vlen = size(val)
 
   if endidx ~= nil and start == nil then
     start = 0
   end
 
-  start = start or 0
-  endidx = endidx or vlen
-
-  if start < 0 then
-    endidx = vlen + start
-    if endidx < 0 then endidx = 0 end
-    start = 0
-  elseif endidx < 0 then
-    endidx = vlen + endidx
-    if endidx < 0 then endidx = 0 end
-  elseif vlen < endidx then
-    endidx = vlen
-  end
-
-  if vlen < start then
-    start = vlen
-  end
-
-  if start >= 0 and start <= endidx and endidx <= vlen then
-    if mutate then
-      local j = start + 1
-      for i = 1, endidx - start do
-        val[i] = val[j]
-        j = j + 1
+  if start ~= nil then
+    if start < 0 then
+      endidx = vlen + start
+      if endidx < 0 then endidx = 0 end
+      start = 0
+    elseif endidx ~= nil then
+      if endidx < 0 then
+        endidx = vlen + endidx
+        if endidx < 0 then endidx = 0 end
+      elseif vlen < endidx then
+        endidx = vlen
       end
-      for i = endidx - start + 1, vlen do
-        val[i] = nil
-      end
-      return val
     else
-      local result = {}
-      setmetatable(result, { __jsontype = "array" })
-      for i = start + 1, endidx do
-        table.insert(result, val[i])
+      endidx = vlen
+    end
+
+    if vlen < start then
+      start = vlen
+    end
+
+    if -1 < start and start <= endidx and endidx <= vlen then
+      if islist(val) then
+        if mutate then
+          local j = start + 1
+          for i = 1, endidx - start do
+            val[i] = val[j]
+            j = j + 1
+          end
+          for i = endidx - start + 1, #val do
+            val[i] = nil
+          end
+          return val
+        else
+          local result = {}
+          setmetatable(result, { __jsontype = "array" })
+          for i = start + 1, endidx do
+            table.insert(result, val[i])
+          end
+          return result
+        end
+      elseif S_string == type(val) then
+        return string.sub(val, start + 1, endidx)
       end
-      return result
+    else
+      if islist(val) then
+        if mutate then
+          for i = 1, #val do val[i] = nil end
+          return val
+        end
+        return setmetatable({}, { __jsontype = "array" })
+      elseif S_string == type(val) then
+        return S_MT
+      end
     end
   end
 
-  return mutate and val or {}
+  return val
 end
 
 
@@ -663,7 +667,7 @@ local function flatten(val, depth)
   setmetatable(result, { __jsontype = "array" })
 
   for _, item in ipairs(val) do
-    if islist(item) and depth > 0 then
+    if (islist(item) or (type(item) == 'table' and next(item) == nil)) and depth > 0 then
       local sub = flatten(item, depth - 1)
       for _, v in ipairs(sub) do
         table.insert(result, v)
@@ -939,20 +943,80 @@ local function stringify(val, maxlen, pretty)
 end
 
 
--- Convert a value to JSON string representation.
+-- Convert a value to JSON string representation (matching JSON.stringify behavior).
 local function jsonify(val, flags)
   local str = S_null
 
   if val ~= nil then
     local ok, result = pcall(function()
-      local dkjson = require("dkjson")
-      local indent = getprop(flags, 'indent', 2)
-      if indent == 0 then
-        return dkjson.encode(val)
+      local indent_size = getprop(flags, 'indent', 2)
+      local offset = getprop(flags, 'offset', 0)
+
+      -- Recursive JSON serializer matching JSON.stringify(val, null, indent)
+      local function ser(v, depth)
+        if v == nil then
+          return S_null
+        elseif type(v) == S_boolean then
+          return tostring(v)
+        elseif type(v) == S_number then
+          if v ~= v then return S_null end  -- NaN
+          if v % 1 == 0 then
+            return string.format('%d', v)
+          end
+          return tostring(v)
+        elseif type(v) == S_string then
+          -- Escape string for JSON
+          local escaped = v:gsub('\\', '\\\\'):gsub('"', '\\"')
+            :gsub('\n', '\\n'):gsub('\r', '\\r'):gsub('\t', '\\t')
+          return '"' .. escaped .. '"'
+        elseif type(v) == S_function then
+          return nil  -- Functions are omitted in JSON
+        elseif type(v) == 'table' then
+          if islist(v) then
+            if #v == 0 then
+              return '[]'
+            end
+            local parts = {}
+            for i = 1, #v do
+              local sv = ser(v[i], depth + 1)
+              table.insert(parts, sv or S_null)
+            end
+            if indent_size == 0 then
+              return '[' .. table.concat(parts, ',') .. ']'
+            end
+            local pad_str = string.rep(' ', indent_size * (depth + 1) + offset)
+            local close_pad = string.rep(' ', indent_size * depth + offset)
+            return '[\n' .. pad_str .. table.concat(parts, ',\n' .. pad_str) ..
+              '\n' .. close_pad .. ']'
+          else
+            -- Map/object
+            local keys_list = keysof(v)
+            if #keys_list == 0 then
+              return '{}'
+            end
+            local parts = {}
+            for _, k in ipairs(keys_list) do
+              local sv = ser(v[k], depth + 1)
+              if sv ~= nil then  -- Skip undefined values
+                table.insert(parts, '"' .. k .. '": ' .. sv)
+              end
+            end
+            if #parts == 0 then
+              return '{}'
+            end
+            if indent_size == 0 then
+              return '{' .. table.concat(parts, ',') .. '}'
+            end
+            local pad_str = string.rep(' ', indent_size * (depth + 1) + offset)
+            local close_pad = string.rep(' ', indent_size * depth + offset)
+            return '{\n' .. pad_str .. table.concat(parts, ',\n' .. pad_str) ..
+              '\n' .. close_pad .. '}'
+          end
+        end
+        return S_null
       end
 
-      -- For indented output, use dkjson's indentation
-      local jsonstr = dkjson.encode(val, { indent = true, keyorder = nil })
+      local jsonstr = ser(val, 0)
       if jsonstr == nil then
         return S_null
       end
@@ -1429,10 +1493,11 @@ getpath = function(store, path, injdef)
     if not isfunc(val) then
       val = src
 
-      -- Check for $META path prefix (e.g., "$meta.path")
-      local meta_match = parts[1]:match("^(%$)([A-Z]+)(.*)")
-      if meta_match and injdef and injdef.meta then
-        -- TODO: $META path prefix handling
+      -- Check for meta path syntax: field$=value or field$~value
+      local m1, m2, m3 = parts[1]:match("^([^$]+)%$([=~])(.+)$")
+      if m1 and injdef and injdef.meta then
+        val = getprop(injdef.meta, m1)
+        parts[1] = m3
       end
 
       local dpath = getprop(injdef, 'dpath')
@@ -1444,14 +1509,14 @@ getpath = function(store, path, injdef)
         if injdef and S_DKEY == part then
           part = getprop(injdef, S_key)
         elseif injdef and part and #part > 5 and part:sub(1, 5) == '$GET:' then
-          -- $GET:path -> get store value, use as path part
-          part = stringify(getpath(src, part:sub(6, -1)))
+          -- $GET:path$ -> get store value, use as path part (strip trailing $)
+          part = stringify(getpath(src, slice(part, 5, -1)))
         elseif injdef and part and #part > 5 and part:sub(1, 5) == '$REF:' then
-          -- $REF:refpath -> get spec value, use as path part
-          part = stringify(getpath(getprop(store, S_DSPEC), part:sub(6, -1)))
+          -- $REF:refpath$ -> get spec value, use as path part (strip trailing $)
+          part = stringify(getpath(getprop(store, S_DSPEC), slice(part, 5, -1)))
         elseif injdef and part and #part > 6 and part:sub(1, 6) == '$META:' then
-          -- $META:metapath -> get meta value, use as path part
-          part = stringify(getpath(getprop(injdef, 'meta'), part:sub(7, -1)))
+          -- $META:metapath$ -> get meta value, use as path part (strip trailing $)
+          part = stringify(getpath(getprop(injdef, 'meta'), slice(part, 6, -1)))
         end
 
         -- $$ escapes $
@@ -1475,6 +1540,7 @@ getpath = function(store, path, injdef)
               val = dparent
             else
               local remaining = {}
+              setmetatable(remaining, { __jsontype = "array" })
               for ri = pI + 2, numparts do
                 table.insert(remaining, parts[ri])
               end
@@ -1651,7 +1717,7 @@ local function inject(val, store, injdef)
       local regular_keys = {}
       local ds_keys = {}
       for k, _ in pairs(val) do
-        if type(k) == S_string and k:find(S_DS) then
+        if type(k) == S_string and k:find(S_DS, 1, true) then
           table.insert(ds_keys, k)
         else
           table.insert(regular_keys, k)
@@ -2051,17 +2117,217 @@ local function transform_PACK(inj, _val, _ref, store)
 end
 
 
--- Apply a function to a value.
--- Format: ['`$APPLY`', function, child]
-local function transform_APPLY(inj, _val, _ref, store)
+-- Placement labels for error messages.
+local PLACEMENT = {
+  [S_MVAL] = 'value',
+  [S_MKEYPRE] = S_key,
+  [S_MKEYPOST] = S_key,
+}
+
+
+-- Check that a transform is used in the correct mode and parent type.
+local function checkPlacement(modes, ijname, parentTypes, inj)
+  local modeOk = false
+  for _, m in ipairs(modes) do
+    if m == inj.mode then modeOk = true; break end
+  end
+  if not modeOk then
+    local expected = {}
+    for _, m in ipairs(modes) do
+      table.insert(expected, PLACEMENT[m] or m)
+    end
+    table.insert(inj.errs, '$' .. ijname .. ': invalid placement as ' ..
+      (PLACEMENT[inj.mode] or inj.mode) .. ', expected: ' ..
+      table.concat(expected, ',') .. '.')
+    return false
+  end
+  if not isempty(parentTypes) then
+    local ptype = typify(inj.parent)
+    if 0 == (parentTypes & ptype) then
+      table.insert(inj.errs, '$' .. ijname .. ': invalid placement in parent ' ..
+        typename(ptype) .. ', expected: ' .. typename(parentTypes) .. '.')
+      return false
+    end
+  end
+  return true
+end
+
+
+-- Validate and extract typed arguments from a list.
+local function injectorArgs(argTypes, args)
+  local numargs = size(argTypes)
+  local found = {}
+  found[1] = NONE  -- err slot (1-based)
+  for argI = 1, numargs do
+    local arg = getprop(args, argI - 1)  -- 0-based access
+    local argType = typify(arg)
+    if 0 == (argTypes[argI] & argType) then
+      found[1] = 'invalid argument: ' .. stringify(arg, 22) ..
+        ' (' .. typename(argType) .. ' at position ' .. argI ..
+        ') is not of type: ' .. typename(argTypes[argI]) .. '.'
+      break
+    end
+    found[1 + argI] = arg
+  end
+  return found
+end
+
+
+-- Transform: resolve a reference to another part of the spec.
+-- Format: ['`$REF`', 'ref-path']
+local function transform_REF(inj, val, _ref, store)
+  local nodes = inj.nodes
+
   if S_MVAL ~= inj.mode then
     return NONE
   end
 
-  local apply = getprop(inj.parent, 1)
+  -- Get arguments: ['`$REF`', 'ref-path'].
+  local refpath = getprop(inj.parent, 1)
+  inj.keyI = size(inj.keys)
+
+  -- Spec reference.
+  local specfn = getprop(store, S_DSPEC)
+  local spec = specfn()
+
+  local dpath = slice(inj.path, 1)
+  local ref = getpath(spec, refpath, {
+    dpath = dpath,
+    dparent = getpath(spec, dpath),
+  })
+
+  local hasSubRef = false
+  if isnode(ref) then
+    walk(ref, function(_k, v)
+      if '`$REF`' == v then
+        hasSubRef = true
+      end
+      return v
+    end)
+  end
+
+  local tref = clone(ref)
+
+  local cpath = slice(inj.path, -3)
+  local tpath = slice(inj.path, -1)
+  local tcur = getpath(store, cpath)
+  local tval = getpath(store, tpath)
+  local rval = NONE
+
+  if not hasSubRef or NONE ~= tval then
+    local tinj = inj:child(0, { getelem(tpath, -1) })
+
+    tinj.path = tpath
+    tinj.nodes = slice(inj.nodes, -1)
+    tinj.parent = getelem(nodes, -2)
+    tinj.val = tref
+
+    tinj.dpath = flatten({ cpath })
+    tinj.dparent = tcur
+
+    inject(tref, store, tinj)
+
+    rval = tinj.val
+  else
+    rval = NONE
+  end
+
+  local grandparent = inj:setval(rval, 2)
+
+  if islist(grandparent) and inj.prior then
+    inj.prior.keyI = inj.prior.keyI - 1
+  end
+
+  return val
+end
+
+
+-- Named formatters for transform_FORMAT.
+local FORMATTER = {
+  identity = function(_k, v) return v end,
+  upper = function(_k, v)
+    return isnode(v) and v or string.upper(tostring(v))
+  end,
+  lower = function(_k, v)
+    return isnode(v) and v or string.lower(tostring(v))
+  end,
+  string = function(_k, v)
+    return isnode(v) and v or tostring(v)
+  end,
+  number = function(_k, v)
+    if isnode(v) then return v end
+    local n = tonumber(v)
+    return (n == nil or n ~= n) and 0 or n
+  end,
+  integer = function(_k, v)
+    if isnode(v) then return v end
+    local n = tonumber(v)
+    if n == nil or n ~= n then n = 0 end
+    return math.floor(n)
+  end,
+  concat = function(k, v)
+    if k == nil and islist(v) then
+      local parts = {}
+      for _, item in ipairs(items(v)) do
+        local val = item[2]
+        table.insert(parts, isnode(val) and '' or tostring(val))
+      end
+      return table.concat(parts)
+    end
+    return v
+  end,
+}
+
+
+-- Transform: format values using named formatters.
+-- Format: ['`$FORMAT`', 'name', child]
+local function transform_FORMAT(inj, _val, _ref, store)
+  -- Remove remaining keys to avoid spurious processing.
+  slice(inj.keys, 0, 1, true)
+
+  if S_MVAL ~= inj.mode then
+    return NONE
+  end
+
+  -- Get arguments: ['`$FORMAT`', 'name', child].
+  local name = getprop(inj.parent, 1)
   local child = getprop(inj.parent, 2)
 
-  if not isfunc(apply) then
+  -- Source data.
+  local tkey = getelem(inj.path, -2)
+  local target = getelem(inj.nodes, -2, function() return getelem(inj.nodes, -1) end)
+
+  local cinj = injectChild(child, store, inj)
+  local resolved = cinj.val
+
+  local formatter = (0 < (T_function & typify(name))) and name or getprop(FORMATTER, name)
+
+  if NONE == formatter then
+    table.insert(inj.errs, '$FORMAT: unknown format: ' .. tostring(name) .. '.')
+    return NONE
+  end
+
+  local out = walk(resolved, formatter)
+
+  setprop(target, tkey, out)
+
+  return out
+end
+
+
+-- Apply a function to a value.
+-- Format: ['`$APPLY`', function, child]
+local function transform_APPLY(inj, _val, _ref, store)
+  local ijname = 'APPLY'
+
+  if not checkPlacement({ S_MVAL }, ijname, T_list, inj) then
+    return NONE
+  end
+
+  local found = injectorArgs({ T_function, T_any }, slice(inj.parent, 1))
+  local err, apply, child = found[1], found[2], found[3]
+  if NONE ~= err then
+    table.insert(inj.errs, '$' .. ijname .. ': ' .. err)
     return NONE
   end
 
@@ -2131,10 +2397,11 @@ local function transform(data, spec, injdef)
       ['$MERGE'] = transform_MERGE,
       ['$EACH'] = transform_EACH,
       ['$PACK'] = transform_PACK,
+      ['$REF'] = transform_REF,
+      ['$FORMAT'] = transform_FORMAT,
       ['$APPLY'] = transform_APPLY,
     },
     extraTransforms,
-    dataClone,
     { ['$ERRS'] = errs },
   }, 1)
 
@@ -2849,7 +3116,16 @@ _injectstr = function(val, store, inj)
   local out = val
 
   -- Full value wrapped in backticks
-  local full_match = val:match("^`([^`]+)`$")
+  -- R_INJECTION_FULL: /^`(\$[A-Z]+|[^`]*)[0-9]*`$/
+  -- Matches full backtick injection, including empty `` and optional trailing digits
+  local full_match = val:match("^`([^`]*)`$")
+  if full_match then
+    -- Strip optional trailing digits from $NAME patterns
+    local name_part = full_match:match("^(%$[A-Z]+)%d+$")
+    if name_part then
+      full_match = name_part
+    end
+  end
 
   if full_match then
     if inj then
