@@ -1,4 +1,7 @@
--- Copyright (c) 2025 Voxgig Ltd. MIT LICENSE.
+-- Copyright (c) 2025-2026 Voxgig Ltd. MIT LICENSE.
+
+-- VERSION: @voxgig/struct 0.0.9
+
 --[[
   Voxgig Struct
   =============
@@ -38,6 +41,8 @@
   functionally redundant in specific languages is still retained to
   keep the code human comparable.
 
+  NOTE: Lists are assumed to be mutable and reference stable.
+
   NOTE: In this code JSON nulls are in general *not* considered the
   same as undefined values in the given language. However most
   JSON parsers do use the undefined value to represent JSON
@@ -47,51 +52,144 @@
   (thankfully in most APIs, JSON nulls are not used). For example,
   the unit tests use the string "__NULL__" where necessary.
 ]] ----------------------------------------------------------
--- String constants
+-- String constants are explicitly defined.
 ----------------------------------------------------------
--- Mode value for inject step
+
+-- Mode value for inject step.
 local S_MKEYPRE = 'key:pre'
 local S_MKEYPOST = 'key:post'
 local S_MVAL = 'val'
 local S_MKEY = 'key'
 
--- Special keys
-local S_DKEY = '`$KEY`'
-local S_DMETA = '`$META`'
+-- Special strings.
+local S_BKEY = '`$KEY`'
+local S_BANNO = '`$ANNO`'
+local S_BEXACT = '`$EXACT`'
+local S_BVAL = '`$VAL`'
+
+local S_DKEY = '$KEY'
 local S_DTOP = '$TOP'
 local S_DERRS = '$ERRS'
+local S_DSPEC = '$SPEC'
 
--- General strings
-local S_array = 'array'
+-- General strings.
+local S_list = 'list'
 local S_base = 'base'
 local S_boolean = 'boolean'
 local S_function = 'function'
+local S_symbol = 'symbol'
+local S_instance = 'instance'
+local S_key = 'key'
+local S_any = 'any'
+local S_nil = 'nil'
+local S_null = 'null'
 local S_number = 'number'
 local S_object = 'object'
 local S_string = 'string'
-local S_null = 'null'
-local S_MT = ''
+local S_decimal = 'decimal'
+local S_integer = 'integer'
+local S_map = 'map'
+local S_scalar = 'scalar'
+local S_node = 'node'
+
+-- Character strings.
 local S_BT = '`'
+local S_CN = ':'
+local S_CS = ']'
 local S_DS = '$'
 local S_DT = '.'
-local S_CN = ':'
+local S_FS = '/'
 local S_KEY = 'KEY'
+local S_MT = ''
+local S_OS = '['
+local S_SP = ' '
+local S_VIZ = ': '
 
--- The standard undefined value for this language
-local UNDEF = nil
+
+-- Types (bit flags)
+-- Using explicit bit positions to match TS implementation
+local T_any = (1 << 31) - 1        -- All bits set
+local T_noval = 1 << 30            -- Property absent, undefined
+local T_boolean = 1 << 29
+local T_decimal = 1 << 28
+local T_integer = 1 << 27
+local T_number = 1 << 26
+local T_string = 1 << 25
+local T_function = 1 << 24
+local T_symbol = 1 << 23
+local T_null = 1 << 22             -- Actual JSON null value
+-- gap of 7
+local T_list = 1 << 14
+local T_map = 1 << 13
+local T_instance = 1 << 12
+-- gap of 4
+local T_scalar = 1 << 7
+local T_node = 1 << 6
+
+local TYPENAME = {
+  S_any,
+  S_nil,
+  S_boolean,
+  S_decimal,
+  S_integer,
+  S_number,
+  S_string,
+  S_function,
+  S_symbol,
+  S_null,
+  '', '', '',
+  '', '', '', '',
+  S_list,
+  S_map,
+  S_instance,
+  '', '', '', '',
+  S_scalar,
+  S_node,
+}
+
+
+-- The standard undefined value for this language.
+local NONE = nil
+
+-- Private marker to indicate a skippable value.
+local SKIP = { ['`$SKIP`'] = true }
+
+local DELETE = { ['`$DELETE`'] = true }
+
+local MAXDEPTH = 32
 
 ----------------------------------------------------------
 -- Forward declarations to work around the lack of function hoisting
 ----------------------------------------------------------
 local _injectstr
 local _injecthandler
+local _validatehandler
 local _invalidTypeMsg
-local _setparentprop
-local _updateAncestors
 local _validation
 local ismap
 local islist
 local getpath
+
+
+-- Return type string for narrowest type.
+local function typename(t)
+  -- Math.clz32 equivalent: count leading zeros in a 32-bit integer
+  local function clz32(x)
+    if x == 0 then return 32 end
+    local n = 0
+    if (x & 0xFFFF0000) == 0 then n = n + 16; x = x << 16 end
+    if (x & 0xFF000000) == 0 then n = n + 8; x = x << 8 end
+    if (x & 0xF0000000) == 0 then n = n + 4; x = x << 4 end
+    if (x & 0xC0000000) == 0 then n = n + 2; x = x << 2 end
+    if (x & 0x80000000) == 0 then n = n + 1 end
+    return n
+  end
+  local idx = clz32(t) + 1  -- 1-based index
+  if idx >= 1 and idx <= #TYPENAME then
+    return TYPENAME[idx]
+  end
+  return TYPENAME[1]  -- S_any
+end
 
 -- Value is a node - defined, and a map (hash) or list (array).
 -- @param val (any) The value to check
@@ -175,6 +273,39 @@ local function iskey(key)
 end
 
 
+-- Get a defined value. Returns alt if val is nil.
+local function getdef(val, alt)
+  if nil == val then
+    return alt
+  end
+  return val
+end
+
+
+-- The integer size of the value.
+local function size(val)
+  if islist(val) then
+    return #val
+  elseif ismap(val) then
+    local count = 0
+    for _ in pairs(val) do count = count + 1 end
+    return count
+  end
+
+  local valtype = type(val)
+
+  if S_string == valtype then
+    return #val
+  elseif S_number == valtype then
+    return math.floor(val)
+  elseif S_boolean == valtype then
+    return val and 1 or 0
+  else
+    return 0
+  end
+end
+
+
 -- Check for an "empty" value - nil, empty string, array, object.
 -- @param val (any) The value to check
 -- @return (boolean) True if value is empty
@@ -207,27 +338,41 @@ local function isfunc(val)
 end
 
 
--- Determine the type of a value as a string.
--- Returns one of: 'null', 'string', 'number', 'boolean', 'function', 'array', 'object'
--- Normalizes and simplifies Lua's type system for consistency.
+-- Determine the type of a value as a bit code.
 -- @param value (any) The value to check
--- @return (string) The type as a string
+-- @return (number) The type as a bit flag
 local function typify(value)
-  if value == nil or value == "null" then
-    return S_null
+  if value == nil then
+    return T_noval
   end
 
-  local type = type(value)
+  local luatype = type(value)
 
-  if islist(value) then
-    return S_array
+  if luatype == S_number then
+    if value ~= value then  -- NaN check
+      return T_noval
+    elseif math.type(value) == 'integer' or (value % 1 == 0) then
+      return T_scalar | T_number | T_integer
+    else
+      return T_scalar | T_number | T_decimal
+    end
+  elseif luatype == S_string then
+    return T_scalar | T_string
+  elseif luatype == S_boolean then
+    return T_scalar | T_boolean
+  elseif luatype == S_function then
+    return T_scalar | T_function
+  elseif luatype == 'table' then
+    if islist(value) then
+      return T_node | T_list
+    elseif ismap(value) then
+      return T_node | T_map
+    end
+    return T_node | T_map
   end
 
-  if ismap(value) then
-    return S_object
-  end
-
-  return type
+  -- Anything else is considered T_any
+  return T_any
 end
 
 
@@ -272,6 +417,37 @@ local function getprop(val, key, alt)
 
   -- Return alternative if out is nil
   if out == nil then
+    return alt
+  end
+
+  return out
+end
+
+
+-- Get a list element. The key should be an integer, or a string
+-- that can parse to an integer only. Negative integers count from the end of the list.
+local function getelem(val, key, alt)
+  local out = NONE
+
+  if NONE == val or NONE == key then
+    return alt
+  end
+
+  if islist(val) then
+    local nkey = tonumber(key)
+    if nkey ~= nil and nkey == math.floor(nkey) then
+      if nkey < 0 then
+        nkey = #val + nkey
+      end
+      -- Convert 0-based to 1-based
+      out = val[nkey + 1]
+    end
+  end
+
+  if NONE == out then
+    if NONE ~= alt and type(alt) == S_function then
+      return alt()
+    end
     return alt
   end
 
