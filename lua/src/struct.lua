@@ -1187,40 +1187,41 @@ end
 
 -- Walk a data structure depth first, applying a function to each value.
 -- @param val (any) The value to walk
--- @param apply (function) Function to apply to each node
+-- @param before (function) Applied before descending into a node
+-- @param after (function) Applied after descending into a node
+-- @param maxdepth (number) Maximum recursive depth (default MAXDEPTH)
 -- @param key (any) Current key (for recursive calls)
 -- @param parent (table) Current parent (for recursive calls)
 -- @param path (table) Current path (for recursive calls)
 -- @return (any) The transformed value
-local function walk(val, apply,       -- These arguments are the public interface.
-                    key, parent, path -- These arguments are used for recursive state.
-)
-  path = path or {}                   -- Initialize path as empty table for root level
-  setmetatable(path, {
-    __jsontype = "array"
-  })
+local function walk(val, before, after, maxdepth,
+                    key, parent, path)
+  if NONE == path then
+    path = {}
+    setmetatable(path, { __jsontype = "array" })
+  end
 
-  if isnode(val) then
-    -- items(val) returns an array of {key, value} pairs
-    for _, item in ipairs(items(val)) do
+  local out = (nil == before) and val or before(key, val, parent, path)
+
+  maxdepth = (maxdepth ~= nil and maxdepth >= 0) and maxdepth or MAXDEPTH
+  if 0 == maxdepth or (path ~= nil and 0 < maxdepth and maxdepth <= #path) then
+    return out
+  end
+
+  if isnode(out) then
+    for _, item in ipairs(items(out)) do
       local ckey, child = item[1], item[2]
 
-      -- Create a new path array
-      local childPath = {}
-      setmetatable(childPath, {
-        __jsontype = "array"
-      })
-      for _, p in ipairs(path) do
-        table.insert(childPath, p)
-      end
-      table.insert(childPath, S_MT .. tostring(ckey))
+      local childPath = flatten({ getdef(path, {}), S_MT .. tostring(ckey) })
+      setmetatable(childPath, { __jsontype = "array" })
 
-      setprop(val, ckey, walk(child, apply, ckey, val, childPath))
+      setprop(out, ckey, walk(child, before, after, maxdepth, ckey, out, childPath))
     end
   end
 
-  -- Nodes are applied *after* their children.
-  return apply(key, val, parent, path)
+  out = (nil == after) and out or after(key, out, parent, path)
+
+  return out
 end
 
 
