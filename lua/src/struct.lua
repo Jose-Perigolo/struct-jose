@@ -1297,76 +1297,128 @@ local function merge(val, maxdepth)
 end
 
 
--- Get a value deep inside a node using a key path.  For example the
--- path `a.b` gets the value 1 from {a={b=1}}.  The path can specified
--- as a dotted string, or a string array.  If the path starts with a
--- dot (or the first element is ''), the path is considered local, and
--- resolved against the `current` argument, if defined.  Integer path
--- parts are used as array indexes.  The state argument allows for
--- custom handling when called from `inject` or `transform`.
--- @param path (string|table) The path to the value
+-- Get a value deep inside a node using a key path.
 -- @param store (table) The data store to search in
--- @param current (any) Current context for relative paths
--- @param state (table) Optional state for custom handling
+-- @param path (string|table|number) The path to the value
+-- @param injdef (table) Optional injection definition
 -- @return (any) The value at the path
-getpath = function(path, store, current, state)
-  -- Operate on a string array
+getpath = function(store, path, injdef)
+  -- Operate on a string array.
   local parts
-
   if islist(path) then
     parts = path
   elseif type(path) == S_string then
     parts = {}
-    for part in string.gmatch(path .. S_DT,
-      "([^" .. S_DT .. "]*)(" .. S_DT .. ")") do
+    for part in string.gmatch(path, "([^%.]*)(%.?)") do
       table.insert(parts, part)
     end
-    if path == "" then
+    -- Remove trailing empty from the split
+    if #parts > 0 and parts[#parts] == S_MT then
+      table.remove(parts, #parts)
+    end
+    if path == S_MT then
       parts = { S_MT }
     end
+  elseif type(path) == S_number then
+    parts = { strkey(path) }
   else
-    return nil
+    return NONE
   end
 
-  local root = store
   local val = store
-  local base = state and state.base or nil
+  local base = getprop(injdef, S_base)
+  local src = getprop(store, base, store)
+  local numparts = #parts
+  local dparent = getprop(injdef, 'dparent')
 
-  -- An empty path (incl empty string) just finds the store
-  if path == nil or store == nil or (#parts == 1 and parts[1] == S_MT) then
-    -- The actual store data may be in a store sub property, defined by state.base
-    val = getprop(store, base, store)
-  elseif #parts > 0 then
-    local pI = 1
+  -- An empty path (incl empty string) just finds the store.
+  if path == nil or store == nil or (1 == numparts and S_MT == parts[1]) then
+    val = src
+  elseif 0 < numparts then
 
-    -- Relative path uses `current` argument
-    if parts[1] == S_MT then
-      pI = 2
-      root = current
+    -- Check for $ACTIONs
+    if 1 == numparts then
+      val = getprop(store, parts[1])
     end
 
-    local part = pI <= #parts and parts[pI] or nil
-    local first = getprop(root, part)
+    if not isfunc(val) then
+      val = src
 
-    -- At top level, check state.base, if provided
-    if first == nil and pI == 1 then
-      val = getprop(getprop(root, base), part)
-    else
-      val = first
-    end
+      -- Check for $META path prefix (e.g., "$meta.path")
+      local meta_match = parts[1]:match("^(%$)([A-Z]+)(.*)")
+      if meta_match and injdef and injdef.meta then
+        -- TODO: $META path prefix handling
+      end
 
-    -- Move along the path, trying to descend into the store
-    pI = pI + 1
-    while val ~= nil and pI <= #parts do
-      val = getprop(val, parts[pI])
-      pI = pI + 1
+      local dpath = getprop(injdef, 'dpath')
+
+      local pI = 0
+      while NONE ~= val and pI < numparts do
+        local part = parts[pI + 1]  -- Lua 1-based
+
+        if injdef and S_DKEY == part then
+          part = getprop(injdef, S_key)
+        elseif injdef and part and #part > 5 and part:sub(1, 5) == '$GET:' then
+          -- $GET:path -> get store value, use as path part
+          part = stringify(getpath(src, part:sub(6, -1)))
+        elseif injdef and part and #part > 5 and part:sub(1, 5) == '$REF:' then
+          -- $REF:refpath -> get spec value, use as path part
+          part = stringify(getpath(getprop(store, S_DSPEC), part:sub(6, -1)))
+        elseif injdef and part and #part > 6 and part:sub(1, 6) == '$META:' then
+          -- $META:metapath -> get meta value, use as path part
+          part = stringify(getpath(getprop(injdef, 'meta'), part:sub(7, -1)))
+        end
+
+        -- $$ escapes $
+        if part and type(part) == S_string then
+          part = part:gsub('%$%$', '$')
+        end
+
+        if S_MT == part then
+          local ascends = 0
+          while pI + 1 < numparts and S_MT == parts[pI + 2] do
+            ascends = ascends + 1
+            pI = pI + 1
+          end
+
+          if injdef and 0 < ascends then
+            if pI == numparts - 1 then
+              ascends = ascends - 1
+            end
+
+            if 0 == ascends then
+              val = dparent
+            else
+              local remaining = {}
+              for ri = pI + 2, numparts do
+                table.insert(remaining, parts[ri])
+              end
+              local fullpath = flatten({ slice(dpath, 0 - ascends), remaining })
+
+              if ascends <= size(dpath) then
+                val = getpath(store, fullpath)
+              else
+                val = NONE
+              end
+              break
+            end
+          else
+            val = dparent
+          end
+        else
+          val = getprop(val, part)
+        end
+
+        pI = pI + 1
+      end
     end
   end
 
-  -- State may provide a custom handler to modify found value
-  if state ~= nil and isfunc(state.handler) then
+  -- Injdef may provide a custom handler to modify found value.
+  local handler = getprop(injdef, 'handler')
+  if nil ~= injdef and isfunc(handler) then
     local ref = pathify(path)
-    val = state.handler(state, val, current, ref, store)
+    val = handler(injdef, val, ref, store)
   end
 
   return val
