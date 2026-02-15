@@ -169,6 +169,8 @@ local _validation
 local ismap
 local islist
 local getpath
+local setprop
+local delprop
 
 
 -- Return type string for narrowest type.
@@ -531,10 +533,9 @@ local function items(val)
   local result = {}
 
   if islist(val) then
-    -- Handle array-like tables
+    -- Handle array-like tables (0-based string keys like JS Object.entries)
     for i, v in ipairs(val) do
-      -- Lua is 1-indexed, so we need to adjust the index
-      table.insert(result, { i - 1, v })
+      table.insert(result, { tostring(i - 1), v })
     end
   else
     local keys = {}
@@ -576,30 +577,79 @@ end
 
 
 -- Return a sub-array. Start and end are 0-based, end is exclusive.
-local function slice(val, start, endidx)
-  if not islist(val) then
-    if S_string == type(val) then
-      start = start or 0
-      endidx = endidx or #val
-      return string.sub(val, start + 1, endidx)
+local function slice(val, start, endidx, mutate)
+  -- Number clamping: slice(num, min) or slice(num, min, max)
+  if S_number == type(val) then
+    local minv = (start ~= nil and S_number == type(start)) and start or (-1 / 0)
+    local maxv = (endidx ~= nil and S_number == type(endidx)) and (endidx - 1) or (1 / 0)
+    return math.min(math.max(val, minv), maxv)
+  end
+
+  if S_string == type(val) then
+    local vlen = #val
+    start = start or 0
+    endidx = endidx or vlen
+    if start < 0 then
+      endidx = vlen + start
+      if endidx < 0 then endidx = 0 end
+      start = 0
+    elseif endidx < 0 then
+      endidx = vlen + endidx
+      if endidx < 0 then endidx = 0 end
     end
+    return string.sub(val, start + 1, endidx)
+  end
+
+  if not islist(val) then
     return {}
   end
-  local len = #val
+
+  local vlen = #val
+
+  if endidx ~= nil and start == nil then
+    start = 0
+  end
+
   start = start or 0
-  endidx = endidx or len
+  endidx = endidx or vlen
 
-  if start < 0 then start = len + start end
-  if endidx < 0 then endidx = len + endidx end
+  if start < 0 then
+    endidx = vlen + start
+    if endidx < 0 then endidx = 0 end
+    start = 0
+  elseif endidx < 0 then
+    endidx = vlen + endidx
+    if endidx < 0 then endidx = 0 end
+  elseif vlen < endidx then
+    endidx = vlen
+  end
 
-  local result = {}
-  setmetatable(result, { __jsontype = "array" })
-  for i = start + 1, endidx do
-    if i >= 1 and i <= len then
-      table.insert(result, val[i])
+  if vlen < start then
+    start = vlen
+  end
+
+  if start >= 0 and start <= endidx and endidx <= vlen then
+    if mutate then
+      local j = start + 1
+      for i = 1, endidx - start do
+        val[i] = val[j]
+        j = j + 1
+      end
+      for i = endidx - start + 1, vlen do
+        val[i] = nil
+      end
+      return val
+    else
+      local result = {}
+      setmetatable(result, { __jsontype = "array" })
+      for i = start + 1, endidx do
+        table.insert(result, val[i])
+      end
+      return result
     end
   end
-  return result
+
+  return mutate and val or {}
 end
 
 
@@ -627,19 +677,31 @@ end
 
 
 -- Pad a string or number.
+-- Positive padlen = right-pad (padEnd), negative padlen = left-pad (padStart).
 local function pad(val, padlen, padchar)
-  padlen = padlen or 0
+  val = S_string == type(val) and val or stringify(val)
+  padlen = padlen or 44
   padchar = padchar or S_SP
-  val = tostring(val or S_MT)
-  while #val < padlen do
-    val = padchar .. val
+  if #padchar > 1 then padchar = padchar:sub(1, 1) end
+
+  if padlen >= 0 then
+    -- Right-pad (padEnd)
+    while #val < padlen do
+      val = val .. padchar
+    end
+  else
+    -- Left-pad (padStart)
+    local abslen = -padlen
+    while #val < abslen do
+      val = padchar .. val
+    end
   end
   return val
 end
 
 
 -- Delete a property from a node.
-local function delprop(parent, key)
+delprop = function(parent, key)
   if not iskey(key) then
     return parent
   end
@@ -1119,7 +1181,7 @@ end
 -- @param key (any) The key to set
 -- @param val (any) The value to set
 -- @return (table) The modified parent
-local function setprop(parent, key, val)
+setprop = function(parent, key, val)
   if not iskey(key) then
     return parent
   end
@@ -1173,7 +1235,12 @@ local function walk(val, before, after, maxdepth,
     setmetatable(path, { __jsontype = "array" })
   end
 
-  local out = (nil == before) and val or before(key, val, parent, path)
+  local out
+  if nil == before then
+    out = val
+  else
+    out = before(key, val, parent, path)
+  end
 
   maxdepth = (maxdepth ~= nil and maxdepth >= 0) and maxdepth or MAXDEPTH
   if 0 == maxdepth or (path ~= nil and 0 < maxdepth and maxdepth <= #path) then
@@ -1191,7 +1258,9 @@ local function walk(val, before, after, maxdepth,
     end
   end
 
-  out = (nil == after) and out or after(key, out, parent, path)
+  if nil ~= after then
+    out = after(key, out, parent, path)
+  end
 
   return out
 end
@@ -1308,16 +1377,32 @@ getpath = function(store, path, injdef)
   if islist(path) then
     parts = path
   elseif type(path) == S_string then
+    -- Split by '.' like JS split('.'): "a.b" -> ["a","b"], "." -> ["",""], "" -> [""]
     parts = {}
-    for part in string.gmatch(path, "([^%.]*)(%.?)") do
-      table.insert(parts, part)
+    local pos = 1
+    local len = #path
+    while pos <= len do
+      local dotpos = path:find('.', pos, true)
+      if dotpos then
+        table.insert(parts, path:sub(pos, dotpos - 1))
+        pos = dotpos + 1
+      else
+        table.insert(parts, path:sub(pos))
+        pos = len + 1
+      end
     end
-    -- Remove trailing empty from the split
-    if #parts > 0 and parts[#parts] == S_MT then
-      table.remove(parts, #parts)
-    end
-    if path == S_MT then
+    if pos == 1 then
+      -- Empty string
       parts = { S_MT }
+    elseif pos == len + 1 then
+      -- Normal end
+    else
+      -- Path ends with a dot
+      table.insert(parts, S_MT)
+    end
+    -- Handle trailing dot: "a." -> ["a", ""]
+    if len > 0 and path:sub(len, len) == '.' then
+      table.insert(parts, S_MT)
     end
   elseif type(path) == S_number then
     parts = { strkey(path) }
@@ -2021,10 +2106,12 @@ local function transform(data, spec, injdef)
     end
   end
 
-  local dataClone = merge({
-    isempty(extraData) and NONE or clone(extraData),
-    clone(data),
-  })
+  local dataClone
+  if isempty(extraData) then
+    dataClone = clone(data)
+  else
+    dataClone = merge({ clone(extraData), clone(data) })
+  end
 
   -- Define a top level store that provides transform operations.
   local store = merge({
@@ -2047,6 +2134,7 @@ local function transform(data, spec, injdef)
       ['$APPLY'] = transform_APPLY,
     },
     extraTransforms,
+    dataClone,
     { ['$ERRS'] = errs },
   }, 1)
 

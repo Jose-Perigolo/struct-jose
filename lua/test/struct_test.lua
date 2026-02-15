@@ -409,18 +409,38 @@ describe("struct", function()
 
   test("walk-log", function()
     local test = clone(walkSpec.log)
-    local log = array()
 
-    -- Log handler function for walk test
     local function walklog(key, val, parent, path)
-      table.insert(log,
-        "k=" .. stringify(key) .. ", v=" .. stringify(val) .. ", p=" ..
-        stringify(parent) .. ", t=" .. pathify(path))
-      return val
+      return "k=" .. stringify(key) .. ", v=" .. stringify(val) .. ", p=" ..
+        stringify(parent) .. ", t=" .. pathify(path)
     end
 
-    walk(test["in"], walklog)
-    assert.same(log, test.out)
+    -- Test before callback
+    local logb = array()
+    local function walklog_before(key, val, parent, path)
+      table.insert(logb, walklog(key, val, parent, path))
+      return val
+    end
+    walk(test["in"], walklog_before)
+    assert.same(logb, test.out.before)
+
+    -- Test after callback
+    local loga = array()
+    local function walklog_after(key, val, parent, path)
+      table.insert(loga, walklog(key, val, parent, path))
+      return val
+    end
+    walk(test["in"], nil, walklog_after)
+    assert.same(loga, test.out.after)
+
+    -- Test both callbacks
+    local logba = array()
+    local function walklog_both(key, val, parent, path)
+      table.insert(logba, walklog(key, val, parent, path))
+      return val
+    end
+    walk(test["in"], walklog_both, walklog_both)
+    assert.same(logba, test.out.both)
   end)
 
 
