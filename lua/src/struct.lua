@@ -1202,8 +1202,10 @@ end
 -- override each other, and do *not* merge. The first element is
 -- modified.
 -- @param val (any) Array of values to merge
+-- @param maxdepth (number) Optional maximum depth for merge
 -- @return (any) The merged result
-local function merge(val)
+local function merge(val, maxdepth)
+  local md = slice(getdef(maxdepth, MAXDEPTH), 0)
   local out = NONE
 
   -- Handle edge cases
@@ -1220,7 +1222,6 @@ local function merge(val)
     return list[1]
   end
 
-  -- getprop expects 0-indexed list, so we need to adjust
   out = getprop(list, 0, {})
 
   for oI = 2, lenlist do
@@ -1230,62 +1231,66 @@ local function merge(val)
       -- Nodes win
       out = obj
     else
-      -- Nodes win, also over nodes of a different kind
-      if (not isnode(out) or (ismap(obj) and islist(out)) or
-            (islist(obj) and ismap(out))) then
-        out = obj
-      else
-        -- Node stack walking down the current obj
-        local cur = {}
-        cur[1] = out
-        local cI = 1
+      -- Current value at path end in overriding node.
+      local cur = { out }
 
-        local function merger(key, val, parent, path)
-          if key == nil then
-            return val
-          end
+      -- Current value at path end in destination node.
+      local dst = { out }
 
-          -- Get the current value at the current path in obj
-          local lenpath = #path
-          cI = lenpath
-          if cur[cI] == NONE then
-            local pathSlice = {}
-            for i = 1, lenpath - 1 do
-              table.insert(pathSlice, path[i])
-            end
-            cur[cI] = getpath(pathSlice, out)
-          end
+      local function before(key, bval, _parent, path)
+        local pI = size(path)
 
-          -- Create node if needed
-          if not isnode(cur[cI]) then
-            if islist(parent) then
-              cur[cI] = {}
-              setmetatable(cur[cI], {
-                __jsontype = "array"
-              })
-            else
-              cur[cI] = {}
-            end
-          end
+        if md <= pI then
+          setprop(cur[pI], key, bval)
 
-          -- Node child is just ahead of us on the stack, since
-          -- `walk` traverses leaves before nodes.
-          if isnode(val) and not isempty(val) then
-            setprop(cur[cI], key, cur[cI + 1])
-            cur[cI + 1] = NONE
+        -- Scalars just override directly.
+        elseif not isnode(bval) then
+          cur[pI + 1] = bval
+
+        -- Descend into override node.
+        else
+          -- Descend into destination node using same key.
+          dst[pI + 1] = 0 < pI and getprop(dst[pI], key) or dst[pI + 1]
+          local tval = dst[pI + 1]
+
+          -- Destination empty, so create node (unless override is class instance).
+          if NONE == tval and 0 == (T_instance & typify(bval)) then
+            cur[pI + 1] = islist(bval) and
+              setmetatable({}, { __jsontype = "array" }) or {}
+
+          -- Matching override and destination so continue with their values.
+          elseif typify(bval) == typify(tval) then
+            cur[pI + 1] = tval
+
+          -- Override wins.
           else
-            -- Scalar child
-            setprop(cur[cI], key, val)
+            cur[pI + 1] = bval
+            -- No need to descend when override wins.
+            bval = NONE
           end
-
-          return val
         end
 
-        -- Walk overriding node, creating paths in output as needed
-        walk(obj, merger)
-        out = cur[1]
+        return bval
       end
+
+      local function after(key, _aval, _parent, path)
+        local cI = size(path)
+        local target = cur[cI]
+        local value = cur[cI + 1]
+
+        setprop(target, key, value)
+        return value
+      end
+
+      -- Walk overriding node, creating paths in output as needed.
+      out = walk(obj, before, after, maxdepth)
     end
+  end
+
+  if 0 == md then
+    out = getelem(list, -1)
+    out = islist(out) and setmetatable({}, { __jsontype = "array" })
+      or ismap(out) and {} or out
   end
 
   return out
