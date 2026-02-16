@@ -2,6 +2,7 @@
 import {
   validate,
   transform,
+  M_KEYPRE,
 } from '..'
 
 
@@ -72,7 +73,7 @@ let errs: any
 
 const extra = {
   $CAPTURE: (inj: any) => {
-    if ('key:pre' === inj.mode) {
+    if (M_KEYPRE === inj.mode) {
       const { val, prior } = inj
       const { dparent, key } = prior
       const dval = dparent[key]

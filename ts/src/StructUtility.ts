@@ -56,10 +56,10 @@
 
 // String constants are explicitly defined.
 
-// Mode value for inject step.
-const S_MKEYPRE = 'key:pre'
-const S_MKEYPOST = 'key:post'
-const S_MVAL = 'val'
+// Mode value for inject step (bitfield).
+const M_KEYPRE = 1
+const M_KEYPOST = 2
+const M_VAL = 4
 
 // Special strings.
 const S_BKEY = '`$KEY`'
@@ -185,7 +185,7 @@ type Indexable = { [key: string]: any } & { [key: number]: any }
 // For each key in a node (map or list), perform value injections in
 // three phases: on key value, before child, and then on key value again.
 // This mode is passed via the Injection structure.
-type InjectMode = 'key:pre' | 'key:post' | 'val'
+type InjectMode = number
 
 // Handle value injections using backtick escape sequences:
 // - `a.b.c`: insert value at {a:{b:{c:1}}}
@@ -1285,14 +1285,14 @@ function inject(
     }
 
     // Each child key-value pair is processed in three injection phases:
-    // 1. inj.mode='key:pre' - Key string is injected, returning a possibly altered key.
-    // 2. inj.mode='val' - The child value is injected.
-    // 3. inj.mode='key:post' - Key string is injected again, allowing child mutation.
+    // 1. inj.mode=M_KEYPRE - Key string is injected, returning a possibly altered key.
+    // 2. inj.mode=M_VAL - The child value is injected.
+    // 3. inj.mode=M_KEYPOST - Key string is injected again, allowing child mutation.
     for (let nkI = 0; nkI < nodekeys.length; nkI++) {
 
       const childinj = inj.child(nkI, nodekeys)
       const nodekey = childinj.key
-      childinj.mode = S_MKEYPRE
+      childinj.mode = M_KEYPRE
 
       // Peform the key:pre mode injection on the child key.
       const prekey = _injectstr(nodekey, store, childinj)
@@ -1304,7 +1304,7 @@ function inject(
       // Prevent further processing by returning an undefined prekey
       if (NONE !== prekey) {
         childinj.val = getprop(val, prekey)
-        childinj.mode = S_MVAL as InjectMode
+        childinj.mode = M_VAL
 
         // Perform the val mode injection on the child value.
         // NOTE: return value is not used.
@@ -1315,7 +1315,7 @@ function inject(
         nodekeys = childinj.keys
 
         // Peform the key:post mode injection on the child key.
-        childinj.mode = S_MKEYPOST as InjectMode
+        childinj.mode = M_KEYPOST
         _injectstr(nodekey, store, childinj)
 
         // The injection may modify child processing.
@@ -1327,7 +1327,7 @@ function inject(
 
   // Inject paths into string scalars.
   else if (S_string === valtype) {
-    inj.mode = S_MVAL as InjectMode
+    inj.mode = M_VAL
     val = _injectstr(val, store, inj)
     if (SKIP !== val) {
       inj.setval(val)
@@ -1372,7 +1372,7 @@ const transform_DELETE: Injector = (inj: Injection) => {
 const transform_COPY: Injector = (inj: Injection, _val: any) => {
   const ijname = 'COPY'
 
-  if (!checkPlacement([S_MVAL], ijname, T_any, inj)) {
+  if (!checkPlacement(M_VAL, ijname, T_any, inj)) {
     return NONE
   }
 
@@ -1389,7 +1389,7 @@ const transform_KEY: Injector = (inj: Injection) => {
   const { mode, path, parent } = inj
 
   // Do nothing in val mode - not an error.
-  if (S_MVAL !== mode) {
+  if (M_VAL !== mode) {
     return NONE
   }
 
@@ -1426,12 +1426,12 @@ const transform_MERGE: Injector = (inj: Injection) => {
   // Ensures $MERGE is removed from parent list (val mode).
   let out: any = NONE
 
-  if (S_MKEYPRE === mode) {
+  if (M_KEYPRE === mode) {
     out = key
   }
 
   // Operate after child values have been transformed.
-  else if (S_MKEYPOST === mode) {
+  else if (M_KEYPOST === mode) {
     out = key
 
     let args = getprop(parent, key)
@@ -1461,7 +1461,7 @@ const transform_EACH: Injector = (
 ) => {
   const ijname = 'EACH'
 
-  if (!checkPlacement([S_MVAL], ijname, T_list, inj)) {
+  if (!checkPlacement(M_VAL, ijname, T_list, inj)) {
     return NONE
   }
 
@@ -1555,7 +1555,7 @@ const transform_PACK: Injector = (
 
   const ijname = 'EACH'
 
-  if (!checkPlacement([S_MKEYPRE], ijname, T_map, inj)) {
+  if (!checkPlacement(M_KEYPRE, ijname, T_map, inj)) {
     return NONE
   }
 
@@ -1690,7 +1690,7 @@ const transform_REF: Injector = (
 ) => {
   const { nodes } = inj
 
-  if (S_MVAL !== inj.mode) {
+  if (M_VAL !== inj.mode) {
     return NONE
   }
 
@@ -1768,7 +1768,7 @@ const transform_FORMAT: Injector = (
   // Remove remaining keys to avoid spurious processing.
   slice(inj.keys, 0, 1, true)
 
-  if (S_MVAL !== inj.mode) {
+  if (M_VAL !== inj.mode) {
     return NONE
   }
 
@@ -1843,7 +1843,7 @@ const transform_APPLY: Injector = (
 ) => {
   const ijname = 'APPLY'
 
-  if (!checkPlacement([S_MVAL], ijname, T_list, inj)) {
+  if (!checkPlacement(M_VAL, ijname, T_list, inj)) {
     return NONE
   }
 
@@ -2003,7 +2003,7 @@ const validate_CHILD: Injector = (inj: Injection) => {
   // Setup data structures for validation by cloning child template.
 
   // Map syntax.
-  if (S_MKEYPRE === mode) {
+  if (M_KEYPRE === mode) {
     const childtm = getprop(parent, key)
 
     // Get corresponding current object.
@@ -2033,7 +2033,7 @@ const validate_CHILD: Injector = (inj: Injection) => {
   }
 
   // List syntax.
-  if (S_MVAL === mode) {
+  if (M_VAL === mode) {
 
     if (!islist(parent)) {
       // $CHILD was not inside a list.
@@ -2087,7 +2087,7 @@ const validate_ONE: Injector = (
   const { mode, parent, keyI } = inj
 
   // Only operate in val mode, since parent is a list.
-  if (S_MVAL === mode) {
+  if (M_VAL === mode) {
     if (!islist(parent) || 0 !== keyI) {
       inj.errs.push('The $ONE validator at field ' +
         pathify(inj.path, 1, 1) +
@@ -2151,7 +2151,7 @@ const validate_EXACT: Injector = (inj: Injection) => {
   const { mode, parent, key, keyI } = inj
 
   // Only operate in val mode, since parent is a list.
-  if (S_MVAL === mode) {
+  if (M_VAL === mode) {
     if (!islist(parent) || 0 !== keyI) {
       inj.errs.push('The $EXACT validator at field ' +
         pathify(inj.path, 1, 1) +
@@ -2384,7 +2384,7 @@ function validate(
 
 
 const select_AND: Injector = (inj: Injection, _val: any, _ref: string, store: any) => {
-  if (S_MKEYPRE === inj.mode) {
+  if (M_KEYPRE === inj.mode) {
     const terms = getprop(inj.parent, inj.key)
 
     const ppath = slice(inj.path, -1)
@@ -2416,7 +2416,7 @@ const select_AND: Injector = (inj: Injection, _val: any, _ref: string, store: an
 
 
 const select_OR: Injector = (inj: Injection, _val: any, _ref: string, store: any) => {
-  if (S_MKEYPRE === inj.mode) {
+  if (M_KEYPRE === inj.mode) {
     const terms = getprop(inj.parent, inj.key)
 
     const ppath = slice(inj.path, -1)
@@ -2450,7 +2450,7 @@ const select_OR: Injector = (inj: Injection, _val: any, _ref: string, store: any
 
 
 const select_NOT: Injector = (inj: Injection, _val: any, _ref: string, store: any) => {
-  if (S_MKEYPRE === inj.mode) {
+  if (M_KEYPRE === inj.mode) {
     const term = getprop(inj.parent, inj.key)
 
     const ppath = slice(inj.path, -1)
@@ -2480,7 +2480,7 @@ const select_NOT: Injector = (inj: Injection, _val: any, _ref: string, store: an
 
 
 const select_CMP: Injector = (inj: Injection, _val: any, ref: string, store: any) => {
-  if (S_MKEYPRE === inj.mode) {
+  if (M_KEYPRE === inj.mode) {
     const term = getprop(inj.parent, inj.key)
     // const src = getprop(store, inj.base, store)
     const gkey = getelem(inj.path, -2)
@@ -2583,7 +2583,7 @@ function select(children: any, query: any): any[] {
 
 // Injection state used for recursive injection into JSON - like data structures.
 class Injection {
-  mode: InjectMode          // Injection mode: key:pre, val, key:post.
+  mode: InjectMode          // Injection mode: M_KEYPRE, M_VAL, M_KEYPOST.
   full: boolean             // Transform escape was full key name.
   keyI: number              // Index of parent key in list of parent keys.
   keys: string[]            // List of parent keys.
@@ -2610,7 +2610,7 @@ class Injection {
     this.dparent = NONE
     this.dpath = [S_DTOP]
 
-    this.mode = S_MVAL as InjectMode
+    this.mode = M_VAL
     this.full = false
     this.keyI = 0
     this.keys = [S_DTOP]
@@ -2626,7 +2626,7 @@ class Injection {
   toString(prefix?: string) {
     return 'INJ' + (null == prefix ? '' : S_FS + prefix) + S_CN +
       pad(pathify(this.path, 1)) +
-      this.mode + (this.full ? '/full' : '') + S_CN +
+      MODENAME[this.mode] + (this.full ? '/full' : '') + S_CN +
       'key=' + this.keyI + S_FS + this.key + S_FS + S_OS + this.keys + S_CS +
       '  p=' + stringify(this.parent, -1, 1) +
       '  m=' + stringify(this.meta, -1, 1) +
@@ -2762,7 +2762,7 @@ const _injecthandler: Injector = (
   }
 
   // Update parent with value. Ensures references remain in node tree.
-  else if (S_MVAL === inj.mode && inj.full) {
+  else if (M_VAL === inj.mode && inj.full) {
     inj.setval(val)
   }
 
@@ -2877,21 +2877,29 @@ function _injectstr(
 // =================
 
 
+const MODENAME: any = {
+  [M_VAL]: 'val',
+  [M_KEYPRE]: 'key:pre',
+  [M_KEYPOST]: 'key:post',
+}
+
 const PLACEMENT: any = {
-  [S_MVAL]: 'value',
-  [S_MKEYPRE]: S_key,
-  [S_MKEYPOST]: S_key,
+  [M_VAL]: 'value',
+  [M_KEYPRE]: S_key,
+  [M_KEYPOST]: S_key,
 }
 
 function checkPlacement(
-  modes: InjectMode[],
+  modes: InjectMode,
   ijname: string,
   parentTypes: number,
   inj: Injection
 ): boolean {
-  if (!modes.includes(inj.mode)) {
+  if (0 === (modes & inj.mode)) {
     inj.errs.push('$' + ijname + ': invalid placement as ' + PLACEMENT[inj.mode] +
-      ', expected: ' + join(items(modes, (n: any) => PLACEMENT[n[1]]), ',') + '.')
+      ', expected: ' + join(items(
+        [M_KEYPRE, M_KEYPOST, M_VAL].filter(m => modes & m),
+        (n: any) => PLACEMENT[n[1]]), ',') + '.')
     return false
   }
   if (!isempty(parentTypes)) {
@@ -3080,6 +3088,12 @@ export {
   T_instance,
   T_scalar,
   T_node,
+
+  M_KEYPRE,
+  M_KEYPOST,
+  M_VAL,
+
+  MODENAME,
 
   checkPlacement,
   injectorArgs,
