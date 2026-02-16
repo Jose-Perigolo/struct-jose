@@ -6,7 +6,7 @@ const {
   T_map, T_node, T_scalar, T_number, T_integer, T_decimal,
   T_string, T_function, T_instance,
   typify, getdef, flatten,
-  slice,
+  slice, filter,
 } = require('../')
 
 
@@ -194,30 +194,36 @@ let x
 // a = undefined
 // console.log(flatten([1,getdef(a,[])]))
 
-let a = [1,2,3,4]
-let b = slice(a,1,3,true)
-console.log(a,b,a===b)
+// let a = [1,2,3,4]
+// let b = slice(a,1,3,true)
+// console.log(a,b,a===b)
 
 
-a = [1,2,3,4]
-b = slice(a,0,4,true)
-console.log(a,b,a===b)
+// a = [1,2,3,4]
+// b = slice(a,0,4,true)
+// console.log(a,b,a===b)
 
-a = [1,2,3,4]
-b = slice(a,0,0,true)
-console.log(a,b,a===b)
-
-
-a = [1,2,3,4]
-b = slice(a,0,5,true)
-console.log(a,b,a===b)
+// a = [1,2,3,4]
+// b = slice(a,0,0,true)
+// console.log(a,b,a===b)
 
 
-a = [1,2,3,4]
-b = slice(a,5,6,true)
-console.log(a,b,a===b)
+// a = [1,2,3,4]
+// b = slice(a,0,5,true)
+// console.log(a,b,a===b)
 
 
-a = [1,2,3,4]
-b = slice(a,2,6,true)
-console.log(a,b,a===b)
+// a = [1,2,3,4]
+// b = slice(a,5,6,true)
+// console.log(a,b,a===b)
+
+
+// a = [1,2,3,4]
+// b = slice(a,2,6,true)
+// console.log(a,b,a===b)
+
+
+// console.log(filter([1,2,3,4], (n)=>n[1]>3))
+
+
+console.log(typify(1), typify(1.1))

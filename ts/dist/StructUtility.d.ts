@@ -58,9 +58,10 @@ declare function haskey(val: any, key: any): boolean;
 declare function items(val: any): [string, any][];
 declare function items<T>(val: any, apply: (item: [string, any]) => T): T[];
 declare function flatten(list: any[], depth?: number): any[];
+declare function filter(val: any, check: (item: [string, any]) => boolean): any[];
 declare function escre(s: string): string;
 declare function escurl(s: string): string;
-declare function joinurl(sarr: any[]): string;
+declare function join(arr: any[], sep?: string, url?: boolean): string;
 declare function jsonify(val: any, flags?: {
     indent?: number;
     offset?: number;
@@ -117,6 +118,7 @@ declare class StructUtility {
     delprop: typeof delprop;
     escre: typeof escre;
     escurl: typeof escurl;
+    filter: typeof filter;
     flatten: typeof flatten;
     getdef: typeof getdef;
     getelem: typeof getelem;
@@ -131,7 +133,7 @@ declare class StructUtility {
     ismap: typeof ismap;
     isnode: typeof isnode;
     items: typeof items;
-    joinurl: typeof joinurl;
+    join: typeof join;
     jsonify: typeof jsonify;
     keysof: typeof keysof;
     merge: typeof merge;
@@ -146,6 +148,7 @@ declare class StructUtility {
     stringify: typeof stringify;
     transform: typeof transform;
     typify: typeof typify;
+    typename: typeof typename;
     validate: typeof validate;
     walk: typeof walk;
     SKIP: {
@@ -176,5 +179,5 @@ declare class StructUtility {
     injectorArgs: typeof injectorArgs;
     injectChild: typeof injectChild;
 }
-export { StructUtility, clone, delprop, escre, escurl, flatten, getdef, getelem, getpath, getprop, haskey, inject, isempty, isfunc, iskey, islist, ismap, isnode, items, joinurl, jsonify, keysof, merge, pad, pathify, select, setpath, setprop, size, slice, strkey, stringify, transform, typify, validate, walk, SKIP, DELETE, jm, jt, typename, T_any, T_noval, T_boolean, T_decimal, T_integer, T_number, T_string, T_function, T_symbol, T_null, T_list, T_map, T_instance, T_scalar, T_node, checkPlacement, injectorArgs, injectChild, };
+export { StructUtility, clone, delprop, escre, escurl, filter, flatten, getdef, getelem, getpath, getprop, haskey, inject, isempty, isfunc, iskey, islist, ismap, isnode, items, join, jsonify, keysof, merge, pad, pathify, select, setpath, setprop, size, slice, strkey, stringify, transform, typify, typename, validate, walk, SKIP, DELETE, jm, jt, T_any, T_noval, T_boolean, T_decimal, T_integer, T_number, T_string, T_function, T_symbol, T_null, T_list, T_map, T_instance, T_scalar, T_node, checkPlacement, injectorArgs, injectChild, };
 export type { Injection, Injector, WalkApply };

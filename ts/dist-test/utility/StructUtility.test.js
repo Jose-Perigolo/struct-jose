@@ -33,6 +33,8 @@ const { equal, deepEqual } = node_assert_1.default;
         equal('function', typeof s.delprop);
         equal('function', typeof s.escre);
         equal('function', typeof s.escurl);
+        equal('function', typeof s.filter);
+        equal('function', typeof s.flatten);
         equal('function', typeof s.getelem);
         equal('function', typeof s.getprop);
         equal('function', typeof s.getpath);
@@ -45,7 +47,7 @@ const { equal, deepEqual } = node_assert_1.default;
         equal('function', typeof s.ismap);
         equal('function', typeof s.isnode);
         equal('function', typeof s.items);
-        equal('function', typeof s.joinurl);
+        equal('function', typeof s.join);
         equal('function', typeof s.jsonify);
         equal('function', typeof s.keysof);
         equal('function', typeof s.merge);
@@ -60,6 +62,7 @@ const { equal, deepEqual } = node_assert_1.default;
         equal('function', typeof s.stringify);
         equal('function', typeof s.transform);
         equal('function', typeof s.typify);
+        equal('function', typeof s.typename);
         equal('function', typeof s.validate);
         equal('function', typeof s.walk);
     });
@@ -112,6 +115,16 @@ const { equal, deepEqual } = node_assert_1.default;
         (0, node_assert_1.default)(a === ac);
         equal(a.constructor.name, ac.constructor.name);
     });
+    (0, node_test_1.test)('minor-filter', async () => {
+        const checkmap = {
+            gt3: (n) => n[1] > 3,
+            lt3: (n) => n[1] < 3,
+        };
+        await runset(spec.minor.filter, (vin) => struct.filter(vin.val, checkmap[vin.check]));
+    });
+    (0, node_test_1.test)('minor-flatten', async () => {
+        await runset(spec.minor.flatten, (vin) => struct.flatten(vin.val, vin.depth));
+    });
     (0, node_test_1.test)('minor-escre', async () => {
         await runset(spec.minor.escre, struct.escre);
     });
@@ -146,6 +159,12 @@ const { equal, deepEqual } = node_assert_1.default;
     });
     (0, node_test_1.test)('minor-items', async () => {
         await runset(spec.minor.items, struct.items);
+    });
+    (0, node_test_1.test)('minor-edge-items', async () => {
+        const { items } = struct;
+        const a0 = [11, 22, 33];
+        a0.x = 1;
+        deepEqual(items(a0), [['0', 11], ['1', 22], ['2', 33]]);
     });
     (0, node_test_1.test)('minor-getelem', async () => {
         const { getelem } = struct;
@@ -202,8 +221,17 @@ const { equal, deepEqual } = node_assert_1.default;
     (0, node_test_1.test)('minor-keysof', async () => {
         await runset(spec.minor.keysof, struct.keysof);
     });
-    (0, node_test_1.test)('minor-joinurl', async () => {
-        await runsetflags(spec.minor.joinurl, { null: false }, struct.joinurl);
+    (0, node_test_1.test)('minor-edge-keysof', async () => {
+        const { keysof } = struct;
+        const a0 = [11, 22, 33];
+        a0.x = 1;
+        deepEqual(keysof(a0), [0, 1, 2]);
+    });
+    (0, node_test_1.test)('minor-join', async () => {
+        await runsetflags(spec.minor.join, { null: false }, (vin) => struct.join(vin.val, vin.sep, vin.url));
+    });
+    (0, node_test_1.test)('minor-typename', async () => {
+        await runset(spec.minor.typename, struct.typename);
     });
     (0, node_test_1.test)('minor-typify', async () => {
         await runsetflags(spec.minor.typify, { null: false }, struct.typify);

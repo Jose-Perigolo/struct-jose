@@ -52,6 +52,9 @@ describe('struct', async () => {
     equal('function', typeof s.delprop)
     equal('function', typeof s.escre)
     equal('function', typeof s.escurl)
+    equal('function', typeof s.filter)
+
+    equal('function', typeof s.flatten)
     equal('function', typeof s.getelem)
     equal('function', typeof s.getprop)
 
@@ -67,7 +70,7 @@ describe('struct', async () => {
     equal('function', typeof s.isnode)
     equal('function', typeof s.items)
 
-    equal('function', typeof s.joinurl)
+    equal('function', typeof s.join)
     equal('function', typeof s.jsonify)
     equal('function', typeof s.keysof)
     equal('function', typeof s.merge)
@@ -84,8 +87,9 @@ describe('struct', async () => {
     equal('function', typeof s.stringify)
     equal('function', typeof s.transform)
     equal('function', typeof s.typify)
-    equal('function', typeof s.validate)
+    equal('function', typeof s.typename)
 
+    equal('function', typeof s.validate)
     equal('function', typeof s.walk)
   })
 
@@ -157,6 +161,20 @@ describe('struct', async () => {
   })
 
 
+  test('minor-filter', async () => {
+    const checkmap: any = {
+      gt3: (n: any) => n[1] > 3,
+      lt3: (n: any) => n[1] < 3,
+    }
+    await runset(spec.minor.filter, (vin: any) => struct.filter(vin.val, checkmap[vin.check]))
+  })
+
+
+  test('minor-flatten', async () => {
+    await runset(spec.minor.flatten, (vin: any) => struct.flatten(vin.val, vin.depth))
+  })
+
+
   test('minor-escre', async () => {
     await runset(spec.minor.escre, struct.escre)
   })
@@ -211,6 +229,14 @@ describe('struct', async () => {
 
   test('minor-items', async () => {
     await runset(spec.minor.items, struct.items)
+  })
+
+
+  test('minor-edge-items', async () => {
+    const { items } = struct
+    const a0: any = [11, 22, 33]
+    a0.x = 1
+    deepEqual(items(a0), [['0', 11], ['1', 22], ['2', 33]])
   })
 
 
@@ -299,9 +325,23 @@ describe('struct', async () => {
     await runset(spec.minor.keysof, struct.keysof)
   })
 
+  test('minor-edge-keysof', async () => {
+    const { keysof } = struct
+    const a0: any = [11, 22, 33]
+    a0.x = 1
+    deepEqual(keysof(a0), [0, 1, 2])
+  })
 
-  test('minor-joinurl', async () => {
-    await runsetflags(spec.minor.joinurl, { null: false }, struct.joinurl)
+
+
+  test('minor-join', async () => {
+    await runsetflags(spec.minor.join, { null: false },
+      (vin: any) => struct.join(vin.val, vin.sep, vin.url))
+  })
+
+
+  test('minor-typename', async () => {
+    await runset(spec.minor.typename, struct.typename)
   })
 
 

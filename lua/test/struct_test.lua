@@ -51,6 +51,8 @@ describe("struct", function()
   local delprop = struct_util.delprop
   local escre = struct_util.escre
   local escurl = struct_util.escurl
+  local filter = struct_util.filter
+  local flatten = struct_util.flatten
   local getelem = struct_util.getelem
   local getpath = struct_util.getpath
   local getprop = struct_util.getprop
@@ -65,7 +67,7 @@ describe("struct", function()
   local ismap = struct_util.ismap
   local isnode = struct_util.isnode
   local items = struct_util.items
-  local joinurl = struct_util.joinurl
+  local join = struct_util.join
   local jsonify = struct_util.jsonify
 
   local keysof = struct_util.keysof
@@ -81,6 +83,7 @@ describe("struct", function()
 
   local stringify = struct_util.stringify
   local transform = struct_util.transform
+  local typename = struct_util.typename
   local typify = struct_util.typify
   local validate = struct_util.validate
   local walk = struct_util.walk
@@ -100,6 +103,9 @@ describe("struct", function()
     assert.equal("function", type(delprop))
     assert.equal("function", type(escre))
     assert.equal("function", type(escurl))
+    assert.equal("function", type(filter))
+
+    assert.equal("function", type(flatten))
     assert.equal("function", type(getelem))
     assert.equal("function", type(getprop))
     assert.equal("function", type(getpath))
@@ -108,29 +114,32 @@ describe("struct", function()
     assert.equal("function", type(inject))
     assert.equal("function", type(isempty))
     assert.equal("function", type(isfunc))
-    assert.equal("function", type(iskey))
 
+    assert.equal("function", type(iskey))
     assert.equal("function", type(islist))
     assert.equal("function", type(ismap))
     assert.equal("function", type(isnode))
     assert.equal("function", type(items))
-    assert.equal("function", type(joinurl))
-    assert.equal("function", type(jsonify))
 
+    assert.equal("function", type(join))
+    assert.equal("function", type(jsonify))
     assert.equal("function", type(keysof))
     assert.equal("function", type(merge))
     assert.equal("function", type(pad))
     assert.equal("function", type(pathify))
+
     assert.equal("function", type(select_fn))
     assert.equal("function", type(setpath))
-    assert.equal("function", type(setprop))
     assert.equal("function", type(size))
     assert.equal("function", type(slice))
-    assert.equal("function", type(strkey))
+    assert.equal("function", type(setprop))
 
+    assert.equal("function", type(strkey))
     assert.equal("function", type(stringify))
     assert.equal("function", type(transform))
     assert.equal("function", type(typify))
+    assert.equal("function", type(typename))
+
     assert.equal("function", type(validate))
     assert.equal("function", type(walk))
   end)
@@ -208,6 +217,24 @@ describe("struct", function()
   end)
 
 
+  test("minor-filter", function()
+    local checkmap = {
+      gt3 = function(n) return n[2] > 3 end,
+      lt3 = function(n) return n[2] < 3 end,
+    }
+    runset(minorSpec.filter, function(vin)
+      return filter(vin.val, checkmap[vin.check])
+    end)
+  end)
+
+
+  test("minor-flatten", function()
+    runset(minorSpec.flatten, function(vin)
+      return flatten(vin.val, vin.depth)
+    end)
+  end)
+
+
   test("minor-escre", function()
     runset(minorSpec.escre, escre)
   end)
@@ -252,6 +279,13 @@ describe("struct", function()
 
   test("minor-items", function()
     runset(minorSpec.items, items)
+  end)
+
+
+  test("minor-edge-items", function()
+    local a0 = {11, 22, 33}
+    a0.x = 1
+    assert.same(items(a0), {{'0', 11}, {'1', 22}, {'2', 33}})
   end)
 
 
@@ -312,11 +346,24 @@ describe("struct", function()
     runset(minorSpec.keysof, keysof)
   end)
 
+  test("minor-edge-keysof", function()
+    local a0 = {11, 22, 33}
+    a0.x = 1
+    assert.same(keysof(a0), {'0', '1', '2'})
+  end)
 
-  test("minor-joinurl", function()
-    runsetflags(minorSpec.joinurl, {
+
+  test("minor-join", function()
+    runsetflags(minorSpec.join, {
       null = false
-    }, joinurl)
+    }, function(vin)
+      return join(vin.val, vin.sep, vin.url)
+    end)
+  end)
+
+
+  test("minor-typename", function()
+    runset(minorSpec.typename, typename)
   end)
 
 

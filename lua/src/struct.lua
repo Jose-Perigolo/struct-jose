@@ -34,7 +34,7 @@
   - stringify: human-friendly string version of a value.
   - escre: escape a regular expresion string.
   - escurl: escape a url.
-  - joinurl: join parts of a url, merging forward slashes.
+  - join: join parts of a url, merging forward slashes.
 
   This set of functions and supporting utilities is designed to work
   uniformly across many languages, meaning that some code that may be
@@ -59,7 +59,6 @@
 local S_MKEYPRE = 'key:pre'
 local S_MKEYPOST = 'key:post'
 local S_MVAL = 'val'
-local S_MKEY = 'key'
 
 -- Special strings.
 local S_BKEY = '`$KEY`'
@@ -103,6 +102,7 @@ local S_KEY = 'KEY'
 local S_MT = ''
 local S_OS = '['
 local S_SP = ' '
+local S_CM = ','
 local S_VIZ = ': '
 
 
@@ -151,9 +151,8 @@ local TYPENAME = {
 -- The standard undefined value for this language.
 local NONE = nil
 
--- Private marker to indicate a skippable value.
+-- Private markers
 local SKIP = { ['`$SKIP`'] = true }
-
 local DELETE = { ['`$DELETE`'] = true }
 
 local MAXDEPTH = 32
@@ -553,6 +552,23 @@ local function items(val)
 end
 
 
+-- Filter item values using check function.
+-- check receives {key, value} pairs (1-indexed: [1]=key, [2]=value).
+-- Returns array of values where check returns true.
+local function filter(val, check)
+  local all = items(val)
+  local numall = size(all)
+  local out = {}
+  setmetatable(out, { __jsontype = "array" })
+  for i = 1, numall do
+    if check(all[i]) then
+      table.insert(out, all[i][2])
+    end
+  end
+  return out
+end
+
+
 -- Escape regular expression.
 -- @param s (string) The string to escape
 -- @return (string) The escaped string
@@ -762,59 +778,69 @@ local function jt(...)
 end
 
 
--- Concatenate url part strings, merging forward slashes as needed.
--- @param sarr (table) Array of URL parts to join
--- @return (string) The combined URL
-local function joinurl(sarr)
-  -- Filter out nil, empty strings, and "null" values and convert non-strings to strings
-  local filtered = {}
-  for _, p in ipairs(sarr) do
-    if p ~= nil and p ~= '' and p ~= 'null' then
-      if type(p) == 'string' then
-        -- Skip if the string is "null"
-        if p ~= "null" then
-          table.insert(filtered, p)
-        end
+-- Concatenate strings, merging separator char as needed.
+-- Default separator is comma. When url=true, preserve protocol slashes.
+-- @param arr (table) Array of parts to join
+-- @param sep (string) Separator character (default: ',')
+-- @param url (boolean) URL mode preserves leading protocol slashes
+-- @return (string) The combined string
+local function join(arr, sep, url)
+  if not islist(arr) then
+    return S_MT
+  end
+
+  local arrsize = size(arr)
+  local sepdef = getdef(sep, S_CM)
+
+  -- Escape separator for Lua patterns
+  local function lua_pat_escape(c)
+    return c:gsub("([%(%)%.%%%+%-%*%?%[%]%^%$])", "%%%1")
+  end
+  local seppat = (size(sepdef) == 1) and lua_pat_escape(sepdef) or nil
+
+  -- Step 1: Filter to only string, non-empty values, keeping original indices
+  local string_items = {}
+  for i = 1, #arr do
+    local v = arr[i]
+    local ts = typify(v)
+    if (0 < (T_string & ts)) and v ~= S_MT then
+      table.insert(string_items, { i - 1, v })  -- 0-based index, value
+    end
+  end
+
+  -- Step 2: Process each element to clean separators
+  local processed = {}
+  for _, item in ipairs(string_items) do
+    local idx = item[1]  -- 0-based original index
+    local s = item[2]
+
+    if seppat ~= nil and seppat ~= S_MT then
+      if url and idx == 0 then
+        -- First element in URL mode: strip trailing seps only
+        s = s:gsub(seppat .. "+$", S_MT)
       else
-        -- Convert non-string values using stringify and skip if result is "null"
-        local str = stringify(p)
-        if str ~= "null" then
-          table.insert(filtered, str)
+        if idx > 0 then
+          -- Strip leading seps
+          s = s:gsub("^" .. seppat .. "+", S_MT)
         end
+
+        if idx < arrsize - 1 or not url then
+          -- Strip trailing seps
+          s = s:gsub(seppat .. "+$", S_MT)
+        end
+
+        -- Collapse multiple seps between non-sep chars
+        s = s:gsub("([^" .. seppat .. "])" .. seppat .. "+([^" .. seppat .. "])",
+          "%1" .. sepdef .. "%2")
       end
     end
-  end
 
-  -- Process each part to handle slashes correctly
-  for i = 1, #filtered do
-    local s = filtered[i]
-
-
-    if i == 1 then
-      -- For first element, only remove trailing slashes
-      s = s:gsub("/+$", "")
-    else
-      -- Replace multiple slashes after non-slash with single slash
-      s = s:gsub("([^/])/+", "%1/")
-
-      -- For other elements, remove both leading and trailing slashes
-      s = s:gsub("^/+", "")
-      s = s:gsub("/+$", "")
-    end
-
-    filtered[i] = s
-  end
-
-  -- Filter out empty strings after processing
-  local finalParts = {}
-  for _, s in ipairs(filtered) do
-    if s ~= '' then
-      table.insert(finalParts, s)
+    if s ~= S_MT then
+      table.insert(processed, s)
     end
   end
 
-  -- Join the parts with single slashes
-  return table.concat(finalParts, "/")
+  return table.concat(processed, sepdef)
 end
 
 
@@ -3200,7 +3226,8 @@ local StructUtility = {
   ismap = ismap,
   isnode = isnode,
   items = items,
-  joinurl = joinurl,
+  filter = filter,
+  join = join,
   jsonify = jsonify,
   keysof = keysof,
   merge = merge,
@@ -3248,7 +3275,8 @@ return {
   ismap = ismap,
   isnode = isnode,
   items = items,
-  joinurl = joinurl,
+  filter = filter,
+  join = join,
   jsonify = jsonify,
   keysof = keysof,
   merge = merge,

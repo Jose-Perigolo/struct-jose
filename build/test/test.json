@@ -2841,81 +2841,275 @@
           }
         ]
       },
-      "joinurl": {
+      "join": {
         "set": [
           {
             "out": "a",
-            "in": [
-              "a"
-            ]
+            "in": {
+              "val": [
+                "a"
+              ]
+            }
           },
           {
-            "out": "a/b",
-            "in": [
-              "a",
-              "b"
-            ]
+            "out": "cQdQe",
+            "in": {
+              "val": [
+                "c",
+                "d",
+                "e"
+              ],
+              "sep": "Q"
+            }
           },
           {
-            "out": "a/b",
-            "in": [
-              "a",
-              null,
-              "b"
-            ]
+            "out": "C|D|E",
+            "in": {
+              "val": [
+                "C",
+                "D",
+                "E"
+              ],
+              "sep": "|"
+            }
           },
           {
-            "out": "a/b",
-            "in": [
-              "a/",
-              "b"
-            ]
+            "out": "a,b",
+            "in": {
+              "val": [
+                "a",
+                "b"
+              ]
+            }
           },
           {
-            "out": "a/b",
-            "in": [
-              "a",
-              "/b"
-            ]
+            "out": "a,b",
+            "in": {
+              "val": [
+                "a",
+                null,
+                "b"
+              ]
+            }
           },
           {
-            "out": "a/b",
-            "in": [
-              "a/",
-              "/b"
-            ]
+            "out": "a,b",
+            "in": {
+              "val": [
+                "a,",
+                "b"
+              ]
+            }
           },
           {
-            "out": "a/b",
-            "in": [
-              "a/",
-              "//b"
-            ]
+            "out": "a,b",
+            "in": {
+              "val": [
+                "a",
+                ",b"
+              ]
+            }
+          },
+          {
+            "out": "a,b",
+            "in": {
+              "val": [
+                "a,",
+                ",b"
+              ]
+            }
+          },
+          {
+            "out": "a,b",
+            "in": {
+              "val": [
+                "a,",
+                ",,b"
+              ]
+            }
           },
           {
             "out": "a/b/c/d",
-            "in": [
-              "a",
-              "b",
-              "c//d"
-            ]
+            "in": {
+              "val": [
+                "a",
+                "b",
+                "c//d"
+              ],
+              "sep": "/"
+            }
           },
           {
             "out": "//a/b",
-            "in": [
-              "//a",
-              "/b"
+            "in": {
+              "val": [
+                "//a",
+                "/b"
+              ],
+              "sep": "/"
+            }
+          },
+          {
+            "in": {
+              "val": [
+                "https://www.example.com/",
+                "/a",
+                "/b/",
+                "/c",
+                "d"
+              ],
+              "sep": "/",
+              "url": true
+            },
+            "out": "https://www.example.com/a/b/c/d"
+          },
+          {
+            "in": {
+              "val": [
+                "https://www.example.com/",
+                "e/"
+              ],
+              "sep": "/",
+              "url": true
+            },
+            "out": "https://www.example.com/e/"
+          }
+        ]
+      },
+      "flatten": {
+        "set": [
+          {
+            "in": {
+              "val": [
+                1,
+                2,
+                3
+              ]
+            },
+            "out": [
+              1,
+              2,
+              3
             ]
           },
           {
-            "in": [
-              "https://www.example.com/",
-              "/a",
-              "/b/",
-              "/c",
-              "d"
-            ],
-            "out": "https://www.example.com/a/b/c/d"
+            "in": {
+              "val": [
+                1,
+                [
+                  2
+                ],
+                3
+              ]
+            },
+            "out": [
+              1,
+              2,
+              3
+            ]
+          },
+          {
+            "in": {
+              "val": [
+                1,
+                [
+                  [
+                    2
+                  ],
+                  3
+                ]
+              ]
+            },
+            "out": [
+              1,
+              [
+                2
+              ],
+              3
+            ]
+          },
+          {
+            "in": {
+              "val": [
+                1,
+                [
+                  [
+                    2
+                  ],
+                  3
+                ]
+              ],
+              "depth": 2
+            },
+            "out": [
+              1,
+              2,
+              3
+            ]
+          }
+        ]
+      },
+      "filter": {
+        "set": [
+          {
+            "in": {
+              "val": [
+                1,
+                2,
+                3,
+                4,
+                5
+              ],
+              "check": "gt3"
+            },
+            "out": [
+              4,
+              5
+            ]
+          },
+          {
+            "in": {
+              "val": [
+                1,
+                2,
+                3,
+                4,
+                5
+              ],
+              "check": "lt3"
+            },
+            "out": [
+              1,
+              2
+            ]
+          }
+        ]
+      },
+      "typename": {
+        "set": [
+          {
+            "in": 8192,
+            "out": "map"
+          },
+          {
+            "in": 8256,
+            "out": "map"
+          },
+          {
+            "in": 16384,
+            "out": "list"
+          },
+          {
+            "in": 16448,
+            "out": "list"
+          },
+          {
+            "in": 201326720,
+            "out": "integer"
+          },
+          {
+            "in": 335544448,
+            "out": "decimal"
           }
         ]
       },

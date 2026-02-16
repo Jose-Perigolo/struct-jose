@@ -6,6 +6,7 @@ exports.clone = clone;
 exports.delprop = delprop;
 exports.escre = escre;
 exports.escurl = escurl;
+exports.filter = filter;
 exports.flatten = flatten;
 exports.getdef = getdef;
 exports.getelem = getelem;
@@ -20,7 +21,7 @@ exports.islist = islist;
 exports.ismap = ismap;
 exports.isnode = isnode;
 exports.items = items;
-exports.joinurl = joinurl;
+exports.join = join;
 exports.jsonify = jsonify;
 exports.keysof = keysof;
 exports.merge = merge;
@@ -35,11 +36,11 @@ exports.strkey = strkey;
 exports.stringify = stringify;
 exports.transform = transform;
 exports.typify = typify;
+exports.typename = typename;
 exports.validate = validate;
 exports.walk = walk;
 exports.jm = jm;
 exports.jt = jt;
-exports.typename = typename;
 exports.checkPlacement = checkPlacement;
 exports.injectorArgs = injectorArgs;
 exports.injectChild = injectChild;
@@ -75,7 +76,7 @@ exports.injectChild = injectChild;
  * - stringify: human-friendly string version of a value.
  * - escre: escape a regular expresion string.
  * - escurl: escape a url.
- * - joinurl: join parts of a url, merging forward slashes.
+ * - join: join parts of a url, merging forward slashes.
  *
  * This set of functions and supporting utilities is designed to work
  * uniformly across many languages, meaning that some code that may be
@@ -99,7 +100,6 @@ exports.injectChild = injectChild;
 const S_MKEYPRE = 'key:pre';
 const S_MKEYPOST = 'key:post';
 const S_MVAL = 'val';
-const S_MKEY = 'key';
 // Special strings.
 const S_BKEY = '`$KEY`';
 const S_BANNO = '`$ANNO`';
@@ -139,6 +139,7 @@ const S_KEY = 'KEY';
 const S_MT = '';
 const S_OS = '[';
 const S_SP = ' ';
+const S_CM = ',';
 const S_VIZ = ': ';
 // Types
 let t = 31;
@@ -196,7 +197,7 @@ const TYPENAME = [
 ];
 // The standard undefined value for this language.
 const NONE = undefined;
-// Private marker to indicate a skippable value.
+// Private markers
 const SKIP = { '`$SKIP`': true };
 exports.SKIP = SKIP;
 const DELETE = { '`$DELETE`': true };
@@ -217,6 +218,7 @@ const R_INJECTION_FULL = /^`(\$[A-Z]+|[^`]*)[0-9]*`$/; // Full string injection 
 const R_BT_ESCAPE = /\$BT/g; // Backtick escape sequence.
 const R_DS_ESCAPE = /\$DS/g; // Dollar sign escape sequence.
 const R_INJECTION_PARTIAL = /`([^`]+)`/g; // Partial string injection pattern.
+// Default max depth (for walk etc).
 const MAXDEPTH = 32;
 // Return type string for narrowest type.
 function typename(t) {
@@ -463,11 +465,13 @@ function strkey(key = NONE) {
     return S_MT;
 }
 // Sorted keys of a map, or indexes (as strings) of a list.
+// Root utility - only uses language facilities.
 function keysof(val) {
     return !isnode(val) ? [] :
         ismap(val) ? Object.keys(val).sort() : val.map((_n, i) => S_MT + i);
 }
 // Value of property with name key in node val is defined.
+// Root utility - only uses language facilities.
 function haskey(val, key) {
     return NONE !== getprop(val, key);
 }
@@ -489,26 +493,70 @@ function flatten(list, depth) {
     }
     return list.flat(getdef(depth, 1));
 }
+// Filter item values using check function.
+function filter(val, check) {
+    let all = items(val);
+    let numall = size(all);
+    let out = [];
+    for (let i = 0; i < numall; i++) {
+        if (check(all[i])) {
+            out.push(all[i][1]);
+        }
+    }
+    return out;
+}
 // Escape regular expression.
 function escre(s) {
-    s = null == s ? S_MT : s;
-    return s.replace(R_ESCAPE_REGEXP, '\\$&');
+    // s = null == s ? S_MT : s
+    return replace(s, R_ESCAPE_REGEXP, '\\$&');
 }
 // Escape URLs.
 function escurl(s) {
     s = null == s ? S_MT : s;
     return encodeURIComponent(s);
 }
-// Concatenate url part strings, merging forward slashes as needed.
-function joinurl(sarr) {
-    return sarr
-        .filter(s => null != s && S_MT !== s)
-        .map((s, i) => 0 === i ? s.replace(R_TRAILING_SLASH, S_MT) :
-        s.replace(R_LEADING_TRAILING_SLASH, '$1/')
-            .replace(R_LEADING_SLASH, S_MT)
-            .replace(R_TRAILING_SLASH, S_MT))
-        .filter(s => S_MT !== s)
-        .join(S_FS);
+// Replace a search string (all), or a regexp, in a source string.
+function replace(s, from, to) {
+    let rs = s;
+    let ts = typify(s);
+    if (0 === (T_string & ts)) {
+        rs = stringify(s);
+    }
+    else if (0 < ((T_noval | T_null) & ts)) {
+        rs = S_MT;
+    }
+    else {
+        rs = stringify(s);
+    }
+    return rs.replace(from, to);
+}
+// Concatenate url part strings, merging sep char as needed.
+function join(arr, sep, url) {
+    const sarr = size(arr);
+    const sepdef = getdef(sep, S_CM);
+    const sepre = 1 === size(sepdef) ? escre(sepdef) : NONE;
+    const out = filter(items(
+    // filter(arr, (n) => null != n[1] && S_MT !== n[1]),
+    filter(arr, (n) => (0 < (T_string & typify(n[1]))) && S_MT !== n[1]), (n) => {
+        let i = +n[0];
+        let s = n[1];
+        if (NONE !== sepre && S_MT !== sepre) {
+            if (url && 0 === i) {
+                s = replace(s, RegExp(sepre + '+$'), S_MT);
+                return s;
+            }
+            if (0 < i) {
+                s = replace(s, RegExp('^' + sepre + '+'), S_MT);
+            }
+            if (i < sarr - 1 || !url) {
+                s = replace(s, RegExp(sepre + '+$'), S_MT);
+            }
+            s = replace(s, RegExp('([^' + sepre + '])' + sepre + '+([^' + sepre + '])'), '$1' + sepdef + '$2');
+        }
+        return s;
+    }), (n) => S_MT !== n[1])
+        .join(sepdef);
+    return out;
 }
 // Output JSON in a "standard" format, with 2 space indents, each property on a new line,
 // and spaces after {[: and before ]}. Any "wierd" values (NaN, etc) are output as null.
@@ -526,9 +574,8 @@ function jsonify(val, flags) {
             if (0 < offset) {
                 // Left offset entire indented JSON so that it aligns with surrounding code
                 // indented by offset. Assume first brace is on line with asignment, so not offset.
-                str = '{\n' + str.split('\n').slice(1)
-                    .map(n => pad(n, 0 - offset - size(n)))
-                    .join('\n');
+                str = '{\n' +
+                    join(items(slice(str.split('\n'), 1), (n) => pad(n[1], 0 - offset - size(n[1]))), '\n');
             }
         }
         catch (e) {
@@ -554,9 +601,9 @@ function stringify(val, maxlen, pretty) {
                     typeof val === "object" &&
                     !Array.isArray(val)) {
                     const sortedObj = {};
-                    for (const k of Object.keys(val).sort()) {
-                        sortedObj[k] = val[k];
-                    }
+                    items(val, (n) => {
+                        sortedObj[n[0]] = val[n[0]];
+                    });
                     return sortedObj;
                 }
                 return val;
@@ -573,8 +620,7 @@ function stringify(val, maxlen, pretty) {
     }
     if (pretty) {
         // Indicate deeper JSON levels with different terminal colors (simplistic wrt strings).
-        let c = [81, 118, 213, 39, 208, 201, 45, 190, 129, 51, 160, 121, 226, 33, 207, 69]
-            .map(n => `\x1b[38;5;${n}m`), r = '\x1b[0m', d = 0, o = c[0], t = o;
+        let c = items([81, 118, 213, 39, 208, 201, 45, 190, 129, 51, 160, 121, 226, 33, 207, 69], (n) => '\x1b[38;5;' + n[1] + 'm'), r = '\x1b[0m', d = 0, o = c[0], t = o;
         for (const ch of valstr) {
             if (ch === '{' || ch === '[') {
                 d++;
@@ -609,11 +655,11 @@ function pathify(val, startin, endin) {
             pathstr = '<root>';
         }
         else {
-            pathstr = path
-                .filter((p) => iskey(p))
-                .map((p) => S_number === typeof p ? S_MT + Math.floor(p) :
-                p.replace(R_DOT, S_MT))
-                .join(S_DT);
+            pathstr = join(items(filter(path, (n) => iskey(n[1])), (n) => {
+                let p = n[1];
+                return S_number === typeof p ? S_MT + Math.floor(p) :
+                    p.replace(R_DOT, S_MT);
+            }), S_DT);
         }
     }
     if (NONE === pathstr) {
@@ -988,10 +1034,17 @@ function inject(val, store, injdef) {
         // Injection transforms ($FOO) are processed *after* other keys.
         // NOTE: the optional digits suffix of the transform can thus be
         // used to order the transforms.
-        let nodekeys = ismap(val) ? flatten([
-            Object.keys(val).filter(k => !k.includes(S_DS)).sort(),
-            Object.keys(val).filter(k => k.includes(S_DS)).sort(),
-        ]) : val.map((_n, i) => i);
+        let nodekeys;
+        nodekeys = keysof(val);
+        if (ismap(val)) {
+            nodekeys = flatten([
+                filter(nodekeys, (n => !n[1].includes(S_DS))),
+                filter(nodekeys, (n => n[1].includes(S_DS))),
+            ]);
+        }
+        else {
+            nodekeys = keysof(val);
+        }
         // Each child key-value pair is processed in three injection phases:
         // 1. inj.mode='key:pre' - Key string is injected, returning a possibly altered key.
         // 2. inj.mode='val' - The child value is injected.
@@ -1389,7 +1442,7 @@ const FORMATTER = {
             return n | 0;
         }
     },
-    concat: (k, v) => null == k && islist(v) ? items(v, (n => isnode(n[1]) ? '' : ('' + n[1]))).join('') : v
+    concat: (k, v) => null == k && islist(v) ? join(items(v, (n => isnode(n[1]) ? S_MT : (S_MT + n[1]))), S_MT) : v
 };
 const transform_APPLY = (inj, _val, _ref, store) => {
     const ijname = 'APPLY';
@@ -1463,7 +1516,7 @@ injdef) {
     const out = inject(spec, store, injdef);
     const generr = (0 < size(errs) && !collect);
     if (generr) {
-        throw new Error(errs.join(' | '));
+        throw new Error(join(errs, ' | '));
     }
     return out;
 }
@@ -1552,8 +1605,7 @@ const validate_CHILD = (inj) => {
         // Clone children abd reset inj key index.
         // The inject child loop will now iterate over the cloned children,
         // validating them againt the current list values.
-        inj.dparent.map((_n, i) => parent[i] = clone(childtm));
-        // parent.length = inj.dparent.length
+        items(inj.dparent, (n) => setprop(parent, n[0], clone(childtm)));
         slice(parent, 0, inj.dparent.length, true);
         inj.keyI = 0;
         const out = getprop(inj.dparent, 0);
@@ -1606,10 +1658,7 @@ const validate_ONE = (inj, _val, _ref, store) => {
             }
         }
         // There was no match.
-        const valdesc = tvals
-            .map((v) => stringify(v))
-            .join(', ')
-            .replace(R_TRANSFORM_NAME, (_m, p1) => p1.toLowerCase());
+        const valdesc = replace(join(items(tvals, (n) => stringify(n[1])), ', '), R_TRANSFORM_NAME, (_m, p1) => p1.toLowerCase());
         inj.errs.push(_invalidTypeMsg(inj.path, (1 < size(tvals) ? 'one of ' : '') + valdesc, typify(inj.dparent), inj.dparent, 'V0210'));
     }
 };
@@ -1649,10 +1698,8 @@ const validate_EXACT = (inj) => {
                 return;
             }
         }
-        const valdesc = tvals
-            .map((v) => stringify(v))
-            .join(', ')
-            .replace(R_TRANSFORM_NAME, (_m, p1) => p1.toLowerCase());
+        // There was no match.
+        const valdesc = replace(join(items(tvals, (n) => stringify(n[1])), ', '), R_TRANSFORM_NAME, (_m, p1) => p1.toLowerCase());
         inj.errs.push(_invalidTypeMsg(inj.path, (1 < size(inj.path) ? '' : 'value ') +
             'exactly equal to ' + (1 === size(tvals) ? '' : 'one of ') + valdesc, typify(inj.dparent), inj.dparent, 'V0110'));
     }
@@ -1704,7 +1751,7 @@ const _validation = (pval, key, parent, inj) => {
             }
             // Closed object, so reject extra keys not in shape.
             if (0 < size(badkeys)) {
-                const msg = 'Unexpected keys at field ' + pathify(inj.path, 1) + S_VIZ + badkeys.join(', ');
+                const msg = 'Unexpected keys at field ' + pathify(inj.path, 1) + S_VIZ + join(badkeys, ', ');
                 inj.errs.push(msg);
             }
         }
@@ -1794,7 +1841,7 @@ injdef) {
     });
     const generr = (0 < size(errs) && !collect);
     if (generr) {
-        throw new Error(errs.join(' | '));
+        throw new Error(join(errs, ' | '));
     }
     return out;
 }
@@ -1911,13 +1958,13 @@ function select(children, query) {
         return [];
     }
     if (ismap(children)) {
-        children = items(children).map(n => {
+        children = items(children, n => {
             setprop(n[1], S_DKEY, n[0]);
             return n[1];
         });
     }
     else {
-        children = children.map((n, i) => (setprop(n, S_DKEY, i), n));
+        children = items(children, (n) => (setprop(n[1], S_DKEY, +n[0]), n[1]));
     }
     const results = [];
     const injdef = {
@@ -2121,9 +2168,6 @@ function _injectstr(val, store, inj) {
         }
         let pathref = m[1];
         // Special escapes inside injection.
-        // pathref = 3 < size(pathref) ?
-        //   pathref.replace(R_BT_ESCAPE, S_BT).replace(R_DS_ESCAPE, S_DS) :
-        //   pathref
         if (3 < size(pathref)) {
             pathref = pathref.replace(R_BT_ESCAPE, S_BT).replace(R_DS_ESCAPE, S_DS);
         }
@@ -2164,7 +2208,7 @@ const PLACEMENT = {
 function checkPlacement(modes, ijname, parentTypes, inj) {
     if (!modes.includes(inj.mode)) {
         inj.errs.push('$' + ijname + ': invalid placement as ' + PLACEMENT[inj.mode] +
-            ', expected: ' + items(modes, (n) => PLACEMENT[n[1]]).join(',') + '.');
+            ', expected: ' + join(items(modes, (n) => PLACEMENT[n[1]]), ',') + '.');
         return false;
     }
     if (!isempty(parentTypes)) {
@@ -2221,6 +2265,7 @@ class StructUtility {
         this.delprop = delprop;
         this.escre = escre;
         this.escurl = escurl;
+        this.filter = filter;
         this.flatten = flatten;
         this.getdef = getdef;
         this.getelem = getelem;
@@ -2235,7 +2280,7 @@ class StructUtility {
         this.ismap = ismap;
         this.isnode = isnode;
         this.items = items;
-        this.joinurl = joinurl;
+        this.join = join;
         this.jsonify = jsonify;
         this.keysof = keysof;
         this.merge = merge;
@@ -2250,6 +2295,7 @@ class StructUtility {
         this.stringify = stringify;
         this.transform = transform;
         this.typify = typify;
+        this.typename = typename;
         this.validate = validate;
         this.walk = walk;
         this.SKIP = SKIP;

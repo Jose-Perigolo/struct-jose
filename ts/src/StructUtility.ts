@@ -33,7 +33,7 @@
  * - stringify: human-friendly string version of a value.
  * - escre: escape a regular expresion string.
  * - escurl: escape a url.
- * - joinurl: join parts of a url, merging forward slashes.
+ * - join: join parts of a url, merging forward slashes.
  *
  * This set of functions and supporting utilities is designed to work
  * uniformly across many languages, meaning that some code that may be
@@ -60,7 +60,6 @@
 const S_MKEYPRE = 'key:pre'
 const S_MKEYPOST = 'key:post'
 const S_MVAL = 'val'
-const S_MKEY = 'key'
 
 // Special strings.
 const S_BKEY = '`$KEY`'
@@ -104,6 +103,7 @@ const S_KEY = 'KEY'
 const S_MT = ''
 const S_OS = '['
 const S_SP = ' '
+const S_CM = ','
 const S_VIZ = ': '
 
 // Types
@@ -150,10 +150,10 @@ const TYPENAME = [
 // The standard undefined value for this language.
 const NONE = undefined
 
-// Private marker to indicate a skippable value.
+// Private markers
 const SKIP = { '`$SKIP`': true }
-
 const DELETE = { '`$DELETE`': true }
+
 
 // Regular expression constants
 const R_INTEGER_KEY = /^[-0-9]+$/                      // Match integer keys (including <0).
@@ -172,9 +172,8 @@ const R_BT_ESCAPE = /\$BT/g                            // Backtick escape sequen
 const R_DS_ESCAPE = /\$DS/g                            // Dollar sign escape sequence.
 const R_INJECTION_PARTIAL = /`([^`]+)`/g               // Partial string injection pattern.
 
-
+// Default max depth (for walk etc).
 const MAXDEPTH = 32
-
 
 // Keys are strings for maps, or integers for lists.
 type PropKey = string | number
@@ -188,7 +187,6 @@ type Indexable = { [key: string]: any } & { [key: number]: any }
 // This mode is passed via the Injection structure.
 type InjectMode = 'key:pre' | 'key:post' | 'val'
 
-
 // Handle value injections using backtick escape sequences:
 // - `a.b.c`: insert value at {a:{b:{c:1}}}
 // - `$FOO`: apply transform FOO
@@ -199,7 +197,6 @@ type Injector = (
   store: any,          // Current source root value.
 ) => any
 
-
 // Apply a custom modification to injections.
 type Modify = (
   val: any,            // Value.
@@ -208,7 +205,6 @@ type Modify = (
   inj?: Injection,     // Injection state, if any.
   store?: any,         // Store, if any
 ) => void
-
 
 // Function applied to each node and leaf when walking a node structure depth first.
 // For {a:{b:1}} the call sequence args will be: b, 1, {b:1}, [a,b].
@@ -526,6 +522,7 @@ function strkey(key: any = NONE): string {
 
 
 // Sorted keys of a map, or indexes (as strings) of a list.
+// Root utility - only uses language facilities.
 function keysof(val: any): string[] {
   return !isnode(val) ? [] :
     ismap(val) ? Object.keys(val).sort() : (val as any).map((_n: any, i: number) => S_MT + i)
@@ -533,6 +530,7 @@ function keysof(val: any): string[] {
 
 
 // Value of property with name key in node val is defined.
+// Root utility - only uses language facilities.
 function haskey(val: any, key: any) {
   return NONE !== getprop(val, key)
 }
@@ -540,6 +538,7 @@ function haskey(val: any, key: any) {
 
 // List the sorted keys of a map or list as an array of tuples of the form [key, value].
 // As with keysof, list indexes are converted to strings.
+// Root utility - only uses language facilities.
 function items(val: any): [string, any][];
 function items<T>(val: any, apply: (item: [string, any]) => T): T[];
 function items(
@@ -567,10 +566,24 @@ function flatten(list: any[], depth?: number) {
 }
 
 
+// Filter item values using check function.
+function filter(val: any, check: (item: [string, any]) => boolean): any[] {
+  let all = items(val)
+  let numall = size(all)
+  let out = []
+  for (let i = 0; i < numall; i++) {
+    if (check(all[i])) {
+      out.push(all[i][1])
+    }
+  }
+  return out
+}
+
+
 // Escape regular expression.
 function escre(s: string) {
-  s = null == s ? S_MT : s
-  return s.replace(R_ESCAPE_REGEXP, '\\$&')
+  // s = null == s ? S_MT : s
+  return replace(s, R_ESCAPE_REGEXP, '\\$&')
 }
 
 
@@ -581,16 +594,59 @@ function escurl(s: string) {
 }
 
 
-// Concatenate url part strings, merging forward slashes as needed.
-function joinurl(sarr: any[]) {
-  return sarr
-    .filter(s => null != s && S_MT !== s)
-    .map((s, i) => 0 === i ? s.replace(R_TRAILING_SLASH, S_MT) :
-      s.replace(R_LEADING_TRAILING_SLASH, '$1/')
-        .replace(R_LEADING_SLASH, S_MT)
-        .replace(R_TRAILING_SLASH, S_MT))
-    .filter(s => S_MT !== s)
-    .join(S_FS)
+// Replace a search string (all), or a regexp, in a source string.
+function replace(s: string, from: string | RegExp, to: any) {
+  let rs = s
+  let ts = typify(s)
+  if (0 === (T_string & ts)) {
+    rs = stringify(s)
+  }
+  else if (0 < ((T_noval | T_null) & ts)) {
+    rs = S_MT
+  }
+  else {
+    rs = stringify(s)
+  }
+  return rs.replace(from, to)
+}
+
+
+// Concatenate url part strings, merging sep char as needed.
+function join(arr: any[], sep?: string, url?: boolean) {
+  const sarr = size(arr)
+  const sepdef = getdef(sep, S_CM)
+  const sepre = 1 === size(sepdef) ? escre(sepdef) : NONE
+  const out = filter(
+    items(
+      // filter(arr, (n) => null != n[1] && S_MT !== n[1]),
+      filter(arr, (n) => (0 < (T_string & typify(n[1]))) && S_MT !== n[1]),
+      (n) => {
+        let i = +n[0]
+        let s = n[1]
+
+        if (NONE !== sepre && S_MT !== sepre) {
+          if (url && 0 === i) {
+            s = replace(s, RegExp(sepre + '+$'), S_MT)
+            return s
+          }
+
+          if (0 < i) {
+            s = replace(s, RegExp('^' + sepre + '+'), S_MT)
+          }
+
+          if (i < sarr - 1 || !url) {
+            s = replace(s, RegExp(sepre + '+$'), S_MT)
+          }
+
+          s = replace(s, RegExp('([^' + sepre + '])' + sepre + '+([^' + sepre + '])'),
+            '$1' + sepdef + '$2')
+        }
+
+        return s
+      }), (n) => S_MT !== n[1])
+    .join(sepdef)
+
+  return out
 }
 
 
@@ -611,9 +667,11 @@ function jsonify(val: any, flags?: { indent?: number, offset?: number }) {
       if (0 < offset) {
         // Left offset entire indented JSON so that it aligns with surrounding code
         // indented by offset. Assume first brace is on line with asignment, so not offset.
-        str = '{\n' + str.split('\n').slice(1)
-          .map(n => pad(n, 0 - offset - size(n)))
-          .join('\n')
+        str = '{\n' +
+          join(
+            items(
+              slice(str.split('\n'), 1),
+              (n: any) => pad(n[1], 0 - offset - size(n[1]))), '\n')
       }
     }
     catch (e: any) {
@@ -646,9 +704,9 @@ function stringify(val: any, maxlen?: number, pretty?: any): string {
           !Array.isArray(val)
         ) {
           const sortedObj: any = {}
-          for (const k of Object.keys(val).sort()) {
-            sortedObj[k] = val[k]
-          }
+          items(val, (n) => {
+            sortedObj[n[0]] = val[n[0]]
+          })
           return sortedObj
         }
         return val
@@ -667,8 +725,9 @@ function stringify(val: any, maxlen?: number, pretty?: any): string {
 
   if (pretty) {
     // Indicate deeper JSON levels with different terminal colors (simplistic wrt strings).
-    let c = [81, 118, 213, 39, 208, 201, 45, 190, 129, 51, 160, 121, 226, 33, 207, 69]
-      .map(n => `\x1b[38;5;${n}m`),
+    let c = items(
+      [81, 118, 213, 39, 208, 201, 45, 190, 129, 51, 160, 121, 226, 33, 207, 69],
+      (n) => '\x1b[38;5;' + n[1] + 'm'),
       r = '\x1b[0m', d = 0, o = c[0], t = o
     for (const ch of valstr) {
       if (ch === '{' || ch === '[') {
@@ -705,12 +764,13 @@ function pathify(val: any, startin?: number, endin?: number) {
       pathstr = '<root>'
     }
     else {
-      pathstr = path
-        .filter((p: any) => iskey(p))
-        .map((p: any) =>
-          S_number === typeof p ? S_MT + Math.floor(p) :
-            p.replace(R_DOT, S_MT))
-        .join(S_DT)
+      pathstr = join(
+        items(
+          filter(path, (n) => iskey(n[1])), (n) => {
+            let p = n[1]
+            return S_number === typeof p ? S_MT + Math.floor(p) :
+              p.replace(R_DOT, S_MT)
+          }), S_DT)
     }
   }
 
@@ -1210,10 +1270,19 @@ function inject(
     // Injection transforms ($FOO) are processed *after* other keys.
     // NOTE: the optional digits suffix of the transform can thus be
     // used to order the transforms.
-    let nodekeys = ismap(val) ? flatten([
-      Object.keys(val).filter(k => !k.includes(S_DS)).sort(),
-      Object.keys(val).filter(k => k.includes(S_DS)).sort(),
-    ]) : (val as any).map((_n: any, i: number) => i)
+
+    let nodekeys: any[]
+    nodekeys = keysof(val)
+
+    if (ismap(val)) {
+      nodekeys = flatten([
+        filter(nodekeys, (n => !n[1].includes(S_DS))),
+        filter(nodekeys, (n => n[1].includes(S_DS))),
+      ])
+    }
+    else {
+      nodekeys = keysof(val)
+    }
 
     // Each child key-value pair is processed in three injection phases:
     // 1. inj.mode='key:pre' - Key string is injected, returning a possibly altered key.
@@ -1761,7 +1830,7 @@ const FORMATTER: Record<string, WalkApply> = {
     }
   },
   concat: (k: any, v: any) =>
-    null == k && islist(v) ? items(v, (n => isnode(n[1]) ? '' : ('' + n[1]))).join('') : v
+    null == k && islist(v) ? join(items(v, (n => isnode(n[1]) ? S_MT : (S_MT + n[1]))), S_MT) : v
 }
 
 
@@ -1869,7 +1938,7 @@ function transform(
 
   const generr = (0 < size(errs) && !collect)
   if (generr) {
-    throw new Error(errs.join(' | '))
+    throw new Error(join(errs, ' | '))
   }
 
   return out
@@ -1992,9 +2061,7 @@ const validate_CHILD: Injector = (inj: Injection) => {
     // Clone children abd reset inj key index.
     // The inject child loop will now iterate over the cloned children,
     // validating them againt the current list values.
-
-    inj.dparent.map((_n, i) => parent[i] = clone(childtm))
-    // parent.length = inj.dparent.length
+    items(inj.dparent, (n) => setprop(parent, n[0], clone(childtm)))
     slice(parent, 0, inj.dparent.length, true)
     inj.keyI = 0
 
@@ -2004,6 +2071,7 @@ const validate_CHILD: Injector = (inj: Injection) => {
 
   return NONE
 }
+
 
 // TODO: implement SOME, ALL
 // FIX: ONE should mean exactly one, not at least one (=SOME)
@@ -2067,11 +2135,9 @@ const validate_ONE: Injector = (
     }
 
     // There was no match.
-
-    const valdesc = tvals
-      .map((v: any) => stringify(v))
-      .join(', ')
-      .replace(R_TRANSFORM_NAME, (_m: any, p1: string) => p1.toLowerCase())
+    const valdesc =
+      replace(join(items(tvals, (n) => stringify(n[1])), ', '),
+        R_TRANSFORM_NAME, (_m: any, p1: string) => p1.toLowerCase())
 
     inj.errs.push(_invalidTypeMsg(
       inj.path,
@@ -2126,10 +2192,10 @@ const validate_EXACT: Injector = (inj: Injection) => {
       }
     }
 
-    const valdesc = tvals
-      .map((v: any) => stringify(v))
-      .join(', ')
-      .replace(R_TRANSFORM_NAME, (_m: any, p1: string) => p1.toLowerCase())
+    // There was no match.
+    const valdesc =
+      replace(join(items(tvals, (n) => stringify(n[1])), ', '),
+        R_TRANSFORM_NAME, (_m: any, p1: string) => p1.toLowerCase())
 
     inj.errs.push(_invalidTypeMsg(
       inj.path,
@@ -2206,7 +2272,7 @@ const _validation: Modify = (
       // Closed object, so reject extra keys not in shape.
       if (0 < size(badkeys)) {
         const msg =
-          'Unexpected keys at field ' + pathify(inj.path, 1) + S_VIZ + badkeys.join(', ')
+          'Unexpected keys at field ' + pathify(inj.path, 1) + S_VIZ + join(badkeys, ', ')
         inj.errs.push(msg)
       }
     }
@@ -2310,7 +2376,7 @@ function validate(
 
   const generr = (0 < size(errs) && !collect)
   if (generr) {
-    throw new Error(errs.join(' | '))
+    throw new Error(join(errs, ' | '))
   }
 
   return out
@@ -2467,13 +2533,13 @@ function select(children: any, query: any): any[] {
   }
 
   if (ismap(children)) {
-    children = items(children).map(n => {
+    children = items(children, n => {
       setprop(n[1], S_DKEY, n[0])
       return n[1]
     })
   }
   else {
-    children = (children as any[]).map((n, i) => (setprop(n, S_DKEY, i), n))
+    children = items(children, (n) => (setprop(n[1], S_DKEY, +n[0]), n[1]))
   }
 
   const results: any[] = []
@@ -2766,10 +2832,6 @@ function _injectstr(
     let pathref = m[1]
 
     // Special escapes inside injection.
-    // pathref = 3 < size(pathref) ?
-    //   pathref.replace(R_BT_ESCAPE, S_BT).replace(R_DS_ESCAPE, S_DS) :
-    //   pathref
-
     if (3 < size(pathref)) {
       pathref = pathref.replace(R_BT_ESCAPE, S_BT).replace(R_DS_ESCAPE, S_DS)
     }
@@ -2829,7 +2891,7 @@ function checkPlacement(
 ): boolean {
   if (!modes.includes(inj.mode)) {
     inj.errs.push('$' + ijname + ': invalid placement as ' + PLACEMENT[inj.mode] +
-      ', expected: ' + items(modes, (n: any) => PLACEMENT[n[1]]).join(',') + '.')
+      ', expected: ' + join(items(modes, (n: any) => PLACEMENT[n[1]]), ',') + '.')
     return false
   }
   if (!isempty(parentTypes)) {
@@ -2895,6 +2957,7 @@ class StructUtility {
   delprop = delprop
   escre = escre
   escurl = escurl
+  filter = filter
   flatten = flatten
   getdef = getdef
   getelem = getelem
@@ -2909,7 +2972,7 @@ class StructUtility {
   ismap = ismap
   isnode = isnode
   items = items
-  joinurl = joinurl
+  join = join
   jsonify = jsonify
   keysof = keysof
   merge = merge
@@ -2924,6 +2987,7 @@ class StructUtility {
   stringify = stringify
   transform = transform
   typify = typify
+  typename = typename
   validate = validate
   walk = walk
 
@@ -2961,6 +3025,7 @@ export {
   delprop,
   escre,
   escurl,
+  filter,
   flatten,
   getdef,
   getelem,
@@ -2975,7 +3040,7 @@ export {
   ismap,
   isnode,
   items,
-  joinurl,
+  join,
   jsonify,
   keysof,
   merge,
@@ -2990,6 +3055,7 @@ export {
   stringify,
   transform,
   typify,
+  typename,
   validate,
   walk,
 
@@ -2998,7 +3064,6 @@ export {
 
   jm,
   jt,
-  typename,
 
   T_any,
   T_noval,
