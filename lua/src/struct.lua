@@ -170,6 +170,8 @@ local islist
 local getpath
 local setprop
 local delprop
+local checkPlacement
+local injectorArgs
 
 
 -- Return type string for narrowest type.
@@ -584,8 +586,8 @@ end
 -- @return (string) The URL-encoded string
 local function escurl(s)
   s = s or S_MT
-  -- Exact match for encodeURIComponent behavior
-  local result, _ = s:gsub("([^%w-_%.~])", function(c)
+  -- Match encodeURIComponent: preserve A-Za-z0-9 - _ . ~ ! ' ( ) *
+  local result, _ = s:gsub("([^%w%-_%.~!'%(%)%*])", function(c)
     return string.format("%%%02X", string.byte(c))
   end)
   return result
@@ -803,7 +805,7 @@ local function join(arr, sep, url)
   for i = 1, #arr do
     local v = arr[i]
     local ts = typify(v)
-    if (0 < (T_string & ts)) and v ~= S_MT then
+    if (0 < (T_string & ts)) and v ~= S_MT and v ~= S_null then
       table.insert(string_items, { i - 1, v })  -- 0-based index, value
     end
   end
@@ -1687,22 +1689,24 @@ end
 
 
 function Injection:setval(val, ancestor)
+  local parent = NONE
   if ancestor == nil or ancestor < 2 then
     if NONE == val then
-      delprop(self.parent, self.key)
+      self.parent = delprop(self.parent, self.key)
+      parent = self.parent
     else
-      setprop(self.parent, self.key, val)
+      parent = setprop(self.parent, self.key, val)
     end
   else
     local aval = getelem(self.nodes, 0 - ancestor)
     local akey = getelem(self.path, 0 - ancestor)
     if NONE == val then
-      delprop(aval, akey)
+      parent = delprop(aval, akey)
     else
-      setprop(aval, akey, val)
+      parent = setprop(aval, akey, val)
     end
   end
-  return self.parent
+  return parent
 end
 
 
@@ -1824,7 +1828,9 @@ end
 
 -- Copy value from source data.
 local function transform_COPY(inj, _val)
-  if S_MVAL ~= inj.mode then
+  local ijname = 'COPY'
+
+  if not checkPlacement({ S_MVAL }, ijname, T_any, inj) then
     return NONE
   end
 
@@ -1914,7 +1920,9 @@ end
 -- Convert a node to a list.
 -- Format: ['`$EACH`', '`source-path-of-node`', child-template]
 local function transform_EACH(inj, _val, _ref, store)
-  if S_MVAL ~= inj.mode then
+  local ijname = 'EACH'
+
+  if not checkPlacement({ S_MVAL }, ijname, T_list, inj) then
     return NONE
   end
 
@@ -1925,8 +1933,14 @@ local function transform_EACH(inj, _val, _ref, store)
   for i, v in ipairs(trimmed) do inj.keys[i] = v end
 
   -- Get arguments: ['`$EACH`', 'source-path', child-template]
-  local srcpath = getprop(inj.parent, 1)
-  local child = clone(getprop(inj.parent, 2))
+  local each_args = injectorArgs({ T_string, T_any }, slice(inj.parent, 1))
+  local err = each_args[1]
+  if NONE ~= err then
+    table.insert(inj.errs, '$' .. ijname .. ': ' .. err)
+    return NONE
+  end
+  local srcpath = each_args[2]
+  local child = clone(each_args[3])
 
   -- Source data.
   local srcstore = getprop(store, inj.base, store)
@@ -2013,14 +2027,22 @@ local function transform_PACK(inj, _val, _ref, store)
   local mode, key, path, parent, nodes = inj.mode, inj.key, inj.path,
       inj.parent, inj.nodes
 
-  if S_MKEYPRE ~= mode then
+  local ijname = 'EACH'
+
+  if not checkPlacement({ S_MKEYPRE }, ijname, T_map, inj) then
     return NONE
   end
 
   -- Get arguments.
   local args = getprop(parent, key)
-  local srcpath = getprop(args, 0)
-  local origchildspec = getprop(args, 1)
+  local pack_args = injectorArgs({ T_string, T_any }, args)
+  local err = pack_args[1]
+  if NONE ~= err then
+    table.insert(inj.errs, '$' .. ijname .. ': ' .. err)
+    return NONE
+  end
+  local srcpath = pack_args[2]
+  local origchildspec = pack_args[3]
 
   -- Find key and target node.
   local tkey = getelem(path, -2)
@@ -2150,7 +2172,7 @@ local PLACEMENT = {
 
 
 -- Check that a transform is used in the correct mode and parent type.
-local function checkPlacement(modes, ijname, parentTypes, inj)
+checkPlacement = function(modes, ijname, parentTypes, inj)
   local modeOk = false
   for _, m in ipairs(modes) do
     if m == inj.mode then modeOk = true; break end
@@ -2178,7 +2200,7 @@ end
 
 
 -- Validate and extract typed arguments from a list.
-local function injectorArgs(argTypes, args)
+injectorArgs = function(argTypes, args)
   local numargs = size(argTypes)
   local found = {}
   found[1] = NONE  -- err slot (1-based)
