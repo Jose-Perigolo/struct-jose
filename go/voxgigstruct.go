@@ -272,7 +272,7 @@ func (inj *Injection) child(keyI int, keys []string) *Injection {
 }
 
 // Set value in parent or ancestor node.
-func (inj *Injection) setval(val any, ancestor ...int) {
+func (inj *Injection) setval(val any, ancestor ...int) any {
 	anc := 0
 	if len(ancestor) > 0 {
 		anc = ancestor[0]
@@ -284,6 +284,7 @@ func (inj *Injection) setval(val any, ancestor ...int) {
 		} else {
 			SetProp(inj.Parent, inj.Key, val)
 		}
+		return inj.Parent
 	} else {
 		aval := GetElem(inj.Nodes.List, 0-anc)
 		akey := GetElem(inj.Path.List, 0-anc)
@@ -292,6 +293,7 @@ func (inj *Injection) setval(val any, ancestor ...int) {
 		} else {
 			SetProp(aval, akey, val)
 		}
+		return aval
 	}
 }
 
@@ -903,6 +905,20 @@ func _flattenDepth(arr []any, depth int) []any {
 	return result
 }
 
+// Filter item values using check function.
+// Returns values where the check function returns true.
+func Filter(val any, check func([2]any) bool) []any {
+	all := Items(val)
+	out := make([]any, 0)
+	for _, item := range all {
+		if check(item) {
+			out = append(out, item[1])
+		}
+	}
+	return out
+}
+
+
 // Escape regular expression.
 func EscRe(s string) string {
 	if s == "" {
@@ -958,6 +974,83 @@ func JoinUrl(parts []any) string {
 
 	return strings.Join(finalParts, "/")
 }
+
+
+// Concatenate string array elements, merging separator chars as needed.
+// Optional args: sep (string, default ","), url (bool, default false).
+func Join(arr []any, args ...any) string {
+	sarr := Size(arr)
+
+	sep := ","
+	urlMode := false
+
+	if len(args) > 0 && args[0] != nil {
+		if s, ok := args[0].(string); ok {
+			sep = s
+		}
+	}
+	if len(args) > 1 && args[1] != nil {
+		if b, ok := args[1].(bool); ok {
+			urlMode = b
+		}
+	}
+
+	var sepre string
+	if 1 == len(sep) {
+		sepre = EscRe(sep)
+	}
+
+	// Filter to only non-empty strings
+	filtered := Filter(arr, func(n [2]any) bool {
+		t := Typify(n[1])
+		return (0 < (T_string & t)) && S_MT != n[1]
+	})
+
+	// Process each element for separator handling
+	processed := Items(filtered)
+
+	var parts []string
+	for _, kv := range processed {
+		idx := 0
+		if kstr, ok := kv[0].(string); ok {
+			n, err := strconv.Atoi(kstr)
+			if err == nil {
+				idx = n
+			}
+		}
+		s, ok := kv[1].(string)
+		if !ok {
+			continue
+		}
+
+		if sepre != "" && sepre != S_MT {
+			reTrailing := regexp.MustCompile(sepre + `+$`)
+			reLeading := regexp.MustCompile(`^` + sepre + `+`)
+			reInternal := regexp.MustCompile(`([^` + sepre + `])` + sepre + `+([^` + sepre + `])`)
+
+			if urlMode && 0 == idx {
+				s = reTrailing.ReplaceAllString(s, S_MT)
+			} else {
+				if 0 < idx {
+					s = reLeading.ReplaceAllString(s, S_MT)
+				}
+
+				if idx < sarr-1 || !urlMode {
+					s = reTrailing.ReplaceAllString(s, S_MT)
+				}
+
+				s = reInternal.ReplaceAllString(s, "${1}"+sep+"${2}")
+			}
+		}
+
+		if s != S_MT {
+			parts = append(parts, s)
+		}
+	}
+
+	return strings.Join(parts, sep)
+}
+
 
 // Output JSON in a "standard" format, with 2 space indents, each property on a new line,
 // and spaces after {[: and before ]}. Any "weird" values (NaN, etc) are output as null.
@@ -1399,13 +1492,50 @@ func SetProp(parent any, key any, newval any) any {
 	return parent
 }
 
-// Walk a data structure depth first, applying a function to each value.
+// Walk a data structure depth first, applying functions to each value.
+// Walk(val, before) - before callback only (pre-order).
+// Walk(val, before, after) - both before and after callbacks.
+// Walk(val, before, after, maxdepth) - with maximum recursion depth.
+// Pass nil for before or after to skip that callback.
+// For backward compatibility, Walk(val, apply) applies the callback after children (post-order).
 func Walk(
 	val any,
 	apply WalkApply,
+	opts ...any,
 ) any {
-	return WalkDescend(val, apply, nil, nil, nil)
+	var after WalkApply
+	var maxdepth int = 32
+
+	if len(opts) > 0 {
+		if opts[0] != nil {
+			if fn, ok := opts[0].(WalkApply); ok {
+				after = fn
+			} else if fn, ok := opts[0].(func(*string, any, any, []string) any); ok {
+				after = fn
+			}
+		}
+	}
+	if len(opts) > 1 {
+		if opts[1] != nil {
+			switch md := opts[1].(type) {
+			case int:
+				maxdepth = md
+			case float64:
+				maxdepth = int(md)
+			}
+		}
+	}
+
+	if after != nil {
+		// Two-callback mode: apply is before, after is after.
+		return _walkDescend(val, apply, after, maxdepth, nil, nil, nil)
+	}
+
+	// Single-callback mode: apply is called before children (pre-order),
+	// matching the TS implementation where walk(val, before) is pre-order.
+	return _walkDescend(val, apply, nil, maxdepth, nil, nil, nil)
 }
+
 
 func WalkDescend(
 	val any,
@@ -1414,33 +1544,72 @@ func WalkDescend(
 	parent any,
 	path []string,
 ) any {
+	return _walkDescend(val, nil, apply, 32, key, parent, path)
+}
 
-	if IsNode(val) {
-		for _, kv := range Items(val) {
+
+func _walkDescend(
+	val any,
+	before WalkApply,
+	after WalkApply,
+	maxdepth int,
+	key *string,
+	parent any,
+	path []string,
+) any {
+
+	out := val
+
+	// Apply before callback.
+	if nil != before {
+		out = before(key, out, parent, path)
+	}
+
+	// Check depth limit.
+	if 0 == maxdepth || (nil != path && 0 < maxdepth && maxdepth <= len(path)) {
+		return out
+	}
+
+	if IsNode(out) {
+		for _, kv := range Items(out) {
 			ckey := kv[0]
 			child := kv[1]
 			ckeyStr := StrKey(ckey)
-			newChild := WalkDescend(child, apply, &ckeyStr, val, append(path, ckeyStr))
-			val = SetProp(val, ckey, newChild)
+			newPath := make([]string, len(path)+1)
+			copy(newPath, path)
+			newPath[len(path)] = ckeyStr
+			newChild := _walkDescend(child, before, after, maxdepth, &ckeyStr, out, newPath)
+			out = SetProp(out, ckey, newChild)
 		}
 
 		if nil != parent && nil != key {
-			SetProp(parent, *key, val)
+			SetProp(parent, *key, out)
 		}
 	}
 
-	// Nodes are applied *after* their children.
-	// For the root node, key and parent will be undefined.
-	val = apply(key, val, parent, path)
+	// Apply after callback.
+	if nil != after {
+		out = after(key, out, parent, path)
+	}
 
-	return val
+	return out
 }
 
 // Merge a list of values into each other. Later values have
 // precedence.  Nodes override scalars. Node kinds (list or map)
 // override each other, and do *not* merge.  The first element is
 // modified.
-func Merge(val any) any {
+// Optional maxdepth parameter limits recursion depth.
+func Merge(val any, maxdepths ...int) any {
+	md := 32
+	if len(maxdepths) > 0 {
+		if maxdepths[0] < 0 {
+			md = 0
+		} else {
+			md = maxdepths[0]
+		}
+	}
+
 	var out any = nil
 
 	if !IsList(val) {
@@ -1465,83 +1634,92 @@ func Merge(val any) any {
 		obj := list[i]
 
 		if !IsNode(obj) {
-
 			// Nodes win.
 			out = obj
-
 		} else {
-			// Nodes win, also over nodes of a different kind.
-			if !IsNode(out) ||
-				(IsMap(obj) && IsList(out)) ||
-				(IsList(obj) && IsMap(out)) {
+			// Current value at path end in overriding node.
+			cur := make([]any, 33)
+			cur[0] = out
 
-				out = obj
+			// Current value at path end in destination node.
+			dst := make([]any, 33)
+			dst[0] = out
 
-			} else {
-				// Node stack. walking down the current obj.
-				var cur []any = make([]any, 11)
-				cI := 0
-				cur[cI] = out
+			before := func(
+				key *string,
+				val any,
+				_parent any,
+				path []string,
+			) any {
+				pI := len(path)
 
-				merger := func(
-					key *string,
-					val any,
-					parent any,
-					path []string,
-				) any {
-
-					if nil == key {
-						return val
+				if md <= pI {
+					if key != nil {
+						SetProp(cur[pI-1], *key, val)
 					}
-
-					// Get the curent value at the current path in obj.
-					// NOTE: this is not exactly efficient, and should be optimised.
-					lenpath := len(path)
-					cI = lenpath - 1
-					if nil == cur[cI] {
-						cur[cI] = GetPath(path[:lenpath-1], out)
+				} else if !IsNode(val) {
+					// Scalars just override directly.
+					cur[pI] = val
+				} else {
+					// Descend into override node.
+					if 0 < pI && key != nil {
+						dst[pI] = GetProp(dst[pI-1], *key)
 					}
+					tval := dst[pI]
 
-					// Create node if needed.
-					if nil == cur[cI] {
-						if IsList(parent) {
-							cur[cI] = make([]any, 0)
+					// Destination empty, create node (unless override is class instance).
+					if nil == tval && 0 == (T_instance&Typify(val)) {
+						if IsList(val) {
+							cur[pI] = make([]any, 0)
 						} else {
-							cur[cI] = make(map[string]any)
+							cur[pI] = make(map[string]any)
 						}
-					}
-
-					// Node child is just ahead of us on the stack, since
-					// `walk` traverses leaves before nodes.
-					if IsNode(val) {
-						existing := GetProp(cur[cI], *key)
-						// If existing value and new value are different node types,
-						// replace rather than merge.
-						if IsNode(existing) &&
-							((IsMap(val) && IsList(existing)) || (IsList(val) && IsMap(existing))) {
-							cur[cI] = SetProp(cur[cI], *key, val)
-						} else if IsEmpty(val) && IsNode(existing) {
-							// Empty node should not overwrite existing node.
-							// Keep existing value.
-						} else if IsEmpty(val) {
-							cur[cI] = SetProp(cur[cI], *key, val)
-						} else {
-							cur[cI] = SetProp(cur[cI], *key, cur[cI+1])
-						}
-						cur[cI+1] = nil
-
+					} else if Typify(val) == Typify(tval) {
+						// Matching override and destination, continue with their values.
+						cur[pI] = tval
 					} else {
-						cur[cI] = SetProp(cur[cI], *key, val)
+						// Override wins.
+						cur[pI] = val
+						// No need to descend (destination is discarded).
+						val = nil
 					}
-
-					return val
 				}
 
-				// Walk overriding node, creating paths in output as needed.
-				Walk(obj, merger)
-
-				out = cur[0]
+				return val
 			}
+
+			after := func(
+				key *string,
+				_val any,
+				_parent any,
+				path []string,
+			) any {
+				cI := len(path)
+
+				// Root node: nothing to set on parent.
+				if nil == key || cI <= 0 {
+					return cur[0]
+				}
+
+				value := cur[cI]
+
+				cur[cI-1] = SetProp(cur[cI-1], *key, value)
+				return value
+			}
+
+			// Walk overriding node, creating paths in output as needed.
+			Walk(obj, before, after, md)
+
+			out = cur[0]
+		}
+	}
+
+	if 0 == md {
+		out = GetElem(list, -1)
+		if IsList(out) {
+			out = make([]any, 0)
+		} else if IsMap(out) {
+			out = make(map[string]any)
 		}
 	}
 
@@ -1641,8 +1819,8 @@ func GetPathState(
 					// $REF:refpath$ -> get spec value, use as path part
 					subpath := part[5 : len(part)-1]
 					specVal := GetProp(store, S_DSPEC)
-					if fn, ok := specVal.(func() any); ok {
-						result := GetPathState(subpath, fn(), nil, nil)
+					if specVal != nil {
+						result := GetPathState(subpath, specVal, nil, nil)
 						part = Stringify(result)
 					}
 				} else if state != nil && strings.HasPrefix(part, "$META:") {
@@ -2614,11 +2792,19 @@ var Transform_REF Injector = func(
 		tinj := state.child(0, []string{lastPath})
 		tinj.Path = &ListRef[string]{List: tpath}
 
-		tnodeslist := make([]any, 1)
-		copy(tnodeslist, state.Nodes.List[len(state.Nodes.List)-1:])
-		tinj.Nodes = &ListRef[any]{List: tnodeslist}
-		if len(state.Nodes.List) >= 2 {
-			tinj.Parent = state.Nodes.List[len(state.Nodes.List)-2]
+		// TS: tinj.nodes = slice(inj.nodes, -1) → nodes[0:len-1] (all except last)
+		nodesLen := len(state.Nodes.List)
+		if nodesLen > 1 {
+			tnodeslist := make([]any, nodesLen-1)
+			copy(tnodeslist, state.Nodes.List[:nodesLen-1])
+			tinj.Nodes = &ListRef[any]{List: tnodeslist}
+		} else {
+			tinj.Nodes = &ListRef[any]{List: []any{}}
+		}
+
+		// TS: tinj.parent = getelem(nodes, -2)
+		if nodesLen >= 2 {
+			tinj.Parent = state.Nodes.List[nodesLen-2]
 		}
 		tinj.Val = tref
 
@@ -2629,9 +2815,9 @@ var Transform_REF Injector = func(
 		rval = tinj.Val
 	}
 
-	state.setval(rval, 2)
+	grandparent := state.setval(rval, 2)
 
-	if IsList(state.Parent) && state.Prior != nil {
+	if IsList(grandparent) && state.Prior != nil {
 		state.Prior.KeyI--
 	}
 
@@ -3043,6 +3229,9 @@ func TransformModify(
 	// Clone and wrap: clone the structures and convert bare lists to ListRefs
 	// for reference stability, in a single pass.
 	wrapFlags := map[string]bool{"wrap": true}
+
+	// Save original spec for $REF as a separate wrapped clone (not modified by injection)
+	origspec := CloneFlags(spec, wrapFlags)
 	spec = CloneFlags(spec, wrapFlags)
 
 	// Split extra transforms from extra data
@@ -3075,9 +3264,6 @@ func TransformModify(
 		CloneFlags(extraData, wrapFlags),
 		CloneFlags(data, wrapFlags),
 	})
-
-	// Save original spec for $REF
-	origspec := spec
 
 	// The injection store with transform functions
 	store := map[string]any{

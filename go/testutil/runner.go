@@ -38,7 +38,7 @@ type StructUtility struct {
 	Inject     func(val any, store any) any
 	Items      func(val any) [][2]any
 	Stringify  func(val any, maxlen ...int) string
-	Walk       func(val any, apply voxgigstruct.WalkApply) any
+	Walk       func(val any, apply voxgigstruct.WalkApply, opts ...any) any
 }
 
 
