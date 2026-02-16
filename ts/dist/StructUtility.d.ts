@@ -1,3 +1,6 @@
+declare const M_KEYPRE = 1;
+declare const M_KEYPOST = 2;
+declare const M_VAL = 4;
 declare const T_any: number;
 declare const T_noval: number;
 declare const T_boolean: number;
@@ -25,7 +28,7 @@ type Indexable = {
 } & {
     [key: number]: any;
 };
-type InjectMode = 'key:pre' | 'key:post' | 'val';
+type InjectMode = number;
 type Injector = (inj: Injection, // Injection state.
 val: any, // Injection value specification.
 ref: string, // Original injection reference string.
@@ -110,7 +113,8 @@ declare class Injection {
     child(keyI: number, keys: string[]): Injection;
     setval(val: any, ancestor?: number): undefined;
 }
-declare function checkPlacement(modes: InjectMode[], ijname: string, parentTypes: number, inj: Injection): boolean;
+declare const MODENAME: any;
+declare function checkPlacement(modes: InjectMode, ijname: string, parentTypes: number, inj: Injection): boolean;
 declare function injectorArgs(argTypes: number[], args: any[]): any;
 declare function injectChild(child: any, store: any, inj: Injection): Injection;
 declare class StructUtility {
@@ -179,5 +183,5 @@ declare class StructUtility {
     injectorArgs: typeof injectorArgs;
     injectChild: typeof injectChild;
 }
-export { StructUtility, clone, delprop, escre, escurl, filter, flatten, getdef, getelem, getpath, getprop, haskey, inject, isempty, isfunc, iskey, islist, ismap, isnode, items, join, jsonify, keysof, merge, pad, pathify, select, setpath, setprop, size, slice, strkey, stringify, transform, typify, typename, validate, walk, SKIP, DELETE, jm, jt, T_any, T_noval, T_boolean, T_decimal, T_integer, T_number, T_string, T_function, T_symbol, T_null, T_list, T_map, T_instance, T_scalar, T_node, checkPlacement, injectorArgs, injectChild, };
+export { StructUtility, clone, delprop, escre, escurl, filter, flatten, getdef, getelem, getpath, getprop, haskey, inject, isempty, isfunc, iskey, islist, ismap, isnode, items, join, jsonify, keysof, merge, pad, pathify, select, setpath, setprop, size, slice, strkey, stringify, transform, typify, typename, validate, walk, SKIP, DELETE, jm, jt, T_any, T_noval, T_boolean, T_decimal, T_integer, T_number, T_string, T_function, T_symbol, T_null, T_list, T_map, T_instance, T_scalar, T_node, M_KEYPRE, M_KEYPOST, M_VAL, MODENAME, checkPlacement, injectorArgs, injectChild, };
 export type { Injection, Injector, WalkApply };

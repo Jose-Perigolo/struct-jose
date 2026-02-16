@@ -1,7 +1,7 @@
 "use strict";
 /* Copyright (c) 2025-2026 Voxgig Ltd. MIT LICENSE. */
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.T_node = exports.T_scalar = exports.T_instance = exports.T_map = exports.T_list = exports.T_null = exports.T_symbol = exports.T_function = exports.T_string = exports.T_number = exports.T_integer = exports.T_decimal = exports.T_boolean = exports.T_noval = exports.T_any = exports.DELETE = exports.SKIP = exports.StructUtility = void 0;
+exports.MODENAME = exports.M_VAL = exports.M_KEYPOST = exports.M_KEYPRE = exports.T_node = exports.T_scalar = exports.T_instance = exports.T_map = exports.T_list = exports.T_null = exports.T_symbol = exports.T_function = exports.T_string = exports.T_number = exports.T_integer = exports.T_decimal = exports.T_boolean = exports.T_noval = exports.T_any = exports.DELETE = exports.SKIP = exports.StructUtility = void 0;
 exports.clone = clone;
 exports.delprop = delprop;
 exports.escre = escre;
@@ -96,10 +96,13 @@ exports.injectChild = injectChild;
  *
  */
 // String constants are explicitly defined.
-// Mode value for inject step.
-const S_MKEYPRE = 'key:pre';
-const S_MKEYPOST = 'key:post';
-const S_MVAL = 'val';
+// Mode value for inject step (bitfield).
+const M_KEYPRE = 1;
+exports.M_KEYPRE = M_KEYPRE;
+const M_KEYPOST = 2;
+exports.M_KEYPOST = M_KEYPOST;
+const M_VAL = 4;
+exports.M_VAL = M_VAL;
 // Special strings.
 const S_BKEY = '`$KEY`';
 const S_BANNO = '`$ANNO`';
@@ -1052,7 +1055,7 @@ function inject(val, store, injdef) {
         for (let nkI = 0; nkI < nodekeys.length; nkI++) {
             const childinj = inj.child(nkI, nodekeys);
             const nodekey = childinj.key;
-            childinj.mode = S_MKEYPRE;
+            childinj.mode = M_KEYPRE;
             // Peform the key:pre mode injection on the child key.
             const prekey = _injectstr(nodekey, store, childinj);
             // The injection may modify child processing.
@@ -1061,7 +1064,7 @@ function inject(val, store, injdef) {
             // Prevent further processing by returning an undefined prekey
             if (NONE !== prekey) {
                 childinj.val = getprop(val, prekey);
-                childinj.mode = S_MVAL;
+                childinj.mode = M_VAL;
                 // Perform the val mode injection on the child value.
                 // NOTE: return value is not used.
                 inject(childinj.val, store, childinj);
@@ -1069,7 +1072,7 @@ function inject(val, store, injdef) {
                 nkI = childinj.keyI;
                 nodekeys = childinj.keys;
                 // Peform the key:post mode injection on the child key.
-                childinj.mode = S_MKEYPOST;
+                childinj.mode = M_KEYPOST;
                 _injectstr(nodekey, store, childinj);
                 // The injection may modify child processing.
                 nkI = childinj.keyI;
@@ -1079,7 +1082,7 @@ function inject(val, store, injdef) {
     }
     // Inject paths into string scalars.
     else if (S_string === valtype) {
-        inj.mode = S_MVAL;
+        inj.mode = M_VAL;
         val = _injectstr(val, store, inj);
         if (SKIP !== val) {
             inj.setval(val);
@@ -1107,7 +1110,7 @@ const transform_DELETE = (inj) => {
 // Copy value from source data.
 const transform_COPY = (inj, _val) => {
     const ijname = 'COPY';
-    if (!checkPlacement([S_MVAL], ijname, T_any, inj)) {
+    if (!checkPlacement(M_VAL, ijname, T_any, inj)) {
         return NONE;
     }
     let out = getprop(inj.dparent, inj.key);
@@ -1119,7 +1122,7 @@ const transform_COPY = (inj, _val) => {
 const transform_KEY = (inj) => {
     const { mode, path, parent } = inj;
     // Do nothing in val mode - not an error.
-    if (S_MVAL !== mode) {
+    if (M_VAL !== mode) {
         return NONE;
     }
     // Key is defined by $KEY meta property.
@@ -1148,11 +1151,11 @@ const transform_MERGE = (inj) => {
     const { mode, key, parent } = inj;
     // Ensures $MERGE is removed from parent list (val mode).
     let out = NONE;
-    if (S_MKEYPRE === mode) {
+    if (M_KEYPRE === mode) {
         out = key;
     }
     // Operate after child values have been transformed.
-    else if (S_MKEYPOST === mode) {
+    else if (M_KEYPOST === mode) {
         out = key;
         let args = getprop(parent, key);
         args = Array.isArray(args) ? args : [args];
@@ -1169,7 +1172,7 @@ const transform_MERGE = (inj) => {
 // Format: ['`$EACH`', '`source-path-of-node`', child-template]
 const transform_EACH = (inj, _val, _ref, store) => {
     const ijname = 'EACH';
-    if (!checkPlacement([S_MVAL], ijname, T_list, inj)) {
+    if (!checkPlacement(M_VAL, ijname, T_list, inj)) {
         return NONE;
     }
     // Remove remaining keys to avoid spurious processing.
@@ -1235,7 +1238,7 @@ const transform_EACH = (inj, _val, _ref, store) => {
 const transform_PACK = (inj, _val, _ref, store) => {
     const { mode, key, path, parent, nodes } = inj;
     const ijname = 'EACH';
-    if (!checkPlacement([S_MKEYPRE], ijname, T_map, inj)) {
+    if (!checkPlacement(M_KEYPRE, ijname, T_map, inj)) {
         return NONE;
     }
     // Get arguments.
@@ -1336,7 +1339,7 @@ const transform_PACK = (inj, _val, _ref, store) => {
 // Format: ['`$REF`', '`spec-path`']
 const transform_REF = (inj, val, _ref, store) => {
     const { nodes } = inj;
-    if (S_MVAL !== inj.mode) {
+    if (M_VAL !== inj.mode) {
         return NONE;
     }
     // Get arguments: ['`$REF`', 'ref-path'].
@@ -1391,7 +1394,7 @@ const transform_FORMAT = (inj, _val, _ref, store) => {
     // console.log('FORMAT-START', inj, _val)
     // Remove remaining keys to avoid spurious processing.
     slice(inj.keys, 0, 1, true);
-    if (S_MVAL !== inj.mode) {
+    if (M_VAL !== inj.mode) {
         return NONE;
     }
     // Get arguments: ['`$FORMAT`', 'name', child].
@@ -1446,7 +1449,7 @@ const FORMATTER = {
 };
 const transform_APPLY = (inj, _val, _ref, store) => {
     const ijname = 'APPLY';
-    if (!checkPlacement([S_MVAL], ijname, T_list, inj)) {
+    if (!checkPlacement(M_VAL, ijname, T_list, inj)) {
         return NONE;
     }
     // const [err, apply, child] = injectorArgs([T_function, T_any], inj)
@@ -1560,7 +1563,7 @@ const validate_CHILD = (inj) => {
     const { mode, key, parent, keys, path } = inj;
     // Setup data structures for validation by cloning child template.
     // Map syntax.
-    if (S_MKEYPRE === mode) {
+    if (M_KEYPRE === mode) {
         const childtm = getprop(parent, key);
         // Get corresponding current object.
         const pkey = getelem(path, -2);
@@ -1583,7 +1586,7 @@ const validate_CHILD = (inj) => {
         return NONE;
     }
     // List syntax.
-    if (S_MVAL === mode) {
+    if (M_VAL === mode) {
         if (!islist(parent)) {
             // $CHILD was not inside a list.
             inj.errs.push('Invalid $CHILD as value');
@@ -1621,7 +1624,7 @@ const validate_CHILD = (inj) => {
 const validate_ONE = (inj, _val, _ref, store) => {
     const { mode, parent, keyI } = inj;
     // Only operate in val mode, since parent is a list.
-    if (S_MVAL === mode) {
+    if (M_VAL === mode) {
         if (!islist(parent) || 0 !== keyI) {
             inj.errs.push('The $ONE validator at field ' +
                 pathify(inj.path, 1, 1) +
@@ -1665,7 +1668,7 @@ const validate_ONE = (inj, _val, _ref, store) => {
 const validate_EXACT = (inj) => {
     const { mode, parent, key, keyI } = inj;
     // Only operate in val mode, since parent is a list.
-    if (S_MVAL === mode) {
+    if (M_VAL === mode) {
         if (!islist(parent) || 0 !== keyI) {
             inj.errs.push('The $EXACT validator at field ' +
                 pathify(inj.path, 1, 1) +
@@ -1846,7 +1849,7 @@ injdef) {
     return out;
 }
 const select_AND = (inj, _val, _ref, store) => {
-    if (S_MKEYPRE === inj.mode) {
+    if (M_KEYPRE === inj.mode) {
         const terms = getprop(inj.parent, inj.key);
         const ppath = slice(inj.path, -1);
         const point = getpath(store, ppath);
@@ -1869,7 +1872,7 @@ const select_AND = (inj, _val, _ref, store) => {
     }
 };
 const select_OR = (inj, _val, _ref, store) => {
-    if (S_MKEYPRE === inj.mode) {
+    if (M_KEYPRE === inj.mode) {
         const terms = getprop(inj.parent, inj.key);
         const ppath = slice(inj.path, -1);
         const point = getpath(store, ppath);
@@ -1893,7 +1896,7 @@ const select_OR = (inj, _val, _ref, store) => {
     }
 };
 const select_NOT = (inj, _val, _ref, store) => {
-    if (S_MKEYPRE === inj.mode) {
+    if (M_KEYPRE === inj.mode) {
         const term = getprop(inj.parent, inj.key);
         const ppath = slice(inj.path, -1);
         const point = getpath(store, ppath);
@@ -1914,7 +1917,7 @@ const select_NOT = (inj, _val, _ref, store) => {
     }
 };
 const select_CMP = (inj, _val, ref, store) => {
-    if (S_MKEYPRE === inj.mode) {
+    if (M_KEYPRE === inj.mode) {
         const term = getprop(inj.parent, inj.key);
         // const src = getprop(store, inj.base, store)
         const gkey = getelem(inj.path, -2);
@@ -2005,7 +2008,7 @@ class Injection {
         this.errs = [];
         this.dparent = NONE;
         this.dpath = [S_DTOP];
-        this.mode = S_MVAL;
+        this.mode = M_VAL;
         this.full = false;
         this.keyI = 0;
         this.keys = [S_DTOP];
@@ -2019,7 +2022,7 @@ class Injection {
     toString(prefix) {
         return 'INJ' + (null == prefix ? '' : S_FS + prefix) + S_CN +
             pad(pathify(this.path, 1)) +
-            this.mode + (this.full ? '/full' : '') + S_CN +
+            MODENAME[this.mode] + (this.full ? '/full' : '') + S_CN +
             'key=' + this.keyI + S_FS + this.key + S_FS + S_OS + this.keys + S_CS +
             '  p=' + stringify(this.parent, -1, 1) +
             '  m=' + stringify(this.meta, -1, 1) +
@@ -2120,7 +2123,7 @@ const _injecthandler = (inj, val, ref, store) => {
         out = val(inj, val, ref, store);
     }
     // Update parent with value. Ensures references remain in node tree.
-    else if (S_MVAL === inj.mode && inj.full) {
+    else if (M_VAL === inj.mode && inj.full) {
         inj.setval(val);
     }
     return out;
@@ -2200,15 +2203,21 @@ function _injectstr(val, store, inj) {
 }
 // Handler Utilities
 // =================
+const MODENAME = {
+    [M_VAL]: 'val',
+    [M_KEYPRE]: 'key:pre',
+    [M_KEYPOST]: 'key:post',
+};
+exports.MODENAME = MODENAME;
 const PLACEMENT = {
-    [S_MVAL]: 'value',
-    [S_MKEYPRE]: S_key,
-    [S_MKEYPOST]: S_key,
+    [M_VAL]: 'value',
+    [M_KEYPRE]: S_key,
+    [M_KEYPOST]: S_key,
 };
 function checkPlacement(modes, ijname, parentTypes, inj) {
-    if (!modes.includes(inj.mode)) {
+    if (0 === (modes & inj.mode)) {
         inj.errs.push('$' + ijname + ': invalid placement as ' + PLACEMENT[inj.mode] +
-            ', expected: ' + join(items(modes, (n) => PLACEMENT[n[1]]), ',') + '.');
+            ', expected: ' + join(items([M_KEYPRE, M_KEYPOST, M_VAL].filter(m => modes & m), (n) => PLACEMENT[n[1]]), ',') + '.');
         return false;
     }
     if (!isempty(parentTypes)) {
