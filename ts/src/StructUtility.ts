@@ -1,6 +1,6 @@
 /* Copyright (c) 2025-2026 Voxgig Ltd. MIT LICENSE. */
 
-// VERSION: @voxgig/struct 0.0.9
+// VERSION: @voxgig/struct 0.0.10
 
 /* Voxgig Struct
  * =============

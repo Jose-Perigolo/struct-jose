@@ -48,7 +48,7 @@ let errs;
 // console.log('validate-OUT', out, errs)
 const extra = {
     $CAPTURE: (inj) => {
-        if ('key:pre' === inj.mode) {
+        if (__1.M_KEYPRE === inj.mode) {
             const { val, prior } = inj;
             const { dparent, key } = prior;
             const dval = dparent[key];

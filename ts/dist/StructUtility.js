@@ -44,7 +44,7 @@ exports.jt = jt;
 exports.checkPlacement = checkPlacement;
 exports.injectorArgs = injectorArgs;
 exports.injectChild = injectChild;
-// VERSION: @voxgig/struct 0.0.9
+// VERSION: @voxgig/struct 0.0.10
 /* Voxgig Struct
  * =============
  *
@@ -1049,9 +1049,9 @@ function inject(val, store, injdef) {
             nodekeys = keysof(val);
         }
         // Each child key-value pair is processed in three injection phases:
-        // 1. inj.mode='key:pre' - Key string is injected, returning a possibly altered key.
-        // 2. inj.mode='val' - The child value is injected.
-        // 3. inj.mode='key:post' - Key string is injected again, allowing child mutation.
+        // 1. inj.mode=M_KEYPRE - Key string is injected, returning a possibly altered key.
+        // 2. inj.mode=M_VAL - The child value is injected.
+        // 3. inj.mode=M_KEYPOST - Key string is injected again, allowing child mutation.
         for (let nkI = 0; nkI < nodekeys.length; nkI++) {
             const childinj = inj.child(nkI, nodekeys);
             const nodekey = childinj.key;
