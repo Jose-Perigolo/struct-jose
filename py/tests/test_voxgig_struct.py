@@ -22,6 +22,9 @@ except ImportError:
     from sdk import SDK
 
 from voxgig_struct import InjectState
+from voxgig_struct.voxgig_struct import (
+    T_noval, T_scalar, T_function, T_symbol, T_any, T_node, T_instance, T_null,
+)
 
 
 sdk_client = SDK.test()
@@ -39,6 +42,8 @@ clone = struct_utils.clone
 delprop = struct_utils.delprop
 escre = struct_utils.escre
 escurl = struct_utils.escurl
+filter_fn = struct_utils.filter
+flatten = struct_utils.flatten
 getelem = struct_utils.getelem
 getpath = struct_utils.getpath
 getprop = struct_utils.getprop
@@ -60,12 +65,15 @@ merge = struct_utils.merge
 pad = struct_utils.pad
 pathify = struct_utils.pathify
 select = struct_utils.select
+setpath = struct_utils.setpath
 setprop = struct_utils.setprop
+DELETE = struct_utils.DELETE
 size = struct_utils.size
 slice = struct_utils.slice
 stringify = struct_utils.stringify
 strkey = struct_utils.strkey
 transform = struct_utils.transform
+typename = struct_utils.typename
 typify = struct_utils.typify
 validate = struct_utils.validate
 walk = struct_utils.walk
@@ -170,7 +178,8 @@ class TestStruct(unittest.TestCase):
                                      vin.get('val'), vin.get('max')))
 
     def test_minor_jsonify(self):
-        runsetflags(minorSpec["jsonify"], {"null": False}, jsonify)
+        runsetflags(minorSpec["jsonify"], {"null": False},
+            lambda vin: jsonify(vin.get("val"), vin.get("flags")))
 
     def test_minor_getelem(self):
         def getelem_wrapper(vin):
@@ -184,6 +193,35 @@ class TestStruct(unittest.TestCase):
         def delprop_wrapper(vin):
             return delprop(vin.get("parent"), vin.get("key"))
         runset(minorSpec["delprop"], delprop_wrapper)
+
+    def test_minor_edge_clone(self):
+        x = {"y": 1}
+        xc = clone(x)
+        self.assertEqual(x, xc)
+        self.assertIsNot(x, xc)
+
+    def test_minor_edge_items(self):
+        a0 = [11, 22, 33]
+        self.assertEqual(items(a0), [['0', 11], ['1', 22], ['2', 33]])
+
+    def test_minor_edge_getelem(self):
+        self.assertEqual(getelem([], 1, lambda: 2), 2)
+
+    def test_minor_edge_jsonify(self):
+        self.assertEqual(jsonify(lambda: 1), 'null')
+
+    def test_minor_edge_keysof(self):
+        a0 = [11, 22, 33]
+        self.assertEqual(keysof(a0), ['0', '1', '2'])
+
+    def test_minor_edge_stringify(self):
+        a = {}
+        a["a"] = a
+        self.assertEqual(stringify(a), '__STRINGIFY_FAILED__')
+
+        self.assertEqual(stringify({"a": [9]}, -1, True),
+            '\x1b[38;5;81m\x1b[38;5;118m{\x1b[38;5;118ma\x1b[38;5;118m:'
+            '\x1b[38;5;213m[\x1b[38;5;213m9\x1b[38;5;213m]\x1b[38;5;118m}\x1b[0m')
 
     def test_minor_edge_delprop(self):
         # String array tests
@@ -275,12 +313,43 @@ class TestStruct(unittest.TestCase):
 
         
     def test_minor_joinurl(self):
-        runsetflags(minorSpec["joinurl"], {"null": False}, joinurl)
+        from voxgig_struct.voxgig_struct import join as struct_join
+        runsetflags(minorSpec["join"], {"null": False},
+            lambda vin: struct_join(vin.get("val"), vin.get("sep"), vin.get("url")))
 
 
     def test_minor_typify(self):
         runsetflags(minorSpec["typify"], {"null": False}, typify)
-        
+
+    def test_minor_edge_typify(self):
+        self.assertEqual(typify(), T_noval)
+        self.assertEqual(typify(None), T_scalar | T_null)
+        self.assertEqual(typify(float('nan')), T_noval)
+        self.assertEqual(typify(lambda: None), T_scalar | T_function)
+
+    def test_minor_setpath(self):
+        runsetflags(minorSpec["setpath"], {"null": False},
+                    lambda vin: setpath(vin.get("store"), vin.get("path"), vin.get("val")))
+
+    def test_minor_edge_setpath(self):
+        x = {"y": {"z": 1, "q": 2}}
+        self.assertEqual(setpath(x, 'y.q', DELETE), {"z": 1})
+        self.assertEqual(x, {"y": {"z": 1}})
+
+    def test_minor_filter(self):
+        checkmap = {
+            'gt3': lambda n: n[1] > 3,
+            'lt3': lambda n: n[1] < 3,
+        }
+        runset(minorSpec["filter"],
+               lambda vin: filter_fn(vin.get("val"), checkmap[vin.get("check")]))
+
+    def test_minor_typename(self):
+        runset(minorSpec["typename"], typename)
+
+    def test_minor_flatten(self):
+        runset(minorSpec["flatten"],
+               lambda vin: flatten(vin.get("val"), vin.get("depth")))
 
     # walk tests
     # ==========
@@ -313,7 +382,54 @@ class TestStruct(unittest.TestCase):
 
         runset(walkSpec["basic"], walk_wrapper)
 
-        
+    def test_walk_copy(self):
+        cur = [None]
+
+        def walkcopy(key, val, _parent, path):
+            if key is None:
+                cur[0] = [None]
+                cur[0][0] = {} if ismap(val) else [] if islist(val) else val
+                return val
+
+            v = val
+            i = size(path)
+
+            if isnode(v):
+                while len(cur[0]) <= i:
+                    cur[0].append(None)
+                v = cur[0][i] = {} if ismap(v) else []
+
+            setprop(cur[0][i - 1], key, v)
+
+            return val
+
+        def walk_copy_wrapper(vin=None):
+            walk(vin, before=walkcopy)
+            return cur[0][0]
+
+        runset(walkSpec["copy"], walk_copy_wrapper)
+
+    def test_walk_depth(self):
+        def walk_depth_wrapper(vin):
+            state = {'top': None, 'cur': None}
+
+            def copy(key, val, _parent, _path):
+                if key is None or isnode(val):
+                    child = [] if islist(val) else {}
+                    if key is None:
+                        state['top'] = state['cur'] = child
+                    else:
+                        state['cur'][key] = child
+                        state['cur'] = child
+                else:
+                    state['cur'][key] = val
+                return val
+
+            walk(vin.get("src"), before=copy, maxdepth=vin.get("maxdepth"))
+            return state['top']
+
+        runsetflags(walkSpec["depth"], {"null": False}, walk_depth_wrapper)
+
     # merge tests
     # ===========
 
@@ -331,6 +447,10 @@ class TestStruct(unittest.TestCase):
 
     def test_merge_integrity(self):
         runset(spec["merge"]["integrity"], merge)
+
+    def test_merge_depth(self):
+        runset(spec["merge"]["depth"],
+               lambda vin: merge(vin.get("val"), vin.get("depth")))
 
     def test_merge_special(self):
         def f0():
@@ -500,6 +620,19 @@ class TestStruct(unittest.TestCase):
             {"x": 1, "b": 2, "c": "C"}
         )
 
+    def test_transform_format(self):
+        def transform_wrapper(vin):
+            return transform(vin.get("data"), vin.get("spec"))
+        runsetflags(spec["transform"]["format"], {"null": False}, transform_wrapper)
+
+    def test_transform_apply(self):
+        def transform_wrapper(vin):
+            return transform(vin.get("data"), vin.get("spec"))
+        runset(spec["transform"]["apply"], transform_wrapper)
+
+    def test_transform_edge_apply(self):
+        self.assertEqual(2, transform({}, ['`$APPLY`', lambda v: 1 + v, 1]))
+
     def test_transform_funcval(self):
         def f0():
             return 99
@@ -518,7 +651,7 @@ class TestStruct(unittest.TestCase):
     def test_validate_basic(self):
         def validate_wrapper(vin):
             return validate(vin.get("data"), vin.get("spec"))
-        runset(spec["validate"]["basic"], validate_wrapper)
+        runsetflags(spec["validate"]["basic"], {"null": False}, validate_wrapper)
 
         
     def test_validate_child(self):
@@ -577,6 +710,19 @@ class TestStruct(unittest.TestCase):
         out = validate({"a": "A"}, shape, {"extra": extra, "errs": errs})
         self.assertEqual(out, {"a": "A"})
         self.assertEqual(errs, ["Not an integer at a: A"])
+
+    def test_validate_edge(self):
+        errs = []
+        validate({"x": 1}, {"x": '`$INSTANCE`'}, {"errs": errs})
+        self.assertEqual(errs[0], 'Expected field x to be instance, but found integer: 1.')
+
+        errs = []
+        validate({"x": {}}, {"x": '`$INSTANCE`'}, {"errs": errs})
+        self.assertEqual(errs[0], 'Expected field x to be instance, but found map: {}.')
+
+        errs = []
+        validate({"x": []}, {"x": '`$INSTANCE`'}, {"errs": errs})
+        self.assertEqual(errs[0], 'Expected field x to be instance, but found list: [].')
 
     # -------------------------------------------------
     # select tests

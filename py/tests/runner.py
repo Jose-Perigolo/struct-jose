@@ -53,7 +53,7 @@ def makeRunner(testfile: str, client: Any):
                     res = testpack["subject"](*args)
                     res = fixJSON(res, flags)
                     entry['res'] = res
-                    check_result(entry, res, structUtils)
+                    check_result(entry, args, res, structUtils)
                     
                 except Exception as err:
                     handle_error(entry, err, structUtils)
@@ -109,11 +109,11 @@ def resolve_subject(name: str, container: Any):
     return getattr(container, name, getattr(container.struct, name, None))
 
 
-def check_result(entry, res, structUtils):
+def check_result(entry, args, res, structUtils):
     matched = False
     
     if 'match' in entry:
-        result = {'in': entry.get('in'), 'out': entry.get('res'), 'ctx': entry.get('ctx')}
+        result = {'in': entry.get('in'), 'args': args, 'out': entry.get('res'), 'ctx': entry.get('ctx')}
         match(
             entry['match'],
             result,
