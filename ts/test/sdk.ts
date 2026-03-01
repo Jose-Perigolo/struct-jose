@@ -1,5 +1,5 @@
 
-import { StructUtility } from '../dist/struct'
+import { StructUtility } from '../dist/StructUtility'
 
 class SDK {
 

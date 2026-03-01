@@ -1,10 +1,10 @@
+// VERSION: @voxgig/struct 0.0.10
 // This test utility runs the JSON-specified tests in build/test/test.json.
+// (or .sdk/test/test.json if used in a @voxgig/sdkgen project)
 
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { deepEqual, fail, AssertionError } from 'node:assert'
-
-import { StructUtility } from '../dist/struct'
+import { deepStrictEqual, fail, AssertionError } from 'node:assert'
 
 const NULLMARK = '__NULL__' // Value is JSON null
 const UNDEFMARK = '__UNDEF__' // Value is not present (thus, undefined).
@@ -16,6 +16,7 @@ type RunSet = (testspec: any, testsubject: Function) => Promise<any>
 type RunSetFlags = (testspec: any, flags: Record<string, boolean>, testsubject: Function)
   => Promise<any>
 
+
 type RunPack = {
   spec: Record<string, any>
   runset: RunSet
@@ -23,6 +24,7 @@ type RunPack = {
   subject: Subject
   client: any
 }
+
 
 type TestPack = {
   name?: string
@@ -35,9 +37,10 @@ type Flags = Record<string, boolean>
 
 
 type Utility = {
-  struct: StructUtility
-  contextify: (ctxmap: Record<string, any>) => any
+  struct: any
+  makeContext: (ctxmap: Record<string, any>, basectx?: any) => any
 }
+
 
 type Client = {
   utility: () => Utility
@@ -80,9 +83,12 @@ async function makeRunner(testfile: string, client: Client) {
           res = fixJSON(res, flags)
           entry.res = res
 
-          checkResult(entry, res, structUtils)
+          checkResult(entry, args, res, structUtils)
         }
         catch (err: any) {
+          if (err instanceof AssertionError) {
+            throw err
+          }
           handleError(entry, err, structUtils)
         }
       }
@@ -107,8 +113,7 @@ async function makeRunner(testfile: string, client: Client) {
 
 function resolveSpec(name: string, testfile: string): Record<string, any> {
   const alltests =
-    JSON.parse(readFileSync(join(
-      __dirname, testfile), 'utf8'))
+    JSON.parse(readFileSync(join(__dirname, testfile), 'utf8'))
 
   let spec = alltests.primary?.[name] || alltests[name] || alltests
   return spec
@@ -160,11 +165,16 @@ function resolveEntry(entry: any, flags: Flags): any {
 }
 
 
-function checkResult(entry: any, res: any, structUtils: Record<string, any>) {
+function checkResult(entry: any, args: any[], res: any, structUtils: Record<string, any>) {
   let matched = false
 
+  if (entry.err) {
+    return fail('Expected error did not occur: ' + entry.err +
+      '\n\nENTRY: ' + JSON.stringify(entry, null, 2))
+  }
+
   if (entry.match) {
-    const result = { in: entry.in, out: entry.res, ctx: entry.ctx }
+    const result = { in: entry.in, args, out: entry.res, ctx: entry.ctx }
     match(
       entry.match,
       result,
@@ -185,7 +195,7 @@ function checkResult(entry: any, res: any, structUtils: Record<string, any>) {
     return
   }
 
-  deepEqual(null != res ? JSON.parse(JSON.stringify(res)) : res, entry.out)
+  deepStrictEqual(null != res ? JSON.parse(JSON.stringify(res)) : res, entry.out)
 }
 
 
@@ -243,7 +253,7 @@ function resolveArgs(
     let first = args[0]
     if (structUtils.ismap(first)) {
       first = structUtils.clone(first)
-      first = utility.contextify(first)
+      first = utility.makeContext(first)
       args[0] = first
       entry.ctx = first
 
@@ -282,14 +292,14 @@ function resolveTestPack(
 
 function match(
   check: any,
-  base: any,
+  basex: any,
   structUtils: Record<string, any>
 ) {
-  base = structUtils.clone(base)
+  const cbase = structUtils.clone(basex)
 
   structUtils.walk(check, (_key: any, val: any, _parent: any, path: any) => {
     if (!structUtils.isnode(val)) {
-      let baseval = structUtils.getpath(path, base)
+      let baseval = structUtils.getpath(cbase, path)
 
       if (baseval === val) {
         return val
@@ -322,9 +332,6 @@ function matchval(
   base: any,
   structUtils: Record<string, any>
 ) {
-  // check = NULLMARK === check || UNDEFMARK === check ? undefined : check
-  // check = NULLMARK === check ? undefined : check
-
   let pass = check === base
 
   if (!pass) {
