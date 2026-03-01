@@ -1,5 +1,7 @@
 "use strict";
+// VERSION: @voxgig/struct 0.0.10
 // This test utility runs the JSON-specified tests in build/test/test.json.
+// (or .sdk/test/test.json if used in a @voxgig/sdkgen project)
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.EXISTSMARK = exports.NULLMARK = void 0;
 exports.nullModifier = nullModifier;
@@ -33,9 +35,12 @@ async function makeRunner(testfile, client) {
                     let res = await testpack.subject(...args);
                     res = fixJSON(res, flags);
                     entry.res = res;
-                    checkResult(entry, res, structUtils);
+                    checkResult(entry, args, res, structUtils);
                 }
                 catch (err) {
+                    if (err instanceof node_assert_1.AssertionError) {
+                        throw err;
+                    }
                     handleError(entry, err, structUtils);
                 }
             }
@@ -85,10 +90,14 @@ function resolveEntry(entry, flags) {
     entry.out = null == entry.out && flags.null ? NULLMARK : entry.out;
     return entry;
 }
-function checkResult(entry, res, structUtils) {
+function checkResult(entry, args, res, structUtils) {
     let matched = false;
+    if (entry.err) {
+        return (0, node_assert_1.fail)('Expected error did not occur: ' + entry.err +
+            '\n\nENTRY: ' + JSON.stringify(entry, null, 2));
+    }
     if (entry.match) {
-        const result = { in: entry.in, out: entry.res, ctx: entry.ctx };
+        const result = { in: entry.in, args, out: entry.res, ctx: entry.ctx };
         match(entry.match, result, structUtils);
         matched = true;
     }
@@ -100,7 +109,7 @@ function checkResult(entry, res, structUtils) {
     if (matched && (NULLMARK === out || null == out)) {
         return;
     }
-    (0, node_assert_1.deepEqual)(null != res ? JSON.parse(JSON.stringify(res)) : res, entry.out);
+    (0, node_assert_1.deepStrictEqual)(null != res ? JSON.parse(JSON.stringify(res)) : res, entry.out);
 }
 // Handle errors from test execution
 function handleError(entry, err, structUtils) {
@@ -139,7 +148,7 @@ function resolveArgs(entry, testpack, utility, structUtils) {
         let first = args[0];
         if (structUtils.ismap(first)) {
             first = structUtils.clone(first);
-            first = utility.contextify(first);
+            first = utility.makeContext(first);
             args[0] = first;
             entry.ctx = first;
             first.client = testpack.client;
@@ -162,11 +171,11 @@ function resolveTestPack(name, entry, subject, client, clients) {
     }
     return testpack;
 }
-function match(check, base, structUtils) {
-    base = structUtils.clone(base);
+function match(check, basex, structUtils) {
+    const cbase = structUtils.clone(basex);
     structUtils.walk(check, (_key, val, _parent, path) => {
         if (!structUtils.isnode(val)) {
-            let baseval = structUtils.getpath(path, base);
+            let baseval = structUtils.getpath(cbase, path);
             if (baseval === val) {
                 return val;
             }
@@ -188,8 +197,6 @@ function match(check, base, structUtils) {
     });
 }
 function matchval(check, base, structUtils) {
-    // check = NULLMARK === check || UNDEFMARK === check ? undefined : check
-    // check = NULLMARK === check ? undefined : check
     let pass = check === base;
     if (!pass) {
         if ('string' === typeof check) {

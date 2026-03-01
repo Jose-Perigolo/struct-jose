@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<phpunit 
+    bootstrap="vendor/autoload.php"
+    colors="true"
+    testdox="true"
+    beStrictAboutOutputDuringTests="false"
+>
+    <testsuites>
+        <testsuite name="StructTests">
+            <directory>tests</directory>
+        </testsuite>
+    </testsuites>
+</phpunit>

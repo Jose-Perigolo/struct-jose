@@ -86,6 +86,8 @@ const UNDEF = undefined
 
 
 // Value is a node - defined, and a map (hash) or list (array).
+// NOTE: javascript
+// stuff
 function isnode(val) {
   return null != val && S_object == typeof val
 }
