@@ -1087,8 +1087,18 @@ func TestStruct(t *testing.T) {
 	})
 
 
-	// NOTE: transform-apply skipped - all entries test error cases and
-	// Go Transform does not return errors (TS throws).
+	t.Run("transform-apply", func(t *testing.T) {
+		runset(t, transformSpec["apply"], func(v any) (any, error) {
+			m := v.(map[string]any)
+			data := m["data"]
+			spec := m["spec"]
+			result, errs := voxgigstruct.TransformCollect(data, spec)
+			if len(errs) > 0 {
+				return result, fmt.Errorf("%s", errs[0])
+			}
+			return result, nil
+		})
+	})
 
 	t.Run("transform-edge-apply", func(t *testing.T) {
 		result := voxgigstruct.Transform(

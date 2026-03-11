@@ -3221,12 +3221,13 @@ func TransformModifyHandler(
 	return out
 }
 
-func TransformModify(
-	data any, // source data
-	spec any, // transform specification
-	extra any, // extra store
-	modify Modify, // optional modify
-) any {
+// transformModifyCore is the internal implementation that collects errors.
+func transformModifyCore(
+	data any,
+	spec any,
+	extra any,
+	modify Modify,
+) (any, *ListRef[any]) {
 
 	// Clone and wrap: clone the structures and convert bare lists to ListRefs
 	// for reference stability, in a single pass.
@@ -3267,6 +3268,9 @@ func TransformModify(
 		CloneFlags(data, wrapFlags),
 	})
 
+	// Collect errors from transform operations
+	errs := ListRefCreate[any]()
+
 	// The injection store with transform functions
 	store := map[string]any{
 		// Merged data is at $TOP
@@ -3303,12 +3307,43 @@ func TransformModify(
 		store[k] = v
 	}
 
-	out := InjectDescend(spec, store, modify, store, nil)
+	// Pass errs via injection state to avoid Merge converting ListRef to []any
+	injState := &Injection{
+		Modify: modify,
+		Errs:   errs,
+	}
+
+	out := InjectDescend(spec, store, modify, store, injState)
 
 	// Clone output, unwrapping ListRefs back to bare lists.
 	out = CloneFlags(out, map[string]bool{"unwrap": true})
 
+	return out, errs
+}
+
+func TransformModify(
+	data any, // source data
+	spec any, // transform specification
+	extra any, // extra store
+	modify Modify, // optional modify
+) any {
+	out, _ := transformModifyCore(data, spec, extra, modify)
 	return out
+}
+
+// TransformCollect is like Transform but also returns collected error strings.
+func TransformCollect(
+	data any,
+	spec any,
+) (any, []string) {
+	out, errs := transformModifyCore(data, spec, nil, nil)
+	errStrs := make([]string, 0, len(errs.List))
+	for _, e := range errs.List {
+		if s, ok := e.(string); ok {
+			errStrs = append(errStrs, s)
+		}
+	}
+	return out, errStrs
 }
 
 var validate_STRING Injector = func(
