@@ -22,7 +22,7 @@ const { equal, deepEqual } = assert
 
 
 // NOTE: tests are (mostly) in order of increasing dependence.
-describe('struct', async () => {
+describe('StructUtility', async () => {
 
   let spec: any
   let runset: any

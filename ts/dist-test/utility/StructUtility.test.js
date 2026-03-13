@@ -12,7 +12,7 @@ const runner_1 = require("../runner");
 const index_1 = require("./index");
 const { equal, deepEqual } = node_assert_1.default;
 // NOTE: tests are (mostly) in order of increasing dependence.
-(0, node_test_1.describe)('struct', async () => {
+(0, node_test_1.describe)('StructUtility', async () => {
     let spec;
     let runset;
     let runsetflags;
