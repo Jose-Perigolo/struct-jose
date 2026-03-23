@@ -60,6 +60,12 @@ local M_KEYPRE = 1
 local M_KEYPOST = 2
 local M_VAL = 4
 
+local MODENAME = {
+  [M_VAL] = 'val',
+  [M_KEYPRE] = 'key:pre',
+  [M_KEYPOST] = 'key:post',
+}
+
 -- Special strings.
 local S_BKEY = '`$KEY`'
 local S_BANNO = '`$ANNO`'
@@ -747,36 +753,30 @@ end
 
 -- Build a JSON map from alternating key, value arguments.
 local function jm(...)
-  local args = { ... }
-  local out = {}
-  local i = 1
-  while i <= #args do
-    local k = args[i]
-    local v = nil
-    if i + 1 <= #args then
-      v = args[i + 1]
-    end
-    -- Keys must be strings
-    if type(k) ~= S_string then
-      -- Stringify non-string keys
-      k = tostring(k)
-    end
-    out[k] = v
+  local kv = { ... }
+  local kvsize = size(kv)
+  local o = {}
+  local i = 0
+  while i < kvsize do
+    local k = getprop(kv, i, '$KEY' .. i)
+    k = S_string == type(k) and k or stringify(k)
+    o[k] = getprop(kv, i + 1, nil)
     i = i + 2
   end
-  return out
+  return o
 end
 
 
--- Build a JSON tuple (list) from arguments.
+-- Define a JSON Array using function arguments.
 local function jt(...)
-  local args = { ... }
-  local out = {}
-  setmetatable(out, { __jsontype = "array" })
-  for _, v in ipairs(args) do
-    table.insert(out, v)
+  local v = { ... }
+  local vsize = size(v)
+  local a = {}
+  setmetatable(a, { __jsontype = "array" })
+  for i = 0, vsize - 1 do
+    a[i + 1] = getprop(v, i, nil)
   end
-  return out
+  return a
 end
 
 
@@ -1634,6 +1634,18 @@ function Injection:new(val, parent)
 end
 
 
+function Injection:__tostring()
+  return 'INJ' .. S_CN ..
+    pad(pathify(self.path, 1)) ..
+    (MODENAME[self.mode] or '') .. (self.full and '/full' or '') .. S_CN ..
+    'key=' .. self.keyI .. S_FS .. tostring(self.key) .. S_FS .. S_OS .. table.concat(self.keys, ',') .. S_CS ..
+    '  p=' .. stringify(self.parent, -1, 1) ..
+    '  m=' .. stringify(self.meta, -1, 1) ..
+    '  d/' .. pathify(self.dpath, 1) .. '=' .. stringify(self.dparent, -1, 1) ..
+    '  r=' .. stringify(getprop(getprop(self.nodes, 0), S_DTOP), -1, 1)
+end
+
+
 function Injection:descend()
   if self.meta.__d == nil then self.meta.__d = 0 end
   self.meta.__d = self.meta.__d + 1
@@ -2162,12 +2174,6 @@ local function transform_PACK(inj, _val, _ref, store)
   return NONE
 end
 
-
-local MODENAME = {
-  [M_VAL] = 'val',
-  [M_KEYPRE] = 'key:pre',
-  [M_KEYPOST] = 'key:post',
-}
 
 -- Placement labels for error messages.
 local PLACEMENT = {
