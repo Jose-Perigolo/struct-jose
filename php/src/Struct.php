@@ -1191,14 +1191,20 @@ class Struct
         // Process the value through _injectval
         $modifiedVal = self::_injectval($state, $val, $state->dparent ?? $current, $store);
         
-        // For existing injection states, just update and return the modified value
+        // For existing injection states, just update and return the modified value.
+        // Like Python/TS: store the actual processed value in state->val, not SKIP.
+        // SKIP is a control signal; the actual value is in $val (modified in-place for objects).
         if ($injdef !== null && property_exists($injdef, 'mode')) {
-            $state->val = $modifiedVal;
+            $state->val = ($modifiedVal === self::$SKIP) ? $val : $modifiedVal;
             return $modifiedVal;
         }
         
-        // For new injection states, update the holder and return from it
-        self::setprop($state->parent, self::S_DTOP, $modifiedVal);
+        // For new injection states, update the holder and return from it.
+        // When SKIP: don't overwrite the holder — transforms (e.g. transform_REF) may have
+        // already written the correct value into the holder via direct reference modification.
+        if ($modifiedVal !== self::$SKIP) {
+            self::setprop($state->parent, self::S_DTOP, $modifiedVal);
+        }
         return self::getprop($state->parent, self::S_DTOP);
     }
 
@@ -1542,7 +1548,10 @@ class Struct
         
         // Source data
         $srcstore = self::getprop($store, $state->base, $store);
-        $src = self::getpath($srcpath, $srcstore, $state);
+        // Pass dparent as current context and state as state for proper relative-path resolution.
+        // Using $state directly as current (3rd arg) was wrong: getpath would navigate state.dparent
+        // only when state is the 4th arg. Using $state->dparent as current handles '.' correctly.
+        $src = self::getpath($srcpath, $srcstore, $state->dparent ?? null, $state);
 
         // Create parallel data structures: source entries :: child templates  
         $tcur = [];
@@ -1569,7 +1578,11 @@ class Struct
         $rval = [];
 
         if (count($tval) > 0) {
-            $tcur = (null == $src) ? self::UNDEF : array_values((array) $src);
+            // PHP has no descend() mechanism, so pass $src directly as dparent.
+            // Python wraps src in nested path structs and calls descend() twice during inject(),
+            // navigating down to the flat data array. PHP skips that by using $src directly —
+            // _injectval then does getprop($src, '0') = first element, etc.
+            $srcData = (null == $src) ? self::UNDEF : array_values((array) $src);
 
             $ckey = self::getelem($state->path, -2);
             $tpath = array_slice($state->path, 0, -1);
@@ -1578,14 +1591,16 @@ class Struct
             $dpath = [self::S_DTOP];
             $dpath = array_merge($dpath, explode('.', $srcpath), ['$:' . $ckey]);
 
-            // Build parent structure like TypeScript version
-            $tcur = [$ckey => $tcur];
-
             if (count($tpath) > 1) {
                 $pkey = self::getelem($state->path, -3) ?? self::S_DTOP;
-                $tcur = [$pkey => $tcur];
                 $dpath[] = '$:' . $pkey;
             }
+
+            // tinj->parent must be the spec node that CONTAINS ckey (e.g. z22_spec, not p_spec_array).
+            // This is nodes[-2]: the node one level above the $EACH spec list.
+            // TypeScript uses getelem(tinj.nodes, -1) after tinj.nodes = slice(inj.nodes, -1),
+            // which is equivalent to getelem(inj.nodes, -2).
+            $tinjParent = self::getelem($state->nodes, -2);
 
             // Create child injection state matching TypeScript version
             $tinj = (object) [
@@ -1595,7 +1610,7 @@ class Struct
                 'keys' => [$ckey],
                 'key' => $ckey,
                 'val' => $tval,
-                'parent' => self::getelem($state->nodes, -1),
+                'parent' => $tinjParent,
                 'path' => $tpath,
                 'nodes' => array_slice($state->nodes, 0, -1),
                 'handler' => [self::class, '_injecthandler'],
@@ -1603,24 +1618,34 @@ class Struct
                 'modify' => $state->modify,
                 'errs' => $state->errs ?? [],
                 'meta' => $state->meta ?? (object) [],
-                'dparent' => $tcur,  // Use the full nested structure like TypeScript
+                'dparent' => $srcData,
                 'dpath' => $dpath,
             ];
 
-            // Set tval in parent like TypeScript version
+            // Pre-link tval into the spec tree so that transform_REF's setval navigation
+            // can correctly find and update the array elements. For object templates, the
+            // objects are modified in-place via PHP object references. For array templates
+            // (e.g. ['$REF','z22']), transform_REF writes back via grandparent (tinj->parent).
             self::setprop($tinj->parent, $ckey, $tval);
 
             // Inject using the proper injection state
-            $result = self::inject($tval, $store, $state->modify, $tinj->dparent, $tinj);
-            
-            $rval = $tinj->val;
+            self::inject($tval, $store, $state->modify, $tinj->dparent, $tinj);
+
+            // Read $rval from the spec tree parent rather than tinj->val. For object
+            // templates, objects are modified in-place so both sources are equivalent.
+            // For array templates (e.g. ['$REF','z22']), transform_REF writes results
+            // into tinj->parent->ckey (z22_spec->p), not into the PHP value-type $tval.
+            $rval = self::getprop($tinj->parent, $ckey) ?? [];
         }
 
-        // Update ancestors using the simple approach like TypeScript
+        // Update ancestors: set the correct output on the spec node's parent.
         self::_updateAncestors($state, $target, $tkey, $rval);
 
-        // Prevent callee from damaging first list entry (since we are in `val` mode).
-        return count($rval) > 0 ? $rval[0] : self::UNDEF;
+        // Return SKIP so the PHP outer injection loop does NOT overwrite the value
+        // already set by _updateAncestors. TypeScript/Python don't use inject's return
+        // value (TS has "NOTE: return value is not used"), but PHP does, so SKIP is the
+        // right signal to prevent the local spec-array copy from corrupting the result.
+        return self::$SKIP;
     }
 
 
@@ -1827,46 +1852,102 @@ class Struct
         $cpath = $pathLen >= 3 ? self::slice($state->path, 0, -2) : [];
         $tpath = self::slice($state->path, 0, -1);
         $tcur = self::getpath($cpath, $store);
-        // Resolve current value at path from spec; strip $TOP if present so we resolve relative to spec root
-        $tpathInSpec = (isset($state->path[0]) && $state->path[0] === self::S_DTOP)
-            ? self::slice($state->path, 1, -1) : $tpath;
-        $tval = self::getpath($tpathInSpec, $spec);
+        // Match TS: check store (data output) not spec, to break circular $REF cycles.
+        // Pass $store as $current so getpath traverses from the store root,
+        // matching TS/Python's getpath(store, tpath) which starts from store not store['$TOP'].
+        $tval = self::getpath($tpath, $store, $store);
         $rval = self::UNDEF;
-        // Resolve when: no nested $REF, or current path exists in spec, or inside list with scalar ref
+        // Resolve when: no nested $REF, or current value exists in store, or inside list with scalar ref
         $insideListWithScalarRef = isset($state->prior) && !self::isnode($ref);
         $shouldResolve = !$hasSubRef || $tval !== self::UNDEF || $insideListWithScalarRef;
         if ($shouldResolve) {
             $lastKey = self::getelem($tpath, -1);
+            // PHP inject does not call descend() like TS/Python do, so we must pre-apply the
+            // data context navigation. For node refs (objects), TS/Python descend() twice
+            // (once at tinj level, once at child level) to reach the data at tpath. In PHP we
+            // pre-set dparent = tval (the data already at tpath) so $COPY/.n etc. work correctly.
+            // For scalar refs, one descent (to data) is sufficient; $tcur already holds that.
+            $dparent = self::isnode($ref) ? $tval : $tcur;
             $tinj = (object) [
                 'mode' => self::S_MVAL, 'key' => $lastKey,
                 'parent' => self::getelem($state->nodes, -2),
                 'path' => $tpath, 'nodes' => array_slice($state->nodes, 0, -1),
-                'val' => $tref, 'dpath' => self::flatten([$cpath]), 'dparent' => $tcur,
+                'val' => $tref, 'dpath' => self::flatten([$cpath]), 'dparent' => $dparent,
                 'handler' => $state->handler, 'base' => $state->base, 'modify' => $state->modify,
                 'errs' => $state->errs ?? [], 'meta' => $state->meta ?? (object) [],
             ];
-            $rval = self::inject($tref, $store, $state->modify, $tcur, $tinj);
+            self::inject($tref, $store, $state->modify, $dparent, $tinj);
+            // For PHP objects, tref is modified in-place by inject; use it directly as the result.
+            // For non-objects (scalars), use tinj->val (which holds the resolved value).
+            // When inject returns SKIP, tinj->val = $tref (the in-place modified object).
+            $rval = is_object($tref) ? $tref : $tinj->val;
         }
-        // When ref is scalar and we didn't resolve (e.g. path/tval issue), use ref as value
-        if ($rval === self::UNDEF && !self::isnode($ref)) {
-            $rval = $ref;
-        }
-        // Set on grandparent (spec) when inside a list so we replace the list key, not the list element.
-        // When we have prior (list state), the list's container is prior->nodes[1] at prior->path[1] (spec at 'r0').
-        if (count($state->path) >= 2) {
-            $specFn = self::getprop($store, '$SPEC');
-            $specToSet = is_callable($specFn) ? $specFn() : self::UNDEF;
-            $specKey = $state->path[1];
-            if ($specToSet !== self::UNDEF && $specKey !== self::UNDEF) {
-                self::setprop($specToSet, $specKey, $rval);
-            } else {
-                self::_setval($state, $rval, 0);
+        // Match TS inj.setval(rval, 2): set at nodes[-2]/path[-2].
+        // PHP arrays are value types (copied), so we split based on whether nodes[-2] is an object or array.
+        $targetNode = self::getelem($state->nodes, -2);
+        if (is_object($targetNode)) {
+            // Object parent: _setval(-2) modifies the object in-place via PHP object reference.
+            self::_setval($state, $rval, -2);
+            // For list parents: signal _injectval to re-index (only on deletion, when rval=UNDEF).
+            if ($rval === self::UNDEF && isset($state->prior) && is_array($state->parent)) {
+                $state->prior->keyI--;
             }
         } else {
-            self::_setval($state, $rval, 0);
-        }
-        if (isset($state->prior)) {
-            $state->prior->keyI--;
+            // Array parent: PHP arrays are value types - find nearest object ancestor for direct mutation.
+            $grandparentNode = self::getelem($state->nodes, -3);
+            if (is_object($grandparentNode)) {
+                // Grandparent is an object: mutate its array property directly.
+                $grandparentKey = (string) self::getelem($state->path, -3);
+                $containerKey = (int) self::getelem($state->path, -2);
+                if ($rval === self::UNDEF) {
+                    // Delete: remove the element from the grandparent's array property.
+                    array_splice($grandparentNode->{$grandparentKey}, $containerKey, 1);
+                    // Signal _injectval to splice local copy and re-index to process the shifted element.
+                    if (isset($state->prior) && is_array($state->parent)) {
+                        $state->prior->keyI--;
+                    }
+                } else {
+                    // Replace: set the element in the grandparent's array property.
+                    // No keyI decrement: _injectval iterates normally to the next element.
+                    $grandparentNode->{$grandparentKey}[$containerKey] = $rval;
+                }
+            } else {
+                // Grandparent is also an array: navigate via PHP references from the root holder.
+                // This handles deeply-nested list specs (e.g. [[['$REF','z']]]).
+                $rootState = $state;
+                while (isset($rootState->prior) && $rootState->prior !== null) {
+                    $rootState = $rootState->prior;
+                }
+                $rootHolder = $rootState->parent;
+                $pathLen = count($state->path);
+                $containerPath = array_slice($state->path, 1, $pathLen - 3);
+                $containerKey = (int) $state->path[$pathLen - 2];
+                $specRef = &$rootHolder->{self::S_DTOP};
+                foreach ($containerPath as $ckey) {
+                    if (is_array($specRef)) {
+                        $specRef = &$specRef[(int) $ckey];
+                    } elseif (is_object($specRef)) {
+                        $k = (string) $ckey;
+                        $specRef = &$specRef->{$k};
+                    }
+                }
+                if ($rval === self::UNDEF) {
+                    if (is_array($specRef)) {
+                        array_splice($specRef, $containerKey, 1);
+                    } elseif (is_object($specRef)) {
+                        self::delprop($specRef, $containerKey);
+                    }
+                } else {
+                    if (is_array($specRef)) {
+                        $specRef[$containerKey] = $rval;
+                    } elseif (is_object($specRef)) {
+                        self::setprop($specRef, $containerKey, $rval);
+                    }
+                }
+                if (isset($state->prior) && is_array($state->parent)) {
+                    $state->prior->keyI--;
+                }
+            }
         }
         return self::$SKIP;
     }
@@ -1920,7 +2001,7 @@ class Struct
                 '$MERGE' => [self::class, 'transform_MERGE'],
                 '$EACH' => [self::class, 'transform_EACH'],
                 '$PACK' => [self::class, 'transform_PACK'],
-                '$SPEC' => fn() => $specClone,
+                '$SPEC' => fn() => $spec,
                 '$REF' => [self::class, 'transform_REF'],
             ],
             $extraTransforms
@@ -1973,16 +2054,24 @@ class Struct
     private static function _setval(object $inj, mixed $val, int $ancestor = 0): void
     {
         if ($ancestor === 0) {
-            self::setprop($inj->parent, $inj->key, $val);
+            if ($val === self::UNDEF) {
+                self::delprop($inj->parent, $inj->key);
+            } else {
+                self::setprop($inj->parent, $inj->key, $val);
+            }
         } else {
-            // Navigate up the ancestor chain
+            // Navigate up the ancestor chain (negative ancestor = from end, matching TS nodes[0-ancestor])
             $targetIndex = count($inj->nodes) + $ancestor;
             if ($targetIndex >= 0 && $targetIndex < count($inj->nodes)) {
                 $targetNode = $inj->nodes[$targetIndex];
                 $pathIndex = count($inj->path) + $ancestor;
                 if ($pathIndex >= 0 && $pathIndex < count($inj->path)) {
                     $targetKey = $inj->path[$pathIndex];
-                    self::setprop($targetNode, $targetKey, $val);
+                    if ($val === self::UNDEF) {
+                        self::delprop($targetNode, $targetKey);
+                    } else {
+                        self::setprop($targetNode, $targetKey, $val);
+                    }
                 }
             }
         }
@@ -2839,23 +2928,36 @@ class Struct
 
                 // Perform the val mode injection on the child value.
                 // Pass the child injection state to maintain context
+                $preUpdate_nkI = $nkI;
                 $injected_result = self::inject($childinj->val, $store, $state->modify, $childinj->dparent, $childinj);
                 if ($injected_result === self::$SKIP) {
                     $childReturnedSkip = true;
+                    // When transform_REF deletes a list element it decrements childinj->keyI.
+                    // Sync the local copy so the next iteration processes the element that shifted down.
+                    if (self::islist($val) && $childinj->keyI < $preUpdate_nkI) {
+                        array_splice($val, $preUpdate_nkI, 1);
+                        // Recompute nodekeys from the updated $val and sync back into childinj
+                        // so the subsequent key:post phase sees consistent state.
+                        $nodekeys = array_keys($val);
+                        $childinj->keys = $nodekeys;
+                        $nkI = $childinj->keyI;
+                    } else {
+                        $nkI = $childinj->keyI;
+                        $nodekeys = $childinj->keys;
+                    }
                 } else {
                     self::setprop($val, $nodekey, $injected_result);
+                    // Use raw keyI (no max) so keyI decrement by transform_REF causes correct re-indexing.
+                    $nkI = $childinj->keyI;
+                    $nodekeys = $childinj->keys;
                 }
-
-                // The injection may modify child processing.
-                $nkI = max(0, $childinj->keyI);
-                $nodekeys = $childinj->keys;
 
                 // Perform the key:post mode injection on the child key.
                 $childinj->mode = self::S_MKEYPOST;
                 self::_injectstr(self::strkey($nodekey), $store, $childinj);
 
-                // The injection may modify child processing.
-                $nkI = max(0, $childinj->keyI);
+                // Use raw keyI (no max) to preserve re-indexing from fix-4 or transform_REF.
+                $nkI = $childinj->keyI;
                 $nodekeys = $childinj->keys;
             }
 
