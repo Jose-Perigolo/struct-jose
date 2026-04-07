@@ -1907,6 +1907,16 @@ class Struct
         $tcur = self::getpath($store, $cpath);
         $tval = self::getpath($store, $tpath);
 
+        // Resolve data parent: if cpath is empty, tcur is the store root;
+        // navigate to the data via $TOP base for proper dparent context
+        $dparent = $tcur;
+        if (empty($cpath)) {
+            $topdata = self::getprop($store, self::S_DTOP);
+            if ($topdata !== self::UNDEF && $topdata !== null) {
+                $dparent = $topdata;
+            }
+        }
+
         $rval = self::UNDEF;
 
         if (!$hasSubRef || $tval !== self::UNDEF) {
@@ -1928,7 +1938,7 @@ class Struct
                 'base' => $state->base ?? self::S_DTOP,
                 'modify' => $state->modify ?? null,
                 'dpath' => self::flatten([$cpath]),
-                'dparent' => $tcur,
+                'dparent' => $dparent,
             ];
 
             self::inject($tref, $store, $tinj);
@@ -2015,7 +2025,7 @@ class Struct
                 '$MERGE' => [self::class, 'transform_MERGE'],
                 '$EACH' => [self::class, 'transform_EACH'],
                 '$PACK' => [self::class, 'transform_PACK'],
-                '$SPEC' => fn() => $specClone,
+                '$SPEC' => fn() => $spec,
                 '$REF' => [self::class, 'transform_REF'],
             ],
             $extraTransforms
@@ -2029,9 +2039,39 @@ class Struct
 
         // When a child transform (e.g. $REF) deletes the key, inject returns SKIP; return mutated spec
         if ($result === self::$SKIP) {
+            // For list specs where $REF removed entries, walk the spec to clean up
+            // unresolved $REF entries (PHP arrays are value types so _setval can't modify them in place)
+            if (self::islist($specClone)) {
+                $specClone = self::_cleanRefEntries($specClone);
+            }
             return $specClone;
         }
+
+        // Also clean up any remaining $REF entries in list results
+        if (self::islist($result)) {
+            $result = self::_cleanRefEntries($result);
+        }
+
         return $result;
+    }
+
+    /**
+     * Remove unresolved $REF list entries from a list spec.
+     * This handles PHP's value-type arrays where in-place mutation via references doesn't propagate.
+     */
+    private static function _cleanRefEntries(array $list): array {
+        $cleaned = [];
+        foreach ($list as $item) {
+            if (self::islist($item) && count($item) >= 1 && self::getprop($item, 0) === '`$REF`') {
+                // This is an unresolved $REF entry - remove it
+                continue;
+            }
+            if (self::islist($item)) {
+                $item = self::_cleanRefEntries($item);
+            }
+            $cleaned[] = $item;
+        }
+        return $cleaned;
     }
 
     /** @internal */
