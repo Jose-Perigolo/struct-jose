@@ -150,3 +150,10 @@ __pycache__
 package-lock.json
 
 *.local.*
+
+# Cursor IDE (local agent notes — not part of the library)
+.cursor/
+
+# .NET / C# (cs port)
+cs/**/bin/
+cs/**/obj/
