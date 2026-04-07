@@ -388,8 +388,8 @@ class StructTest extends TestCase
                     return $val();
                 };
                 return Struct::getpath(
-                    $input->path,
                     $store,
+                    $input->path,
                     null,
                     $state
                 );
@@ -577,7 +577,7 @@ class StructTest extends TestCase
             function ($input) {
                 $path = property_exists($input, 'path') ? $input->path : Struct::UNDEF;
                 $store = property_exists($input, 'store') ? $input->store : Struct::UNDEF;
-                $result = Struct::getpath($path, $store);
+                $result = Struct::getpath($store, $path);
                 return $result;
             },
             true
@@ -598,7 +598,7 @@ class StructTest extends TestCase
                 if (property_exists($input, 'dpath')) {
                     $state->dpath = explode('.', $input->dpath);
                 }
-                $result = Struct::getpath($path, $store, null, $state);
+                $result = Struct::getpath($store, $path, null, $state);
                 return $result;
             },
             true
@@ -613,7 +613,7 @@ class StructTest extends TestCase
                 $path = property_exists($input, 'path') ? $input->path : Struct::UNDEF;
                 $store = property_exists($input, 'store') ? $input->store : Struct::UNDEF;
                 $state = property_exists($input, 'inj') ? $input->inj : null;
-                $result = Struct::getpath($path, $store, null, $state);
+                $result = Struct::getpath($store, $path, null, $state);
                 return $result;
             },
             true
@@ -650,7 +650,12 @@ class StructTest extends TestCase
             function (stdClass $in) use ($nullModifier) {
                 // some specs may include a 'current' key
                 $current = property_exists($in, 'current') ? $in->current : null;
-                return Struct::inject($in->val, $in->store, $nullModifier, $current);
+                $opts = new \stdClass();
+                $opts->modify = $nullModifier;
+                if ($current !== null) {
+                    $opts->current = $current;
+                }
+                return Struct::inject($in->val, $in->store, $opts);
             },
             /* force deep‐equal */ true
         );
@@ -732,15 +737,17 @@ class StructTest extends TestCase
         $this->testSet(
             $this->testSpec->transform->modify,
             function (object $vin) {
+                $opts = new \stdClass();
+                $opts->extra = property_exists($vin, 'store') ? $vin->store : (object) [];
+                $opts->modify = function ($val, $key, $parent) {
+                    if ($key !== null && $parent !== null && is_string($val)) {
+                        Struct::setprop($parent, $key, '@' . $val);
+                    }
+                };
                 return Struct::transform(
                     $vin->data,
                     $vin->spec,
-                    property_exists($vin, 'store') ? $vin->store : (object) [],
-                    function ($val, $key, $parent) {
-                        if ($key !== null && $parent !== null && is_string($val)) {
-                            Struct::setprop($parent, $key, '@' . $val);
-                        }
-                    }
+                    $opts
                 );
             }
         );

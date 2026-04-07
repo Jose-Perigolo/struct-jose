@@ -1054,8 +1054,8 @@ class Struct
     }
 
     public static function getpath(
-        mixed $path,
         mixed $store,
+        mixed $path,
         mixed $current = null,
         mixed $state = null
     ): mixed {
@@ -1118,7 +1118,7 @@ class Struct
                     } else if ($state && str_starts_with($part, '$GET:')) {
                         // $GET:path$ -> get store value, use as path part (string)
                         $getpath = substr($part, 5, -1);
-                        $getval = self::getpath($getpath, $src, null, null);
+                        $getval = self::getpath($src, $getpath, null, null);
                         $part = self::stringify($getval);
                     } else if ($state && str_starts_with($part, '$REF:')) {
                         // $REF:refpath$ -> get spec value, use as path part (string)
@@ -1136,7 +1136,7 @@ class Struct
                         }
                     } else if ($state && str_starts_with($part, '$META:')) {
                         // $META:metapath$ -> get meta value, use as path part (string)
-                        $part = self::stringify(self::getpath(substr($part, 6, -1), self::getprop($state, 'meta'), null, null));
+                        $part = self::stringify(self::getpath(self::getprop($state, 'meta'), substr($part, 6, -1), null, null));
                     }
 
                     // $$ escapes $
@@ -1167,7 +1167,7 @@ class Struct
                                 $fullpath = array_merge($dpath_slice, $parts_slice);
 
                                 if (is_array($dpath) && $ascends <= count($dpath)) {
-                                    $val = self::getpath($fullpath, $store, null, null);
+                                    $val = self::getpath($store, $fullpath, null, null);
                                 } else {
                                     $val = self::UNDEF;
                                 }
@@ -1202,12 +1202,20 @@ class Struct
     public static function inject(
         mixed $val,
         mixed $store,
-        ?callable $modify = null,
-        mixed $current = null,
-        ?object $injdef = null
+        mixed $injdef = null
     ): mixed {
+        // Extract modify/current from injdef if it's a config object
+        $modify = null;
+        $current = null;
+        if ($injdef !== null && is_object($injdef) && !property_exists($injdef, 'mode')) {
+            // injdef is a config object (not an Injection state)
+            // injdef is a config object (not an Injection state)
+            $modify = property_exists($injdef, 'modify') ? $injdef->modify : null;
+            $current = property_exists($injdef, 'current') ? $injdef->current : null;
+        }
+
         // Check if we're using an existing injection state
-        if ($injdef !== null && property_exists($injdef, 'mode')) {
+        if ($injdef !== null && is_object($injdef) && property_exists($injdef, 'mode')) {
             // Use the existing injection state directly
             $state = $injdef;
         } else {
@@ -1293,7 +1301,7 @@ class Struct
 
             // Get the extracted path reference.
             $current = ($inj !== null && property_exists($inj, 'dparent')) ? $inj->dparent : null;
-            $out = self::getpath($pathref, $store, $current, $inj);
+            $out = self::getpath($store, $pathref, $current, $inj);
             // When result is a transform (callable), run it via the handler
             if ($inj !== null && is_callable($inj->handler) && is_callable($out) && str_starts_with($pathref, self::S_DS)) {
                 $out = call_user_func($inj->handler, $inj, $out, $pathref, $store);
@@ -1320,7 +1328,7 @@ class Struct
             }
             // Use dparent from injection state as current context for relative path resolution
             $current = ($inj !== null && property_exists($inj, 'dparent')) ? $inj->dparent : null;
-            $found = self::getpath($ref, $store, $current, $inj);
+            $found = self::getpath($store, $ref, $current, $inj);
 
             // Ensure inject value is a string.
             if ($found === self::UNDEF) {
@@ -1360,7 +1368,7 @@ class Struct
         }
 
         // Otherwise treat it as a path
-        $result = self::getpath($expr, $store, $current, $state);
+        $result = self::getpath($store, $expr, $current, $state);
         return $result;
     }
 
@@ -1542,7 +1550,7 @@ class Struct
                             $pathref = str_replace('$BT', '`', $pathref);
                             $pathref = str_replace('$DS', '$', $pathref);
                         }
-                        $resolved = self::getpath($pathref, $store);
+                        $resolved = self::getpath($store, $pathref);
                     } else {
                         $resolved = $arg;
                     }
@@ -1599,7 +1607,7 @@ class Struct
         
         // Source data
         $srcstore = self::getprop($store, $state->base, $store);
-        $src = self::getpath($srcpath, $srcstore, $state);
+        $src = self::getpath($srcstore, $srcpath, $state);
 
         // Create parallel data structures: source entries :: child templates  
         $tcur = [];
@@ -1668,7 +1676,7 @@ class Struct
             self::setprop($tinj->parent, $ckey, $tval);
 
             // Inject using the proper injection state
-            $result = self::inject($tval, $store, $state->modify, $tinj->dparent, $tinj);
+            $result = self::inject($tval, $store, $tinj);
             
             $rval = $tinj->val;
         }
@@ -1716,7 +1724,7 @@ class Struct
 
         // Source data
         $srcstore = self::getprop($store, $state->base, $store);
-        $src = self::getpath($srcpath, $srcstore, null, $state);
+        $src = self::getpath($srcstore, $srcpath, null, $state);
 
         // Prepare source as a list - matching TypeScript logic exactly
         if (self::islist($src)) {
@@ -1841,7 +1849,7 @@ class Struct
                     $individualState->key = $templateKey;
                     
                     // Inject this individual template
-                    $injectedTemplate = self::inject($template, $store, $state->modify, $sourceNode, $individualState);
+                    $injectedTemplate = self::inject($template, $store, $individualState);
                     self::setprop($tval, $templateKey, $injectedTemplate);
                 }
             }
@@ -1868,8 +1876,8 @@ class Struct
         $specFn = self::getprop($store, '$SPEC');
         $spec = is_callable($specFn) ? $specFn() : self::UNDEF;
         $dpath = self::slice($state->path, 1);
-        $pathState = (object) ['dpath' => $dpath, 'dparent' => self::getpath($dpath, $spec)];
-        $ref = self::getpath($refpath, $spec, null, null);
+        $pathState = (object) ['dpath' => $dpath, 'dparent' => self::getpath($spec, $dpath)];
+        $ref = self::getpath($spec, $refpath, null, null);
         $hasSubRef = false;
         if (self::isnode($ref)) {
             self::walk($ref, function ($_k, $v) use (&$hasSubRef) {
@@ -1883,11 +1891,11 @@ class Struct
         $pathLen = count($state->path);
         $cpath = $pathLen >= 3 ? self::slice($state->path, 0, -2) : [];
         $tpath = self::slice($state->path, 0, -1);
-        $tcur = self::getpath($cpath, $store);
+        $tcur = self::getpath($store, $cpath);
         // Resolve current value at path from spec; strip $TOP if present so we resolve relative to spec root
         $tpathInSpec = (isset($state->path[0]) && $state->path[0] === self::S_DTOP)
             ? self::slice($state->path, 1, -1) : $tpath;
-        $tval = self::getpath($tpathInSpec, $spec);
+        $tval = self::getpath($spec, $tpathInSpec);
         $rval = self::UNDEF;
         // Resolve when: no nested $REF, or current path exists in spec, or inside list with scalar ref
         $insideListWithScalarRef = isset($state->prior) && !self::isnode($ref);
@@ -1902,7 +1910,7 @@ class Struct
                 'handler' => $state->handler, 'base' => $state->base, 'modify' => $state->modify,
                 'errs' => $state->errs ?? [], 'meta' => $state->meta ?? (object) [],
             ];
-            $rval = self::inject($tref, $store, $state->modify, $tcur, $tinj);
+            $rval = self::inject($tref, $store, $tinj);
         }
         // When ref is scalar and we didn't resolve (e.g. path/tval issue), use ref as value
         if ($rval === self::UNDEF && !self::isnode($ref)) {
@@ -1939,9 +1947,28 @@ class Struct
     public static function transform(
         mixed $data,
         mixed $spec,
-        mixed $extra = null,
-        ?callable $modify = null
+        mixed $injdef = null
     ): mixed {
+        // Support injdef object pattern or backward compat (extra data passed directly)
+        $extra = null;
+        $modify = null;
+        $errs = null;
+        if (is_object($injdef) && (
+            property_exists($injdef, 'extra') ||
+            property_exists($injdef, 'modify') ||
+            property_exists($injdef, 'errs') ||
+            property_exists($injdef, 'meta') ||
+            property_exists($injdef, 'handler')
+        )) {
+            // New injdef pattern: { extra, modify, errs, meta, handler }
+            $extra = property_exists($injdef, 'extra') ? $injdef->extra : null;
+            $modify = property_exists($injdef, 'modify') ? $injdef->modify : null;
+            $errs = property_exists($injdef, 'errs') ? $injdef->errs : null;
+        } else {
+            // Backward compat: treat 3rd arg as extra data/store directly
+            $extra = $injdef;
+        }
+
         // 1) clone spec so we can mutate it
         $specClone = self::clone($spec);
 
@@ -1949,7 +1976,7 @@ class Struct
         $extraTransforms = [];
         $extraData = [];
 
-        foreach ((array) $extra as $k => $v) {
+        foreach ((array) ($extra ?? []) as $k => $v) {
             if (str_starts_with((string) $k, self::S_DS)) {
                 $extraTransforms[$k] = $v;
             } else {
@@ -1984,7 +2011,10 @@ class Struct
         );
 
         // 4) run inject to do the transform
-        $result = self::inject($specClone, $store, $modify, $dataClone);
+        $injectOpts = new \stdClass();
+        $injectOpts->modify = $modify;
+        $injectOpts->current = $dataClone;
+        $result = self::inject($specClone, $store, $injectOpts);
 
         // When a child transform (e.g. $REF) deletes the key, inject returns SKIP; return mutated spec
         if ($result === self::$SKIP) {
@@ -2571,7 +2601,14 @@ class Struct
 
         $meta = is_object($injdef) && property_exists($injdef, 'meta') ? $injdef->meta : null;
 
-        $out = self::transform($data, $spec, $store, [self::class, '_validation']);
+        $transformOpts = new \stdClass();
+        $transformOpts->extra = $store;
+        $transformOpts->modify = [self::class, '_validation'];
+        if ($meta !== null) {
+            $transformOpts->meta = $meta;
+        }
+        $transformOpts->errs = $errs;
+        $out = self::transform($data, $spec, $transformOpts);
 
         $generr = (0 < count($errs) && !$collect);
         if ($generr) {
@@ -2708,7 +2745,7 @@ class Struct
             $term = self::getprop($state->parent, $state->key);
 
             $ppath = self::slice($state->path, -1);
-            $point = self::getpath($ppath, $store);
+            $point = self::getpath($store, $ppath);
 
             $vstore = self::merge([(object) [], $store], 1);
             $vstore->{'$TOP'} = $point;
@@ -2741,7 +2778,7 @@ class Struct
             $gkey = self::getelem($state->path, -2);
 
             $ppath = self::slice($state->path, -1);
-            $point = self::getpath($ppath, $store);
+            $point = self::getpath($store, $ppath);
 
             $pass = false;
 
@@ -2959,7 +2996,7 @@ class Struct
 
                 // Perform the val mode injection on the child value.
                 // Pass the child injection state to maintain context
-                $injected_result = self::inject($childinj->val, $store, $state->modify, $childinj->dparent, $childinj);
+                $injected_result = self::inject($childinj->val, $store, $childinj);
                 if ($injected_result === self::$SKIP) {
                     $childReturnedSkip = true;
                 } else {
