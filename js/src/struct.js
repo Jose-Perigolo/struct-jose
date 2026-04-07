@@ -68,17 +68,74 @@ const S_DERRS = '$ERRS'
 const S_array = 'array'
 const S_base = 'base'
 const S_boolean = 'boolean'
+const S_decimal = 'decimal'
 const S_function = 'function'
+const S_instance = 'instance'
+const S_integer = 'integer'
+const S_list = 'list'
+const S_map = 'map'
+const S_nil = 'nil'
+const S_node = 'node'
 const S_number = 'number'
-const S_object = 'object'
-const S_string = 'string'
 const S_null = 'null'
+const S_object = 'object'
+const S_scalar = 'scalar'
+const S_string = 'string'
+const S_symbol = 'symbol'
+const S_any = 'any'
 const S_MT = ''
 const S_BT = '`'
 const S_DS = '$'
 const S_DT = '.'
 const S_CN = ':'
+const S_SP = ' '
+const S_VIZ = ': '
 const S_KEY = 'KEY'
+
+
+// Types
+let t = 31
+const T_any = (1 << t--) - 1
+const T_noval = 1 << t-- // Means property absent, undefined. Also NOT a scalar!
+const T_boolean = 1 << t--
+const T_decimal = 1 << t--
+const T_integer = 1 << t--
+const T_number = 1 << t--
+const T_string = 1 << t--
+const T_function = 1 << t--
+const T_symbol = 1 << t--
+const T_null = 1 << t-- // The actual JSON null value.
+t -= 7
+const T_list = 1 << t--
+const T_map = 1 << t--
+const T_instance = 1 << t--
+t -= 4
+const T_scalar = 1 << t--
+const T_node = 1 << t--
+
+const TYPENAME = [
+  S_any,
+  S_nil,
+  S_boolean,
+  S_decimal,
+  S_integer,
+  S_number,
+  S_string,
+  S_function,
+  S_symbol,
+  S_null,
+  '', '', '',
+  '', '', '', '',
+  S_list,
+  S_map,
+  S_instance,
+  '', '', '', '',
+  S_scalar,
+  S_node,
+]
+
+const SKIP = { '`$SKIP`': true }
+const DELETE = { '`$DELETE`': true }
 
 
 // The standard undefined value for this language.
@@ -126,25 +183,66 @@ function isfunc(val) {
 }
 
 
-// Determine the type of a value as a string.
-// Returns one of: 'null', 'string', 'number', 'boolean', 'function', 'array', 'object'
-// Normalizes and simplifies JavaScript's type system for consistency.
+// Get type name string from type bitfield value.
+function typename(t) {
+  let tname = S_MT
+  for (let tI = 0; tI < TYPENAME.length; tI++) {
+    if (S_MT !== TYPENAME[tI] && 0 < (t & (1 << (31 - tI)))) {
+      tname = TYPENAME[tI]
+    }
+  }
+  return tname
+}
+
+
+// Determine the type of a value as a bitfield integer.
 function typify(value) {
-  if (value === null || value === undefined) {
-    return S_null
+  if (undefined === value) {
+    return T_noval
   }
 
-  const type = typeof value
+  const typestr = typeof value
 
-  if (Array.isArray(value)) {
-    return S_array
+  if (null === value) {
+    return T_scalar | T_null
+  }
+  else if (S_number === typestr) {
+    if (Number.isInteger(value)) {
+      return T_scalar | T_number | T_integer
+    }
+    else if (isNaN(value)) {
+      return T_noval
+    }
+    else {
+      return T_scalar | T_number | T_decimal
+    }
+  }
+  else if (S_string === typestr) {
+    return T_scalar | T_string
+  }
+  else if (S_boolean === typestr) {
+    return T_scalar | T_boolean
+  }
+  else if (S_function === typestr) {
+    return T_scalar | T_function
+  }
+  else if (S_symbol === typestr) {
+    return T_scalar | T_symbol
+  }
+  else if (Array.isArray(value)) {
+    return T_node | T_list
+  }
+  else if (S_object === typestr) {
+    if (value.constructor instanceof Function) {
+      let cname = value.constructor.name
+      if ('Object' !== cname && 'Array' !== cname) {
+        return T_node | T_instance
+      }
+    }
+    return T_node | T_map
   }
 
-  if (type === 'object') {
-    return S_object
-  }
-
-  return type
+  return T_any
 }
 
 
@@ -998,7 +1096,7 @@ const validate_STRING = (state, _val, current) => {
   let out = getprop(current, state.key)
 
   const t = typify(out)
-  if (S_string !== t) {
+  if (0 === (T_string & t)) {
     let msg = _invalidTypeMsg(state.path, S_string, t, out)
     state.errs.push(msg)
     return UNDEF
@@ -1019,7 +1117,7 @@ const validate_NUMBER = (state, _val, current) => {
   let out = getprop(current, state.key)
 
   const t = typify(out)
-  if (S_number !== t) {
+  if (0 === (T_number & t)) {
     state.errs.push(_invalidTypeMsg(state.path, S_number, t, out))
     return UNDEF
   }
@@ -1033,7 +1131,7 @@ const validate_BOOLEAN = (state, _val, current) => {
   let out = getprop(current, state.key)
 
   const t = typify(out)
-  if (S_boolean !== t) {
+  if (0 === (T_boolean & t)) {
     state.errs.push(_invalidTypeMsg(state.path, S_boolean, t, out))
     return UNDEF
   }
@@ -1047,7 +1145,7 @@ const validate_OBJECT = (state, _val, current) => {
   let out = getprop(current, state.key)
 
   const t = typify(out)
-  if (t !== S_object) {
+  if (0 === (T_map & t)) {
     state.errs.push(_invalidTypeMsg(state.path, S_object, t, out))
     return UNDEF
   }
@@ -1061,7 +1159,7 @@ const validate_ARRAY = (state, _val, current) => {
   let out = getprop(current, state.key)
 
   const t = typify(out)
-  if (t !== S_array) {
+  if (0 === (T_list & t)) {
     state.errs.push(_invalidTypeMsg(state.path, S_array, t, out))
     return UNDEF
   }
@@ -1075,7 +1173,7 @@ const validate_FUNCTION = (state, _val, current) => {
   let out = getprop(current, state.key)
 
   const t = typify(out)
-  if (S_function !== t) {
+  if (0 === (T_function & t)) {
     state.errs.push(_invalidTypeMsg(state.path, S_function, t, out))
     return UNDEF
   }
@@ -1335,7 +1433,7 @@ const _validation = (
   const ptype = typify(pval)
 
   // Delete any special commands remaining.
-  if (S_string === ptype && pval.includes(S_DS)) {
+  if (0 !== (T_string & ptype) && pval.includes(S_DS)) {
     return
   }
 
@@ -1343,13 +1441,13 @@ const _validation = (
 
   // Type mismatch.
   if (ptype !== ctype && UNDEF !== pval) {
-    state.errs.push(_invalidTypeMsg(state.path, ptype, ctype, cval, 'V0010'))
+    state.errs.push(_invalidTypeMsg(state.path, typename(ptype), ctype, cval, 'V0010'))
     return
   }
 
   if (ismap(cval)) {
     if (!ismap(pval)) {
-      state.errs.push(_invalidTypeMsg(state.path, ptype, ctype, cval, 'V0020'))
+      state.errs.push(_invalidTypeMsg(state.path, typename(ptype), ctype, cval, 'V0020'))
       return
     }
 
@@ -1382,7 +1480,7 @@ const _validation = (
   }
   else if (islist(cval)) {
     if (!islist(pval)) {
-      state.errs.push(_invalidTypeMsg(state.path, ptype, ctype, cval, 'V0030'))
+      state.errs.push(_invalidTypeMsg(state.path, typename(ptype), ctype, cval, 'V0030'))
     }
   }
   else {
@@ -1479,7 +1577,7 @@ function _invalidTypeMsg(path, needtype, vt, v, _whence) {
   return 'Expected ' +
     (1 < path.length ? ('field ' + pathify(path, 1) + ' to be ') : '') +
     needtype + ', but found ' +
-    (null != v ? vt + ': ' : '') + vs +
+    (null != v ? typename(vt) + S_VIZ : '') + vs +
 
     // Uncomment to help debug validation errors.
     // (null == _whence ? '' : ' [' + _whence + ']') +
@@ -1606,9 +1704,29 @@ class StructUtility {
   strkey = strkey
   stringify = stringify
   transform = transform
+  typename = typename
   typify = typify
   validate = validate
   walk = walk
+
+  SKIP = SKIP
+  DELETE = DELETE
+
+  T_any = T_any
+  T_noval = T_noval
+  T_boolean = T_boolean
+  T_decimal = T_decimal
+  T_integer = T_integer
+  T_number = T_number
+  T_string = T_string
+  T_function = T_function
+  T_symbol = T_symbol
+  T_null = T_null
+  T_list = T_list
+  T_map = T_map
+  T_instance = T_instance
+  T_scalar = T_scalar
+  T_node = T_node
 }
 
 
@@ -1637,8 +1755,28 @@ module.exports = {
   strkey,
   stringify,
   transform,
+  typename,
   typify,
   validate,
   walk,
+
+  SKIP,
+  DELETE,
+
+  T_any,
+  T_noval,
+  T_boolean,
+  T_decimal,
+  T_integer,
+  T_number,
+  T_string,
+  T_function,
+  T_symbol,
+  T_null,
+  T_list,
+  T_map,
+  T_instance,
+  T_scalar,
+  T_node,
 
 }
