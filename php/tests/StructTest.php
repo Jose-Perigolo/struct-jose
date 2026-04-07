@@ -827,15 +827,18 @@ class StructTest extends TestCase
 
     public function testValidateInvalid(): void
     {
+        $count = 0;
         $this->testSet(
             $this->testSpec->validate->invalid,
-            function ($input) {
+            function ($input) use (&$count) {
+                $count++;
                 return Struct::validate(
                     property_exists($input, 'data') ? $input->data : (object) [],
                     property_exists($input, 'spec') ? $input->spec : (object) []
                 );
             }
         );
+        $this->assertGreaterThan(0, $count, 'validate-invalid should have run at least one test entry');
     }
 
     public function testValidateSpecial(): void

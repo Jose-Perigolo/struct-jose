@@ -1866,18 +1866,26 @@ class Struct
     /** @internal */
     public static function transform_REF(object $state, mixed $_val, string $_ref, mixed $store): mixed
     {
+        $nodes = $state->nodes ?? [];
+
         if (self::S_MVAL !== $state->mode) {
             return self::UNDEF;
         }
-        $parentVal = self::getprop($state->parent, $state->key);
-        // Ref path is the second element of the list (parent), not of the current value
+
+        // Get arguments: ['`$REF`', 'ref-path'].
         $refpath = self::getprop($state->parent, 1);
         $state->keyI = self::size($state->keys ?? []);
+
+        // Spec reference.
         $specFn = self::getprop($store, '$SPEC');
         $spec = is_callable($specFn) ? $specFn() : self::UNDEF;
+
         $dpath = self::slice($state->path, 1);
-        $pathState = (object) ['dpath' => $dpath, 'dparent' => self::getpath($spec, $dpath)];
-        $ref = self::getpath($spec, $refpath, null, null);
+        $ref = self::getpath($spec, $refpath, null, (object) [
+            'dpath' => $dpath,
+            'dparent' => self::getpath($spec, $dpath),
+        ]);
+
         $hasSubRef = false;
         if (self::isnode($ref)) {
             self::walk($ref, function ($_k, $v) use (&$hasSubRef) {
@@ -1887,52 +1895,55 @@ class Struct
                 return $v;
             });
         }
+
         $tref = self::clone($ref);
+
+        // TS: cpath = slice(inj.path, -3) => remove last 3 elements
+        // TS: tpath = slice(inj.path, -1) => remove last element
         $pathLen = count($state->path);
-        $cpath = $pathLen >= 3 ? self::slice($state->path, 0, -2) : [];
-        $tpath = self::slice($state->path, 0, -1);
+        $cpath = $pathLen > 3 ? array_slice($state->path, 0, $pathLen - 3) : [];
+        $tpath = $pathLen > 1 ? array_slice($state->path, 0, $pathLen - 1) : [];
+
         $tcur = self::getpath($store, $cpath);
-        // Resolve current value at path from spec; strip $TOP if present so we resolve relative to spec root
-        $tpathInSpec = (isset($state->path[0]) && $state->path[0] === self::S_DTOP)
-            ? self::slice($state->path, 1, -1) : $tpath;
-        $tval = self::getpath($spec, $tpathInSpec);
+        $tval = self::getpath($store, $tpath);
+
         $rval = self::UNDEF;
-        // Resolve when: no nested $REF, or current path exists in spec, or inside list with scalar ref
-        $insideListWithScalarRef = isset($state->prior) && !self::isnode($ref);
-        $shouldResolve = !$hasSubRef || $tval !== self::UNDEF || $insideListWithScalarRef;
-        if ($shouldResolve) {
+
+        if (!$hasSubRef || $tval !== self::UNDEF) {
             $lastKey = self::getelem($tpath, -1);
+
             $tinj = (object) [
-                'mode' => self::S_MVAL, 'key' => $lastKey,
-                'parent' => self::getelem($state->nodes, -2),
-                'path' => $tpath, 'nodes' => array_slice($state->nodes, 0, -1),
-                'val' => $tref, 'dpath' => self::flatten([$cpath]), 'dparent' => $tcur,
-                'handler' => $state->handler, 'base' => $state->base, 'modify' => $state->modify,
-                'errs' => $state->errs ?? [], 'meta' => $state->meta ?? (object) [],
+                'mode' => self::S_MVAL,
+                'full' => false,
+                'keyI' => 0,
+                'keys' => [$lastKey],
+                'key' => $lastKey,
+                'val' => $tref,
+                'parent' => self::getelem($nodes, count($nodes) - 2),
+                'path' => $tpath,
+                'nodes' => array_slice($nodes, 0, max(0, count($nodes) - 1)),
+                'handler' => $state->handler ?? null,
+                'errs' => $state->errs ?? [],
+                'meta' => $state->meta ?? (object) [],
+                'base' => $state->base ?? self::S_DTOP,
+                'modify' => $state->modify ?? null,
+                'dpath' => self::flatten([$cpath]),
+                'dparent' => $tcur,
             ];
-            $rval = self::inject($tref, $store, $tinj);
-        }
-        // When ref is scalar and we didn't resolve (e.g. path/tval issue), use ref as value
-        if ($rval === self::UNDEF && !self::isnode($ref)) {
-            $rval = $ref;
-        }
-        // Set on grandparent (spec) when inside a list so we replace the list key, not the list element.
-        // When we have prior (list state), the list's container is prior->nodes[1] at prior->path[1] (spec at 'r0').
-        if (count($state->path) >= 2) {
-            $specFn = self::getprop($store, '$SPEC');
-            $specToSet = is_callable($specFn) ? $specFn() : self::UNDEF;
-            $specKey = $state->path[1];
-            if ($specToSet !== self::UNDEF && $specKey !== self::UNDEF) {
-                self::setprop($specToSet, $specKey, $rval);
-            } else {
-                self::_setval($state, $rval, 0);
-            }
+
+            self::inject($tref, $store, $tinj);
+            $rval = $tinj->val ?? $tref;
         } else {
-            self::_setval($state, $rval, 0);
+            $rval = self::UNDEF;
         }
+
+        // Set on grandparent
+        self::_setval($state, $rval, 2);
+
         if (isset($state->prior)) {
             $state->prior->keyI--;
         }
+
         return self::$SKIP;
     }
 
@@ -2057,22 +2068,26 @@ class Struct
     /**
      * Helper function to set a value in injection state, equivalent to TypeScript's setval method
      */
-    private static function _setval(object $inj, mixed $val, int $ancestor = 0): void
+    private static function _setval(object $inj, mixed $val, int $ancestor = 0): mixed
     {
-        if ($ancestor === 0) {
-            self::setprop($inj->parent, $inj->key, $val);
+        $parent = null;
+        if ($ancestor < 2) {
+            if ($val === self::UNDEF || $val === null) {
+                $parent = self::delprop($inj->parent, $inj->key);
+                $inj->parent = $parent;
+            } else {
+                $parent = self::setprop($inj->parent, $inj->key, $val);
+            }
         } else {
-            // Navigate up the ancestor chain
-            $targetIndex = count($inj->nodes) + $ancestor;
-            if ($targetIndex >= 0 && $targetIndex < count($inj->nodes)) {
-                $targetNode = $inj->nodes[$targetIndex];
-                $pathIndex = count($inj->path) + $ancestor;
-                if ($pathIndex >= 0 && $pathIndex < count($inj->path)) {
-                    $targetKey = $inj->path[$pathIndex];
-                    self::setprop($targetNode, $targetKey, $val);
-                }
+            $aval = self::getelem($inj->nodes ?? [], 0 - $ancestor);
+            $akey = self::getelem($inj->path ?? [], 0 - $ancestor);
+            if ($val === self::UNDEF || $val === null) {
+                $parent = self::delprop($aval, $akey);
+            } else {
+                $parent = self::setprop($aval, $akey, $val);
             }
         }
+        return $parent;
     }
 
     /**
