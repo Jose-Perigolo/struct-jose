@@ -87,7 +87,12 @@ class Struct
     /**
      * Private marker to indicate a skippable value.
      */
-    private static array $SKIP = ['__SKIP__' => true];
+    private static array $SKIP = ['`$SKIP`' => true];
+
+    // Mode constants (bitfield) matching TypeScript canonical
+    public const M_KEYPRE = 1;
+    public const M_KEYPOST = 2;
+    public const M_VAL = 4;
 
     /* =======================
      * Regular expressions for validation and transformation
@@ -268,6 +273,58 @@ class Struct
         }
         $clz = 31 - (int) floor(log($type, 2));
         return self::TYPENAME[$clz] ?? self::TYPENAME[0];
+    }
+
+    /**
+     * Get a defined value. Returns alt if val is undefined.
+     */
+    public static function getdef(mixed $val, mixed $alt): mixed
+    {
+        if ($val === self::UNDEF || $val === null) {
+            return $alt;
+        }
+        return $val;
+    }
+
+    /**
+     * Replace a search string (all), or a regex pattern, in a source string.
+     */
+    public static function replace(string $s, string|array $from, mixed $to): string
+    {
+        $rs = $s;
+        $ts = self::typify($s);
+        if (0 === (self::T_string & $ts)) {
+            $rs = self::stringify($s);
+        } elseif (0 < ((self::T_noval | self::T_null) & $ts)) {
+            $rs = self::S_MT;
+        }
+        if (is_string($from) && @preg_match($from, '') !== false && $from[0] === '/') {
+            return preg_replace($from, (string)$to, $rs);
+        }
+        return str_replace((string)$from, (string)$to, $rs);
+    }
+
+    /**
+     * Define a JSON Object using key-value arguments.
+     */
+    public static function jm(mixed ...$kv): object
+    {
+        $kvsize = count($kv);
+        $o = new \stdClass();
+        for ($i = 0; $i < $kvsize; $i += 2) {
+            $k = $kv[$i] ?? ('$KEY' . $i);
+            $k = is_string($k) ? $k : self::stringify($k);
+            $o->$k = $kv[$i + 1] ?? null;
+        }
+        return $o;
+    }
+
+    /**
+     * Define a JSON Array using arguments.
+     */
+    public static function jt(mixed ...$v): array
+    {
+        return array_values($v);
     }
 
     public static function getprop(mixed $val, mixed $key, mixed $alt = self::UNDEF): mixed
@@ -2092,6 +2149,25 @@ class Struct
     }
 
     /**
+     * Generic type validator. Validates against any type name via TYPENAME lookup.
+     */
+    public static function validate_TYPE(object $inj, mixed $_val = null, ?string $ref = null): mixed
+    {
+        $tname = strtolower(substr($ref ?? '', 1));
+        $idx = array_search($tname, self::TYPENAME);
+        $typev = ($idx !== false) ? (1 << (31 - $idx)) : 0;
+        $out = self::getprop($inj->dparent, $inj->key);
+
+        $t = self::typify($out);
+        if (0 === ($t & $typev)) {
+            $inj->errs[] = self::_invalidTypeMsg($inj->path, $tname, $t, $out);
+            return self::UNDEF;
+        }
+
+        return $out;
+    }
+
+    /**
      * Allow any value.
      */
     public static function validate_ANY(object $inj): mixed
@@ -2474,11 +2550,16 @@ class Struct
             '$PACK' => null,
 
             '$STRING' => [self::class, 'validate_STRING'],
-            '$NUMBER' => [self::class, 'validate_NUMBER'],
-            '$BOOLEAN' => [self::class, 'validate_BOOLEAN'],
-            '$OBJECT' => [self::class, 'validate_OBJECT'],
-            '$ARRAY' => [self::class, 'validate_ARRAY'],
-            '$FUNCTION' => [self::class, 'validate_FUNCTION'],
+            '$NUMBER' => [self::class, 'validate_TYPE'],
+            '$INTEGER' => [self::class, 'validate_TYPE'],
+            '$DECIMAL' => [self::class, 'validate_TYPE'],
+            '$BOOLEAN' => [self::class, 'validate_TYPE'],
+            '$NULL' => [self::class, 'validate_TYPE'],
+            '$NIL' => [self::class, 'validate_TYPE'],
+            '$MAP' => [self::class, 'validate_TYPE'],
+            '$LIST' => [self::class, 'validate_TYPE'],
+            '$FUNCTION' => [self::class, 'validate_TYPE'],
+            '$INSTANCE' => [self::class, 'validate_TYPE'],
             '$ANY' => [self::class, 'validate_ANY'],
             '$CHILD' => [self::class, 'validate_CHILD'],
             '$ONE' => [self::class, 'validate_ONE'],
@@ -2509,7 +2590,7 @@ class Struct
      * @param mixed $children The object or array to search in
      * @return array Array of matching children
      */
-    public static function select(mixed $query, mixed $children): array
+    public static function select(mixed $children, mixed $query): array
     {
         if (!self::isnode($children)) {
             return [];
@@ -2536,10 +2617,12 @@ class Struct
             'extra' => [
                 '$AND' => [self::class, 'select_AND'],
                 '$OR' => [self::class, 'select_OR'],
+                '$NOT' => [self::class, 'select_NOT'],
                 '$GT' => [self::class, 'select_CMP'],
                 '$LT' => [self::class, 'select_CMP'],
                 '$GTE' => [self::class, 'select_CMP'],
                 '$LTE' => [self::class, 'select_CMP'],
+                '$LIKE' => [self::class, 'select_CMP'],
             ]
         ];
 
@@ -2617,38 +2700,75 @@ class Struct
     }
 
     /**
+     * Helper method for $NOT operator in select queries
+     */
+    private static function select_NOT(object $state, mixed $_val, mixed $_ref, mixed $store): mixed
+    {
+        if (self::S_MKEYPRE === $state->mode) {
+            $term = self::getprop($state->parent, $state->key);
+
+            $ppath = self::slice($state->path, -1);
+            $point = self::getpath($ppath, $store);
+
+            $vstore = self::merge([(object) [], $store], 1);
+            $vstore->{'$TOP'} = $point;
+
+            $terrs = [];
+            self::validate($point, $term, (object) [
+                'extra' => $vstore,
+                'errs' => $terrs,
+                'meta' => $state->meta,
+            ]);
+
+            if (count($terrs) === 0) {
+                $state->errs[] = 'NOT:' . self::pathify($ppath) . ': ' . self::stringify($point) . ' fail:' . self::stringify($term);
+            }
+
+            $gkey = self::getelem($state->path, -2);
+            $gp = self::getelem($state->nodes, -2);
+            self::setprop($gp, $gkey, $point);
+        }
+        return null;
+    }
+
+    /**
      * Helper method for comparison operators in select queries
      */
     private static function select_CMP(object $state, mixed $_val, string $ref, mixed $store): mixed
     {
         if (self::S_MKEYPRE === $state->mode) {
             $term = self::getprop($state->parent, $state->key);
-            $src = self::getprop($store, $state->base, $store);
             $gkey = self::getelem($state->path, -2);
 
-            $tval = self::getprop($src, $gkey);
+            $ppath = self::slice($state->path, -1);
+            $point = self::getpath($ppath, $store);
+
             $pass = false;
 
-            if ('$GT' === $ref && $tval > $term) {
+            if ('$GT' === $ref && $point > $term) {
                 $pass = true;
             }
-            else if ('$LT' === $ref && $tval < $term) {
+            elseif ('$LT' === $ref && $point < $term) {
                 $pass = true;
             }
-            else if ('$GTE' === $ref && $tval >= $term) {
+            elseif ('$GTE' === $ref && $point >= $term) {
                 $pass = true;
             }
-            else if ('$LTE' === $ref && $tval <= $term) {
+            elseif ('$LTE' === $ref && $point <= $term) {
+                $pass = true;
+            }
+            elseif ('$LIKE' === $ref && preg_match('/' . $term . '/', self::stringify($point))) {
                 $pass = true;
             }
 
             if ($pass) {
                 // Update spec to match found value so that _validate does not complain
                 $gp = self::getelem($state->nodes, -2);
-                self::setprop($gp, $gkey, $tval);
+                self::setprop($gp, $gkey, $point);
             }
             else {
-                $state->errs[] = 'CMP: fail:' . $ref . ' ' . self::stringify($term);
+                $state->errs[] = 'CMP: ' . self::pathify($ppath) . ': ' . self::stringify($point) .
+                    ' fail:' . $ref . ' ' . self::stringify($term);
             }
         }
         return null;
