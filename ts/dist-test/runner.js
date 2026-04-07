@@ -148,7 +148,7 @@ function resolveArgs(entry, testpack, utility, structUtils) {
         let first = args[0];
         if (structUtils.ismap(first)) {
             first = structUtils.clone(first);
-            first = utility.contextify(first);
+            first = utility.makeContext(first);
             args[0] = first;
             entry.ctx = first;
             first.client = testpack.client;
