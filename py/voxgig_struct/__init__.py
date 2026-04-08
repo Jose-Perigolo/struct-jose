@@ -44,7 +44,7 @@ from .voxgig_struct import (
     typify,
     validate,
     walk,
-    InjectState,
+    Injection,
     StructUtility,
     checkPlacement,
     injectorArgs,

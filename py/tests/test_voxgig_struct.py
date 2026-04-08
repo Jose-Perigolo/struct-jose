@@ -21,7 +21,7 @@ except ImportError:
     )
     from sdk import SDK
 
-from voxgig_struct import InjectState
+from voxgig_struct import Injection
 from voxgig_struct.voxgig_struct import (
     T_noval, T_scalar, T_function, T_symbol, T_any, T_node, T_instance, T_null,
 )
@@ -510,7 +510,7 @@ class TestStruct(unittest.TestCase):
     #         state.meta["step"] = state.meta["step"]+1 
     #         return out
 
-    #     state = InjectState(
+    #     state = Injection(
     #             meta = {"step":0},
     #             handler = handler_fn,
     #             mode = "val",

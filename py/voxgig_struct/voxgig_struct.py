@@ -148,7 +148,7 @@ SKIP = {'`$SKIP`': True}
 DELETE = {'`$DELETE`': True}
 
 
-class InjectState:
+class Injection:
     """
     Injection state used for recursive injection into JSON-like data structures.
     """
@@ -212,12 +212,12 @@ class InjectState:
 
         return self.dparent
 
-    def child(self, keyI: int, keys: List[str]) -> 'InjectState':
+    def child(self, keyI: int, keys: List[str]) -> 'Injection':
         """Create a child state object with the given key index and keys."""
         key = strkey(keys[keyI])
         val = self.val
         
-        cinj = InjectState(
+        cinj = Injection(
             mode=self.mode,
             full=self.full,
             keyI=keyI,
@@ -1227,8 +1227,8 @@ def getpath(store, path, injdef=UNDEF):
         return UNDEF
     
     val = store
-    # Support both dict-style injdef and InjectState instance
-    if isinstance(injdef, InjectState):
+    # Support both dict-style injdef and Injection instance
+    if isinstance(injdef, Injection):
         base = injdef.base
         dparent = injdef.dparent
         inj_meta = injdef.meta
@@ -1315,7 +1315,7 @@ def getpath(store, path, injdef=UNDEF):
                     val = getprop(val, part)
     
     # Injdef may provide a custom handler to modify found value.
-    handler = injdef.handler if isinstance(injdef, InjectState) else (getprop(injdef, 'handler') if injdef else UNDEF)
+    handler = injdef.handler if isinstance(injdef, Injection) else (getprop(injdef, 'handler') if injdef else UNDEF)
     if handler and isfunc(handler):
         ref = pathify(path)
         val = handler(injdef, val, ref, store)
@@ -1363,14 +1363,14 @@ def inject(val, store, injdef=UNDEF):
     valtype = type(val)
 
     # Reuse existing injection state during recursion; otherwise create a new one.
-    if isinstance(injdef, InjectState):
+    if isinstance(injdef, Injection):
         inj = injdef
     else:
         inj = injdef  # may be dict/UNDEF; used below via getprop
         # Create state if at root of injection. The input value is placed
         # inside a virtual parent holder to simplify edge cases.
         parent = {S_DTOP: val}
-        inj = InjectState(
+        inj = Injection(
             mode=S_MVAL,
             full=False,
             keyI=0,
@@ -2696,7 +2696,7 @@ class StructUtility:
     
 
 __all__ = [
-    'InjectState',
+    'Injection',
     'StructUtility',
     'checkPlacement',
     'clone',
