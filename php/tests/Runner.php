@@ -202,7 +202,7 @@ class Runner {
     private static function match($check, $base, $structUtils): void {
         $structUtils->walk($check, function ($key, $val, $parent, $path) use ($base, $structUtils) {
             if (!is_array($val) && !is_object($val)) {
-                $baseval = $structUtils->getpath($path, $base);
+                $baseval = $structUtils->getpath($base, $path);
                 if ($baseval === $val) {
                     return;
                 }

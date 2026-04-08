@@ -46,7 +46,7 @@ async function makeRunner(testfile, client) {
           res = fixJSON(res, flags)
           entry.res = res
 
-          checkResult(entry, res, structUtils)
+          checkResult(entry, args, res, structUtils)
         }
         catch (err) {
           handleError(entry, err, structUtils)
@@ -125,11 +125,16 @@ function resolveEntry(entry, flags) {
 }
 
 
-function checkResult(entry, res, structUtils) {
+function checkResult(entry, args, res, structUtils) {
   let matched = false
 
+  if (entry.err) {
+    return fail('Expected error did not occur: ' + entry.err +
+      '\n\nENTRY: ' + JSON.stringify(entry, null, 2))
+  }
+
   if (entry.match) {
-    const result = { in: entry.in, out: entry.res, ctx: entry.ctx }
+    const result = { in: entry.in, args, out: entry.res, ctx: entry.ctx }
     match(
       entry.match,
       result,
@@ -254,7 +259,7 @@ function match(
   
   structUtils.walk(check, (_key, val, _parent, path) => {
     if(!structUtils.isnode(val)) {
-      let baseval = structUtils.getpath(path, base)
+      let baseval = structUtils.getpath(base, path)
 
       if (baseval === val) {
         return val

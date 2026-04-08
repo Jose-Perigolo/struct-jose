@@ -600,6 +600,27 @@ local function escurl(s)
 end
 
 
+-- Replace a search string (all), or a pattern, in a source string.
+local function replace(s, from, to)
+  local rs = s
+  local ts = typify(s)
+  if 0 == (T_string & ts) then
+    rs = stringify(s)
+  elseif 0 < ((T_noval | T_null) & ts) then
+    rs = S_MT
+  else
+    rs = stringify(s)
+  end
+  if type(from) == 'string' then
+    -- Plain string replacement (all occurrences)
+    return (rs:gsub(escre(from), to))
+  else
+    -- Pattern replacement
+    return (rs:gsub(from, to))
+  end
+end
+
+
 -- Return a sub-array. Start and end are 0-based, end is exclusive.
 -- For numbers: clamp between start and end-1.
 -- For strings: substring from start to end.
@@ -3266,6 +3287,7 @@ local StructUtility = {
   merge = merge,
   pad = pad,
   pathify = pathify,
+  replace = replace,
   select = select_fn,
   setpath = setpath,
   setprop = setprop,
@@ -3305,6 +3327,11 @@ local StructUtility = {
   checkPlacement = checkPlacement,
   injectorArgs = injectorArgs,
   injectChild = injectChild,
+
+  M_KEYPRE = M_KEYPRE,
+  M_KEYPOST = M_KEYPOST,
+  M_VAL = M_VAL,
+  MODENAME = MODENAME,
 }
 StructUtility.__index = StructUtility
 
@@ -3342,6 +3369,7 @@ return {
   merge = merge,
   pad = pad,
   pathify = pathify,
+  replace = replace,
   select = select_fn,
   setpath = setpath,
   setprop = setprop,

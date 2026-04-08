@@ -388,8 +388,8 @@ class StructTest extends TestCase
                     return $val();
                 };
                 return Struct::getpath(
-                    $input->path,
                     $store,
+                    $input->path,
                     null,
                     $state
                 );
@@ -577,7 +577,7 @@ class StructTest extends TestCase
             function ($input) {
                 $path = property_exists($input, 'path') ? $input->path : Struct::UNDEF;
                 $store = property_exists($input, 'store') ? $input->store : Struct::UNDEF;
-                $result = Struct::getpath($path, $store);
+                $result = Struct::getpath($store, $path);
                 return $result;
             },
             true
@@ -598,7 +598,7 @@ class StructTest extends TestCase
                 if (property_exists($input, 'dpath')) {
                     $state->dpath = explode('.', $input->dpath);
                 }
-                $result = Struct::getpath($path, $store, null, $state);
+                $result = Struct::getpath($store, $path, null, $state);
                 return $result;
             },
             true
@@ -613,7 +613,7 @@ class StructTest extends TestCase
                 $path = property_exists($input, 'path') ? $input->path : Struct::UNDEF;
                 $store = property_exists($input, 'store') ? $input->store : Struct::UNDEF;
                 $state = property_exists($input, 'inj') ? $input->inj : null;
-                $result = Struct::getpath($path, $store, null, $state);
+                $result = Struct::getpath($store, $path, null, $state);
                 return $result;
             },
             true
@@ -640,7 +640,7 @@ class StructTest extends TestCase
     public function testInjectString(): void
     {
         // a no-op modifier for string‐only tests
-        $nullModifier = function ($v, $k, $p, $state, $current, $store) {
+        $nullModifier = function ($v, $k = null, $p = null, $state = null, $store = null) {
             // do nothing
             return $v;
         };
@@ -648,9 +648,9 @@ class StructTest extends TestCase
         $this->testSet(
             $this->testSpec->inject->string,
             function (stdClass $in) use ($nullModifier) {
-                // some specs may include a 'current' key
-                $current = property_exists($in, 'current') ? $in->current : null;
-                return Struct::inject($in->val, $in->store, $nullModifier, $current);
+                $opts = new \stdClass();
+                $opts->modify = $nullModifier;
+                return Struct::inject($in->val, $in->store, $opts);
             },
             /* force deep‐equal */ true
         );
@@ -732,15 +732,17 @@ class StructTest extends TestCase
         $this->testSet(
             $this->testSpec->transform->modify,
             function (object $vin) {
+                $opts = new \stdClass();
+                $opts->extra = property_exists($vin, 'store') ? $vin->store : (object) [];
+                $opts->modify = function ($val, $key, $parent) {
+                    if ($key !== null && $parent !== null && is_string($val)) {
+                        Struct::setprop($parent, $key, '@' . $val);
+                    }
+                };
                 return Struct::transform(
                     $vin->data,
                     $vin->spec,
-                    property_exists($vin, 'store') ? $vin->store : (object) [],
-                    function ($val, $key, $parent) {
-                        if ($key !== null && $parent !== null && is_string($val)) {
-                            Struct::setprop($parent, $key, '@' . $val);
-                        }
-                    }
+                    $opts
                 );
             }
         );
@@ -820,15 +822,18 @@ class StructTest extends TestCase
 
     public function testValidateInvalid(): void
     {
+        $count = 0;
         $this->testSet(
             $this->testSpec->validate->invalid,
-            function ($input) {
+            function ($input) use (&$count) {
+                $count++;
                 return Struct::validate(
                     property_exists($input, 'data') ? $input->data : (object) [],
                     property_exists($input, 'spec') ? $input->spec : (object) []
                 );
             }
         );
+        $this->assertGreaterThan(0, $count, 'validate-invalid should have run at least one test entry');
     }
 
     public function testValidateSpecial(): void

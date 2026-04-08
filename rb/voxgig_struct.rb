@@ -25,19 +25,61 @@ module VoxgigStruct
   S_DTOP   = '$TOP'
   S_DERRS  = '$ERRS'
 
+  S_any      = 'any'
   S_array    = 'array'
   S_boolean  = 'boolean'
+  S_decimal  = 'decimal'
   S_function = 'function'
+  S_instance = 'instance'
+  S_integer  = 'integer'
+  S_list     = 'list'
+  S_map      = 'map'
+  S_nil      = 'nil'
+  S_node     = 'node'
   S_number   = 'number'
-  S_object   = 'object'
-  S_string   = 'string'
   S_null     = 'null'
+  S_object   = 'object'
+  S_scalar   = 'scalar'
+  S_string   = 'string'
+  S_symbol   = 'symbol'
   S_MT       = ''       # empty string constant (used as a prefix)
   S_BT       = '`'
   S_DS       = '$'
   S_DT       = '.'      # delimiter for key paths
   S_CN       = ':'      # colon for unknown paths
+  S_SP       = ' '
+  S_VIZ      = ': '
   S_KEY      = 'KEY'
+
+  # Types - bitfield integers matching TypeScript canonical
+  _t = 31
+  T_any      = (1 << _t) - 1;     _t -= 1
+  T_noval    = 1 << _t;           _t -= 1
+  T_boolean  = 1 << _t;           _t -= 1
+  T_decimal  = 1 << _t;           _t -= 1
+  T_integer  = 1 << _t;           _t -= 1
+  T_number   = 1 << _t;           _t -= 1
+  T_string   = 1 << _t;           _t -= 1
+  T_function = 1 << _t;           _t -= 1
+  T_symbol   = 1 << _t;           _t -= 1
+  T_null     = 1 << _t;           _t -= 8
+  T_list     = 1 << _t;           _t -= 1
+  T_map      = 1 << _t;           _t -= 1
+  T_instance = 1 << _t;           _t -= 5
+  T_scalar   = 1 << _t;           _t -= 1
+  T_node     = 1 << _t
+
+  TYPENAME = [
+    S_any, S_nil, S_boolean, S_decimal, S_integer, S_number, S_string,
+    S_function, S_symbol, S_null,
+    '', '', '', '', '', '', '',
+    S_list, S_map, S_instance,
+    '', '', '', '',
+    S_scalar, S_node,
+  ]
+
+  SKIP = { '`$SKIP`' => true }
+  DELETE = { '`$DELETE`' => true }
 
   # Unique undefined marker.
   UNDEF = Object.new.freeze
@@ -289,14 +331,55 @@ module VoxgigStruct
     end.reject { |s| s.empty? }.join('/')
   end
 
+  # Get type name string from type bitfield value.
+  def self.typename(t)
+    tname = S_MT
+    TYPENAME.each_with_index do |tn, tI|
+      if tn != S_MT && 0 < (t & (1 << (31 - tI)))
+        tname = tn
+      end
+    end
+    tname
+  end
+
+  # Determine the type of a value as a bitfield integer.
   def self.typify(value)
-    return "null" if value.nil?
-    return "array" if islist(value)
-    return "object" if ismap(value)
-    return "boolean" if [true, false].include?(value)
-    return "function" if isfunc(value)
-    return "number" if value.is_a?(Numeric)
-    value.class.to_s.downcase
+    return T_noval if value.nil?
+    return T_noval if value.equal?(UNDEF)
+
+    if value == true || value == false
+      return T_scalar | T_boolean
+    end
+
+    if isfunc(value)
+      return T_scalar | T_function
+    end
+
+    if value.is_a?(Integer)
+      return T_scalar | T_number | T_integer
+    end
+
+    if value.is_a?(Float)
+      return value.nan? ? T_noval : (T_scalar | T_number | T_decimal)
+    end
+
+    if value.is_a?(String)
+      return T_scalar | T_string
+    end
+
+    if value.is_a?(Symbol)
+      return T_scalar | T_symbol
+    end
+
+    if islist(value)
+      return T_node | T_list
+    end
+
+    if ismap(value)
+      return T_node | T_map
+    end
+
+    T_any
   end
 
   def self.walk(val, apply, key = nil, parent = nil, path = [])
@@ -760,7 +843,7 @@ module VoxgigStruct
     'Expected ' +
       (path.length > 1 ? ('field ' + pathify(path, 1) + ' to be ') : '') +
       needtype + ', but found ' +
-      (v.nil? ? '' : vt + ': ') + vs +
+      (v.nil? ? '' : typename(vt) + S_VIZ) + vs +
       # Uncomment to help debug validation errors.
       # ' [' + _whence + ']' +
       '.'
@@ -771,7 +854,7 @@ module VoxgigStruct
     out = getprop(current, state[:key])
 
     t = typify(out)
-    if t != S_string
+    if 0 == (T_string & t)
       msg = _invalid_type_msg(state[:path], S_string, t, out, 'V1010')
       state[:errs].push(msg)
       return nil
@@ -791,7 +874,7 @@ module VoxgigStruct
     out = getprop(current, state[:key])
 
     t = typify(out)
-    if t != S_number
+    if 0 == (T_number & t)
       state[:errs].push(_invalid_type_msg(state[:path], S_number, t, out, 'V1020'))
       return nil
     end
@@ -804,7 +887,7 @@ module VoxgigStruct
     out = getprop(current, state[:key])
 
     t = typify(out)
-    if t != S_boolean
+    if 0 == (T_boolean & t)
       state[:errs].push(_invalid_type_msg(state[:path], S_boolean, t, out, 'V1030'))
       return nil
     end
@@ -817,7 +900,7 @@ module VoxgigStruct
     out = getprop(current, state[:key])
 
     t = typify(out)
-    if t != S_object
+    if 0 == (T_map & t)
       state[:errs].push(_invalid_type_msg(state[:path], S_object, t, out, 'V1040'))
       return nil
     end
@@ -830,7 +913,7 @@ module VoxgigStruct
     out = getprop(current, state[:key])
 
     t = typify(out)
-    if t != S_array
+    if 0 == (T_list & t)
       state[:errs].push(_invalid_type_msg(state[:path], S_array, t, out, 'V1050'))
       return nil
     end
@@ -843,7 +926,7 @@ module VoxgigStruct
     out = getprop(current, state[:key])
 
     t = typify(out)
-    if t != S_function
+    if 0 == (T_function & t)
       state[:errs].push(_invalid_type_msg(state[:path], S_function, t, out, 'V1060'))
       return nil
     end
@@ -1072,19 +1155,19 @@ module VoxgigStruct
     ptype = typify(pval)
 
     # Delete any special commands remaining.
-    return if ptype == S_string && pval.include?(S_DS)
+    return if 0 != (T_string & ptype) && pval.include?(S_DS)
 
     ctype = typify(cval)
 
     # Type mismatch.
     if ptype != ctype && !pval.nil?
-      state[:errs].push(_invalid_type_msg(state[:path], ptype, ctype, cval, 'V0010'))
+      state[:errs].push(_invalid_type_msg(state[:path], typename(ptype), ctype, cval, 'V0010'))
       return
     end
 
     if ismap(cval)
       if !ismap(pval)
-        state[:errs].push(_invalid_type_msg(state[:path], ptype, ctype, cval, 'V0020'))
+        state[:errs].push(_invalid_type_msg(state[:path], typename(ptype), ctype, cval, 'V0020'))
         return
       end
 
@@ -1110,7 +1193,7 @@ module VoxgigStruct
       end
     elsif islist(cval)
       if !islist(pval)
-        state[:errs].push(_invalid_type_msg(state[:path], ptype, ctype, cval, 'V0030'))
+        state[:errs].push(_invalid_type_msg(state[:path], typename(ptype), ctype, cval, 'V0030'))
       end
     else
       # Spec value was a default, copy over data

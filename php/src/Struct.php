@@ -4,6 +4,57 @@ declare(strict_types=1);
 namespace Voxgig\Struct;
 
 /**
+ * Reference-stable wrapper for PHP arrays.
+ * PHP arrays are value types (copy-on-write), so storing them in injection
+ * state loses reference identity. ListRef wraps the array in an object
+ * (reference type) so mutations via setval/delprop propagate through the
+ * injection pipeline. Mirrors Go's ListRef[T] strategy.
+ */
+class ListRef implements \ArrayAccess, \Countable, \IteratorAggregate
+{
+    public array $list;
+
+    public function __construct(array $list = [])
+    {
+        $this->list = $list;
+    }
+
+    public function offsetExists(mixed $offset): bool
+    {
+        return isset($this->list[$offset]);
+    }
+
+    public function offsetGet(mixed $offset): mixed
+    {
+        return $this->list[$offset] ?? null;
+    }
+
+    public function offsetSet(mixed $offset, mixed $value): void
+    {
+        if ($offset === null) {
+            $this->list[] = $value;
+        } else {
+            $this->list[$offset] = $value;
+        }
+    }
+
+    public function offsetUnset(mixed $offset): void
+    {
+        array_splice($this->list, (int)$offset, 1);
+    }
+
+    public function count(): int
+    {
+        return count($this->list);
+    }
+
+    public function getIterator(): \ArrayIterator
+    {
+        return new \ArrayIterator($this->list);
+    }
+}
+
+/**
  * Class Struct
  *
  * Utility class for manipulating in-memory JSON-like data structures.
@@ -87,7 +138,12 @@ class Struct
     /**
      * Private marker to indicate a skippable value.
      */
-    private static array $SKIP = ['__SKIP__' => true];
+    private static array $SKIP = ['`$SKIP`' => true];
+
+    // Mode constants (bitfield) matching TypeScript canonical
+    public const M_KEYPRE = 1;
+    public const M_KEYPOST = 2;
+    public const M_VAL = 4;
 
     /* =======================
      * Regular expressions for validation and transformation
@@ -119,11 +175,12 @@ class Struct
 
     public static function isnode(mixed $val): bool
     {
-        // We don't consider null or the undef‐marker to be a node.
         if ($val === self::UNDEF || $val === null) {
             return false;
         }
-        // Any PHP object *or* any PHP array is a node (map or list).
+        if ($val instanceof ListRef) {
+            return true;
+        }
         return is_object($val) || is_array($val);
     }
 
@@ -137,7 +194,9 @@ class Struct
      */
     public static function ismap(mixed $val): bool
     {
-        // Any PHP object (stdClass, etc.) is a map
+        if ($val instanceof ListRef) {
+            return false;
+        }
         if (is_object($val)) {
             return true;
         }
@@ -162,6 +221,9 @@ class Struct
      */
     public static function islist(mixed $val): bool
     {
+        if ($val instanceof ListRef) {
+            return true;
+        }
         if (!is_array($val)) {
             return false;
         }
@@ -248,6 +310,9 @@ class Struct
         if (is_callable($value) && !is_array($value) && !is_object($value)) {
             return self::T_scalar | self::T_function;
         }
+        if ($value instanceof ListRef) {
+            return self::T_node | self::T_list;
+        }
         if (is_array($value)) {
             if (self::islist($value)) {
                 return self::T_node | self::T_list;
@@ -270,6 +335,58 @@ class Struct
         return self::TYPENAME[$clz] ?? self::TYPENAME[0];
     }
 
+    /**
+     * Get a defined value. Returns alt if val is undefined.
+     */
+    public static function getdef(mixed $val, mixed $alt): mixed
+    {
+        if ($val === self::UNDEF || $val === null) {
+            return $alt;
+        }
+        return $val;
+    }
+
+    /**
+     * Replace a search string (all), or a regex pattern, in a source string.
+     */
+    public static function replace(string $s, string|array $from, mixed $to): string
+    {
+        $rs = $s;
+        $ts = self::typify($s);
+        if (0 === (self::T_string & $ts)) {
+            $rs = self::stringify($s);
+        } elseif (0 < ((self::T_noval | self::T_null) & $ts)) {
+            $rs = self::S_MT;
+        }
+        if (is_string($from) && @preg_match($from, '') !== false && $from[0] === '/') {
+            return preg_replace($from, (string)$to, $rs);
+        }
+        return str_replace((string)$from, (string)$to, $rs);
+    }
+
+    /**
+     * Define a JSON Object using key-value arguments.
+     */
+    public static function jm(mixed ...$kv): object
+    {
+        $kvsize = count($kv);
+        $o = new \stdClass();
+        for ($i = 0; $i < $kvsize; $i += 2) {
+            $k = $kv[$i] ?? ('$KEY' . $i);
+            $k = is_string($k) ? $k : self::stringify($k);
+            $o->$k = $kv[$i + 1] ?? null;
+        }
+        return $o;
+    }
+
+    /**
+     * Define a JSON Array using arguments.
+     */
+    public static function jt(mixed ...$v): array
+    {
+        return array_values($v);
+    }
+
     public static function getprop(mixed $val, mixed $key, mixed $alt = self::UNDEF): mixed
     {
         // 1) undefined‐marker or invalid key → alt
@@ -283,11 +400,16 @@ class Struct
             return $alt;
         }
 
-        // 2) array branch stays the same
-        if (is_array($val) && array_key_exists($key, $val)) {
+        // 2) ListRef branch
+        if ($val instanceof ListRef) {
+            $ki = is_numeric($key) ? (int)$key : -1;
+            $out = ($ki >= 0 && $ki < count($val->list)) ? $val->list[$ki] : $alt;
+        }
+        // 3) array branch
+        elseif (is_array($val) && array_key_exists($key, $val)) {
             $out = $val[$key];
         }
-        // 3) object branch: cast $key to string
+        // 4) object branch: cast $key to string
         elseif (is_object($val)) {
             $prop = (string) $key;
             if (property_exists($val, $prop)) {
@@ -341,9 +463,10 @@ class Struct
             $keys = is_array($val) ? array_keys($val) : array_keys(get_object_vars($val));
             sort($keys, SORT_STRING);
             return $keys;
+        } elseif ($val instanceof ListRef) {
+            return array_map('strval', array_keys($val->list));
         } elseif (self::islist($val)) {
-            $keys = array_keys($val);
-            return array_map('strval', $keys);
+            return array_map('strval', array_keys($val));
         }
         return [];
     }
@@ -468,6 +591,9 @@ class Struct
         $str = 'null';
 
         if ($val !== null && $val !== self::UNDEF && !($val instanceof \Closure)) {
+            if ($val instanceof ListRef) {
+                $val = self::cloneUnwrap($val);
+            }
             $indent = self::getprop($flags, 'indent', 2);
             try {
                 $encoded = json_encode($val, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
@@ -576,13 +702,17 @@ class Struct
             }
 
             if (-1 < $start && $start <= $end && $end <= $vlen) {
-                if (self::islist($val)) {
+                if ($val instanceof ListRef) {
+                    $val = new ListRef(array_slice($val->list, $start, $end - $start));
+                } elseif (self::islist($val)) {
                     $val = array_slice($val, $start, $end - $start);
                 } elseif (is_string($val)) {
                     $val = substr($val, $start, $end - $start);
                 }
             } else {
-                if (self::islist($val)) {
+                if ($val instanceof ListRef) {
+                    $val = new ListRef([]);
+                } elseif (self::islist($val)) {
                     $val = [];
                 } elseif (is_string($val)) {
                     $val = self::S_MT;
@@ -656,6 +786,10 @@ class Struct
             $valstr = $val;
         } else {
             $original = $val;
+            // Unwrap ListRefs before JSON encoding
+            if ($val instanceof ListRef) {
+                $val = self::cloneUnwrap($val);
+            }
             try {
                 $sorted = self::sort_obj($val);
                 $str = json_encode($sorted);
@@ -768,9 +902,15 @@ class Struct
         }
         $refs = [];
         $replacer = function (mixed $v) use (&$refs, &$replacer): mixed {
-            if (is_callable($v)) {
+            if (is_callable($v) && !is_array($v) && !($v instanceof ListRef)) {
                 $refs[] = $v;
                 return '`$FUNCTION:' . (count($refs) - 1) . '`';
+            } elseif ($v instanceof ListRef) {
+                $newList = [];
+                foreach ($v->list as $item) {
+                    $newList[] = $replacer($item);
+                }
+                return new ListRef($newList);
             } elseif (is_array($v)) {
                 $result = [];
                 foreach ($v as $k => $item) {
@@ -795,6 +935,12 @@ class Struct
                     return $refs[(int) $matches[1]];
                 }
                 return $v;
+            } elseif ($v instanceof ListRef) {
+                $newList = [];
+                foreach ($v->list as $item) {
+                    $newList[] = $reviver($item);
+                }
+                return new ListRef($newList);
             } elseif (is_array($v)) {
                 $result = [];
                 foreach ($v as $k => $item) {
@@ -816,6 +962,84 @@ class Struct
     }
 
     /**
+     * Clone a value, wrapping all sequential arrays in ListRef for reference stability.
+     * Mirrors Go's CloneFlags(val, {wrap: true}).
+     */
+    public static function cloneWrap(mixed $val): mixed
+    {
+        if ($val === null || $val === self::UNDEF) {
+            return $val;
+        }
+        if (is_callable($val) && !is_array($val) && !is_object($val)) {
+            return $val;
+        }
+        if ($val instanceof ListRef) {
+            $newList = [];
+            foreach ($val->list as $item) {
+                $newList[] = self::cloneWrap($item);
+            }
+            return new ListRef($newList);
+        }
+        if (is_array($val)) {
+            if (self::isListHelper($val) || empty($val)) {
+                $newList = [];
+                foreach ($val as $item) {
+                    $newList[] = self::cloneWrap($item);
+                }
+                return new ListRef($newList);
+            }
+            // Assoc array (map-array) - clone as stdClass
+            $result = new \stdClass();
+            foreach ($val as $k => $v) {
+                $result->$k = self::cloneWrap($v);
+            }
+            return $result;
+        }
+        if ($val instanceof \stdClass) {
+            $result = new \stdClass();
+            foreach (get_object_vars($val) as $k => $v) {
+                $result->$k = self::cloneWrap($v);
+            }
+            return $result;
+        }
+        // Class instances and scalars returned as-is
+        return $val;
+    }
+
+    /**
+     * Clone a value, unwrapping all ListRef back to plain arrays.
+     * Mirrors Go's CloneFlags(val, {unwrap: true}).
+     */
+    public static function cloneUnwrap(mixed $val, int $depth = 0): mixed
+    {
+        if ($depth > 32) {
+            return $val;
+        }
+        if ($val instanceof ListRef) {
+            $result = [];
+            foreach ($val->list as $item) {
+                $result[] = self::cloneUnwrap($item, $depth + 1);
+            }
+            return $result;
+        }
+        if ($val instanceof \stdClass) {
+            $result = new \stdClass();
+            foreach (get_object_vars($val) as $k => $v) {
+                $result->$k = self::cloneUnwrap($v, $depth + 1);
+            }
+            return $result;
+        }
+        if (is_array($val)) {
+            $result = [];
+            foreach ($val as $k => $v) {
+                $result[$k] = self::cloneUnwrap($v, $depth + 1);
+            }
+            return $result;
+        }
+        return $val;
+    }
+
+    /**
      * @internal
      * Set a property or list‐index on a "node" (stdClass or PHP array).
      * Respects undef‐marker removals, numeric vs string keys, and
@@ -825,6 +1049,28 @@ class Struct
     {
         // only valid keys make sense
         if (!self::iskey($key)) {
+            return $parent;
+        }
+
+        // ─── LISTREF ────────────────────────────────────────────────
+        if ($parent instanceof ListRef) {
+            if (!is_numeric($key)) {
+                return $parent;
+            }
+            $keyI = (int) floor((float) $key);
+            if ($val === self::UNDEF) {
+                if ($keyI >= 0 && $keyI < count($parent->list)) {
+                    array_splice($parent->list, $keyI, 1);
+                }
+            } elseif ($keyI >= 0) {
+                if ($keyI >= count($parent->list)) {
+                    $parent->list[] = $val;
+                } else {
+                    $parent->list[$keyI] = $val;
+                }
+            } else {
+                array_unshift($parent->list, $val);
+            }
             return $parent;
         }
 
@@ -997,8 +1243,8 @@ class Struct
     }
 
     public static function getpath(
-        mixed $path,
         mixed $store,
+        mixed $path,
         mixed $current = null,
         mixed $state = null
     ): mixed {
@@ -1012,7 +1258,7 @@ class Struct
         }
 
         $val = $store;
-        $base = self::getprop($state, 'base', self::S_DTOP);
+        $base = self::getprop($state, 'base');
         $src = self::getprop($store, $base, $store);
         $numparts = count($parts);
         $dparent = self::getprop($state, 'dparent');
@@ -1061,7 +1307,7 @@ class Struct
                     } else if ($state && str_starts_with($part, '$GET:')) {
                         // $GET:path$ -> get store value, use as path part (string)
                         $getpath = substr($part, 5, -1);
-                        $getval = self::getpath($getpath, $src, null, null);
+                        $getval = self::getpath($src, $getpath, null, null);
                         $part = self::stringify($getval);
                     } else if ($state && str_starts_with($part, '$REF:')) {
                         // $REF:refpath$ -> get spec value, use as path part (string)
@@ -1079,7 +1325,7 @@ class Struct
                         }
                     } else if ($state && str_starts_with($part, '$META:')) {
                         // $META:metapath$ -> get meta value, use as path part (string)
-                        $part = self::stringify(self::getpath(substr($part, 6, -1), self::getprop($state, 'meta'), null, null));
+                        $part = self::stringify(self::getpath(self::getprop($state, 'meta'), substr($part, 6, -1), null, null));
                     }
 
                     // $$ escapes $
@@ -1110,7 +1356,7 @@ class Struct
                                 $fullpath = array_merge($dpath_slice, $parts_slice);
 
                                 if (is_array($dpath) && $ascends <= count($dpath)) {
-                                    $val = self::getpath($fullpath, $store, null, null);
+                                    $val = self::getpath($store, $fullpath, null, null);
                                 } else {
                                     $val = self::UNDEF;
                                 }
@@ -1135,7 +1381,7 @@ class Struct
         $handler = self::getprop($state, 'handler');
         if ($state !== null && self::isfunc($handler)) {
             $ref = self::pathify($path);
-            $val = $handler($state, $val, $ref, $store);
+            $val = call_user_func($handler, $state, $val, $ref, $store);
         }
 
         return $val;
@@ -1145,61 +1391,130 @@ class Struct
     public static function inject(
         mixed $val,
         mixed $store,
-        ?callable $modify = null,
-        mixed $current = null,
-        ?object $injdef = null
+        mixed $injdef = null
     ): mixed {
-        // Check if we're using an existing injection state
-        if ($injdef !== null && property_exists($injdef, 'mode')) {
-            // Use the existing injection state directly
-            $state = $injdef;
-        } else {
-            // Create a state object to track the injection process
-            $state = (object) [
-                'mode' => self::S_MVAL,
-                'key' => self::S_DTOP,
-                'parent' => null,
-                'path' => [self::S_DTOP],
-                'nodes' => [],
-                'keys' => [self::S_DTOP],
-                'keyI' => 0,
-                'base' => self::S_DTOP,
-                'modify' => $modify,
-                'full' => false,
-                'handler' => [self::class, '_injecthandler'],
-                'dparent' => null,
-                'dpath' => [self::S_DTOP],
-                'errs' => [],
-                'meta' => (object) [],
-            ];
+        $valtype = gettype($val);
 
-            // Set up data context
-            if ($current === null) {
-                $current = self::getprop($store, self::S_DTOP);
-                if ($current === self::UNDEF) {
-                    $current = $store;
+        /** @var Injection $inj */
+        $inj = $injdef;
+
+        // Create state if at root of injection. The input value is placed
+        // inside a virtual parent holder to simplify edge cases.
+        if (self::UNDEF === $injdef || null === $injdef || !($injdef instanceof Injection)) {
+            $inj = new Injection($val, (object) [self::S_DTOP => $val]);
+            $inj->dparent = $store;
+            $inj->errs = self::getprop($store, self::S_DERRS, []);
+            if (!isset($inj->meta->__d)) {
+                $inj->meta->__d = 0;
+            }
+
+            if (self::UNDEF !== $injdef && null !== $injdef) {
+                $inj->modify = (is_object($injdef) && property_exists($injdef, 'modify') && null !== $injdef->modify) ? $injdef->modify : $inj->modify;
+                $inj->extra = (is_object($injdef) && property_exists($injdef, 'extra') && null !== $injdef->extra) ? $injdef->extra : ($inj->extra ?? null);
+                $inj->meta = (is_object($injdef) && property_exists($injdef, 'meta') && null !== $injdef->meta) ? $injdef->meta : $inj->meta;
+                $inj->handler = (is_object($injdef) && property_exists($injdef, 'handler') && null !== $injdef->handler) ? $injdef->handler : $inj->handler;
+            }
+        }
+
+        $inj->descend();
+
+        // Descend into node.
+        if (self::isnode($val)) {
+            $nodekeys = self::keysof($val);
+
+            if (self::ismap($val)) {
+                $nonDollar = [];
+                $dollar = [];
+                foreach ($nodekeys as $nk) {
+                    if (str_contains((string) $nk, self::S_DS)) {
+                        $dollar[] = $nk;
+                    } else {
+                        $nonDollar[] = $nk;
+                    }
+                }
+                $nodekeys = array_merge($nonDollar, $dollar);
+            } else {
+                $nodekeys = self::keysof($val);
+            }
+
+            for ($nkI = 0; $nkI < count($nodekeys); $nkI++) {
+                $childinj = $inj->child($nkI, $nodekeys);
+                $nodekey = $childinj->key;
+                $childinj->mode = self::M_KEYPRE;
+
+                // Perform the key:pre mode injection on the child key.
+                $prekey = self::_injectstr($nodekey, $store, $childinj);
+
+                // The injection may modify child processing.
+                $nkI = $childinj->keyI;
+                $nodekeys = $childinj->keys;
+
+                // Prevent further processing by returning an undefined prekey
+                if (self::UNDEF !== $prekey) {
+                    $childinj->val = self::getprop($val, $prekey);
+                    $childinj->mode = self::M_VAL;
+
+                    // Perform the val mode injection on the child value.
+                    // NOTE: return value is not used.
+                    self::inject($childinj->val, $store, $childinj);
+
+                    // The injection may modify child processing.
+                    $nkI = $childinj->keyI;
+                    $nodekeys = $childinj->keys;
+
+                    // Perform the key:post mode injection on the child key.
+                    $childinj->mode = self::M_KEYPOST;
+                    self::_injectstr($nodekey, $store, $childinj);
+
+                    // The injection may modify child processing.
+                    $nkI = $childinj->keyI;
+                    $nodekeys = $childinj->keys;
+                }
+
+                // PHP: arrays are value types; propagate child mutations back to val & parent.
+                // Skip sync if a transform modified an ancestor (checked via prior chain).
+                if (is_array($val) && is_array($childinj->parent)) {
+                    // Check that the grandparent (inj->parent) still references our list.
+                    // If a transform like $REF replaced/deleted it, the stored value will differ.
+                    $storedVal = self::getprop($inj->parent, $inj->key);
+                    if (is_array($storedVal)) {
+                        $val = $childinj->parent;
+                        $inj->val = $val;
+                        self::setprop($inj->parent, $inj->key, $val);
+                    }
                 }
             }
-            $state->dparent = $current;
-
-            // Create a virtual parent holder like TypeScript does  
-            $holder = (object) [self::S_DTOP => $val];
-            $state->parent = $holder;
-            $state->nodes = [$holder];
+        }
+        // Inject paths into string scalars.
+        else if ($valtype === 'string') {
+            $inj->mode = self::M_VAL;
+            $val = self::_injectstr($val, $store, $inj);
+            if (self::$SKIP !== $val) {
+                $inj->setval($val);
+            }
         }
 
-        // Process the value through _injectval
-        $modifiedVal = self::_injectval($state, $val, $state->dparent ?? $current, $store);
-        
-        // For existing injection states, just update and return the modified value
-        if ($injdef !== null && property_exists($injdef, 'mode')) {
-            $state->val = $modifiedVal;
-            return $modifiedVal;
+        // Custom modification.
+        if ($inj->modify && self::$SKIP !== $val) {
+            $mkey = $inj->key;
+            $mparent = $inj->parent;
+            $mval = self::getprop($mparent, $mkey);
+
+            call_user_func(
+                $inj->modify,
+                $mval,
+                $mkey,
+                $mparent,
+                $inj,
+                $store
+            );
         }
-        
-        // For new injection states, update the holder and return from it
-        self::setprop($state->parent, self::S_DTOP, $modifiedVal);
-        return self::getprop($state->parent, self::S_DTOP);
+
+        $inj->val = $val;
+
+        // Original val reference may no longer be correct.
+        // This return value is only used as the top level result.
+        return self::getprop($inj->parent, self::S_DTOP);
     }
 
 
@@ -1213,6 +1528,8 @@ class Struct
             return self::S_MT;
         }
 
+        $out = $val;
+
         // Pattern examples: "`a.b.c`", "`$NAME`", "`$NAME1`", "``"
         $m = preg_match('/^`(\$[A-Z]+|[^`]*)[0-9]*`$/', $val, $matches);
 
@@ -1224,64 +1541,47 @@ class Struct
             $pathref = $matches[1];
 
             // Special escapes inside injection.
-            // Only apply escape handling to strings longer than 3 characters
-            // to avoid affecting transform command names like $BT (length 3) and $DS (length 2)
             if (strlen($pathref) > 3) {
-                // Handle escaped dots FIRST: \. -> .
                 $pathref = str_replace('\\.', '.', $pathref);
-                // Then handle $BT and $DS
                 $pathref = str_replace('$BT', self::S_BT, $pathref);
                 $pathref = str_replace('$DS', self::S_DS, $pathref);
             }
 
             // Get the extracted path reference.
-            $current = ($inj !== null && property_exists($inj, 'dparent')) ? $inj->dparent : null;
-            $out = self::getpath($pathref, $store, $current, $inj);
-            // When result is a transform (callable), run it via the handler
-            if ($inj !== null && is_callable($inj->handler) && is_callable($out) && str_starts_with($pathref, self::S_DS)) {
-                $out = call_user_func($inj->handler, $inj, $out, $pathref, $store);
-            }
-            return $out;
+            $out = self::getpath($store, $pathref, null, $inj);
         }
+        else {
+            // Check for injections within the string.
+            $out = preg_replace_callback('/`([^`]+)`/', function($matches) use ($store, $inj) {
+                $ref = $matches[1];
 
-        // Check for injections within the string.
-        $out = preg_replace_callback('/`([^`]+)`/', function($matches) use ($store, $inj) {
-            $ref = $matches[1];
+                if (strlen($ref) > 3) {
+                    $ref = str_replace('\\.', '.', $ref);
+                    $ref = str_replace('$BT', self::S_BT, $ref);
+                    $ref = str_replace('$DS', self::S_DS, $ref);
+                }
+                if ($inj !== null) {
+                    $inj->full = false;
+                }
 
-            // Special escapes inside injection.
-            // Only apply escape handling to strings longer than 3 characters
-            // to avoid affecting transform command names like $BT (length 3) and $DS (length 2)
-            if (strlen($ref) > 3) {
-                // Handle escaped dots FIRST: \. -> .
-                $ref = str_replace('\\.', '.', $ref);
-                // Then handle $BT and $DS
-                $ref = str_replace('$BT', self::S_BT, $ref);
-                $ref = str_replace('$DS', self::S_DS, $ref);
-            }
-            if ($inj !== null) {
-                $inj->full = false;
-            }
-            // Use dparent from injection state as current context for relative path resolution
-            $current = ($inj !== null && property_exists($inj, 'dparent')) ? $inj->dparent : null;
-            $found = self::getpath($ref, $store, $current, $inj);
+                $found = self::getpath($store, $ref, null, $inj);
 
-            // Ensure inject value is a string.
-            if ($found === self::UNDEF) {
-                return self::S_MT;
-            }
-            if (is_string($found)) {
-                return $found;
-            }
-            return json_encode($found);
-        }, $val);
+                // Ensure inject value is a string.
+                if ($found === self::UNDEF) {
+                    return self::S_MT;
+                }
+                if (is_string($found)) {
+                    return $found;
+                }
+                return json_encode($found instanceof ListRef ? self::cloneUnwrap($found) : $found);
+            }, $val);
 
-        // Also call the inj handler on the entire string, providing the
-        // option for custom injection.
-        if ($inj !== null && is_callable($inj->handler)) {
-            $inj->full = true;
-            // Use the extracted pathref if this was a full injection, otherwise original val
-            $ref = isset($pathref) ? $pathref : $val;
-            $out = call_user_func($inj->handler, $inj, $out, $ref, $store);
+            // Also call the inj handler on the entire string, providing the
+            // option for custom injection.
+            if ($inj !== null && is_callable($inj->handler)) {
+                $inj->full = true;
+                $out = call_user_func($inj->handler, $inj, $out, $val, $store);
+            }
         }
 
         return $out;
@@ -1303,18 +1603,18 @@ class Struct
         }
 
         // Otherwise treat it as a path
-        $result = self::getpath($expr, $store, $current, $state);
+        $result = self::getpath($store, $expr, $current, $state);
         return $result;
     }
 
-    private static function _injecthandler(
+    public static function _injecthandler(
         object $inj,
         mixed $val,
         string $ref,
         mixed $store
     ): mixed {
         $out = $val;
-        
+
         // Check if val is a function (command transforms)
         $iscmd = self::isfunc($val) && (self::UNDEF === $ref || str_starts_with($ref, self::S_DS));
 
@@ -1323,8 +1623,8 @@ class Struct
             $out = call_user_func($val, $inj, $val, $ref, $store);
         }
         // Update parent with value. Ensures references remain in node tree.
-        elseif (self::S_MVAL === $inj->mode && $inj->full) {
-            self::setprop($inj->parent, $inj->key, $out);
+        elseif (self::M_VAL === $inj->mode && $inj->full) {
+            $inj->setval($val);
         }
         return $out;
     }
@@ -1349,7 +1649,7 @@ class Struct
         mixed $store
     ): mixed {
         // _setparentprop(state, UNDEF)
-        self::_setparentprop($state, self::UNDEF);
+        $state->setval(self::UNDEF);
         return self::UNDEF;
     }
 
@@ -1363,19 +1663,12 @@ class Struct
         mixed $ref,
         mixed $store
     ): mixed {
-        $mode = $state->mode;
-        $key = $state->key;
-
-        $out = $key;
-        if (!str_starts_with($mode, self::S_MKEY)) {
-            // For root-level copies where key is "$TOP", return dparent directly
-            if ($key === self::S_DTOP) {
-                $out = $state->dparent;
-            } else {
-                $out = self::getprop($state->dparent, $key);
-            }
-            self::_setparentprop($state, $out);
+        if (self::M_VAL !== $state->mode) {
+            return self::UNDEF;
         }
+
+        $out = self::getprop($state->dparent, $state->key);
+        $state->setval($out);
 
         return $out;
     }
@@ -1392,7 +1685,7 @@ class Struct
         mixed $store
     ): mixed {
         // only in "val" mode do anything
-        if ($state->mode !== self::S_MVAL) {
+        if (self::M_VAL !== $state->mode) {
             return self::UNDEF;
         }
 
@@ -1448,7 +1741,7 @@ class Struct
      * @internal
      * Merge a list of objects into the current object.
      */
-        public static function transform_MERGE(
+    public static function transform_MERGE(
         object $state,
         mixed $val,
         mixed $ref,
@@ -1458,68 +1751,32 @@ class Struct
         $key = $state->key;
         $parent = $state->parent;
 
-        // in key:pre, do all the merge work and remove the key
-        if ($mode === self::S_MKEYPRE) {
-            // gather the args under parent[key]
+        // Ensures $MERGE is removed from parent list (val mode).
+        $out = self::UNDEF;
+
+        if (self::M_KEYPRE === $mode) {
+            $out = $key;
+        }
+        // Operate after child values have been transformed.
+        elseif (self::M_KEYPOST === $mode) {
+            $out = $key;
+
             $args = self::getprop($parent, $key);
+            $args = self::islist($args) ? (($args instanceof ListRef) ? $args->list : $args) : [$args];
 
-            // empty-string means "merge top-level store"
-            if ($args === self::S_MT) {
-                $args = [self::getprop($state->dparent, self::S_DTOP)];
-            }
-            // coerce single value into array
-            elseif (!is_array($args)) {
-                $args = [$args];
-            }
+            // Remove the $MERGE command from a parent map.
+            $state->setval(self::UNDEF);
 
-            // Resolve each argument to get data values
-            $resolvedArgs = [];
-            foreach ($args as $arg) {
-                if (is_string($arg)) {
-                    // Check if it's an injection string like '`a`'
-                    if (preg_match('/^`(\$[A-Z]+|[^`]*)[0-9]*`$/', $arg, $matches)) {
-                        $pathref = $matches[1];
-                        // Handle escapes
-                        if (strlen($pathref) > 3) {
-                            $pathref = str_replace('\\.', '.', $pathref);
-                            $pathref = str_replace('$BT', '`', $pathref);
-                            $pathref = str_replace('$DS', '$', $pathref);
-                        }
-                        $resolved = self::getpath($pathref, $store);
-                    } else {
-                        $resolved = $arg;
-                    }
-                    $resolvedArgs[] = $resolved;
-                } else {
-                    $resolvedArgs[] = $arg;
-                }
-            }
+            // Literals in the parent have precedence, but we still merge onto
+            // the parent object, so that node tree references are not changed.
+            $mergelist = self::flatten([[$parent], $args, [clone $parent]]);
 
-            // remove the $MERGE entry from parent
-            self::setprop($parent, $key, self::UNDEF);
-
-            // build list: [ parent, ...resolvedArgs, clone(parent) ]
-            $mergelist = array_merge(
-                [$parent],
-                $resolvedArgs,
-                [clone $parent]
-            );
-
-            // perform merge - this modifies the parent in place
             self::merge($mergelist);
-
-            // return UNDEF to prevent further processing of this key
-            return self::UNDEF;
         }
 
-        // in key:post, the merge is already done, just return the key
-        if ($mode === self::S_MKEYPOST) {
-            return $key;
-        }
-
-        // otherwise drop it
-        return self::UNDEF;
+        return $out;
     }
+
 
     public static function transform_EACH(
         object $state,
@@ -1527,101 +1784,86 @@ class Struct
         string $_ref,
         mixed $store
     ): mixed {
-        // Remove arguments to avoid spurious processing
-        if (isset($state->keys)) {
-            $state->keys = array_slice($state->keys, 0, 1);
-        }
+        // Remove remaining keys to avoid spurious processing.
+        $state->keys = array_slice($state->keys, 0, 1);
 
-        if (self::S_MVAL !== $state->mode) {
+        if (self::M_VAL !== $state->mode) {
             return self::UNDEF;
         }
 
         // Get arguments: ['`$EACH`', 'source-path', child-template]
         $srcpath = self::getprop($state->parent, 1);
         $child = self::clone(self::getprop($state->parent, 2));
-        
-        // Source data
-        $srcstore = self::getprop($store, $state->base, $store);
-        $src = self::getpath($srcpath, $srcstore, $state);
 
-        // Create parallel data structures: source entries :: child templates  
+        // Source data.
+        $srcstore = self::getprop($store, $state->base, $store);
+        $src = self::getpath($srcstore, $srcpath, null, $state);
+
+        // Create parallel data structures: source entries :: child templates
         $tcur = [];
         $tval = [];
 
         $tkey = self::getelem($state->path, -2);
         $target = self::getelem($state->nodes, -2) ?? self::getelem($state->nodes, -1);
 
-        // Create clones of the child template for each value of the current source
+        // Create clones of the child template for each value of the current source.
         if (self::islist($src)) {
+            $srcArr = ($src instanceof ListRef) ? $src->list : (array) $src;
             $tval = array_map(function($_) use ($child) {
                 return self::clone($child);
-            }, $src);
+            }, $srcArr);
         } elseif (self::ismap($src)) {
             $tval = [];
-            foreach ($src as $k => $v) {
-                $template = self::clone($child);
-                // Make a note of the key for $KEY transforms
-                self::setprop($template, self::S_BANNO, (object) [self::S_KEY => $k]);
+            foreach (self::items($src) as $item) {
+                $template = self::merge([
+                    self::clone($child),
+                    (object) [self::S_BANNO => (object) [self::S_KEY => $item[0]]]
+                ], 1);
                 $tval[] = $template;
             }
         }
-        
+
         $rval = [];
 
-        if (count($tval) > 0) {
-            $tcur = (null == $src) ? self::UNDEF : array_values((array) $src);
+        if (0 < self::size($tval)) {
+            $tcur = (null == $src) ? self::UNDEF : ($src instanceof ListRef ? $src->list : array_values((array) $src));
 
             $ckey = self::getelem($state->path, -2);
-            $tpath = array_slice($state->path, 0, -1);
-            
-            // Build dpath like TypeScript: [S_DTOP, ...srcpath.split('.'), '$:' + ckey]
-            $dpath = [self::S_DTOP];
-            $dpath = array_merge($dpath, explode('.', $srcpath), ['$:' . $ckey]);
 
-            // Build parent structure like TypeScript version
-            $tcur = [$ckey => $tcur];
+            $tpath = self::slice($state->path, -1);
+            $dpath = self::flatten([self::S_DTOP, explode(self::S_DT, $srcpath), '$:' . $ckey]);
 
-            if (count($tpath) > 1) {
-                $pkey = self::getelem($state->path, -3) ?? self::S_DTOP;
-                $tcur = [$pkey => $tcur];
+            // Parent structure.
+            $tcur = (object) [$ckey => $tcur];
+
+            if (1 < self::size($tpath)) {
+                $pkey = self::getelem($state->path, -3, self::S_DTOP);
+                $tcur = (object) [$pkey => $tcur];
                 $dpath[] = '$:' . $pkey;
             }
 
-            // Create child injection state matching TypeScript version
-            $tinj = (object) [
-                'mode' => self::S_MVAL,
-                'full' => false,
-                'keyI' => 0,
-                'keys' => [$ckey],
-                'key' => $ckey,
-                'val' => $tval,
-                'parent' => self::getelem($state->nodes, -1),
-                'path' => $tpath,
-                'nodes' => array_slice($state->nodes, 0, -1),
-                'handler' => [self::class, '_injecthandler'],
-                'base' => $state->base,
-                'modify' => $state->modify,
-                'errs' => $state->errs ?? [],
-                'meta' => $state->meta ?? (object) [],
-                'dparent' => $tcur,  // Use the full nested structure like TypeScript
-                'dpath' => $dpath,
-            ];
+            $tinj = $state->child(0, [$ckey]);
+            $tinj->path = $tpath;
+            $tinj->nodes = self::slice($state->nodes, -1);
 
-            // Set tval in parent like TypeScript version
+            $tinj->parent = self::getelem($tinj->nodes, -1);
             self::setprop($tinj->parent, $ckey, $tval);
 
-            // Inject using the proper injection state
-            $result = self::inject($tval, $store, $state->modify, $tinj->dparent, $tinj);
-            
+            $tinj->val = $tval;
+            $tinj->dpath = $dpath;
+            $tinj->dparent = $tcur;
+
+            self::inject($tval, $store, $tinj);
             $rval = $tinj->val;
         }
 
-        // Update ancestors using the simple approach like TypeScript
-        self::_updateAncestors($state, $target, $tkey, $rval);
+        // Update ancestors.
+        self::setprop($target, $tkey, $rval);
 
         // Prevent callee from damaging first list entry (since we are in `val` mode).
-        return count($rval) > 0 ? $rval[0] : self::UNDEF;
+        return $rval[0] ?? self::UNDEF;
     }
+
 
 
 
@@ -1638,181 +1880,155 @@ class Struct
         $parent = $state->parent;
         $nodes = $state->nodes;
 
-        // Defensive context checks - only run in key:pre mode
-        if (self::S_MKEYPRE !== $mode || !is_string($key) || null == $path || null == $nodes) {
+        // Only run in key:pre mode.
+        if (self::M_KEYPRE !== $mode) {
             return self::UNDEF;
         }
 
-        // Get arguments
+        // Get arguments.
         $args = self::getprop($parent, $key);
         if (!is_array($args) || count($args) < 2) {
             return self::UNDEF;
         }
 
-        $srcpath = $args[0]; // Path to source data
-        $child = self::clone($args[1]); // Child template
+        $srcpath = $args[0];
+        $origchildspec = self::clone($args[1]);
 
-        // Find key and target node
-        $keyprop = self::getprop($child, self::S_BKEY);
+        // Find key and target node.
         $tkey = self::getelem($path, -2);
-        $target = $nodes[count($path) - 2] ?? $nodes[count($path) - 1];
+        $pathsize = self::size($path);
+        $target = self::getelem($nodes, $pathsize - 2) ?? self::getelem($nodes, $pathsize - 1);
 
         // Source data
         $srcstore = self::getprop($store, $state->base, $store);
-        $src = self::getpath($srcpath, $srcstore, null, $state);
+        $src = self::getpath($srcstore, $srcpath, null, $state);
 
-        // Prepare source as a list - matching TypeScript logic exactly
-        if (self::islist($src)) {
-            $src = $src;
-        } elseif (self::ismap($src)) {
-            // Transform map to list with KEY annotations like TypeScript
-            $newSrc = [];
-            foreach ($src as $k => $node) {
-                $node = (array) $node; // Ensure it's an array for setprop
-                $node[self::S_BANNO] = (object) [self::S_KEY => $k];
-                $newSrc[] = (object) $node;
+        // Prepare source as a list.
+        if (!self::islist($src)) {
+            if (self::ismap($src)) {
+                $newSrc = [];
+                foreach (self::items($src) as $item) {
+                    self::setprop($item[1], self::S_BANNO, (object) [self::S_KEY => $item[0]]);
+                    $newSrc[] = $item[1];
+                }
+                $src = $newSrc;
+            } else {
+                return self::UNDEF;
             }
-            $src = $newSrc;
-        } else {
-            return self::UNDEF;
         }
 
         if (null == $src) {
             return self::UNDEF;
         }
 
-        // Get key if specified - matching TypeScript logic
-        $childkey = self::getprop($child, self::S_BKEY);
-        $keyname = $childkey !== self::UNDEF ? $childkey : $keyprop;
-        self::delprop($child, self::S_BKEY);
+        // Get keypath.
+        $keypath = self::getprop($origchildspec, self::S_BKEY);
+        $childspec = self::delprop($origchildspec, self::S_BKEY);
 
-        // Build parallel target object using reduce pattern from TypeScript
+        $child = $childspec;
+
+        // Build parallel target object.
         $tval = new \stdClass();
-        foreach ($src as $node) {
-            $kn = self::getprop($node, $keyname);
-            if ($kn !== self::UNDEF) {
-                self::setprop($tval, $kn, self::clone($child));
-                $nchild = self::getprop($tval, $kn);
-                
-                // Transfer annotation data if present
-                $mval = self::getprop($node, self::S_BANNO);
-                if ($mval === self::UNDEF) {
-                    self::delprop($nchild, self::S_BANNO);
+
+        foreach (self::items($src) as $item) {
+            $srckey = $item[0];
+            $srcnode = $item[1];
+
+            $nkey = $srckey;
+            if (self::UNDEF !== $keypath) {
+                if (is_string($keypath) && str_starts_with($keypath, '`')) {
+                    $nkey = self::inject($keypath, self::merge([new \stdClass(), $store, (object) ['$TOP' => $srcnode]], 1));
                 } else {
-                    self::setprop($nchild, self::S_BANNO, $mval);
+                    $nkey = self::getpath($srcnode, $keypath, null, $state);
                 }
+            }
+
+            $tchild = self::clone($child);
+            self::setprop($tval, $nkey, $tchild);
+
+            $anno = self::getprop($srcnode, self::S_BANNO);
+            if (self::UNDEF === $anno) {
+                self::delprop($tchild, self::S_BANNO);
+            } else {
+                self::setprop($tchild, self::S_BANNO, $anno);
             }
         }
 
         $rval = new \stdClass();
 
-        if (count((array) $tval) > 0) {
-            // Build parallel source object
-            $tcur = new \stdClass();
-            foreach ($src as $node) {
-                $kn = self::getprop($node, $keyname);
-                if ($kn !== self::UNDEF) {
-                    self::setprop($tcur, $kn, $node);
+        if (!self::isempty($tval)) {
+            // Build parallel source object.
+            $tsrc = new \stdClass();
+            foreach ($src as $i => $n) {
+                $kn = null;
+                if (self::UNDEF === $keypath) {
+                    $kn = $i;
+                } elseif (is_string($keypath) && str_starts_with($keypath, '`')) {
+                    $kn = self::inject($keypath, self::merge([new \stdClass(), $store, (object) ['$TOP' => $n]], 1));
+                } else {
+                    $kn = self::getpath($n, $keypath, null, $state);
                 }
+                self::setprop($tsrc, $kn, $n);
             }
 
-            $tpath = array_slice($path, 0, -1);
+            $tpath = self::slice($state->path, -1);
 
-            $ckey = self::getelem($path, -2);
-            $dpath = [self::S_DTOP];
-            if (!empty($srcpath)) {
-                $dpath = array_merge($dpath, explode('.', $srcpath));
-            }
-            $dpath[] = '$:' . $ckey;
+            $ckey = self::getelem($state->path, -2);
+            $dpath = self::flatten([self::S_DTOP, explode(self::S_DT, $srcpath), '$:' . $ckey]);
 
-            // Build nested structure like TypeScript using objects, not arrays
-            $tcur = (object) [$ckey => $tcur];
+            $tcur = (object) [$ckey => $tsrc];
 
-            if (count($tpath) > 1) {
-                $pkey = self::getelem($path, -3) ?? self::S_DTOP;
+            if (1 < self::size($tpath)) {
+                $pkey = self::getelem($state->path, -3, self::S_DTOP);
                 $tcur = (object) [$pkey => $tcur];
                 $dpath[] = '$:' . $pkey;
             }
 
-            // Create child injection state matching TypeScript  
-            $slicedNodes = array_slice($nodes, 0, -1);
-            $childState = (object) [
-                'mode' => self::S_MVAL,
-                'full' => false,
-                'keyI' => 0,
-                'keys' => [$ckey],
-                'key' => $ckey,
-                'val' => $tval,
-                'parent' => self::getelem($slicedNodes, -1),
-                'path' => $tpath,
-                'nodes' => $slicedNodes,
-                'handler' => [self::class, '_injecthandler'],
-                'base' => $state->base,
-                'modify' => $state->modify,
-                'errs' => $state->errs ?? [],
-                'meta' => $state->meta ?? (object) [],
-                'dparent' => $tcur,
-                'dpath' => $dpath,
-            ];
+            $tinj = $state->child(0, [$ckey]);
+            $tinj->path = $tpath;
+            $tinj->nodes = self::slice($state->nodes, -1);
 
-            // Set the value in parent like TypeScript version does
-            self::setprop($childState->parent, $ckey, $tval);
+            $tinj->parent = self::getelem($tinj->nodes, -1);
+            $tinj->val = $tval;
 
-            // Instead of injecting the entire template at once, 
-            // inject each individual template with its own data context
-            foreach ((array) $tval as $templateKey => $template) {
-                // Get the corresponding source node for this template
-                // $tcur structure may be nested like: {$TOP: {ckey: {K0: sourceNode0, K1: sourceNode1, ...}}}
-                // Navigate through the structure to find the actual source data
-                $sourceData = $tcur;
-                
-                // If tcur has $TOP level, navigate through it
-                if (self::getprop($sourceData, self::S_DTOP) !== self::UNDEF) {
-                    $sourceData = self::getprop($sourceData, self::S_DTOP);
-                }
-                
-                // Then navigate to the ckey level
-                $sourceData = self::getprop($sourceData, $ckey);
-                
-                // Finally get the specific source node
-                $sourceNode = self::getprop($sourceData, $templateKey);
-                
-                if ($sourceNode !== self::UNDEF) {
-                    // Create individual injection state for this template
-                    $individualState = clone $childState;
-                    $individualState->dparent = $sourceNode; // Set to individual source node
-                    $individualState->key = $templateKey;
-                    
-                    // Inject this individual template
-                    $injectedTemplate = self::inject($template, $store, $state->modify, $sourceNode, $individualState);
-                    self::setprop($tval, $templateKey, $injectedTemplate);
-                }
-            }
-            
-            $rval = $tval;
+            $tinj->dpath = $dpath;
+            $tinj->dparent = $tcur;
+
+            self::inject($tval, $store, $tinj);
+            $rval = $tinj->val;
         }
 
-        // Use _setparentprop to properly set the parent value to the packed data
-        self::_setparentprop($state, $rval);
-        // Return UNDEF to signal that this key should be deleted
+        // Update ancestors.
+        self::setprop($target, $tkey, $rval);
+
+        // Drop transform key.
         return self::UNDEF;
     }
+
 
     /** @internal */
     public static function transform_REF(object $state, mixed $_val, string $_ref, mixed $store): mixed
     {
-        if (self::S_MVAL !== $state->mode) {
+        $nodes = $state->nodes;
+
+        if (self::M_VAL !== $state->mode) {
             return self::UNDEF;
         }
-        $parentVal = self::getprop($state->parent, $state->key);
-        // Ref path is the second element of the list (parent), not of the current value
+
+        // Get arguments: ['`$REF`', 'ref-path'].
         $refpath = self::getprop($state->parent, 1);
-        $state->keyI = self::size($state->keys ?? []);
+        $state->keyI = self::size($state->keys);
+
+        // Spec reference.
         $specFn = self::getprop($store, '$SPEC');
         $spec = is_callable($specFn) ? $specFn() : self::UNDEF;
+
         $dpath = self::slice($state->path, 1);
-        $pathState = (object) ['dpath' => $dpath, 'dparent' => self::getpath($dpath, $spec)];
-        $ref = self::getpath($refpath, $spec, null, null);
+        $ref = self::getpath($spec, $refpath, (object) [
+            'dpath' => $dpath,
+            'dparent' => self::getpath($spec, $dpath),
+        ]);
+
         $hasSubRef = false;
         if (self::isnode($ref)) {
             self::walk($ref, function ($_k, $v) use (&$hasSubRef) {
@@ -1822,54 +2038,58 @@ class Struct
                 return $v;
             });
         }
-        $tref = self::clone($ref);
-        $pathLen = count($state->path);
-        $cpath = $pathLen >= 3 ? self::slice($state->path, 0, -2) : [];
-        $tpath = self::slice($state->path, 0, -1);
-        $tcur = self::getpath($cpath, $store);
-        // Resolve current value at path from spec; strip $TOP if present so we resolve relative to spec root
-        $tpathInSpec = (isset($state->path[0]) && $state->path[0] === self::S_DTOP)
-            ? self::slice($state->path, 1, -1) : $tpath;
-        $tval = self::getpath($tpathInSpec, $spec);
+
+        $tref = self::cloneWrap($ref);
+
+        $cpath = self::slice($state->path, -3);
+        $tpath = self::slice($state->path, -1);
+        $tcur = self::getpath($store, $cpath);
+        $tval = self::getpath($store, $tpath);
         $rval = self::UNDEF;
-        // Resolve when: no nested $REF, or current path exists in spec, or inside list with scalar ref
-        $insideListWithScalarRef = isset($state->prior) && !self::isnode($ref);
-        $shouldResolve = !$hasSubRef || $tval !== self::UNDEF || $insideListWithScalarRef;
-        if ($shouldResolve) {
-            $lastKey = self::getelem($tpath, -1);
-            $tinj = (object) [
-                'mode' => self::S_MVAL, 'key' => $lastKey,
-                'parent' => self::getelem($state->nodes, -2),
-                'path' => $tpath, 'nodes' => array_slice($state->nodes, 0, -1),
-                'val' => $tref, 'dpath' => self::flatten([$cpath]), 'dparent' => $tcur,
-                'handler' => $state->handler, 'base' => $state->base, 'modify' => $state->modify,
-                'errs' => $state->errs ?? [], 'meta' => $state->meta ?? (object) [],
-            ];
-            $rval = self::inject($tref, $store, $state->modify, $tcur, $tinj);
-        }
-        // When ref is scalar and we didn't resolve (e.g. path/tval issue), use ref as value
-        if ($rval === self::UNDEF && !self::isnode($ref)) {
-            $rval = $ref;
-        }
-        // Set on grandparent (spec) when inside a list so we replace the list key, not the list element.
-        // When we have prior (list state), the list's container is prior->nodes[1] at prior->path[1] (spec at 'r0').
-        if (count($state->path) >= 2) {
-            $specFn = self::getprop($store, '$SPEC');
-            $specToSet = is_callable($specFn) ? $specFn() : self::UNDEF;
-            $specKey = $state->path[1];
-            if ($specToSet !== self::UNDEF && $specKey !== self::UNDEF) {
-                self::setprop($specToSet, $specKey, $rval);
+
+        if (!$hasSubRef || self::UNDEF !== $tval) {
+            $tinj = $state->child(0, [self::getelem($tpath, -1)]);
+
+            $tinj->path = $tpath;
+            $tinj->nodes = self::slice($state->nodes, -1);
+            $tinj->parent = self::getelem($nodes, -2);
+            $tinj->val = $tref;
+
+            $tinj->dpath = self::flatten([$cpath]);
+            $tinj->dparent = $tcur;
+
+            $injResult = self::inject($tref, $store, $tinj);
+
+            // If inject returned SKIP, use tref (mutated in place) not tinj->val (which may be SKIP)
+            if ($injResult === self::$SKIP || $tinj->val === self::$SKIP) {
+                $rval = is_object($tref) ? $tref : self::UNDEF;
             } else {
-                self::_setval($state, $rval, 0);
+                $rval = $tinj->val;
             }
         } else {
-            self::_setval($state, $rval, 0);
+            $rval = self::UNDEF;
         }
-        if (isset($state->prior)) {
+
+        $grandparent = $state->setval($rval, 2);
+
+        // PHP: arrays in nodes are copies, so ancestor setval on arrays doesn't propagate.
+        // Sync the prior injection's parent if it's an array.
+        if ($state->prior && is_array($state->prior->parent)) {
+            $akey = self::getelem($state->path, -2);
+            if (self::UNDEF === $rval) {
+                $state->prior->parent = self::delprop($state->prior->parent, $akey);
+            } else {
+                self::setprop($state->prior->parent, $akey, $rval);
+            }
+        }
+
+        if (self::islist($grandparent) && $state->prior) {
             $state->prior->keyI--;
         }
-        return self::$SKIP;
+
+        return $_val;
     }
+
 
     /**
      * Transform data using a spec.
@@ -1882,17 +2102,36 @@ class Struct
     public static function transform(
         mixed $data,
         mixed $spec,
-        mixed $extra = null,
-        ?callable $modify = null
+        mixed $injdef = null
     ): mixed {
-        // 1) clone spec so we can mutate it
-        $specClone = self::clone($spec);
+        // Support injdef object pattern or backward compat (extra data passed directly)
+        $extra = null;
+        $modify = null;
+        $errs = null;
+        if (is_object($injdef) && (
+            property_exists($injdef, 'extra') ||
+            property_exists($injdef, 'modify') ||
+            property_exists($injdef, 'errs') ||
+            property_exists($injdef, 'meta') ||
+            property_exists($injdef, 'handler')
+        )) {
+            // New injdef pattern: { extra, modify, errs, meta, handler }
+            $extra = property_exists($injdef, 'extra') ? $injdef->extra : null;
+            $modify = property_exists($injdef, 'modify') ? $injdef->modify : null;
+            $errs = property_exists($injdef, 'errs') ? $injdef->errs : null;
+        } else {
+            // Backward compat: treat 3rd arg as extra data/store directly
+            $extra = $injdef;
+        }
+
+        // 1) clone spec, wrapping arrays in ListRef for reference stability (Go pattern)
+        $specClone = self::cloneWrap($spec);
 
         // 2) split extra into data vs transforms
         $extraTransforms = [];
         $extraData = [];
 
-        foreach ((array) $extra as $k => $v) {
+        foreach ((array) ($extra ?? []) as $k => $v) {
             if (str_starts_with((string) $k, self::S_DS)) {
                 $extraTransforms[$k] = $v;
             } else {
@@ -1902,8 +2141,8 @@ class Struct
 
         // 3) build the combined store
         $dataClone = self::merge([
-            self::clone($extraData),
-            self::clone($data),
+            self::cloneWrap($extraData),
+            self::cloneWrap($data),
         ]);
 
         $store = (object) array_merge(
@@ -1920,36 +2159,53 @@ class Struct
                 '$MERGE' => [self::class, 'transform_MERGE'],
                 '$EACH' => [self::class, 'transform_EACH'],
                 '$PACK' => [self::class, 'transform_PACK'],
-                '$SPEC' => fn() => $specClone,
+                '$SPEC' => fn() => $spec,
                 '$REF' => [self::class, 'transform_REF'],
             ],
             $extraTransforms
         );
 
         // 4) run inject to do the transform
-        $result = self::inject($specClone, $store, $modify, $dataClone);
+        $injectOpts = new \stdClass();
+        if ($modify !== null) {
+            $injectOpts->modify = $modify;
+        }
+        if (is_object($injdef) && property_exists($injdef, 'handler') && $injdef->handler !== null) {
+            $injectOpts->handler = $injdef->handler;
+        }
+        if (is_object($injdef) && property_exists($injdef, 'meta') && $injdef->meta !== null) {
+            $injectOpts->meta = $injdef->meta;
+        }
+        if (is_object($injdef) && property_exists($injdef, 'errs') && $injdef->errs !== null) {
+            $injectOpts->errs = $injdef->errs;
+        }
+        $result = self::inject($specClone, $store, $injectOpts);
 
         // When a child transform (e.g. $REF) deletes the key, inject returns SKIP; return mutated spec
         if ($result === self::$SKIP) {
-            return $specClone;
+            return self::cloneUnwrap($specClone);
         }
-        return $result;
+
+        return self::cloneUnwrap($result);
     }
 
-    /** @internal */
-    private static function _setparentprop(object $state, mixed $val): void {
-        if ($val === self::UNDEF) {
-            self::delprop($state->parent, $state->key);
-        } else {
-            self::setprop($state->parent, $state->key, $val);
+    /**
+     * Remove unresolved $REF list entries from a list spec.
+     * This handles PHP's value-type arrays where in-place mutation via references doesn't propagate.
+     */
+    private static function _cleanRefEntries(array $list): array {
+        $cleaned = [];
+        foreach ($list as $item) {
+            if (self::islist($item) && count($item) >= 1 && self::getprop($item, 0) === '`$REF`') {
+                // This is an unresolved $REF entry - remove it
+                continue;
+            }
+            if (self::islist($item)) {
+                $item = self::_cleanRefEntries($item);
+            }
+            $cleaned[] = $item;
         }
-    }
-
-    /** @internal */
-    private static function _updateAncestors(object $_state, mixed &$target, mixed $tkey, mixed $tval): void
-    {
-        // In TS this simply re-writes the transformed value into its ancestor
-        self::setprop($target, $tkey, $tval);
+        return $cleaned;
     }
 
     /** @internal */
@@ -1965,28 +2221,6 @@ class Struct
     /* =======================
      * Validation Functions
      * =======================
-     */
-
-    /**
-     * Helper function to set a value in injection state, equivalent to TypeScript's setval method
-     */
-    private static function _setval(object $inj, mixed $val, int $ancestor = 0): void
-    {
-        if ($ancestor === 0) {
-            self::setprop($inj->parent, $inj->key, $val);
-        } else {
-            // Navigate up the ancestor chain
-            $targetIndex = count($inj->nodes) + $ancestor;
-            if ($targetIndex >= 0 && $targetIndex < count($inj->nodes)) {
-                $targetNode = $inj->nodes[$targetIndex];
-                $pathIndex = count($inj->path) + $ancestor;
-                if ($pathIndex >= 0 && $pathIndex < count($inj->path)) {
-                    $targetKey = $inj->path[$pathIndex];
-                    self::setprop($targetNode, $targetKey, $val);
-                }
-            }
-        }
-    }
 
     /**
      * A required string value.
@@ -2092,6 +2326,25 @@ class Struct
     }
 
     /**
+     * Generic type validator. Validates against any type name via TYPENAME lookup.
+     */
+    public static function validate_TYPE(object $inj, mixed $_val = null, ?string $ref = null): mixed
+    {
+        $tname = strtolower(substr($ref ?? '', 1));
+        $idx = array_search($tname, self::TYPENAME);
+        $typev = ($idx !== false) ? (1 << (31 - $idx)) : 0;
+        $out = self::getprop($inj->dparent, $inj->key);
+
+        $t = self::typify($out);
+        if (0 === ($t & $typev)) {
+            $inj->errs[] = self::_invalidTypeMsg($inj->path, $tname, $t, $out);
+            return self::UNDEF;
+        }
+
+        return $out;
+    }
+
+    /**
      * Allow any value.
      */
     public static function validate_ANY(object $inj): mixed
@@ -2114,7 +2367,7 @@ class Struct
         $path = $inj->path;
 
         // Map syntax.
-        if (self::S_MKEYPRE === $mode) {
+        if (self::M_KEYPRE === $mode) {
             $childtm = self::getprop($parent, $key);
 
             // Get corresponding current object.
@@ -2139,12 +2392,12 @@ class Struct
             $inj->keys = $keys;
 
             // Remove $CHILD to cleanup output.
-            self::_setval($inj, self::UNDEF);
+            $inj->setval(self::UNDEF);
             return self::UNDEF;
         }
 
         // List syntax.
-        if (self::S_MVAL === $mode) {
+        if (self::M_VAL === $mode) {
             if (!self::islist($parent)) {
                 // $CHILD was not inside a list.
                 $inj->errs[] = 'Invalid $CHILD as value';
@@ -2200,7 +2453,7 @@ class Struct
         $keyI = $inj->keyI;
 
         // Only operate in val mode, since parent is a list.
-        if (self::S_MVAL === $mode) {
+        if (self::M_VAL === $mode) {
             if (!self::islist($parent) || 0 !== $keyI) {
                 $inj->errs[] = 'The $ONE validator at field ' .
                     self::pathify($inj->path, 1, 1) .
@@ -2211,7 +2464,7 @@ class Struct
             $inj->keyI = count($inj->keys ?? []);
 
             // Clean up structure, replacing [$ONE, ...] with current
-            self::_setval($inj, $inj->dparent, -2);
+            $inj->setval($inj->dparent, 2);
 
             $inj->path = self::slice($inj->path, 0, -1);
             $inj->key = self::getelem($inj->path, -1);
@@ -2237,7 +2490,7 @@ class Struct
                     'meta' => $inj->meta,
                 ]);
 
-                self::_setval($inj, $vcurrent, -2);
+                $inj->setval($vcurrent, 2);
 
                 // Accept current value if there was a match
                 if (0 === count($terrs)) {
@@ -2246,9 +2499,8 @@ class Struct
             }
 
             // There was no match.
-            $valdesc = implode(', ', array_map(function($v) {
-                return self::stringify($v);
-            }, $tvals));
+            $tvArr = ($tvals instanceof ListRef) ? $tvals->list : (is_array($tvals) ? $tvals : []);
+            $valdesc = implode(', ', array_map(fn($v) => self::stringify($v), $tvArr));
             $valdesc = preg_replace(self::R_TRANSFORM_NAME, '$1', strtolower($valdesc));
 
             $inj->errs[] = self::_invalidTypeMsg(
@@ -2271,7 +2523,7 @@ class Struct
         $keyI = $inj->keyI;
 
         // Only operate in val mode, since parent is a list.
-        if (self::S_MVAL === $mode) {
+        if (self::M_VAL === $mode) {
             if (!self::islist($parent) || 0 !== $keyI) {
                 $inj->errs[] = 'The $EXACT validator at field ' .
                     self::pathify($inj->path, 1, 1) .
@@ -2282,7 +2534,7 @@ class Struct
             $inj->keyI = count($inj->keys ?? []);
 
             // Clean up structure, replacing [$EXACT, ...] with current data parent
-            self::_setval($inj, $inj->dparent, -2);
+            $inj->setval($inj->dparent, 2);
 
             $inj->path = self::slice($inj->path, 0, count($inj->path) - 1);
             $inj->key = self::getelem($inj->path, -1);
@@ -2311,9 +2563,8 @@ class Struct
                 }
             }
 
-            $valdesc = implode(', ', array_map(function($v) {
-                return self::stringify($v);
-            }, $tvals));
+            $tvArr = ($tvals instanceof ListRef) ? $tvals->list : (is_array($tvals) ? $tvals : []);
+            $valdesc = implode(', ', array_map(fn($v) => self::stringify($v), $tvArr));
             $valdesc = preg_replace(self::R_TRANSFORM_NAME, '$1', strtolower($valdesc));
 
             $inj->errs[] = self::_invalidTypeMsg(
@@ -2348,7 +2599,7 @@ class Struct
         }
 
         // select needs exact matches
-        $exact = self::getprop($inj->meta ?? (object) [], '`$EXACT`');
+        $exact = self::getprop($inj->meta, '`$EXACT`');
 
         // Current val to verify.
         $cval = self::getprop($inj->dparent, $key);
@@ -2433,9 +2684,9 @@ class Struct
 
         if ($ismetapath) {
             if ('=' === $matches[2]) {
-                self::_setval($inj, ['`$EXACT`', $val]);
+                $inj->setval(['`$EXACT`', $val]);
             } else {
-                self::_setval($inj, $val);
+                $inj->setval($val);
             }
             $inj->keyI = -1;
 
@@ -2474,11 +2725,16 @@ class Struct
             '$PACK' => null,
 
             '$STRING' => [self::class, 'validate_STRING'],
-            '$NUMBER' => [self::class, 'validate_NUMBER'],
-            '$BOOLEAN' => [self::class, 'validate_BOOLEAN'],
-            '$OBJECT' => [self::class, 'validate_OBJECT'],
-            '$ARRAY' => [self::class, 'validate_ARRAY'],
-            '$FUNCTION' => [self::class, 'validate_FUNCTION'],
+            '$NUMBER' => [self::class, 'validate_TYPE'],
+            '$INTEGER' => [self::class, 'validate_TYPE'],
+            '$DECIMAL' => [self::class, 'validate_TYPE'],
+            '$BOOLEAN' => [self::class, 'validate_TYPE'],
+            '$NULL' => [self::class, 'validate_TYPE'],
+            '$NIL' => [self::class, 'validate_TYPE'],
+            '$MAP' => [self::class, 'validate_TYPE'],
+            '$LIST' => [self::class, 'validate_TYPE'],
+            '$FUNCTION' => [self::class, 'validate_TYPE'],
+            '$INSTANCE' => [self::class, 'validate_TYPE'],
             '$ANY' => [self::class, 'validate_ANY'],
             '$CHILD' => [self::class, 'validate_CHILD'],
             '$ONE' => [self::class, 'validate_ONE'],
@@ -2490,7 +2746,15 @@ class Struct
 
         $meta = is_object($injdef) && property_exists($injdef, 'meta') ? $injdef->meta : null;
 
-        $out = self::transform($data, $spec, $store, [self::class, '_validation']);
+        $transformOpts = new \stdClass();
+        $transformOpts->extra = $store;
+        $transformOpts->modify = [self::class, '_validation'];
+        $transformOpts->handler = [self::class, '_validatehandler'];
+        if ($meta !== null) {
+            $transformOpts->meta = $meta;
+        }
+        $transformOpts->errs = $errs;
+        $out = self::transform($data, $spec, $transformOpts);
 
         $generr = (0 < count($errs) && !$collect);
         if ($generr) {
@@ -2509,7 +2773,7 @@ class Struct
      * @param mixed $children The object or array to search in
      * @return array Array of matching children
      */
-    public static function select(mixed $query, mixed $children): array
+    public static function select(mixed $children, mixed $query): array
     {
         if (!self::isnode($children)) {
             return [];
@@ -2536,10 +2800,12 @@ class Struct
             'extra' => [
                 '$AND' => [self::class, 'select_AND'],
                 '$OR' => [self::class, 'select_OR'],
+                '$NOT' => [self::class, 'select_NOT'],
                 '$GT' => [self::class, 'select_CMP'],
                 '$LT' => [self::class, 'select_CMP'],
                 '$GTE' => [self::class, 'select_CMP'],
                 '$LTE' => [self::class, 'select_CMP'],
+                '$LIKE' => [self::class, 'select_CMP'],
             ]
         ];
 
@@ -2569,7 +2835,7 @@ class Struct
      */
     private static function select_AND(object $state, mixed $val, mixed $current, string $ref, mixed $store): mixed
     {
-        if (self::S_MKEYPRE === $state->mode) {
+        if (self::M_KEYPRE === $state->mode) {
             $terms = self::getprop($state->parent, $state->key);
             $src = self::getprop($store, $state->base, $store);
 
@@ -2594,7 +2860,7 @@ class Struct
      */
     private static function select_OR(object $state, mixed $val, mixed $current, string $ref, mixed $store): mixed
     {
-        if (self::S_MKEYPRE === $state->mode) {
+        if (self::M_KEYPRE === $state->mode) {
             $terms = self::getprop($state->parent, $state->key);
             $src = self::getprop($store, $state->base, $store);
 
@@ -2617,38 +2883,75 @@ class Struct
     }
 
     /**
+     * Helper method for $NOT operator in select queries
+     */
+    private static function select_NOT(object $state, mixed $_val, mixed $_ref, mixed $store): mixed
+    {
+        if (self::M_KEYPRE === $state->mode) {
+            $term = self::getprop($state->parent, $state->key);
+
+            $ppath = self::slice($state->path, -1);
+            $point = self::getpath($store, $ppath);
+
+            $vstore = self::merge([(object) [], $store], 1);
+            $vstore->{'$TOP'} = $point;
+
+            $terrs = [];
+            self::validate($point, $term, (object) [
+                'extra' => $vstore,
+                'errs' => $terrs,
+                'meta' => $state->meta,
+            ]);
+
+            if (count($terrs) === 0) {
+                $state->errs[] = 'NOT:' . self::pathify($ppath) . ': ' . self::stringify($point) . ' fail:' . self::stringify($term);
+            }
+
+            $gkey = self::getelem($state->path, -2);
+            $gp = self::getelem($state->nodes, -2);
+            self::setprop($gp, $gkey, $point);
+        }
+        return null;
+    }
+
+    /**
      * Helper method for comparison operators in select queries
      */
     private static function select_CMP(object $state, mixed $_val, string $ref, mixed $store): mixed
     {
-        if (self::S_MKEYPRE === $state->mode) {
+        if (self::M_KEYPRE === $state->mode) {
             $term = self::getprop($state->parent, $state->key);
-            $src = self::getprop($store, $state->base, $store);
             $gkey = self::getelem($state->path, -2);
 
-            $tval = self::getprop($src, $gkey);
+            $ppath = self::slice($state->path, -1);
+            $point = self::getpath($store, $ppath);
+
             $pass = false;
 
-            if ('$GT' === $ref && $tval > $term) {
+            if ('$GT' === $ref && $point > $term) {
                 $pass = true;
             }
-            else if ('$LT' === $ref && $tval < $term) {
+            elseif ('$LT' === $ref && $point < $term) {
                 $pass = true;
             }
-            else if ('$GTE' === $ref && $tval >= $term) {
+            elseif ('$GTE' === $ref && $point >= $term) {
                 $pass = true;
             }
-            else if ('$LTE' === $ref && $tval <= $term) {
+            elseif ('$LTE' === $ref && $point <= $term) {
+                $pass = true;
+            }
+            elseif ('$LIKE' === $ref && preg_match('/' . $term . '/', self::stringify($point))) {
                 $pass = true;
             }
 
             if ($pass) {
                 // Update spec to match found value so that _validate does not complain
                 $gp = self::getelem($state->nodes, -2);
-                self::setprop($gp, $gkey, $tval);
+                self::setprop($gp, $gkey, $point);
             }
             else {
-                $state->errs[] = 'CMP: fail:' . $ref . ' ' . self::stringify($term);
+                $state->errs[] = 'CMP: ' . self::pathify($ppath) . ': ' . self::stringify($point) .
+                    ' fail:' . $ref . ' ' . self::stringify($term);
             }
         }
         return null;
@@ -2668,22 +2971,24 @@ class Struct
         }
 
         if (self::islist($val)) {
+            $listArr = ($val instanceof ListRef) ? $val->list : $val;
+            $listLen = count($listArr);
             if (is_string($key)) {
                 if (!preg_match('/^[-0-9]+$/', $key)) {
                     $out = self::UNDEF;
                 } else {
                     $nkey = (int) $key;
                     if ($nkey < 0) {
-                        $nkey = count($val) + $nkey;
+                        $nkey = $listLen + $nkey;
                     }
-                    $out = array_key_exists($nkey, $val) ? $val[$nkey] : self::UNDEF;
+                    $out = ($nkey >= 0 && $nkey < $listLen) ? $listArr[$nkey] : self::UNDEF;
                 }
             } elseif (is_int($key)) {
                 $nkey = $key;
                 if ($nkey < 0) {
-                    $nkey = count($val) + $nkey;
+                    $nkey = $listLen + $nkey;
                 }
-                $out = array_key_exists($nkey, $val) ? $val[$nkey] : self::UNDEF;
+                $out = ($nkey >= 0 && $nkey < $listLen) ? $listArr[$nkey] : self::UNDEF;
             }
         }
 
@@ -2710,11 +3015,22 @@ class Struct
             return $parent;
         }
 
+        if ($parent instanceof ListRef) {
+            $keyI = (int)$key;
+            if (!is_numeric($key)) {
+                return $parent;
+            }
+            if ($keyI >= 0 && $keyI < count($parent->list)) {
+                array_splice($parent->list, $keyI, 1);
+            }
+            return $parent;
+        }
+
         if (self::ismap($parent)) {
             $key = self::strkey($key);
             unset($parent->$key);
         }
-        else if (self::islist($parent)) {
+        elseif (self::islist($parent)) {
             // Ensure key is an integer
             $keyI = (int)$key;
             if (!is_numeric($key) || (string)$keyI !== (string)$key) {
@@ -2733,159 +3049,6 @@ class Struct
         return $parent;
     }
 
-    private static function _injectval(
-        object $state,
-        mixed $val,
-        mixed $current,
-        mixed $store
-    ): mixed {
-        $valtype = gettype($val);
-
-        // Descend into node (arrays and objects)
-        if (self::isnode($val)) {
-            // Check if this object has been replaced by a PACK transform
-            if (self::ismap($val) && self::getprop($val, '__PACK_REPLACED__') === true) {
-                // The parent structure has been replaced, skip processing this object
-                // But first, clean up the marker so it doesn't appear in the final output
-                self::delprop($val, '__PACK_REPLACED__');
-                return $val;
-            }
-            
-            // Keys are sorted alphanumerically to ensure determinism.
-            // Injection transforms ($FOO) are processed *after* other keys.
-            if (self::ismap($val)) {
-                $allKeys = array_keys((array) $val);
-                $normalKeys = [];
-                $transformKeys = [];
-                
-                foreach ($allKeys as $k) {
-                    if (str_contains((string) $k, self::S_DS)) {
-                        $transformKeys[] = $k;
-                    } else {
-                        $normalKeys[] = $k;
-                    }
-                }
-                
-                sort($normalKeys);
-                sort($transformKeys);
-                $nodekeys = array_merge($normalKeys, $transformKeys);
-            } else {
-                // For lists, keys are just the indices - important: use indices as integers like TypeScript
-                $nodekeys = array_keys($val);
-            }
-
-            // Each child key-value pair is processed in three injection phases:
-            // 1. mode='key:pre' - Key string is injected, returning a possibly altered key.
-            // 2. mode='val' - The child value is injected.
-            // 3. mode='key:post' - Key string is injected again, allowing child mutation.
-            $childReturnedSkip = false;
-            for ($nkI = 0; $nkI < count($nodekeys); $nkI++) {
-                $nodekey = $nodekeys[$nkI];
-
-                // Create child injection state
-                $childpath = array_merge($state->path, [self::strkey($nodekey)]);
-                $childnodes = array_merge($state->nodes, [$val]);
-                $childval = self::getprop($val, $nodekey);
-
-                // Calculate the child data context (dparent)
-                // Only descend into data properties when the spec value is a nested object
-                // This allows relative paths to work while keeping simple injections at the right level
-                $child_dparent = $state->dparent;
-                if ($child_dparent !== self::UNDEF && $child_dparent !== null && self::isnode($childval)) {
-                    $child_dparent = self::getprop($child_dparent, self::strkey($nodekey));
-                }
-
-                $childinj = (object) [
-                    'mode' => self::S_MKEYPRE,
-                    'full' => false,
-                    'keyI' => $nkI,
-                    'keys' => $nodekeys,
-                    'key' => self::strkey($nodekey),
-                    'val' => $childval,
-                    'parent' => $val,
-                    'path' => $childpath,
-                    'nodes' => $childnodes,
-                    'handler' => $state->handler,
-                    'base' => $state->base,
-                    'modify' => $state->modify,
-                    'errs' => $state->errs ?? [],
-                    'meta' => $state->meta ?? (object) [],
-                    'dparent' => $child_dparent,
-                    'dpath' => isset($state->dpath) ? array_merge($state->dpath, [self::strkey($nodekey)]) : [self::strkey($nodekey)],
-                    'prior' => $state,
-                ];
-
-                // Perform the key:pre mode injection on the child key.
-                $prekey = self::_injectstr(self::strkey($nodekey), $store, $childinj);
-
-                // The injection may modify child processing.
-                $nkI = max(0, $childinj->keyI);
-                $nodekeys = $childinj->keys;
-
-                // If prekey is UNDEF, delete the key and skip further processing
-                if ($prekey === self::UNDEF) {
-                    // Delete the key from the parent
-                    self::delprop($val, $nodekey);
-                    
-                    // Remove this key from the nodekeys array to prevent issues with iteration
-                    array_splice($nodekeys, $nkI, 1);
-                    $nkI--; // Adjust index since we removed an element
-                    continue;
-                }
-
-                // Continue with normal processing
-                $childinj->val = self::getprop($val, $prekey);
-                $childinj->mode = self::S_MVAL;
-
-                // Perform the val mode injection on the child value.
-                // Pass the child injection state to maintain context
-                $injected_result = self::inject($childinj->val, $store, $state->modify, $childinj->dparent, $childinj);
-                if ($injected_result === self::$SKIP) {
-                    $childReturnedSkip = true;
-                } else {
-                    self::setprop($val, $nodekey, $injected_result);
-                }
-
-                // The injection may modify child processing.
-                $nkI = max(0, $childinj->keyI);
-                $nodekeys = $childinj->keys;
-
-                // Perform the key:post mode injection on the child key.
-                $childinj->mode = self::S_MKEYPOST;
-                self::_injectstr(self::strkey($nodekey), $store, $childinj);
-
-                // The injection may modify child processing.
-                $nkI = max(0, $childinj->keyI);
-                $nodekeys = $childinj->keys;
-            }
-
-            if ($childReturnedSkip) {
-                return self::$SKIP;
-            }
-        }
-        // Inject paths into string scalars.
-        else if ($valtype === 'string') {
-            $state->mode = self::S_MVAL;
-            $val = self::_injectstr($val, $store, $state);
-            if ($val !== self::$SKIP) { // PHP equivalent of SKIP check
-                self::setprop($state->parent, $state->key, $val);
-            }
-        }
-
-        // Custom modification
-        if ($state->modify) {
-            $mkey = $state->key;
-            $mparent = $state->parent;
-            $mval = self::getprop($mparent, $mkey);
-            call_user_func($state->modify, $mval, $mkey, $mparent, $state, $current, $store);
-            // Return the value after modify (callback may have updated parent)
-            $val = self::getprop($mparent, $mkey);
-        }
-
-        $state->val = $val;
-
-        return $val;
-    }
 
     public static function setpath(
         mixed $store,
@@ -2928,13 +3091,166 @@ class Struct
     }
 
 }
-?>op($parent, self::getelem($parts, -1));
-        } else {
-            self::setprop($parent, self::getelem($parts, -1), $val);
+
+
+class Injection
+{
+    private const MODENAME = [
+        Struct::M_VAL => 'val',
+        Struct::M_KEYPRE => 'key:pre',
+        Struct::M_KEYPOST => 'key:post',
+    ];
+
+    public int $mode;
+    public bool $full;
+    public int $keyI;
+    public array $keys;
+    public string $key;
+    public mixed $val;
+    public mixed $parent;
+    public array $path;
+    public array $nodes;
+    /** @var callable */
+    public mixed $handler;
+    public array $errs;
+    public object $meta;
+    public mixed $dparent;
+    public array $dpath;
+    public string $base;
+    /** @var callable|null */
+    public mixed $modify;
+    public ?Injection $prior;
+    public mixed $extra;
+
+    public function __construct(mixed $val, mixed $parent)
+    {
+        $this->val = $val;
+        $this->parent = $parent;
+        $this->errs = [];
+
+        $this->dparent = Struct::UNDEF;
+        $this->dpath = ['$TOP'];
+
+        $this->mode = Struct::M_VAL;
+        $this->full = false;
+        $this->keyI = 0;
+        $this->keys = ['$TOP'];
+        $this->key = '$TOP';
+        $this->path = ['$TOP'];
+        $this->nodes = [$parent];
+        $this->handler = [Struct::class, '_injecthandler'];
+        $this->base = '$TOP';
+        $this->meta = (object) [];
+        $this->modify = null;
+        $this->prior = null;
+        $this->extra = null;
+    }
+
+
+    public function __toString(): string
+    {
+        return $this->toString();
+    }
+
+    public function toString(?string $prefix = null): string
+    {
+        return 'INJ' . (null === $prefix ? '' : '/' . $prefix) . ':' .
+            Struct::pad(Struct::pathify($this->path, 1)) .
+            (self::MODENAME[$this->mode] ?? '') . ($this->full ? '/full' : '') . ':' .
+            'key=' . $this->keyI . '/' . $this->key . '/' . '[' . implode(',', $this->keys) . ']' .
+            '  p=' . Struct::stringify($this->parent, -1, 1) .
+            '  m=' . Struct::stringify($this->meta, -1, 1) .
+            '  d/' . Struct::pathify($this->dpath, 1) . '=' . Struct::stringify($this->dparent, -1, 1) .
+            '  r=' . Struct::stringify(Struct::getprop($this->nodes[0] ?? null, '$TOP'), -1, 1);
+    }
+
+
+    public function descend(): mixed
+    {
+        if (!isset($this->meta->__d)) {
+            $this->meta->__d = 0;
+        }
+        $this->meta->__d++;
+        $parentkey = Struct::getelem($this->path, -2);
+
+        // Resolve current node in store for local paths.
+        if (Struct::UNDEF === $this->dparent) {
+
+            // Even if there's no data, dpath should continue to match path, so that
+            // relative paths work properly.
+            if (1 < Struct::size($this->dpath)) {
+                $this->dpath = Struct::flatten([$this->dpath, $parentkey]);
+            }
+        }
+        else {
+            // this->dparent is the containing node of the current store value.
+            if (null !== $parentkey && Struct::UNDEF !== $parentkey) {
+                $this->dparent = Struct::getprop($this->dparent, $parentkey);
+
+                $lastpart = Struct::getelem($this->dpath, -1);
+                if ($lastpart === '$:' . $parentkey) {
+                    $this->dpath = Struct::slice($this->dpath, -1);
+                }
+                else {
+                    $this->dpath = Struct::flatten([$this->dpath, $parentkey]);
+                }
+            }
+        }
+
+        return $this->dparent;
+    }
+
+
+    public function child(int $keyI, array $keys): Injection
+    {
+        $key = Struct::strkey($keys[$keyI] ?? null);
+        $val = $this->val;
+
+        $cinj = new Injection(Struct::getprop($val, $key), $val);
+        $cinj->keyI = $keyI;
+        $cinj->keys = $keys;
+        $cinj->key = $key;
+
+        $cinj->path = Struct::flatten([Struct::getdef($this->path, []), $key]);
+        $cinj->nodes = Struct::flatten([Struct::getdef($this->nodes, []), [$val]]);
+
+        $cinj->mode = $this->mode;
+        $cinj->handler = $this->handler;
+        $cinj->modify = $this->modify;
+        $cinj->base = $this->base;
+        $cinj->meta = $this->meta;
+        $cinj->errs = &$this->errs;
+        $cinj->prior = $this;
+
+        $cinj->dpath = Struct::flatten([$this->dpath]);
+        $cinj->dparent = $this->dparent;
+
+        return $cinj;
+    }
+
+
+    public function setval(mixed $val, ?int $ancestor = null): mixed
+    {
+        $parent = Struct::UNDEF;
+        if (null === $ancestor || $ancestor < 2) {
+            if (Struct::UNDEF === $val) {
+                $this->parent = Struct::delprop($this->parent, $this->key);
+                $parent = $this->parent;
+            } else {
+                $parent = Struct::setprop($this->parent, $this->key, $val);
+            }
+        }
+        else {
+            $aval = Struct::getelem($this->nodes, 0 - $ancestor);
+            $akey = Struct::getelem($this->path, 0 - $ancestor);
+            if (Struct::UNDEF === $val) {
+                $parent = Struct::delprop($aval, $akey);
+            } else {
+                $parent = Struct::setprop($aval, $akey, $val);
+            }
         }
 
         return $parent;
     }
-
 }
 ?>
