@@ -902,9 +902,15 @@ class Struct
         }
         $refs = [];
         $replacer = function (mixed $v) use (&$refs, &$replacer): mixed {
-            if (is_callable($v)) {
+            if (is_callable($v) && !is_array($v) && !($v instanceof ListRef)) {
                 $refs[] = $v;
                 return '`$FUNCTION:' . (count($refs) - 1) . '`';
+            } elseif ($v instanceof ListRef) {
+                $newList = [];
+                foreach ($v->list as $item) {
+                    $newList[] = $replacer($item);
+                }
+                return new ListRef($newList);
             } elseif (is_array($v)) {
                 $result = [];
                 foreach ($v as $k => $item) {
@@ -929,6 +935,12 @@ class Struct
                     return $refs[(int) $matches[1]];
                 }
                 return $v;
+            } elseif ($v instanceof ListRef) {
+                $newList = [];
+                foreach ($v->list as $item) {
+                    $newList[] = $reviver($item);
+                }
+                return new ListRef($newList);
             } elseif (is_array($v)) {
                 $result = [];
                 foreach ($v as $k => $item) {
