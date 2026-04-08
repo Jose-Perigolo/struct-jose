@@ -4,6 +4,57 @@ declare(strict_types=1);
 namespace Voxgig\Struct;
 
 /**
+ * Reference-stable wrapper for PHP arrays.
+ * PHP arrays are value types (copy-on-write), so storing them in injection
+ * state loses reference identity. ListRef wraps the array in an object
+ * (reference type) so mutations via setval/delprop propagate through the
+ * injection pipeline. Mirrors Go's ListRef[T] strategy.
+ */
+class ListRef implements \ArrayAccess, \Countable, \IteratorAggregate
+{
+    public array $list;
+
+    public function __construct(array $list = [])
+    {
+        $this->list = $list;
+    }
+
+    public function offsetExists(mixed $offset): bool
+    {
+        return isset($this->list[$offset]);
+    }
+
+    public function offsetGet(mixed $offset): mixed
+    {
+        return $this->list[$offset] ?? null;
+    }
+
+    public function offsetSet(mixed $offset, mixed $value): void
+    {
+        if ($offset === null) {
+            $this->list[] = $value;
+        } else {
+            $this->list[$offset] = $value;
+        }
+    }
+
+    public function offsetUnset(mixed $offset): void
+    {
+        array_splice($this->list, (int)$offset, 1);
+    }
+
+    public function count(): int
+    {
+        return count($this->list);
+    }
+
+    public function getIterator(): \ArrayIterator
+    {
+        return new \ArrayIterator($this->list);
+    }
+}
+
+/**
  * Class Struct
  *
  * Utility class for manipulating in-memory JSON-like data structures.
@@ -124,11 +175,12 @@ class Struct
 
     public static function isnode(mixed $val): bool
     {
-        // We don't consider null or the undef‐marker to be a node.
         if ($val === self::UNDEF || $val === null) {
             return false;
         }
-        // Any PHP object *or* any PHP array is a node (map or list).
+        if ($val instanceof ListRef) {
+            return true;
+        }
         return is_object($val) || is_array($val);
     }
 
@@ -142,7 +194,9 @@ class Struct
      */
     public static function ismap(mixed $val): bool
     {
-        // Any PHP object (stdClass, etc.) is a map
+        if ($val instanceof ListRef) {
+            return false;
+        }
         if (is_object($val)) {
             return true;
         }
@@ -167,6 +221,9 @@ class Struct
      */
     public static function islist(mixed $val): bool
     {
+        if ($val instanceof ListRef) {
+            return true;
+        }
         if (!is_array($val)) {
             return false;
         }
@@ -252,6 +309,9 @@ class Struct
         }
         if (is_callable($value) && !is_array($value) && !is_object($value)) {
             return self::T_scalar | self::T_function;
+        }
+        if ($value instanceof ListRef) {
+            return self::T_node | self::T_list;
         }
         if (is_array($value)) {
             if (self::islist($value)) {
@@ -340,11 +400,16 @@ class Struct
             return $alt;
         }
 
-        // 2) array branch stays the same
-        if (is_array($val) && array_key_exists($key, $val)) {
+        // 2) ListRef branch
+        if ($val instanceof ListRef) {
+            $ki = is_numeric($key) ? (int)$key : -1;
+            $out = ($ki >= 0 && $ki < count($val->list)) ? $val->list[$ki] : $alt;
+        }
+        // 3) array branch
+        elseif (is_array($val) && array_key_exists($key, $val)) {
             $out = $val[$key];
         }
-        // 3) object branch: cast $key to string
+        // 4) object branch: cast $key to string
         elseif (is_object($val)) {
             $prop = (string) $key;
             if (property_exists($val, $prop)) {
@@ -398,9 +463,10 @@ class Struct
             $keys = is_array($val) ? array_keys($val) : array_keys(get_object_vars($val));
             sort($keys, SORT_STRING);
             return $keys;
+        } elseif ($val instanceof ListRef) {
+            return array_map('strval', array_keys($val->list));
         } elseif (self::islist($val)) {
-            $keys = array_keys($val);
-            return array_map('strval', $keys);
+            return array_map('strval', array_keys($val));
         }
         return [];
     }
@@ -525,6 +591,9 @@ class Struct
         $str = 'null';
 
         if ($val !== null && $val !== self::UNDEF && !($val instanceof \Closure)) {
+            if ($val instanceof ListRef) {
+                $val = self::cloneUnwrap($val);
+            }
             $indent = self::getprop($flags, 'indent', 2);
             try {
                 $encoded = json_encode($val, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
@@ -633,13 +702,17 @@ class Struct
             }
 
             if (-1 < $start && $start <= $end && $end <= $vlen) {
-                if (self::islist($val)) {
+                if ($val instanceof ListRef) {
+                    $val = new ListRef(array_slice($val->list, $start, $end - $start));
+                } elseif (self::islist($val)) {
                     $val = array_slice($val, $start, $end - $start);
                 } elseif (is_string($val)) {
                     $val = substr($val, $start, $end - $start);
                 }
             } else {
-                if (self::islist($val)) {
+                if ($val instanceof ListRef) {
+                    $val = new ListRef([]);
+                } elseif (self::islist($val)) {
                     $val = [];
                 } elseif (is_string($val)) {
                     $val = self::S_MT;
@@ -713,6 +786,10 @@ class Struct
             $valstr = $val;
         } else {
             $original = $val;
+            // Unwrap ListRefs before JSON encoding
+            if ($val instanceof ListRef) {
+                $val = self::cloneUnwrap($val);
+            }
             try {
                 $sorted = self::sort_obj($val);
                 $str = json_encode($sorted);
@@ -873,6 +950,84 @@ class Struct
     }
 
     /**
+     * Clone a value, wrapping all sequential arrays in ListRef for reference stability.
+     * Mirrors Go's CloneFlags(val, {wrap: true}).
+     */
+    public static function cloneWrap(mixed $val): mixed
+    {
+        if ($val === null || $val === self::UNDEF) {
+            return $val;
+        }
+        if (is_callable($val) && !is_array($val) && !is_object($val)) {
+            return $val;
+        }
+        if ($val instanceof ListRef) {
+            $newList = [];
+            foreach ($val->list as $item) {
+                $newList[] = self::cloneWrap($item);
+            }
+            return new ListRef($newList);
+        }
+        if (is_array($val)) {
+            if (self::isListHelper($val) || empty($val)) {
+                $newList = [];
+                foreach ($val as $item) {
+                    $newList[] = self::cloneWrap($item);
+                }
+                return new ListRef($newList);
+            }
+            // Assoc array (map-array) - clone as stdClass
+            $result = new \stdClass();
+            foreach ($val as $k => $v) {
+                $result->$k = self::cloneWrap($v);
+            }
+            return $result;
+        }
+        if ($val instanceof \stdClass) {
+            $result = new \stdClass();
+            foreach (get_object_vars($val) as $k => $v) {
+                $result->$k = self::cloneWrap($v);
+            }
+            return $result;
+        }
+        // Class instances and scalars returned as-is
+        return $val;
+    }
+
+    /**
+     * Clone a value, unwrapping all ListRef back to plain arrays.
+     * Mirrors Go's CloneFlags(val, {unwrap: true}).
+     */
+    public static function cloneUnwrap(mixed $val, int $depth = 0): mixed
+    {
+        if ($depth > 32) {
+            return $val;
+        }
+        if ($val instanceof ListRef) {
+            $result = [];
+            foreach ($val->list as $item) {
+                $result[] = self::cloneUnwrap($item, $depth + 1);
+            }
+            return $result;
+        }
+        if ($val instanceof \stdClass) {
+            $result = new \stdClass();
+            foreach (get_object_vars($val) as $k => $v) {
+                $result->$k = self::cloneUnwrap($v, $depth + 1);
+            }
+            return $result;
+        }
+        if (is_array($val)) {
+            $result = [];
+            foreach ($val as $k => $v) {
+                $result[$k] = self::cloneUnwrap($v, $depth + 1);
+            }
+            return $result;
+        }
+        return $val;
+    }
+
+    /**
      * @internal
      * Set a property or list‐index on a "node" (stdClass or PHP array).
      * Respects undef‐marker removals, numeric vs string keys, and
@@ -882,6 +1037,28 @@ class Struct
     {
         // only valid keys make sense
         if (!self::iskey($key)) {
+            return $parent;
+        }
+
+        // ─── LISTREF ────────────────────────────────────────────────
+        if ($parent instanceof ListRef) {
+            if (!is_numeric($key)) {
+                return $parent;
+            }
+            $keyI = (int) floor((float) $key);
+            if ($val === self::UNDEF) {
+                if ($keyI >= 0 && $keyI < count($parent->list)) {
+                    array_splice($parent->list, $keyI, 1);
+                }
+            } elseif ($keyI >= 0) {
+                if ($keyI >= count($parent->list)) {
+                    $parent->list[] = $val;
+                } else {
+                    $parent->list[$keyI] = $val;
+                }
+            } else {
+                array_unshift($parent->list, $val);
+            }
             return $parent;
         }
 
@@ -1384,7 +1561,7 @@ class Struct
                 if (is_string($found)) {
                     return $found;
                 }
-                return json_encode($found);
+                return json_encode($found instanceof ListRef ? self::cloneUnwrap($found) : $found);
             }, $val);
 
             // Also call the inj handler on the entire string, providing the
@@ -1573,7 +1750,7 @@ class Struct
             $out = $key;
 
             $args = self::getprop($parent, $key);
-            $args = is_array($args) ? $args : [$args];
+            $args = self::islist($args) ? (($args instanceof ListRef) ? $args->list : $args) : [$args];
 
             // Remove the $MERGE command from a parent map.
             $state->setval(self::UNDEF);
@@ -1619,9 +1796,10 @@ class Struct
 
         // Create clones of the child template for each value of the current source.
         if (self::islist($src)) {
+            $srcArr = ($src instanceof ListRef) ? $src->list : (array) $src;
             $tval = array_map(function($_) use ($child) {
                 return self::clone($child);
-            }, $src);
+            }, $srcArr);
         } elseif (self::ismap($src)) {
             $tval = [];
             foreach (self::items($src) as $item) {
@@ -1636,7 +1814,7 @@ class Struct
         $rval = [];
 
         if (0 < self::size($tval)) {
-            $tcur = (null == $src) ? self::UNDEF : array_values((array) $src);
+            $tcur = (null == $src) ? self::UNDEF : ($src instanceof ListRef ? $src->list : array_values((array) $src));
 
             $ckey = self::getelem($state->path, -2);
 
@@ -1849,7 +2027,7 @@ class Struct
             });
         }
 
-        $tref = self::clone($ref);
+        $tref = self::cloneWrap($ref);
 
         $cpath = self::slice($state->path, -3);
         $tpath = self::slice($state->path, -1);
@@ -1934,8 +2112,8 @@ class Struct
             $extra = $injdef;
         }
 
-        // 1) clone spec so we can mutate it
-        $specClone = self::clone($spec);
+        // 1) clone spec, wrapping arrays in ListRef for reference stability (Go pattern)
+        $specClone = self::cloneWrap($spec);
 
         // 2) split extra into data vs transforms
         $extraTransforms = [];
@@ -1951,8 +2129,8 @@ class Struct
 
         // 3) build the combined store
         $dataClone = self::merge([
-            self::clone($extraData),
-            self::clone($data),
+            self::cloneWrap($extraData),
+            self::cloneWrap($data),
         ]);
 
         $store = (object) array_merge(
@@ -1993,18 +2171,10 @@ class Struct
 
         // When a child transform (e.g. $REF) deletes the key, inject returns SKIP; return mutated spec
         if ($result === self::$SKIP) {
-            if (self::islist($specClone)) {
-                $specClone = self::_cleanRefEntries($specClone);
-            }
-            return $specClone;
+            return self::cloneUnwrap($specClone);
         }
 
-        // Also clean up any remaining $REF entries in list results
-        if (self::islist($result)) {
-            $result = self::_cleanRefEntries($result);
-        }
-
-        return $result;
+        return self::cloneUnwrap($result);
     }
 
     /**
@@ -2317,9 +2487,8 @@ class Struct
             }
 
             // There was no match.
-            $valdesc = implode(', ', array_map(function($v) {
-                return self::stringify($v);
-            }, $tvals));
+            $tvArr = ($tvals instanceof ListRef) ? $tvals->list : (is_array($tvals) ? $tvals : []);
+            $valdesc = implode(', ', array_map(fn($v) => self::stringify($v), $tvArr));
             $valdesc = preg_replace(self::R_TRANSFORM_NAME, '$1', strtolower($valdesc));
 
             $inj->errs[] = self::_invalidTypeMsg(
@@ -2382,9 +2551,8 @@ class Struct
                 }
             }
 
-            $valdesc = implode(', ', array_map(function($v) {
-                return self::stringify($v);
-            }, $tvals));
+            $tvArr = ($tvals instanceof ListRef) ? $tvals->list : (is_array($tvals) ? $tvals : []);
+            $valdesc = implode(', ', array_map(fn($v) => self::stringify($v), $tvArr));
             $valdesc = preg_replace(self::R_TRANSFORM_NAME, '$1', strtolower($valdesc));
 
             $inj->errs[] = self::_invalidTypeMsg(
@@ -2791,22 +2959,24 @@ class Struct
         }
 
         if (self::islist($val)) {
+            $listArr = ($val instanceof ListRef) ? $val->list : $val;
+            $listLen = count($listArr);
             if (is_string($key)) {
                 if (!preg_match('/^[-0-9]+$/', $key)) {
                     $out = self::UNDEF;
                 } else {
                     $nkey = (int) $key;
                     if ($nkey < 0) {
-                        $nkey = count($val) + $nkey;
+                        $nkey = $listLen + $nkey;
                     }
-                    $out = array_key_exists($nkey, $val) ? $val[$nkey] : self::UNDEF;
+                    $out = ($nkey >= 0 && $nkey < $listLen) ? $listArr[$nkey] : self::UNDEF;
                 }
             } elseif (is_int($key)) {
                 $nkey = $key;
                 if ($nkey < 0) {
-                    $nkey = count($val) + $nkey;
+                    $nkey = $listLen + $nkey;
                 }
-                $out = array_key_exists($nkey, $val) ? $val[$nkey] : self::UNDEF;
+                $out = ($nkey >= 0 && $nkey < $listLen) ? $listArr[$nkey] : self::UNDEF;
             }
         }
 
@@ -2833,11 +3003,22 @@ class Struct
             return $parent;
         }
 
+        if ($parent instanceof ListRef) {
+            $keyI = (int)$key;
+            if (!is_numeric($key)) {
+                return $parent;
+            }
+            if ($keyI >= 0 && $keyI < count($parent->list)) {
+                array_splice($parent->list, $keyI, 1);
+            }
+            return $parent;
+        }
+
         if (self::ismap($parent)) {
             $key = self::strkey($key);
             unset($parent->$key);
         }
-        else if (self::islist($parent)) {
+        elseif (self::islist($parent)) {
             // Ensure key is an integer
             $keyI = (int)$key;
             if (!is_numeric($key) || (string)$keyI !== (string)$key) {
