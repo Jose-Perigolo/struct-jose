@@ -1904,13 +1904,18 @@ class Struct
         $cpath = $pathLen > 3 ? array_slice($state->path, 0, $pathLen - 3) : [];
         $tpath = $pathLen > 1 ? array_slice($state->path, 0, $pathLen - 1) : [];
 
-        $tcur = self::getpath($store, $cpath);
-        $tval = self::getpath($store, $tpath);
+        // Strip $TOP prefix from paths since getpath already uses $TOP as base
+        $storeCpath = (!empty($cpath) && $cpath[0] === self::S_DTOP) ? array_slice($cpath, 1) : $cpath;
+        $storeTpath = (!empty($tpath) && $tpath[0] === self::S_DTOP) ? array_slice($tpath, 1) : $tpath;
+        $tcur = self::getpath($store, $storeCpath);
+        $tval = self::getpath($store, $storeTpath);
 
-        // Resolve data parent: if cpath is empty, tcur is the store root;
-        // navigate to the data via $TOP base for proper dparent context
+        // Set dparent for the recursive injection. Use tcur (store value at cpath).
+        // When cpath is empty, tcur equals the store root. Since the descend logic
+        // in _injectval uses path[-2] to navigate, and the path starts with $TOP,
+        // we need dparent to be the $TOP data so descend can navigate by key.
         $dparent = $tcur;
-        if (empty($cpath)) {
+        if (empty($storeCpath)) {
             $topdata = self::getprop($store, self::S_DTOP);
             if ($topdata !== self::UNDEF && $topdata !== null) {
                 $dparent = $topdata;
@@ -1941,14 +1946,33 @@ class Struct
                 'dparent' => $dparent,
             ];
 
-            self::inject($tref, $store, $tinj);
-            $rval = $tinj->val ?? $tref;
+            $injResult = self::inject($tref, $store, $tinj);
+            // If inject returned SKIP, the spec was mutated in place; use $tref directly.
+            // $tinj->val may be SKIP which we don't want as the result value.
+            if ($injResult === self::$SKIP) {
+                $rval = is_object($tref) ? $tref : ($tinj->val !== self::$SKIP ? $tinj->val : $tref);
+            } else {
+                $rval = $injResult;
+            }
         } else {
             $rval = self::UNDEF;
         }
 
-        // Set on grandparent
-        self::_setval($state, $rval, 2);
+        // Set on grandparent using nodes[-2] / path[-2].
+        // For stdClass nodes this works since objects are reference types in PHP.
+        $nn = count($state->nodes ?? []);
+        $gidx = $nn - 2;
+        if ($gidx >= 0 && $gidx < $nn) {
+            $gnode = $state->nodes[$gidx];
+            $gkey = self::getelem($state->path ?? [], -2);
+            if (is_object($gnode) && $gkey !== null && $gkey !== self::UNDEF) {
+                if ($rval === self::UNDEF || $rval === null) {
+                    self::delprop($gnode, $gkey);
+                } else {
+                    self::setprop($gnode, $gkey, $rval);
+                }
+            }
+        }
 
         if (isset($state->prior)) {
             $state->prior->keyI--;
@@ -2039,8 +2063,6 @@ class Struct
 
         // When a child transform (e.g. $REF) deletes the key, inject returns SKIP; return mutated spec
         if ($result === self::$SKIP) {
-            // For list specs where $REF removed entries, walk the spec to clean up
-            // unresolved $REF entries (PHP arrays are value types so _setval can't modify them in place)
             if (self::islist($specClone)) {
                 $specClone = self::_cleanRefEntries($specClone);
             }
@@ -2953,6 +2975,18 @@ class Struct
     ): mixed {
         $valtype = gettype($val);
 
+        // Simulate TS Injection.descend(): navigate dparent using path[-2].
+        // This ensures the data context tracks the spec path depth.
+        if ($state->dparent !== self::UNDEF && $state->dparent !== null) {
+            $parentkey = self::getelem($state->path ?? [], -2);
+            if ($parentkey !== null && $parentkey !== self::UNDEF && self::isnode($state->dparent)) {
+                $descended = self::getprop($state->dparent, $parentkey);
+                if ($descended !== self::UNDEF && $descended !== null) {
+                    $state->dparent = $descended;
+                }
+            }
+        }
+
         // Descend into node (arrays and objects)
         if (self::isnode($val)) {
             // Check if this object has been replaced by a PACK transform
@@ -3001,7 +3035,6 @@ class Struct
 
                 // Calculate the child data context (dparent)
                 // Only descend into data properties when the spec value is a nested object
-                // This allows relative paths to work while keeping simple injections at the right level
                 $child_dparent = $state->dparent;
                 if ($child_dparent !== self::UNDEF && $child_dparent !== null && self::isnode($childval)) {
                     $child_dparent = self::getprop($child_dparent, self::strkey($nodekey));
