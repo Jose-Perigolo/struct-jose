@@ -640,7 +640,7 @@ class StructTest extends TestCase
     public function testInjectString(): void
     {
         // a no-op modifier for string‐only tests
-        $nullModifier = function ($v, $k, $p, $state, $current, $store) {
+        $nullModifier = function ($v, $k = null, $p = null, $state = null, $store = null) {
             // do nothing
             return $v;
         };
@@ -648,13 +648,8 @@ class StructTest extends TestCase
         $this->testSet(
             $this->testSpec->inject->string,
             function (stdClass $in) use ($nullModifier) {
-                // some specs may include a 'current' key
-                $current = property_exists($in, 'current') ? $in->current : null;
                 $opts = new \stdClass();
                 $opts->modify = $nullModifier;
-                if ($current !== null) {
-                    $opts->current = $current;
-                }
                 return Struct::inject($in->val, $in->store, $opts);
             },
             /* force deep‐equal */ true
