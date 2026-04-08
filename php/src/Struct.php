@@ -1069,7 +1069,7 @@ class Struct
         }
 
         $val = $store;
-        $base = self::getprop($state, 'base', self::S_DTOP);
+        $base = self::getprop($state, 'base');
         $src = self::getprop($store, $base, $store);
         $numparts = count($parts);
         $dparent = self::getprop($state, 'dparent');
@@ -1853,11 +1853,8 @@ class Struct
 
         $cpath = self::slice($state->path, -3);
         $tpath = self::slice($state->path, -1);
-        // Strip $TOP prefix since getpath resolves via $TOP base
-        $storeCpath = (is_array($cpath) && !empty($cpath) && $cpath[0] === self::S_DTOP) ? array_slice($cpath, 1) : $cpath;
-        $storeTpath = (is_array($tpath) && !empty($tpath) && $tpath[0] === self::S_DTOP) ? array_slice($tpath, 1) : $tpath;
-        $tcur = self::getpath($store, $storeCpath);
-        $tval = self::getpath($store, $storeTpath);
+        $tcur = self::getpath($store, $cpath);
+        $tval = self::getpath($store, $tpath);
         $rval = self::UNDEF;
 
         if (!$hasSubRef || self::UNDEF !== $tval) {
