@@ -14,7 +14,7 @@
 | **py** | 40+ | 15 | 2 | 84/84 pass | Complete |
 | **go** | 50+ | 15 | 2 | 92/92 pass | Complete |
 | **php** | 43 | 15 | 2 | untested* | Near-complete |
-| **lua** | 39 | 15 | 2 | untested* | Near-complete |
+| **lua** | 40+ | 15 | 2 | 75/75 pass | Complete |
 | **rb** | 36 | 15 | 2 | 28/47 pass (13 skip, 6 err) | Partial |
 | **java** | 22 | 15 | 0 | untested* | Incomplete |
 | **cpp** | 18 | 15 | 0 | untested* | Incomplete |
@@ -107,8 +107,7 @@ Also exports `replace` as a public function (internal-only in TS).
 - `joinurl(sarr)` -- convenience wrapper for `join(arr, '/', True)`
 - `jo(...)` / `ja(...)` -- aliases for `jm` / `jt`
 
-**Constants:** All type constants, mode constants, and sentinels present.
-- Missing: `MODENAME` constant (minor gap).
+**Constants:** All type constants, mode constants, sentinels, and MODENAME present.
 
 **Classes:** `Injection` class exported (TS exports as type-only).
 
@@ -119,7 +118,7 @@ Also exports `replace` as a public function (internal-only in TS).
 - `UNDEF = None` for undefined semantics; tests use `NULLMARK`/`UNDEFMARK` markers.
 - `walk()` uses keyword arguments (`before`, `after`, `maxdepth`).
 
-**Gap count: 1** (missing `MODENAME`)
+**Gap count: 0**
 
 
 ### Go (`go/`)
@@ -237,17 +236,16 @@ Missing:
 
 ### Lua (`lua/`)
 
-**Status: NEAR-COMPLETE** -- Comprehensive implementation with good coverage.
+**Status: COMPLETE** -- Full functional parity with TypeScript.
 
-**Tests:** Could not run (`busted` framework not installed). Test files exist.
+**Tests:** 75/75 passing.
 
-**Exported Functions (39 of 40):**
-All major and minor functions present: clone, delprop, escre, escurl, filter,
-flatten, getdef, getelem, getpath, getprop, haskey, inject, isempty, isfunc,
-iskey, islist, ismap, isnode, items, join, jm, jt, jsonify, keysof, merge,
-pad, pathify, replace, select, setpath, setprop, size, slice, strkey,
-stringify, transform, typify, typename, validate, walk, checkPlacement,
-injectorArgs, injectChild.
+**Exported Functions:** All 40 canonical functions present plus `replace` (internal
+in TS). Full list: clone, delprop, escre, escurl, filter, flatten, getdef,
+getelem, getpath, getprop, haskey, inject, isempty, isfunc, iskey, islist,
+ismap, isnode, items, join, jm, jt, jsonify, keysof, merge, pad, pathify,
+select, setpath, setprop, size, slice, strkey, stringify, transform, typify,
+typename, validate, walk, checkPlacement, injectorArgs, injectChild.
 
 **Constants:** All 15 type constants, mode constants, sentinels, MODENAME present.
 
@@ -261,7 +259,7 @@ injectorArgs, injectChild.
 - `nil` represents undefined; no native null/undefined distinction.
 - `items()` returns `{key, val}` tables instead of `[key, val]` arrays.
 
-**Gap count: 0-1** (minor `items()` return format difference)
+**Gap count: 0**
 
 
 ### Java (`java/`)
@@ -445,7 +443,7 @@ Missing (22):
 | M_KEYPRE | Y | Y | Y | Y | Y | Y | Y | - | - |
 | M_KEYPOST | Y | Y | Y | Y | Y | Y | Y | - | - |
 | M_VAL | Y | Y | Y | Y | Y | Y | Y | - | - |
-| MODENAME | Y | Y | - | Y | - | Y | - | - | - |
+| MODENAME | Y | Y | Y | Y | - | Y | - | - | - |
 | SKIP | Y | Y | Y | Y | Y | Y | Y | - | - |
 | DELETE | Y | Y | Y | Y | Y | Y | Y | - | - |
 
@@ -493,8 +491,8 @@ Missing (22):
 
 1. **js** -- 100% parity. Identical runtime semantics. 84/84 tests passing.
 2. **go** -- 100% parity. Idiomatic Go adaptations. 92/92 tests passing.
-3. **py** -- ~99% parity. Missing only `MODENAME`. 84/84 tests passing.
-4. **lua** -- ~98% parity. All functions and commands present. Tests not verified.
+3. **py** -- 100% parity. All functions, constants, and commands present. 84/84 tests passing.
+4. **lua** -- 100% parity. All functions and commands present. 75/75 tests passing.
 5. **php** -- ~85% parity. Core functions present but param order issues and missing commands.
 6. **rb** -- ~65% parity. 14 missing functions, signature misalignment, test failures.
 7. **java** -- ~45% parity. Basic utilities only; all major subsystems missing.
@@ -525,5 +523,4 @@ Missing (22):
 - **Ruby**: Add missing transform commands and validators.
 - **Ruby**: Fix test failures and enable skipped tests.
 - **Java**: Fix keysof() bug, improve walk() to support before/after callbacks.
-- **Python**: Add MODENAME export.
 - **C++**: Redesign function signatures for type safety.
