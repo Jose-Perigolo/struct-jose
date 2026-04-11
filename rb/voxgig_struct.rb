@@ -456,13 +456,12 @@ module VoxgigStruct
       if sepre
         if url && i == 0
           s = s.sub(/#{sepre}+$/, '')
+          next s
         end
-        if i > 0
-          s = s.sub(/^#{sepre}+/, '')
-        end
-        if i < parts.length - 1
-          s = s.sub(/#{sepre}+$/, '')
-        end
+        s = s.sub(/^#{sepre}+/, '') if i > 0
+        s = s.sub(/#{sepre}+$/, '') if i < parts.length - 1 || !url
+        # Collapse internal duplicate separators
+        s = s.gsub(/([^#{sepre}])#{sepre}+([^#{sepre}])/, "\\1#{sepdef}\\2")
       end
       s
     }.reject(&:empty?)
