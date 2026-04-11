@@ -261,7 +261,10 @@ module VoxgigRunner
   # Returns a deep copy of a value via JSON round-trip.
   def self.fix_json(val, flags)
     return flags["null"] ? NULLMARK : val if val.nil?
+    return flags["null"] ? NULLMARK : val if val.equal?(VoxgigStruct::UNDEF)
     JSON.parse(JSON.generate(val))
+  rescue
+    val
   end
 
   # Applies a null modifier: if a value is "__NULL__", it replaces it with nil.

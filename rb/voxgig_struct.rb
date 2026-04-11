@@ -674,7 +674,7 @@ module VoxgigStruct
     if islist(path)
       parts = path.dup
     elsif path.is_a?(String)
-      parts = path.split(S_DT)
+      parts = path.split(S_DT, -1)
     elsif path.is_a?(Numeric)
       parts = [strkey(path)]
     else
@@ -1817,12 +1817,12 @@ module VoxgigStruct
     if ismap(children)
       children = items(children).map { |item|
         v = item[1]
-        setprop(v, S_DKEY, item[0]) if ismap(v)
+        setprop(v, '$KEY', item[0]) if ismap(v)
         v
       }
     else
       children = children.each_with_index.map { |n, i|
-        setprop(n, S_DKEY, i) if ismap(n)
+        setprop(n, '$KEY', i) if ismap(n)
         n
       }
     end
