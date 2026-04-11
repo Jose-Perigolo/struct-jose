@@ -84,6 +84,16 @@ module VoxgigStruct
   # Unique undefined marker.
   UNDEF = Object.new.freeze
 
+  # Mode constants (bitfield) matching TypeScript canonical
+  M_KEYPRE = 1
+  M_KEYPOST = 2
+  M_VAL = 4
+
+  MODENAME = { M_VAL => 'val', M_KEYPRE => 'key:pre', M_KEYPOST => 'key:post' }.freeze
+  PLACEMENT = { M_VAL => 'value', M_KEYPRE => S_MKEY, M_KEYPOST => S_MKEY }.freeze
+
+  MAXDEPTH = 32
+
   # --- Utility functions ---
 
   def self.sorted(val)
@@ -188,14 +198,15 @@ module VoxgigStruct
     ismap(val) || islist(val)
   end
 
-  def self.items(val)
+  def self.items(val, apply = nil)
     if ismap(val)
-      val.keys.sort.map { |k| [k, val[k]] }
+      pairs = val.keys.sort.map { |k| [k, val[k]] }
     elsif islist(val)
-      val.each_with_index.map { |v, i| [i, v] }
+      pairs = val.each_with_index.map { |v, i| [i.to_s, v] }
     else
-      []
+      return []
     end
+    apply ? pairs.map { |item| apply.call(item) } : pairs
   end
 
   def self.setprop(parent, key, val = :no_val_provided)
@@ -297,6 +308,174 @@ module VoxgigStruct
     val.respond_to?(:call)
   end
 
+  def self.getdef(val, alt)
+    val.nil? ? alt : val
+  end
+
+  def self.size(val)
+    return 0 if val.nil? || val.equal?(UNDEF)
+    return val.length if val.is_a?(String) || islist(val)
+    return val.keys.length if ismap(val)
+    return val.to_i if val.is_a?(Numeric)
+    0
+  end
+
+  def self.slice(val, start_idx = nil, end_idx = nil, mutate = false)
+    return val if val.nil? || val.equal?(UNDEF)
+
+    if islist(val)
+      len = val.length
+      s = start_idx.nil? ? 0 : start_idx
+      e = end_idx.nil? ? len : end_idx
+      s = len + s if s < 0
+      e = len + e if e < 0
+      s = [[s, 0].max, len].min
+      e = [[e, 0].max, len].min
+      result = val[s...e] || []
+      if mutate
+        val.replace(result)
+        return val
+      end
+      return result
+    end
+
+    if val.is_a?(String)
+      len = val.length
+      s = start_idx.nil? ? 0 : start_idx
+      e = end_idx.nil? ? len : end_idx
+      s = len + s if s < 0
+      e = len + e if e < 0
+      s = [[s, 0].max, len].min
+      e = [[e, 0].max, len].min
+      return val[s...e] || ''
+    end
+
+    if val.is_a?(Numeric)
+      s = start_idx || 0
+      e = end_idx || val
+      val < s ? s : (val > e ? e : val)
+    else
+      val
+    end
+  end
+
+  def self.pad(str, padding = nil, padchar = nil)
+    str = str.nil? ? '' : str.to_s
+    return str if padding.nil? || padding == 0
+    padchar = padchar.nil? ? ' ' : padchar.to_s
+    padchar = ' ' if padchar.empty?
+    diff = padding.abs - str.length
+    return str if diff <= 0
+    fill = padchar * diff
+    padding < 0 ? (fill + str) : (str + fill)
+  end
+
+  def self.getelem(val, key, alt = UNDEF)
+    out = UNDEF
+    if islist(val) && !key.nil? && !key.equal?(UNDEF)
+      begin
+        nkey = key.to_i
+        if key.to_s.strip.match?(/\A-?\d+\z/)
+          nkey = val.length + nkey if nkey < 0
+          out = (0 <= nkey && nkey < val.length) ? val[nkey] : UNDEF
+        end
+      rescue
+      end
+    end
+    if out.equal?(UNDEF)
+      return isfunc(alt) ? alt.call : (alt.equal?(UNDEF) ? nil : alt)
+    end
+    out
+  end
+
+  def self.flatten(lst, depth = nil)
+    depth = 1 if depth.nil?
+    return lst unless islist(lst)
+    out = []
+    lst.each do |item|
+      if islist(item) && depth > 0
+        out.concat(flatten(item, depth - 1))
+      else
+        out << item unless item.nil? || item.equal?(UNDEF)
+      end
+    end
+    out
+  end
+
+  def self.filter(val, check)
+    return [] unless isnode(val)
+    items(val).select { |item| check.call(item) }.map { |item| item[1] }
+  end
+
+  def self.delprop(parent, key)
+    return parent unless iskey(key)
+    if ismap(parent)
+      ks = strkey(key)
+      parent.delete(ks)
+    elsif islist(parent)
+      begin
+        ki = key.to_i
+        if 0 <= ki && ki < parent.length
+          parent.delete_at(ki)
+        end
+      rescue
+      end
+    end
+    parent
+  end
+
+  def self.join(arr, sep = nil, url = nil)
+    return '' unless islist(arr)
+    sep = sep.nil? ? '' : sep.to_s
+    parts = arr.compact.map(&:to_s)
+    if url
+      out = parts.map.with_index { |s, i|
+        s = s.sub(/\/+$/, '') if i == 0
+        s = s.sub(/^\/+/, '').sub(/\/+$/, '') if i > 0
+        s
+      }.reject(&:empty?).join('/')
+      return out
+    end
+    parts.join(sep)
+  end
+
+  def self.joinurl(sarr)
+    join(sarr, '/', true)
+  end
+
+  def self.jsonify(val, flags = nil)
+    return '' if val.nil?
+    begin
+      indent = flags.is_a?(Hash) ? (flags['indent'] || flags[:indent] || 2) : 2
+      JSON.pretty_generate(val)
+    rescue
+      val.to_s
+    end
+  end
+
+  def self.jm(*kv)
+    result = {}
+    i = 0
+    while i < kv.length - 1
+      result[kv[i].to_s] = kv[i + 1]
+      i += 2
+    end
+    result
+  end
+
+  def self.jt(*v)
+    v.to_a
+  end
+
+  def self.replace(s, from, to)
+    return s.to_s unless s.is_a?(String)
+    if from.is_a?(Regexp)
+      s.gsub(from, to.to_s)
+    else
+      s.gsub(from.to_s, to.to_s)
+    end
+  end
+
   def self.keysof(val)
     return [] unless isnode(val)
     if ismap(val)
@@ -309,15 +488,8 @@ module VoxgigStruct
   end
 
   # Public haskey uses getprop (so that missing keys yield nil)
-  def self.haskey(*args)
-    if args.size == 1 && args.first.is_a?(Array) && args.first.size >= 2
-      val, key = args.first[0], args.first[1]
-    elsif args.size == 2
-      val, key = args
-    else
-      return false
-    end
-    !getprop(val, key).nil?
+  def self.haskey(val = UNDEF, key = UNDEF)
+    _getprop(val, key, UNDEF) != UNDEF
   end
 
   def self.joinurl(parts)
@@ -332,20 +504,23 @@ module VoxgigStruct
   end
 
   # Get type name string from type bitfield value.
+  def self._clz32(n)
+    return 32 if n <= 0
+    31 - (n.bit_length - 1)
+  end
+
   def self.typename(t)
-    tname = S_MT
-    TYPENAME.each_with_index do |tn, tI|
-      if tn != S_MT && 0 < (t & (1 << (31 - tI)))
-        tname = tn
-      end
-    end
-    tname
+    t = t.to_i
+    idx = _clz32(t)
+    return TYPENAME[0] if idx < 0 || idx >= TYPENAME.length
+    r = TYPENAME[idx]
+    (r.nil? || r == S_MT) ? TYPENAME[0] : r
   end
 
   # Determine the type of a value as a bitfield integer.
-  def self.typify(value)
-    return T_noval if value.nil?
+  def self.typify(value = UNDEF)
     return T_noval if value.equal?(UNDEF)
+    return T_scalar | T_null if value.nil?
 
     if value == true || value == false
       return T_scalar | T_boolean
@@ -382,14 +557,34 @@ module VoxgigStruct
     T_any
   end
 
-  def self.walk(val, apply, key = nil, parent = nil, path = [])
-    if isnode(val)
-      items(val).each do |ckey, child|
-        new_path = path + [ckey.to_s]
-        setprop(val, ckey, walk(child, apply, ckey, val, new_path))
+  def self.walk(val, before = nil, after = nil, maxdepth = nil, key: nil, parent: nil, path: nil)
+    path = [] if path.nil?
+
+    _before = before
+    _after = after
+
+    out = _before.nil? ? val : _before.call(key, val, parent, path)
+
+    md = (maxdepth.is_a?(Numeric) && maxdepth >= 0) ? maxdepth : MAXDEPTH
+    if md == 0 || (!path.empty? && md > 0 && md <= path.length)
+      return out
+    end
+
+    if isnode(out)
+      items(out).each do |ckey, child|
+        new_path = flatten([path, ckey.to_s])
+        result = walk(child, _before, _after, md, key: ckey, parent: out, path: new_path)
+        if ismap(out)
+          out[ckey.to_s] = result
+        elsif islist(out)
+          out[ckey.to_i] = result
+        end
       end
     end
-    apply.call(key, val, parent, path || [])
+
+    out = _after.call(key, out, parent, path) unless _after.nil?
+
+    out
   end
 
   # --- Deep Merge Helpers for merge ---
@@ -431,95 +626,128 @@ module VoxgigStruct
   # --- Merge function ---
   #
   # Accepts an array of nodes and deep merges them (later nodes override earlier ones).
-  def self.merge(val)
+  def self.merge(val, maxdepth = nil)
     return val unless islist(val)
-    list = val
-    lenlist = list.size
-    return nil if lenlist == 0
+    list = val.reject { |v| v.nil? || v.equal?(UNDEF) }
+    return nil if list.empty?
     result = list[0]
-    (1...lenlist).each do |i|
+    (1...list.size).each do |i|
       result = deep_merge(result, list[i])
     end
     result
   end
 
-  # --- getpath function ---
-  #
-  # Looks up a value deep inside a node using a dot-delimited path.
-  # A path that begins with an empty string (i.e. a leading dot) is treated as relative
-  # and resolved against the `current` parameter.
-  # The optional state hash can provide a :base key and a :handler.
-  def self.getpath(path, store, current = nil, state = nil)
-    log("getpath: called with path=#{path.inspect}, store=#{store.inspect}, current=#{current.inspect}, state=#{state.inspect}")
-    parts =
-      if islist(path)
-        path
-      elsif path.is_a?(String)
-        arr = path.split(S_DT)
-        log("getpath: split path into parts=#{arr.inspect}")
-        arr = [S_MT] if arr.empty?  # treat empty string as [S_MT]
-        arr
-      else
-        UNDEF
-      end
-    if parts.equal?(UNDEF)
-      log("getpath: parts is UNDEF, returning nil")
+  # Get value at a key path deep inside a store.
+  # Matches TS canonical: getpath(store, path, injdef?)
+  def self.getpath(store, path, injdef = nil)
+    # Operate on a string array.
+    if islist(path)
+      parts = path.dup
+    elsif path.is_a?(String)
+      parts = path.split(S_DT)
+    elsif path.is_a?(Numeric)
+      parts = [strkey(path)]
+    else
       return nil
     end
 
-    root = store
     val = store
-    base = state && state[:base]
-    log("getpath: initial root=#{root.inspect}, base=#{base.inspect}")
 
-    # If there is no path (or if path consists of a single empty string)
-    if path.nil? || store.nil? || (parts.length == 1 && parts[0] == S_MT)
-      # When no state/base is provided, return store directly.
-      if base.nil?
-        val = store
-        log("getpath: no base provided; returning entire store: #{val.inspect}")
-      else
-        val = _getprop(store, base, UNDEF)
-        log("getpath: empty or nil path; looking up base key #{base.inspect} gives #{val.inspect}")
-      end
-    elsif parts.length > 0
-      pI = 0
-      if parts[0] == S_MT
-        pI = 1
-        root = current
-        log("getpath: relative path detected. Switching root to current: #{current.inspect}")
+    # Extract injdef properties (support both Hash and object with accessors)
+    if injdef.is_a?(Hash)
+      base = injdef['base'] || injdef[:base]
+      dparent = injdef['dparent'] || injdef[:dparent]
+      inj_meta = injdef['meta'] || injdef[:meta]
+      inj_key = injdef['key'] || injdef[:key]
+      dpath = injdef['dpath'] || injdef[:dpath]
+      handler = injdef['handler'] || injdef[:handler]
+    elsif injdef.respond_to?(:base)
+      base = injdef.base
+      dparent = injdef.dparent
+      inj_meta = injdef.meta
+      inj_key = injdef.key
+      dpath = injdef.dpath
+      handler = injdef.handler
+    else
+      base = nil; dparent = nil; inj_meta = nil; inj_key = nil; dpath = nil; handler = nil
+    end
+
+    src = base ? _getprop(store, base, store) : store
+    numparts = parts.length
+
+    # An empty path (incl empty string) just finds the src.
+    if path.nil? || store.nil? || (numparts == 1 && parts[0] == S_MT) || numparts == 0
+      val = src
+    elsif numparts > 0
+      # Check for $ACTIONs
+      if numparts == 1
+        val = _getprop(store, parts[0], UNDEF)
       end
 
-      part = (pI < parts.length ? parts[pI] : UNDEF)
-      first = _getprop(root, part, UNDEF)
-      log("getpath: first lookup for part=#{part.inspect} in root=#{root.inspect} yielded #{first.inspect}")
-      # If not found at top level and no value present, try fallback if base is given.
-      if (first.nil? || first.equal?(UNDEF)) && pI == 0 && !base.nil?
-        fallback = _getprop(root, base, UNDEF)
-        log("getpath: fallback lookup: _getprop(root, base) returned #{fallback.inspect}")
-        val = _getprop(fallback, part, UNDEF)
-        log("getpath: fallback lookup for part=#{part.inspect} yielded #{val.inspect}")
-      else
-        val = first
-      end
-      pI += 1
-      while !val.equal?(UNDEF) && pI < parts.length
-        log("getpath: descending into part #{parts[pI].inspect} with current val=#{val.inspect}")
-        val = _getprop(val, parts[pI], UNDEF)
-        pI += 1
+      if !isfunc(val)
+        val = src
+
+        # Check for meta path syntax
+        if parts[0].is_a?(String) && (m = parts[0].match(/^([^$]+)\$([=~])(.+)$/)) && inj_meta
+          val = _getprop(inj_meta, m[1], UNDEF)
+          parts[0] = m[3]
+        end
+
+        pI = 0
+        while !val.equal?(UNDEF) && !val.nil? && pI < numparts
+          part = parts[pI]
+
+          if injdef && part == '$KEY'
+            part = inj_key || part
+          elsif part.is_a?(String) && part.start_with?('$GET:')
+            part = stringify(getpath(src, part[5..-2]))
+          elsif part.is_a?(String) && part.start_with?('$REF:')
+            part = stringify(getpath(_getprop(store, '$SPEC', UNDEF), part[5..-2]))
+          elsif injdef && part.is_a?(String) && part.start_with?('$META:')
+            part = stringify(getpath(inj_meta, part[6..-2]))
+          end
+
+          # $$ escapes $
+          part = part.gsub('$$', '$') if part.is_a?(String)
+
+          if part == S_MT
+            ascends = 0
+            while pI + 1 < parts.length && parts[pI + 1] == S_MT
+              ascends += 1
+              pI += 1
+            end
+
+            if injdef && ascends > 0
+              ascends -= 1 if pI == parts.length - 1
+              if ascends == 0
+                val = dparent
+              else
+                fullpath = flatten([slice(dpath, 0 - ascends), parts[(pI + 1)..-1]])
+                if dpath.is_a?(Array) && ascends <= dpath.length
+                  val = getpath(store, fullpath)
+                else
+                  val = UNDEF
+                end
+                break
+              end
+            else
+              val = dparent || src
+            end
+          else
+            val = _getprop(val, part, UNDEF)
+          end
+          pI += 1
+        end
       end
     end
 
-    if state && state[:handler] && state[:handler].respond_to?(:call)
+    # Injdef may provide a custom handler to modify found value.
+    if handler && isfunc(handler)
       ref = pathify(path)
-      log("getpath: applying state handler with ref=#{ref.inspect} and val=#{val.inspect}")
-      val = state[:handler].call(state, val, current, ref, store)
-      log("getpath: state handler returned #{val.inspect}")
+      val = handler.call(injdef, val.equal?(UNDEF) ? nil : val, ref, store)
     end
 
-    final = val.equal?(UNDEF) ? nil : val
-    log("getpath: final returning #{final.inspect}")
-    final
+    val.equal?(UNDEF) ? nil : val
   end
 
 
@@ -1241,22 +1469,92 @@ module VoxgigStruct
     out
   end
 
-  # Transform commands.
-  def self.transform_cmds(state, val, current, ref, store)
-    out = val
-    if ismap(val)
-      out = {}
-      val.each do |k, v|
-        if k.start_with?(S_DS)
-          out[k] = v
-        else
-          out[k] = transform_cmds(state, v, current, ref, store)
-        end
-      end
-    elsif islist(val)
-      out = val.map { |v| transform_cmds(state, v, current, ref, store) }
+  def self.setpath(store, path, val, injdef = nil)
+    pt = typify(path)
+    if 0 < (T_list & pt)
+      parts = path
+    elsif 0 < (T_string & pt)
+      parts = path.split(S_DT)
+    elsif 0 < (T_number & pt)
+      parts = [path]
+    else
+      return nil
     end
-    out
+
+    base = injdef.is_a?(Hash) ? getprop(injdef, S_base) : nil
+    numparts = size(parts)
+    parent = base ? getprop(store, base, store) : store
+
+    (0...numparts - 1).each do |pI|
+      part_key = getelem(parts, pI)
+      next_parent = getprop(parent, part_key)
+      unless isnode(next_parent)
+        next_part = getelem(parts, pI + 1)
+        next_parent = (0 < (T_number & typify(next_part))) ? [] : {}
+        setprop(parent, part_key, next_parent)
+      end
+      parent = next_parent
+    end
+
+    if val == DELETE
+      delprop(parent, getelem(parts, -1))
+    else
+      setprop(parent, getelem(parts, -1), val)
+    end
+
+    parent
+  end
+
+  def self.checkPlacement(modes, ijname, parentTypes, inj)
+    mode_num = { S_MKEYPRE => M_KEYPRE, S_MKEYPOST => M_KEYPOST, S_MVAL => M_VAL }
+    inj_mode = inj.is_a?(Hash) ? inj[:mode] : inj.respond_to?(:mode) ? inj.mode : nil
+    mode_int = mode_num[inj_mode] || 0
+    if 0 == (modes & mode_int)
+      errs = inj.is_a?(Hash) ? inj[:errs] : inj.errs
+      errs << '$' + ijname + ': invalid placement as ' + (PLACEMENT[mode_int] || '') +
+        ', expected: ' + [M_KEYPRE, M_KEYPOST, M_VAL].select { |m| modes & m != 0 }.map { |m| PLACEMENT[m] }.join(',') + '.'
+      return false
+    end
+    if !isempty(parentTypes)
+      inj_parent = inj.is_a?(Hash) ? inj[:parent] : inj.parent
+      ptype = typify(inj_parent)
+      if 0 == (parentTypes & ptype)
+        errs = inj.is_a?(Hash) ? inj[:errs] : inj.errs
+        errs << '$' + ijname + ': invalid placement in parent ' + typename(ptype) +
+          ', expected: ' + typename(parentTypes) + '.'
+        return false
+      end
+    end
+    true
+  end
+
+  def self.injectorArgs(argTypes, args)
+    numargs = size(argTypes)
+    found = Array.new(1 + numargs)
+    found[0] = nil
+    (0...numargs).each do |argI|
+      arg = args[argI]
+      argType = typify(arg)
+      if 0 == (argTypes[argI] & argType)
+        found[0] = 'invalid argument: ' + stringify(arg, 22) +
+          ' (' + typename(argType) + ' at position ' + (1 + argI).to_s +
+          ') is not of type: ' + typename(argTypes[argI]) + '.'
+        break
+      end
+      found[1 + argI] = arg
+    end
+    found
+  end
+
+  def self.injectChild(child, store, inj)
+    # Stub - requires Injection class for full implementation
+    inj
+  end
+
+  def self.select(children, query)
+    # Stub - requires full validate/inject architecture
+    return [] unless isnode(children)
+    []
   end
 
 end

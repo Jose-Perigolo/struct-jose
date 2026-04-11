@@ -164,7 +164,7 @@ module VoxgigRunner
   # If entry["ctx"] or entry["args"] is provided, use that instead.
   # Also, if passing an object, inject client and utility.
   def self.resolve_args(entry, testpack, struct_utils)
-    args = [struct_utils.clone(entry["in"])]
+    args = entry.key?("in") ? [struct_utils.clone(entry["in"])] : [VoxgigStruct::UNDEF]
     if entry.key?("ctx")
       args = [entry["ctx"]]
     elsif entry.key?("args")
