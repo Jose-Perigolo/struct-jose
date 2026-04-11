@@ -135,15 +135,24 @@ class Struct
         'scalar', 'node',
     ];
 
-    /**
-     * Private marker to indicate a skippable value.
-     */
-    private static array $SKIP = ['`$SKIP`' => true];
+    public const SKIP = ['`$SKIP`' => true];
 
     // Mode constants (bitfield) matching TypeScript canonical
     public const M_KEYPRE = 1;
     public const M_KEYPOST = 2;
     public const M_VAL = 4;
+
+    public const MODENAME = [
+        self::M_VAL => 'val',
+        self::M_KEYPRE => 'key:pre',
+        self::M_KEYPOST => 'key:post',
+    ];
+
+    private const PLACEMENT = [
+        self::M_VAL => 'value',
+        self::M_KEYPRE => 'key',
+        self::M_KEYPOST => 'key',
+    ];
 
     /* =======================
      * Regular expressions for validation and transformation
@@ -1245,8 +1254,7 @@ class Struct
     public static function getpath(
         mixed $store,
         mixed $path,
-        mixed $current = null,
-        mixed $state = null
+        mixed $injdef = null
     ): mixed {
         // Convert path to array of parts
         $parts = is_array($path) ? $path :
@@ -1258,74 +1266,48 @@ class Struct
         }
 
         $val = $store;
-        $base = self::getprop($state, 'base');
+        $base = self::getprop($injdef, 'base');
         $src = self::getprop($store, $base, $store);
         $numparts = count($parts);
-        $dparent = self::getprop($state, 'dparent');
-        
-        // If no dparent from state but current is provided, use current as dparent for relative paths
-        if ($dparent === self::UNDEF && $current !== null && $current !== self::UNDEF) {
-            $dparent = $current;
-        }
+        $dparent = self::getprop($injdef, 'dparent');
 
         // An empty path (incl empty string) just finds the src (base data)
         if ($path === null || $store === null || ($numparts === 1 && $parts[0] === '')) {
             $val = $src;
         } else if ($numparts > 0) {
-            // Check for $ACTIONs (transforms/functions in store)
+            // Check for $ACTIONs
             if ($numparts === 1) {
-                $storeVal = self::getprop($store, $parts[0]);
-                if ($storeVal !== self::UNDEF) {
-                    // Found in store - return directly, don't traverse as path
-                    $val = $storeVal;
-                } else {
-                    // Not in store - treat as regular path in data
-                    // Use current context if provided, otherwise use src
-                    $val = ($current !== null && $current !== self::UNDEF) ? $current : $src;
-                }
-            } else {
-                // Multi-part paths - use current context if provided, otherwise use src
-                $val = ($current !== null && $current !== self::UNDEF) ? $current : $src;
+                $val = self::getprop($store, $parts[0]);
             }
 
-            // Only traverse if we didn't get a direct store value or if it's a function that needs to be called
-            if (!self::isfunc($val) && ($numparts > 1 || self::getprop($store, $parts[0]) === self::UNDEF)) {
+            if (!self::isfunc($val)) {
+                $val = $src;
 
                 // Check for meta path in first part
-                if (preg_match('/^([^$]+)\$([=~])(.+)$/', $parts[0], $m) && $state && isset($state->meta)) {
-                    $val = self::getprop($state->meta, $m[1]);
+                if (preg_match('/^([^$]+)\$([=~])(.+)$/', $parts[0], $m) && $injdef && isset($injdef->meta)) {
+                    $val = self::getprop($injdef->meta, $m[1]);
                     $parts[0] = $m[3];
                 }
 
-                $dpath = self::getprop($state, 'dpath');
+                $dpath = self::getprop($injdef, 'dpath');
 
                 for ($pI = 0; $val !== self::UNDEF && $pI < count($parts); $pI++) {
                     $part = $parts[$pI];
 
-                    if ($state && $part === '$KEY') {
-                        $part = self::getprop($state, 'key');
-                    } else if ($state && str_starts_with($part, '$GET:')) {
+                    if ($injdef && $part === '$KEY') {
+                        $part = self::getprop($injdef, 'key');
+                    } else if ($injdef && str_starts_with($part, '$GET:')) {
                         // $GET:path$ -> get store value, use as path part (string)
                         $getpath = substr($part, 5, -1);
-                        $getval = self::getpath($src, $getpath, null, null);
+                        $getval = self::getpath($src, $getpath);
                         $part = self::stringify($getval);
-                    } else if ($state && str_starts_with($part, '$REF:')) {
+                    } else if ($injdef && str_starts_with($part, '$REF:')) {
                         // $REF:refpath$ -> get spec value, use as path part (string)
                         $refpath = substr($part, 5, -1);
-                        $spec = self::getprop($store, '$SPEC');
-                        if ($spec !== self::UNDEF) {
-                            $specval = self::getprop($spec, $refpath);
-                            if ($specval !== self::UNDEF) {
-                                $part = self::stringify($specval);
-                            } else {
-                                $part = self::UNDEF;
-                            }
-                        } else {
-                            $part = self::UNDEF;
-                        }
-                    } else if ($state && str_starts_with($part, '$META:')) {
+                        $part = self::stringify(self::getpath(self::getprop($store, '$SPEC'), self::slice($part, 5, -1)));
+                    } else if ($injdef && str_starts_with($part, '$META:')) {
                         // $META:metapath$ -> get meta value, use as path part (string)
-                        $part = self::stringify(self::getpath(self::getprop($state, 'meta'), substr($part, 6, -1), null, null));
+                        $part = self::stringify(self::getpath(self::getprop($injdef, 'meta'), substr($part, 6, -1)));
                     }
 
                     // $$ escapes $
@@ -1338,7 +1320,7 @@ class Struct
                             $pI++;
                         }
 
-                        if ($state && $ascends > 0) {
+                        if ($injdef && $ascends > 0) {
                             if ($pI === count($parts) - 1) {
                                 $ascends--;
                             }
@@ -1346,17 +1328,10 @@ class Struct
                             if ($ascends === 0) {
                                 $val = $dparent;
                             } else {
-                                // Navigate up the data path by removing 'ascends' levels
-                                $dpath_slice = [];
-                                if (is_array($dpath) && $ascends <= count($dpath)) {
-                                    $dpath_slice = array_slice($dpath, 0, count($dpath) - $ascends);
-                                }
-                                
-                                $parts_slice = array_slice($parts, $pI + 1);
-                                $fullpath = array_merge($dpath_slice, $parts_slice);
+                                $fullpath = self::flatten([self::slice($dpath, 0 - $ascends), array_slice($parts, $pI + 1)]);
 
                                 if (is_array($dpath) && $ascends <= count($dpath)) {
-                                    $val = self::getpath($store, $fullpath, null, null);
+                                    $val = self::getpath($store, $fullpath);
                                 } else {
                                     $val = self::UNDEF;
                                 }
@@ -1378,10 +1353,10 @@ class Struct
         }
 
         // Inj may provide a custom handler to modify found value
-        $handler = self::getprop($state, 'handler');
-        if ($state !== null && self::isfunc($handler)) {
+        $handler = self::getprop($injdef, 'handler');
+        if ($injdef !== null && self::isfunc($handler)) {
             $ref = self::pathify($path);
-            $val = call_user_func($handler, $state, $val, $ref, $store);
+            $val = call_user_func($handler, $injdef, $val, $ref, $store);
         }
 
         return $val;
@@ -1489,13 +1464,13 @@ class Struct
         else if ($valtype === 'string') {
             $inj->mode = self::M_VAL;
             $val = self::_injectstr($val, $store, $inj);
-            if (self::$SKIP !== $val) {
+            if (self::SKIP !== $val) {
                 $inj->setval($val);
             }
         }
 
         // Custom modification.
-        if ($inj->modify && self::$SKIP !== $val) {
+        if ($inj->modify && self::SKIP !== $val) {
             $mkey = $inj->key;
             $mparent = $inj->parent;
             $mval = self::getprop($mparent, $mkey);
@@ -1548,7 +1523,7 @@ class Struct
             }
 
             // Get the extracted path reference.
-            $out = self::getpath($store, $pathref, null, $inj);
+            $out = self::getpath($store, $pathref, $inj);
         }
         else {
             // Check for injections within the string.
@@ -1564,7 +1539,7 @@ class Struct
                     $inj->full = false;
                 }
 
-                $found = self::getpath($store, $ref, null, $inj);
+                $found = self::getpath($store, $ref, $inj);
 
                 // Ensure inject value is a string.
                 if ($found === self::UNDEF) {
@@ -1587,25 +1562,6 @@ class Struct
         return $out;
     }
 
-
-    private static function _injectexpr(
-        string $expr,
-        mixed $store,
-        mixed $current,
-        object $state
-    ): mixed {
-        // Check if it's a transform command
-        if (str_starts_with($expr, self::S_DS)) {
-            $transform = self::getprop($store, $expr);
-            if (is_callable($transform)) {
-                return call_user_func($transform, $state, $expr, $current, $expr, $store);
-            }
-        }
-
-        // Otherwise treat it as a path
-        $result = self::getpath($store, $expr, $current, $state);
-        return $result;
-    }
 
     public static function _injecthandler(
         object $inj,
@@ -1797,7 +1753,7 @@ class Struct
 
         // Source data.
         $srcstore = self::getprop($store, $state->base, $store);
-        $src = self::getpath($srcstore, $srcpath, null, $state);
+        $src = self::getpath($srcstore, $srcpath, $state);
 
         // Create parallel data structures: source entries :: child templates
         $tcur = [];
@@ -1901,7 +1857,7 @@ class Struct
 
         // Source data
         $srcstore = self::getprop($store, $state->base, $store);
-        $src = self::getpath($srcstore, $srcpath, null, $state);
+        $src = self::getpath($srcstore, $srcpath, $state);
 
         // Prepare source as a list.
         if (!self::islist($src)) {
@@ -1939,7 +1895,7 @@ class Struct
                 if (is_string($keypath) && str_starts_with($keypath, '`')) {
                     $nkey = self::inject($keypath, self::merge([new \stdClass(), $store, (object) ['$TOP' => $srcnode]], 1));
                 } else {
-                    $nkey = self::getpath($srcnode, $keypath, null, $state);
+                    $nkey = self::getpath($srcnode, $keypath, $state);
                 }
             }
 
@@ -1966,7 +1922,7 @@ class Struct
                 } elseif (is_string($keypath) && str_starts_with($keypath, '`')) {
                     $kn = self::inject($keypath, self::merge([new \stdClass(), $store, (object) ['$TOP' => $n]], 1));
                 } else {
-                    $kn = self::getpath($n, $keypath, null, $state);
+                    $kn = self::getpath($n, $keypath, $state);
                 }
                 self::setprop($tsrc, $kn, $n);
             }
@@ -2061,7 +2017,7 @@ class Struct
             $injResult = self::inject($tref, $store, $tinj);
 
             // If inject returned SKIP, use tref (mutated in place) not tinj->val (which may be SKIP)
-            if ($injResult === self::$SKIP || $tinj->val === self::$SKIP) {
+            if ($injResult === self::SKIP || $tinj->val === self::SKIP) {
                 $rval = is_object($tref) ? $tref : self::UNDEF;
             } else {
                 $rval = $tinj->val;
@@ -2088,6 +2044,118 @@ class Struct
         }
 
         return $_val;
+    }
+
+
+    private static array $FORMATTER = [];
+
+    private static function _getFormatters(): array
+    {
+        if (empty(self::$FORMATTER)) {
+            self::$FORMATTER = [
+                'identity' => fn($_k, $v) => $v,
+                'upper' => fn($_k, $v) => self::isnode($v) ? $v : strtoupper('' . $v),
+                'lower' => fn($_k, $v) => self::isnode($v) ? $v : strtolower('' . $v),
+                'string' => fn($_k, $v) => self::isnode($v) ? $v : ('' . $v),
+                'number' => function ($_k, $v) {
+                    if (self::isnode($v)) {
+                        return $v;
+                    }
+                    $n = is_numeric($v) ? $v + 0 : 0;
+                    return $n;
+                },
+                'integer' => function ($_k, $v) {
+                    if (self::isnode($v)) {
+                        return $v;
+                    }
+                    $n = is_numeric($v) ? (int)$v : 0;
+                    return $n;
+                },
+                'concat' => function ($k, $v) {
+                    if (null === $k && self::islist($v)) {
+                        $parts = self::items($v, fn($n) => self::isnode($n[1]) ? '' : ('' . $n[1]));
+                        return self::join($parts, '');
+                    }
+                    return $v;
+                },
+            ];
+        }
+        return self::$FORMATTER;
+    }
+
+
+    /** @internal */
+    public static function transform_FORMAT(object $inj, mixed $_val, string $_ref, mixed $store): mixed
+    {
+        // Remove remaining keys to avoid spurious processing.
+        self::slice($inj->keys, 0, 1, true);
+
+        if (self::M_VAL !== $inj->mode) {
+            return self::UNDEF;
+        }
+
+        // Get arguments: ['`$FORMAT`', 'name', child].
+        $name = self::getprop($inj->parent, 1);
+        $child = self::getprop($inj->parent, 2);
+
+        // Source data.
+        $tkey = self::getelem($inj->path, -2);
+        $target = self::getelem($inj->nodes, -2, fn() => self::getelem($inj->nodes, -1));
+
+        $cinj = self::injectChild($child, $store, $inj);
+        $resolved = $cinj->val;
+
+        $formatters = self::_getFormatters();
+        $formatter = (0 < (self::T_function & self::typify($name))) ? $name : ($formatters[$name] ?? self::UNDEF);
+
+        if (self::UNDEF === $formatter) {
+            $inj->errs[] = '$FORMAT: unknown format: ' . $name . '.';
+            return self::UNDEF;
+        }
+
+        $out = self::walk($resolved, $formatter);
+
+        self::setprop($target, $tkey, $out);
+
+        return $out;
+    }
+
+
+    /** @internal */
+    public static function transform_APPLY(object $inj, mixed $_val, string $_ref, mixed $store): mixed
+    {
+        $ijname = 'APPLY';
+
+        if (!self::checkPlacement(self::M_VAL, $ijname, self::T_list, $inj)) {
+            return self::UNDEF;
+        }
+
+        $args = self::slice($inj->parent, 1);
+        $argsList = [];
+        if (self::islist($args)) {
+            if ($args instanceof ListRef) {
+                $argsList = $args->list;
+            } else {
+                $argsList = $args;
+            }
+        }
+        [$err, $apply, $child] = self::injectorArgs([self::T_function, self::T_any], $argsList);
+        if (self::UNDEF !== $err) {
+            $inj->errs[] = '$' . $ijname . ': ' . $err;
+            return self::UNDEF;
+        }
+
+        $tkey = self::getelem($inj->path, -2);
+        $target = self::getelem($inj->nodes, -2, fn() => self::getelem($inj->nodes, -1));
+
+        $cinj = self::injectChild($child, $store, $inj);
+        $resolved = $cinj->val;
+
+        $out = call_user_func($apply, $resolved, $store, $cinj);
+
+        self::setprop($target, $tkey, $out);
+
+        return $out;
     }
 
 
@@ -2161,6 +2229,8 @@ class Struct
                 '$PACK' => [self::class, 'transform_PACK'],
                 '$SPEC' => fn() => $spec,
                 '$REF' => [self::class, 'transform_REF'],
+                '$FORMAT' => [self::class, 'transform_FORMAT'],
+                '$APPLY' => [self::class, 'transform_APPLY'],
             ],
             $extraTransforms
         );
@@ -2182,7 +2252,7 @@ class Struct
         $result = self::inject($specClone, $store, $injectOpts);
 
         // When a child transform (e.g. $REF) deletes the key, inject returns SKIP; return mutated spec
-        if ($result === self::$SKIP) {
+        if ($result === self::SKIP) {
             return self::cloneUnwrap($specClone);
         }
 
@@ -2594,7 +2664,7 @@ class Struct
             return;
         }
 
-        if ($pval === self::$SKIP) {
+        if ($pval === self::SKIP) {
             return;
         }
 
@@ -2690,7 +2760,7 @@ class Struct
             }
             $inj->keyI = -1;
 
-            $out = self::$SKIP;
+            $out = self::SKIP;
         } else {
             $out = self::_injecthandler($inj, $val, $ref, $store);
         }
@@ -3090,16 +3160,83 @@ class Struct
         return $parent;
     }
 
+
+    public static function checkPlacement(
+        int $modes,
+        string $ijname,
+        int $parentTypes,
+        object $inj
+    ): bool {
+        if (0 === ($modes & $inj->mode)) {
+            $modeItems = array_filter(
+                [self::M_KEYPRE, self::M_KEYPOST, self::M_VAL],
+                fn($m) => $modes & $m
+            );
+            $placementNames = array_map(fn($m) => self::PLACEMENT[$m] ?? '', $modeItems);
+            $inj->errs[] = '$' . $ijname . ': invalid placement as ' . (self::PLACEMENT[$inj->mode] ?? '') .
+                ', expected: ' . implode(',', $placementNames) . '.';
+            return false;
+        }
+        if (!self::isempty($parentTypes)) {
+            $ptype = self::typify($inj->parent);
+            if (0 === ($parentTypes & $ptype)) {
+                $inj->errs[] = '$' . $ijname . ': invalid placement in parent ' . self::typename($ptype) .
+                    ', expected: ' . self::typename($parentTypes) . '.';
+                return false;
+            }
+        }
+        return true;
+    }
+
+
+    public static function injectorArgs(array $argTypes, array $args): array
+    {
+        $numargs = self::size($argTypes);
+        $found = array_fill(0, 1 + $numargs, self::UNDEF);
+        $found[0] = self::UNDEF;
+        for ($argI = 0; $argI < $numargs; $argI++) {
+            $arg = $args[$argI] ?? self::UNDEF;
+            $argType = self::typify($arg);
+            if (0 === ($argTypes[$argI] & $argType)) {
+                $found[0] = 'invalid argument: ' . self::stringify($arg, 22) .
+                    ' (' . self::typename($argType) . ' at position ' . (1 + $argI) .
+                    ') is not of type: ' . self::typename($argTypes[$argI]) . '.';
+                break;
+            }
+            $found[1 + $argI] = $arg;
+        }
+        return $found;
+    }
+
+
+    public static function injectChild(mixed $child, mixed $store, object $inj): object
+    {
+        $cinj = $inj;
+
+        // Replace ['`$FORMAT`',...] with child
+        if (null !== $inj->prior) {
+            if (null !== $inj->prior->prior) {
+                $cinj = $inj->prior->prior->child($inj->prior->keyI, $inj->prior->keys);
+                $cinj->val = $child;
+                self::setprop($cinj->parent, $inj->prior->key, $child);
+            }
+            else {
+                $cinj = $inj->prior->child($inj->keyI, $inj->keys);
+                $cinj->val = $child;
+                self::setprop($cinj->parent, $inj->key, $child);
+            }
+        }
+
+        self::inject($child, $store, $cinj);
+
+        return $cinj;
+    }
+
 }
 
 
 class Injection
 {
-    private const MODENAME = [
-        Struct::M_VAL => 'val',
-        Struct::M_KEYPRE => 'key:pre',
-        Struct::M_KEYPOST => 'key:post',
-    ];
 
     public int $mode;
     public bool $full;
@@ -3156,7 +3293,7 @@ class Injection
     {
         return 'INJ' . (null === $prefix ? '' : '/' . $prefix) . ':' .
             Struct::pad(Struct::pathify($this->path, 1)) .
-            (self::MODENAME[$this->mode] ?? '') . ($this->full ? '/full' : '') . ':' .
+            (Struct::MODENAME[$this->mode] ?? '') . ($this->full ? '/full' : '') . ':' .
             'key=' . $this->keyI . '/' . $this->key . '/' . '[' . implode(',', $this->keys) . ']' .
             '  p=' . Struct::stringify($this->parent, -1, 1) .
             '  m=' . Struct::stringify($this->meta, -1, 1) .

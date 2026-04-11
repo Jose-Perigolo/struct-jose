@@ -390,7 +390,6 @@ class StructTest extends TestCase
                 return Struct::getpath(
                     $store,
                     $input->path,
-                    null,
                     $state
                 );
             }
@@ -598,7 +597,7 @@ class StructTest extends TestCase
                 if (property_exists($input, 'dpath')) {
                     $state->dpath = explode('.', $input->dpath);
                 }
-                $result = Struct::getpath($store, $path, null, $state);
+                $result = Struct::getpath($store, $path, $state);
                 return $result;
             },
             true
@@ -613,7 +612,7 @@ class StructTest extends TestCase
                 $path = property_exists($input, 'path') ? $input->path : Struct::UNDEF;
                 $store = property_exists($input, 'store') ? $input->store : Struct::UNDEF;
                 $state = property_exists($input, 'inj') ? $input->inj : null;
-                $result = Struct::getpath($store, $path, null, $state);
+                $result = Struct::getpath($store, $path, $state);
                 return $result;
             },
             true
