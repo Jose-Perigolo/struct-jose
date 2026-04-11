@@ -201,7 +201,7 @@ class TestVoxgigStruct < Minitest::Test
 
   def test_minor_jsonify
     @runsetflags.call(@minor_spec["jsonify"], { "null" => false }, lambda { |vin|
-      VoxgigStruct.jsonify(vin["val"])
+      VoxgigStruct.jsonify(vin["val"], vin["flags"])
     })
   end
 

@@ -474,12 +474,54 @@ module VoxgigStruct
   end
 
   def self.jsonify(val, flags = nil)
+    str = 'null'
+    if !val.nil?
+      begin
+        indent = (flags.is_a?(Hash) ? (flags['indent'] || flags[:indent]) : nil) || 2
+        str = _json_stringify(val, indent, 0)
+        if str.nil?
+          str = 'null'
+        end
+        offset = (flags.is_a?(Hash) ? (flags['offset'] || flags[:offset]) : nil) || 0
+        if offset > 0
+          lines = str.split("\n")
+          first = lines[0] || ''
+          rest = lines[1..-1] || []
+          rest_indented = rest.map { |l| (' ' * offset) + l }
+          str = "{\n" + rest_indented.join("\n")
+        end
+      rescue => e
+        str = '__JSONIFY_FAILED__'
+      end
+    end
+    str
+  end
+
+  # Mimic JSON.stringify(val, null, indent) from JavaScript
+  def self._json_stringify(val, indent, depth)
     return 'null' if val.nil?
-    begin
-      indent = flags.is_a?(Hash) ? (flags['indent'] || flags[:indent] || 2) : 2
-      JSON.generate(val, indent: ' ' * indent, space: ' ', object_nl: "\n", array_nl: "\n")
-    rescue
-      val.to_s
+    return val.to_s if val == true || val == false
+    return val.is_a?(Float) ? val.to_s : val.to_s if val.is_a?(Numeric)
+    return JSON.generate(val) if val.is_a?(String)
+
+    ind = ' ' * indent
+    current_indent = ind * (depth + 1)
+    closing_indent = ind * depth
+
+    if islist(val)
+      return '[]' if val.empty?
+      items_str = val.map { |v| current_indent + _json_stringify(v, indent, depth + 1) }
+      "[\n" + items_str.join(",\n") + "\n" + closing_indent + "]"
+    elsif ismap(val)
+      return '{}' if val.empty?
+      pairs = val.keys.sort.map { |k|
+        current_indent + JSON.generate(k) + ': ' + _json_stringify(val[k], indent, depth + 1)
+      }
+      "{\n" + pairs.join(",\n") + "\n" + closing_indent + "}"
+    elsif isfunc(val)
+      'null'
+    else
+      'null'
     end
   end
 

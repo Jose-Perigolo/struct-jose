@@ -41,6 +41,7 @@ module VoxgigRunner
             puts "DEBUG: Arguments for subject: #{args.inspect}" if ENV['DEBUG']
             # In Ruby we assume the subject is a Proc/lambda or a callable object.
             res = testpack[:subject].call(*args)
+            entry["args"] = args
             res = fix_json(res, flags)
             entry["res"] = res
             # Log the result obtained.
@@ -122,7 +123,7 @@ module VoxgigRunner
   def self.check_result(entry, res, struct_utils)
     matched = false
     if entry.key?("match")
-      result = { "in" => entry["in"], "out" => entry["res"], "ctx" => entry["ctx"] }
+      result = { "in" => entry["in"], "out" => entry["res"], "ctx" => entry["ctx"], "args" => entry["args"] }
       match(entry["match"], result, struct_utils)
       matched = true
     end
