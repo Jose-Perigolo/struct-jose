@@ -109,8 +109,9 @@ class TestVoxgigStruct < Minitest::Test
   end
 
   def test_minor_pathify
-    @runsetflags.call(@minor_spec["pathify"], {}, lambda { |vin|
-      VoxgigStruct.pathify(vin["val"], vin["startin"], vin["endin"])
+    @runsetflags.call(@minor_spec["pathify"], { "null" => false }, lambda { |vin|
+      path = vin.key?("path") ? vin["path"] : VoxgigStruct::UNDEF
+      VoxgigStruct.pathify(path, vin["startin"] || vin["from"], vin["endin"])
     })
   end
 
@@ -172,7 +173,7 @@ class TestVoxgigStruct < Minitest::Test
 
   def test_minor_haskey
     @runsetflags.call(@minor_spec["haskey"], { "null" => false }, lambda { |vin|
-      VoxgigStruct.haskey(vin["val"], vin["key"])
+      VoxgigStruct.haskey(vin["src"], vin["key"])
     })
   end
 
@@ -199,8 +200,13 @@ class TestVoxgigStruct < Minitest::Test
   end
 
   def test_minor_filter
+    checks = {
+      "gt3" => lambda { |item| item[1].is_a?(Numeric) && item[1] > 3 },
+      "lt3" => lambda { |item| item[1].is_a?(Numeric) && item[1] < 3 },
+    }
     @runsetflags.call(@minor_spec["filter"], {}, lambda { |vin|
-      VoxgigStruct.filter(vin["val"], lambda { |item| item[1] != vin["exclude"] })
+      check = checks[vin["check"]] || lambda { |_item| true }
+      VoxgigStruct.filter(vin["val"], check)
     })
   end
 
@@ -224,7 +230,7 @@ class TestVoxgigStruct < Minitest::Test
 
   def test_minor_pad
     @runsetflags.call(@minor_spec["pad"], {}, lambda { |vin|
-      VoxgigStruct.pad(vin["val"], vin["len"], vin["fill"])
+      VoxgigStruct.pad(vin["val"], vin["pad"], vin["char"])
     })
   end
 

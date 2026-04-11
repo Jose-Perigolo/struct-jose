@@ -110,7 +110,7 @@ module VoxgigStruct
   end
 
   def self.clone(val)
-    return nil if val.nil?
+    return nil if val.nil? || val.equal?(UNDEF)
     if isfunc(val)
       val
     elsif islist(val)
@@ -176,7 +176,7 @@ module VoxgigStruct
   end
 
   def self.isempty(val)
-    return true if val.nil? || val == ""
+    return true if val.nil? || val.equal?(UNDEF) || val == ""
     return true if islist(val) && val.empty?
     return true if ismap(val) && val.empty?
     false
@@ -240,20 +240,29 @@ module VoxgigStruct
     parent
   end
 
-  def self.stringify(val, maxlen = nil)
-    return "null" if val.nil?
-    begin
-      v = val.is_a?(Hash) ? sorted(val) : val
-      json = JSON.generate(v)
-    rescue StandardError
-      json = val.to_s
+  def self.stringify(val, maxlen = nil, pretty = nil)
+    return '' if val.equal?(UNDEF)
+    return 'null' if val.nil?
+
+    if val.is_a?(String)
+      valstr = val
+    else
+      begin
+        v = val.is_a?(Hash) ? sorted(val) : val
+        valstr = JSON.generate(v)
+        valstr = valstr.gsub('"', '')
+      rescue StandardError
+        valstr = val.to_s
+      end
     end
-    json = json.gsub('"', '')
-    if maxlen && json.length > maxlen
-      js = json[0, maxlen]
-      json = js[0, maxlen - 3] + '...'
+
+    if !maxlen.nil? && maxlen >= 0
+      if valstr.length > maxlen
+        valstr = valstr[0, maxlen - 3] + '...'
+      end
     end
-    json
+
+    valstr
   end
 
   def self.pathify(val, startin = nil, endin = nil)
@@ -291,7 +300,7 @@ module VoxgigStruct
     end
 
     if pathstr.nil?
-      pathstr = '<unknown-path' + (val.nil? ? S_MT + 'null' : S_CN + stringify(val, 47)) + '>'
+      pathstr = '<unknown-path' + (val.equal?(UNDEF) ? '' : S_CN + stringify(val, 47)) + '>'
     end
 
     pathstr
@@ -316,6 +325,7 @@ module VoxgigStruct
     return 0 if val.nil? || val.equal?(UNDEF)
     return val.length if val.is_a?(String) || islist(val)
     return val.keys.length if ismap(val)
+    return (val == true ? 1 : 0) if val == true || val == false
     return val.to_i if val.is_a?(Numeric)
     0
   end
@@ -323,51 +333,61 @@ module VoxgigStruct
   def self.slice(val, start_idx = nil, end_idx = nil, mutate = false)
     return val if val.nil? || val.equal?(UNDEF)
 
-    if islist(val)
-      len = val.length
-      s = start_idx.nil? ? 0 : start_idx
-      e = end_idx.nil? ? len : end_idx
-      s = len + s if s < 0
-      e = len + e if e < 0
-      s = [[s, 0].max, len].min
-      e = [[e, 0].max, len].min
-      result = val[s...e] || []
-      if mutate
-        val.replace(result)
-        return val
+    if val.is_a?(Numeric) && !val.is_a?(TrueClass) && !val.is_a?(FalseClass)
+      s = start_idx.nil? ? (-Float::INFINITY) : start_idx
+      e = end_idx.nil? ? Float::INFINITY : (end_idx - 1)
+      return [[val, s].max, e].min
+    end
+
+    vlen = size(val)
+
+    start_idx = 0 if !end_idx.nil? && start_idx.nil?
+
+    if !start_idx.nil?
+      s = start_idx
+      e = end_idx
+
+      if s < 0
+        e = vlen + s
+        e = 0 if e < 0
+        s = 0
+      elsif !e.nil?
+        if e < 0
+          e = vlen + e
+          e = 0 if e < 0
+        elsif vlen < e
+          e = vlen
+        end
+      else
+        e = vlen
       end
-      return result
+
+      s = vlen if vlen < s
+
+      if islist(val)
+        result = val[s...e] || []
+        if mutate
+          val.replace(result)
+          return val
+        end
+        return result
+      elsif val.is_a?(String)
+        return val[s...e] || ''
+      end
     end
 
-    if val.is_a?(String)
-      len = val.length
-      s = start_idx.nil? ? 0 : start_idx
-      e = end_idx.nil? ? len : end_idx
-      s = len + s if s < 0
-      e = len + e if e < 0
-      s = [[s, 0].max, len].min
-      e = [[e, 0].max, len].min
-      return val[s...e] || ''
-    end
-
-    if val.is_a?(Numeric)
-      s = start_idx || 0
-      e = end_idx || val
-      val < s ? s : (val > e ? e : val)
-    else
-      val
-    end
+    val
   end
 
   def self.pad(str, padding = nil, padchar = nil)
-    str = str.nil? ? '' : str.to_s
-    return str if padding.nil? || padding == 0
-    padchar = padchar.nil? ? ' ' : padchar.to_s
-    padchar = ' ' if padchar.empty?
-    diff = padding.abs - str.length
-    return str if diff <= 0
-    fill = padchar * diff
-    padding < 0 ? (fill + str) : (str + fill)
+    str = str.is_a?(String) ? str : stringify(str)
+    padding = padding.nil? ? 44 : padding
+    padchar = padchar.nil? ? ' ' : (padchar.to_s + ' ')[0]
+    if padding >= 0
+      str.ljust(padding, padchar)
+    else
+      str.rjust(-padding, padchar)
+    end
   end
 
   def self.getelem(val, key, alt = UNDEF)
@@ -426,17 +446,28 @@ module VoxgigStruct
 
   def self.join(arr, sep = nil, url = nil)
     return '' unless islist(arr)
-    sep = sep.nil? ? '' : sep.to_s
-    parts = arr.compact.map(&:to_s)
-    if url
-      out = parts.map.with_index { |s, i|
-        s = s.sub(/\/+$/, '') if i == 0
-        s = s.sub(/^\/+/, '').sub(/\/+$/, '') if i > 0
-        s
-      }.reject(&:empty?).join('/')
-      return out
-    end
-    parts.join(sep)
+    sepdef = sep.nil? ? ',' : sep.to_s
+    sepre = (sepdef.length == 1) ? Regexp.escape(sepdef) : nil
+
+    # Filter to non-empty strings only
+    parts = arr.select { |n| n.is_a?(String) && n != '' }
+
+    parts = parts.map.with_index { |s, i|
+      if sepre
+        if url && i == 0
+          s = s.sub(/#{sepre}+$/, '')
+        end
+        if i > 0
+          s = s.sub(/^#{sepre}+/, '')
+        end
+        if i < parts.length - 1
+          s = s.sub(/#{sepre}+$/, '')
+        end
+      end
+      s
+    }.reject(&:empty?)
+
+    parts.join(sepdef)
   end
 
   def self.joinurl(sarr)
@@ -444,10 +475,10 @@ module VoxgigStruct
   end
 
   def self.jsonify(val, flags = nil)
-    return '' if val.nil?
+    return 'null' if val.nil?
     begin
       indent = flags.is_a?(Hash) ? (flags['indent'] || flags[:indent] || 2) : 2
-      JSON.pretty_generate(val)
+      JSON.generate(val, indent: ' ' * indent, space: ' ', object_nl: "\n", array_nl: "\n")
     rescue
       val.to_s
     end
