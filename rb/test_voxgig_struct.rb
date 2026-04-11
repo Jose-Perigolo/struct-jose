@@ -5,7 +5,19 @@ require_relative 'voxgig_runner'     # Loads our runner module
 
 # A helper for deep equality comparison using JSON round-trip.
 def deep_equal(a, b)
-  JSON.generate(a) == JSON.generate(b)
+  normalize = lambda { |v|
+    case v
+    when Hash
+      sorted = {}
+      v.keys.sort.each { |k| sorted[k] = normalize.call(v[k]) }
+      sorted
+    when Array
+      v.map { |e| normalize.call(e) }
+    else
+      v
+    end
+  }
+  JSON.generate(normalize.call(a)) == JSON.generate(normalize.call(b))
 rescue
   a == b
 end
@@ -302,14 +314,48 @@ class TestVoxgigStruct < Minitest::Test
   end
 
   def test_walk_depth
-    @runsetflags.call(@walk_spec["depth"], {}, lambda { |vin|
-      VoxgigStruct.walk(vin["src"], nil, nil, vin["depth"])
+    @runsetflags.call(@walk_spec["depth"], { "null" => false }, lambda { |vin|
+      top = nil
+      cur = nil
+      copy = lambda { |key, val, _parent, _path|
+        if key.nil? || VoxgigStruct.isnode(val)
+          child = VoxgigStruct.islist(val) ? [] : {}
+          if key.nil?
+            top = cur = child
+          else
+            cur[key.is_a?(String) ? key : key.to_s] = child
+            cur = child
+          end
+        else
+          cur[key.is_a?(String) ? key : key.to_s] = val
+        end
+        val
+      }
+      VoxgigStruct.walk(vin["src"], copy, nil, vin["maxdepth"])
+      top
     })
   end
 
   def test_walk_copy
+    cur = []
+    walkcopy = lambda { |key, val, _parent, path|
+      if key.nil?
+        cur = []
+        cur[0] = VoxgigStruct.ismap(val) ? {} : VoxgigStruct.islist(val) ? [] : val
+        next val
+      end
+      v = val
+      i = VoxgigStruct.size(path)
+      if VoxgigStruct.isnode(v)
+        v = VoxgigStruct.ismap(v) ? {} : []
+        cur[i] = v
+      end
+      VoxgigStruct.setprop(cur[i - 1], key, v)
+      val
+    }
     @runsetflags.call(@walk_spec["copy"], {}, lambda { |vin|
-      VoxgigStruct.walk(vin, lambda { |_k, v, _p, _t| VoxgigStruct.isnode(v) ? v : v })
+      VoxgigStruct.walk(vin, walkcopy)
+      cur[0]
     })
   end
 

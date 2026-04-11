@@ -255,7 +255,21 @@ module VoxgigRunner
 
   # Uses JSON round-trip to test deep equality.
   def self.deep_equal?(a, b)
-    JSON.generate(a) == JSON.generate(b)
+    normalize = lambda { |v|
+      case v
+      when Hash
+        sorted = {}
+        v.keys.sort.each { |k| sorted[k] = normalize.call(v[k]) }
+        sorted
+      when Array
+        v.map { |e| normalize.call(e) }
+      else
+        v
+      end
+    }
+    JSON.generate(normalize.call(a)) == JSON.generate(normalize.call(b))
+  rescue
+    a == b
   end
 
   # Returns a deep copy of a value via JSON round-trip.
