@@ -282,7 +282,7 @@ module VoxgigStruct
     end_idx = endin.nil? ? 0 : endin < 0 ? 0 : endin
 
     if path && start >= 0
-      path = path[start..-end_idx-1]
+      path = path[start..-end_idx-1] || []
       if path.empty?
         pathstr = '<root>'
       else
@@ -1965,14 +1965,26 @@ module VoxgigStruct
     end
 
     def setval(val, ancestor = nil)
-      if ancestor.nil? || (ancestor.is_a?(Numeric) && ancestor < 2)
-        VoxgigStruct.setprop(@parent, @key, val)
+      if val.nil?
+        # nil means delete (matching TS undefined behavior)
+        if ancestor.nil? || (ancestor.is_a?(Numeric) && ancestor < 2)
+          VoxgigStruct.delprop(@parent, @key)
+        else
+          VoxgigStruct.delprop(
+            VoxgigStruct.getelem(@nodes, 0 - ancestor),
+            VoxgigStruct.getelem(@path, 0 - ancestor)
+          )
+        end
       else
-        VoxgigStruct.setprop(
-          VoxgigStruct.getelem(@nodes, 0 - ancestor),
-          VoxgigStruct.getelem(@path, 0 - ancestor),
-          val
-        )
+        if ancestor.nil? || (ancestor.is_a?(Numeric) && ancestor < 2)
+          VoxgigStruct.setprop(@parent, @key, val)
+        else
+          VoxgigStruct.setprop(
+            VoxgigStruct.getelem(@nodes, 0 - ancestor),
+            VoxgigStruct.getelem(@path, 0 - ancestor),
+            val
+          )
+        end
       end
     end
 
