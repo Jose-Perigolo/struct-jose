@@ -15,7 +15,7 @@
 | **go** | 50+ | 15 | 2 | 92/92 pass | Complete |
 | **php** | 46 | 15 | 2 | 82/82 pass | Complete |
 | **lua** | 40+ | 15 | 2 | 75/75 pass | Complete |
-| **rb** | 40+ | 15 | 2 | 38/75 pass | In progress |
+| **rb** | 40+ | 15 | 2 | 59/75 pass | In progress |
 | **java** | 22 | 15 | 0 | untested* | Incomplete |
 | **cpp** | 18 | 15 | 0 | untested* | Incomplete |
 
@@ -484,7 +484,7 @@ No remaining issues. Full parity achieved.
 3. **py** -- 100% parity. All functions, constants, and commands present. 84/84 tests passing.
 4. **lua** -- 100% parity. All functions and commands present. 75/75 tests passing.
 5. **php** -- 100% parity. All functions, constants, and commands present. 82/82 tests passing.
-6. **rb** -- ~75% parity. All 40 functions added. Minor utilities working. Complex functions (inject/transform/validate/select) need Injection class rewrite. 38/75 tests passing.
+6. **rb** -- ~80% parity. All 40 functions + Injection class. inject/transform/validate/select rewritten. 59/75 tests passing. Remaining: edge cases in transform EACH/PACK/REF/FORMAT, validate, and select.
 7. **java** -- ~45% parity. Basic utilities only; all major subsystems missing.
 8. **cpp** -- ~40% parity. Basic utilities only; UB issues; all major subsystems missing.
 
