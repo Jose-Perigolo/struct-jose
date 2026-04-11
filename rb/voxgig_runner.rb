@@ -223,7 +223,7 @@ module VoxgigRunner
     walk(check) do |_key, val, _parent, path|
       scalar = !(val.is_a?(Hash) || val.is_a?(Array))
       if scalar
-        baseval = struct_utils.getpath(path, base)
+        baseval = struct_utils.getpath(base, path)
         next if baseval == val
         next if val == UNDEFMARK && baseval.nil?
         unless matchval(val, baseval, struct_utils)
