@@ -1,6 +1,6 @@
 # Language Version Comparison Report
 
-**Date**: 2026-04-09
+**Date**: 2026-04-12
 **Canonical**: TypeScript (`ts/`)
 **Languages**: JS, Python, Go, PHP, Ruby, Lua, Java, C++
 
@@ -14,8 +14,8 @@
 | **py** | 40+ | 15 | 2 | 84/84 pass | Complete |
 | **go** | 50+ | 15 | 2 | 92/92 pass | Complete |
 | **php** | 46 | 15 | 2 | 82/82 pass | Complete |
-| **lua** | 40+ | 15 | 2 | 75/75 pass | Complete |
 | **rb** | 40+ | 15 | 2 | 75/75 pass | Complete |
+| **lua** | 40+ | 15 | 2 | 75/75 pass | Complete |
 | **java** | 22 | 15 | 0 | untested* | Incomplete |
 | **cpp** | 18 | 15 | 0 | untested* | Incomplete |
 
@@ -180,51 +180,31 @@ MODENAME present.
 
 ### Ruby (`rb/`)
 
-**Status: PARTIAL** -- Core present but significant gaps in utilities and API alignment.
+**Status: COMPLETE** -- Full functional parity with TypeScript.
 
-**Tests:** 47 runs: 28 pass, 2 failures, 6 errors, 13 skipped.
+**Tests:** 75/75 passing, 150 assertions.
 
-**Exported Functions (36 of 40):**
-Present: clone, escre, escurl, getpath, getprop, haskey, inject, isempty,
-isfunc, iskey, islist, ismap, isnode, items, joinurl, keysof, merge,
-pathify, setprop, strkey, stringify, transform, typify, typename, validate,
-walk.
+**Exported Functions:** All 40 canonical functions present plus replace, joinurl,
+checkPlacement, injectorArgs, injectChild, select operators (AND, OR, NOT, CMP).
 
-Missing:
-- `getdef` -- get-or-default helper
-- `getelem` -- element access with negative indices
-- `delprop` -- dedicated property deletion
-- `setpath` -- set value at nested path
-- `select` -- query/filter on children
-- `size` -- value size
-- `slice` -- array/string slicing
-- `flatten` -- nested list flattening
-- `filter` -- item filtering
-- `pad` -- string padding
-- `replace` -- string replace (internal in TS but present in other langs)
-- `join` -- array join (only `joinurl` exists)
-- `jsonify` -- JSON formatting
-- `jm` / `jt` -- JSON builders
-- `checkPlacement`, `injectorArgs`, `injectChild` -- injection helpers
+**Constants:** All type constants, mode constants (M_KEYPRE, M_KEYPOST, M_VAL),
+sentinels (SKIP, DELETE), and MODENAME present.
 
-**Constants:** All 15 type constants present (bitfield integers). Sentinels (SKIP, DELETE) present.
+**Injection class:** Full implementation with descend, child, setval methods.
 
-**Transform commands (7 of 11):** `$DELETE`, `$COPY`, `$KEY`, `$META`, `$MERGE`, `$EACH`, `$PACK`.
-- Missing: `$ANNO`, `$REF`, `$FORMAT`, `$APPLY`.
+**Transform commands:** All 11 present (`$DELETE`, `$COPY`, `$KEY`, `$META`,
+`$ANNO`, `$MERGE`, `$EACH`, `$PACK`, `$REF`, `$FORMAT`, `$APPLY`).
 
-**Validate checkers (10 of 15):**
-- Present: `$OBJECT`, `$ARRAY`, `$STRING`, `$NUMBER`, `$BOOLEAN`, `$FUNCTION`, `$ANY`, `$CHILD`, `$ONE`, `$EXACT`.
-- Missing: `$INTEGER`, `$DECIMAL`, `$NULL`, `$NIL`, `$INSTANCE`.
-- Note: Uses `$OBJECT`/`$ARRAY` naming instead of `$MAP`/`$LIST`.
+**Validate checkers:** All 15 present (`$MAP`, `$LIST`, `$STRING`, `$NUMBER`,
+`$INTEGER`, `$DECIMAL`, `$BOOLEAN`, `$NULL`, `$NIL`, `$FUNCTION`, `$INSTANCE`,
+`$ANY`, `$CHILD`, `$ONE`, `$EXACT`).
 
-**API signature issues:**
-- `inject(val, store, modify, current, state, flag)` -- 6 positional params vs TS unified `injdef`.
-- `transform(data, spec, extra, modify)` -- 4 params vs TS unified `injdef`.
-- `validate(data, spec, extra, collecterrs)` -- 4 params vs TS unified `injdef`.
-- `getpath(path, store, current, state)` -- reversed param order vs TS.
-- `walk(val, apply, ...)` -- single callback, no `before`/`after` or `maxdepth`.
+**Language adaptations:**
+- `UNDEF = Object.new.freeze` sentinel for absent values (distinct from nil/JSON null).
+- `nil` represents JSON null; `typify(nil)` returns `T_scalar | T_null`.
+- Walk-based merge with before/after callbacks and maxdepth.
 
-**Gap count: ~25** (14 missing functions + 4 transform + 5 validators + 2+ signature issues)
+**Gap count: 0**
 
 
 ### Lua (`lua/`)
@@ -341,50 +321,50 @@ Missing (22):
 |----------|----|----|----|----|-----|-----|----|------|-----|
 | **Minor utilities** | | | | | | | | | |
 | typename | Y | Y | Y | Y | Y | Y | Y | Y | Y |
-| getdef | Y | Y | Y | Y | Y | Y | - | - | - |
+| getdef | Y | Y | Y | Y | Y | Y | Y | - | - |
 | isnode | Y | Y | Y | Y | Y | Y | Y | Y | Y |
 | ismap | Y | Y | Y | Y | Y | Y | Y | Y | Y |
 | islist | Y | Y | Y | Y | Y | Y | Y | Y | Y |
 | iskey | Y | Y | Y | Y | Y | Y | Y | Y | Y |
 | isempty | Y | Y | Y | Y | Y | Y | Y | Y | Y |
 | isfunc | Y | Y | Y | Y | Y | Y | Y | Y | Y |
-| size | Y | Y | Y | Y | Y | Y | - | - | - |
-| slice | Y | Y | Y | Y | Y | Y | - | - | - |
-| pad | Y | Y | Y | Y | Y | Y | - | - | - |
+| size | Y | Y | Y | Y | Y | Y | Y | - | - |
+| slice | Y | Y | Y | Y | Y | Y | Y | - | - |
+| pad | Y | Y | Y | Y | Y | Y | Y | - | - |
 | typify | Y | Y | Y | Y | Y | Y | Y | Y | Y |
-| getelem | Y | Y | Y | Y | Y | Y | - | - | - |
+| getelem | Y | Y | Y | Y | Y | Y | Y | - | - |
 | getprop | Y | Y | Y | Y | Y | Y | Y | Y | Y |
 | strkey | Y | Y | Y | Y | Y | Y | Y | - | - |
 | keysof | Y | Y | Y | Y | Y | Y | Y | Y* | Y |
 | haskey | Y | Y | Y | Y | Y | Y | Y | Y | Y |
 | items | Y | Y | Y | Y | Y | Y | Y | Y | Y |
-| flatten | Y | Y | Y | Y | Y | Y | - | - | - |
-| filter | Y | Y | Y | Y | Y | Y | - | - | - |
+| flatten | Y | Y | Y | Y | Y | Y | Y | - | - |
+| filter | Y | Y | Y | Y | Y | Y | Y | - | - |
 | escre | Y | Y | Y | Y | Y | Y | Y | Y | Y |
 | escurl | Y | Y | Y | Y | Y | Y | Y | Y | Y |
-| join | Y | Y | Y | Y | Y | Y | - | - | - |
-| jsonify | Y | Y | Y | Y | Y | Y | - | - | - |
+| join | Y | Y | Y | Y | Y | Y | Y | - | - |
+| jsonify | Y | Y | Y | Y | Y | Y | Y | - | - |
 | stringify | Y | Y | Y | Y | Y | Y | Y | Y | Y |
 | pathify | Y | Y | Y | Y | Y | Y | Y | Y | - |
 | clone | Y | Y | Y | Y | Y | Y | Y | Y | Y* |
-| delprop | Y | Y | Y | Y | Y | Y | - | - | - |
+| delprop | Y | Y | Y | Y | Y | Y | Y | - | - |
 | setprop | Y | Y | Y | Y | Y | Y | Y | Y | Y |
 | **Major utilities** | | | | | | | | | |
 | walk | Y | Y | Y | Y | Y | Y | Y* | Y* | Y* |
 | merge | Y | Y | Y | Y | Y | Y | Y | - | Y* |
-| setpath | Y | Y | Y | Y | Y | Y | - | - | - |
-| getpath | Y | Y | Y | Y | Y | Y | Y* | - | - |
-| inject | Y | Y | Y | Y | Y | Y | Y* | - | - |
-| transform | Y | Y | Y | Y | Y | Y | Y* | - | - |
-| validate | Y | Y | Y | Y | Y | Y | Y* | - | - |
-| select | Y | Y | Y | Y | Y | Y | - | - | - |
+| setpath | Y | Y | Y | Y | Y | Y | Y | - | - |
+| getpath | Y | Y | Y | Y | Y | Y | Y | - | - |
+| inject | Y | Y | Y | Y | Y | Y | Y | - | - |
+| transform | Y | Y | Y | Y | Y | Y | Y | - | - |
+| validate | Y | Y | Y | Y | Y | Y | Y | - | - |
+| select | Y | Y | Y | Y | Y | Y | Y | - | - |
 | **Builders** | | | | | | | | | |
-| jm | Y | Y | Y | Y | Y | Y | - | - | - |
-| jt | Y | Y | Y | Y | Y | Y | - | - | - |
+| jm | Y | Y | Y | Y | Y | Y | Y | - | - |
+| jt | Y | Y | Y | Y | Y | Y | Y | - | - |
 | **Injection helpers** | | | | | | | | | |
-| checkPlacement | Y | Y | Y | Y | Y | Y | - | - | - |
-| injectorArgs | Y | Y | Y | Y | Y | Y | - | - | - |
-| injectChild | Y | Y | Y | Y | Y | Y | - | - | - |
+| checkPlacement | Y | Y | Y | Y | Y | Y | Y | - | - |
+| injectorArgs | Y | Y | Y | Y | Y | Y | Y | - | - |
+| injectChild | Y | Y | Y | Y | Y | Y | Y | - | - |
 
 **Legend:** Y = present and aligned, Y* = present with issues (see notes), - = missing
 
@@ -397,29 +377,29 @@ Missing (22):
 | $COPY | Y | Y | Y | Y | Y | Y | Y | - | - |
 | $KEY | Y | Y | Y | Y | Y | Y | Y | - | - |
 | $META | Y | Y | Y | Y | Y | Y | Y | - | - |
-| $ANNO | Y | Y | Y | Y | Y | Y | - | - | - |
+| $ANNO | Y | Y | Y | Y | Y | Y | Y | - | - |
 | $MERGE | Y | Y | Y | Y | Y | Y | Y | - | - |
 | $EACH | Y | Y | Y | Y | Y | Y | Y | - | - |
 | $PACK | Y | Y | Y | Y | Y | Y | Y | - | - |
-| $REF | Y | Y | Y | Y | Y | Y | - | - | - |
-| $FORMAT | Y | Y | Y | Y | Y | Y | - | - | - |
-| $APPLY | Y | Y | Y | Y | Y | Y | - | - | - |
+| $REF | Y | Y | Y | Y | Y | Y | Y | - | - |
+| $FORMAT | Y | Y | Y | Y | Y | Y | Y | - | - |
+| $APPLY | Y | Y | Y | Y | Y | Y | Y | - | - |
 
 ## Validate Checker Parity
 
 | Checker | ts | js | py | go | php | lua | rb | java | cpp |
 |---------|----|----|----|----|-----|-----|----|------|-----|
-| $MAP | Y | Y | Y | Y | Y | Y | Y^ | - | - |
-| $LIST | Y | Y | Y | Y | Y | Y | Y^ | - | - |
+| $MAP | Y | Y | Y | Y | Y | Y | Y | - | - |
+| $LIST | Y | Y | Y | Y | Y | Y | Y | - | - |
 | $STRING | Y | Y | Y | Y | Y | Y | Y | - | - |
 | $NUMBER | Y | Y | Y | Y | Y | Y | Y | - | - |
-| $INTEGER | Y | Y | Y | Y | Y | Y | - | - | - |
-| $DECIMAL | Y | Y | Y | Y | Y | Y | - | - | - |
+| $INTEGER | Y | Y | Y | Y | Y | Y | Y | - | - |
+| $DECIMAL | Y | Y | Y | Y | Y | Y | Y | - | - |
 | $BOOLEAN | Y | Y | Y | Y | Y | Y | Y | - | - |
-| $NULL | Y | Y | Y | Y | Y | Y | - | - | - |
-| $NIL | Y | Y | Y | Y | Y | Y | - | - | - |
+| $NULL | Y | Y | Y | Y | Y | Y | Y | - | - |
+| $NIL | Y | Y | Y | Y | Y | Y | Y | - | - |
 | $FUNCTION | Y | Y | Y | Y | Y | Y | Y | - | - |
-| $INSTANCE | Y | Y | Y | Y | Y | Y | - | - | - |
+| $INSTANCE | Y | Y | Y | Y | Y | Y | Y | - | - |
 | $ANY | Y | Y | Y | Y | Y | Y | Y | - | - |
 | $CHILD | Y | Y | Y | Y | Y | Y | Y | - | - |
 | $ONE | Y | Y | Y | Y | Y | Y | Y | - | - |
@@ -436,7 +416,7 @@ Missing (22):
 | M_KEYPRE | Y | Y | Y | Y | Y | Y | Y | - | - |
 | M_KEYPOST | Y | Y | Y | Y | Y | Y | Y | - | - |
 | M_VAL | Y | Y | Y | Y | Y | Y | Y | - | - |
-| MODENAME | Y | Y | Y | Y | Y | Y | - | - | - |
+| MODENAME | Y | Y | Y | Y | Y | Y | Y | - | - |
 | SKIP | Y | Y | Y | Y | Y | Y | Y | - | - |
 | DELETE | Y | Y | Y | Y | Y | Y | Y | - | - |
 
@@ -450,12 +430,7 @@ Missing (22):
 No remaining issues. Full parity achieved.
 
 ### Ruby
-1. **P1 - Missing functions**: 14+ utility functions not yet implemented.
-2. **P1 - API signatures**: `inject`, `transform`, `validate`, `getpath` use positional params instead of unified `injdef`.
-3. **P1 - Missing transforms**: `$ANNO`, `$REF`, `$FORMAT`, `$APPLY`.
-4. **P1 - walk()**: No `before`/`after` callbacks or `maxdepth`.
-5. **P2 - Missing validators**: `$INTEGER`, `$DECIMAL`, `$NULL`, `$NIL`, `$INSTANCE`.
-6. **P2 - Test failures**: 6 errors, 2 failures, 13 skipped tests.
+No remaining issues. Full parity achieved.
 
 ### Java
 1. **P0 - Missing subsystems**: No inject, transform, validate, select.
@@ -499,14 +474,9 @@ No remaining issues. Full parity achieved.
 - **C++**: Fix undefined behavior in `walk()` function pointer handling.
 
 ### Short-term (P1)
-- **Ruby**: Implement missing 14 utility functions (getdef, getelem, delprop, setpath, select, size, slice, flatten, filter, pad, join, jsonify, jm, jt).
-- **Ruby**: Refactor inject/transform/validate to use unified `injdef` object pattern.
-- **Ruby**: Add `before`/`after` and `maxdepth` to walk().
 - **Java**: Implement Injection class and SKIP/DELETE sentinels.
 - **Java**: Implement inject, transform, validate, select subsystems.
 
 ### Medium-term (P2)
-- **Ruby**: Add missing transform commands and validators.
-- **Ruby**: Fix test failures and enable skipped tests.
 - **Java**: Fix keysof() bug, improve walk() to support before/after callbacks.
 - **C++**: Redesign function signatures for type safety.
