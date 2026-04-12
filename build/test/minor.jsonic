@@ -218,6 +218,11 @@ clone: {
     { in: true, out: true }
     { in: null, out: null }
     { in: {a:{b:{x:1},c:[2]}}, out: {a:{b:{x:1},c:[2]}} }
+    { in: false, out: false }
+    { in: 0, out: 0 }
+    { in: '', out: '' }
+    { in: {a:[1,{b:2},[3]]}, out: {a:[1,{b:2},[3]]} }
+    { in: [[{x:1}],[{y:2}]], out: [[{x:1}],[{y:2}]] }
     {}
   ]
 }
@@ -729,6 +734,9 @@ pad: {
     { in: {val:'"', pad:2}, out: '" ' }
     { in: {val:'"', pad:-3}, out: '  "' }
 
+    { in: {val:1, pad:5}, out: '1    ' }
+    { in: {val:null, pad:6}, out: 'null  ' }
+
   ]
 }
 
@@ -755,7 +763,13 @@ setpath: {
 
     { in: { store:{x:1} val:7 },
       match:args:0:store:x:1 }
-  ]  
+
+    { in: { store:{a:1,b:2} path:'b', val:22 }, out: {b:22},
+      match:args:0:store:b:22 }
+
+    { in: { store:{a:{b:{c:1}}} path:'a.b.c', val:99 }, out: {c:99},
+      match:args:0:store:a:b:c:99 }
+  ]
 }
 
 

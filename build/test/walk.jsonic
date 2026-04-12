@@ -69,6 +69,13 @@ basic: {
 
     { in: {x1:{}}, out: {x1:{}} }
     { in: {x2:[]}, out: {x2:[]} }
+
+    { in: {a:'A',b:{c:'C',d:{e:'E'}}},
+      out: {a:'A~a',b:{c:'C~b.c',d:{e:'E~b.d.e'}}} }
+
+    { in: [['X']], out: [['X~0.0']] }
+    { in: {a:1,b:'B'}, out: {a:1,b:'B~b'} }
+    { in: {a:{b:null}}, out: {a:{b:null}} }
   ]
 }
 

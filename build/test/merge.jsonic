@@ -104,6 +104,15 @@ cases: {
 
     { in: [1,2.3], out: 2.3 }
     { in: [4.5,6], out: 6 }
+
+    { in: [{a:1},{a:2,b:3}], out: {a:2,b:3} }
+    { in: [{a:{x:1}},{a:{y:2}}], out: {a:{x:1,y:2}} }
+    { in: [{a:{x:1}},{a:{x:2}}], out: {a:{x:2}} }
+    { in: [[1,2],[3]], out: [3,2] }
+    { in: [[1],[2,3]], out: [2,3] }
+    { in: [null], out: null }
+    { in: ['a',null], out: null }
+    { in: [null,'b'], out: 'b' }
   ]
 }
 
