@@ -931,7 +931,11 @@ module VoxgigStruct
         found = getpath(store, ref, inj)
 
         if found.nil?
-          S_MT
+          # Check if key exists in base data (nil = JSON null, vs not-found)
+          base_data = _getprop(store, S_DTOP, store)
+          ref_parts = ref.split(S_DT)
+          exists = !_getprop(base_data, ref_parts[0], UNDEF).equal?(UNDEF)
+          exists ? 'null' : S_MT
         elsif found.is_a?(String)
           found
         elsif isfunc(found)
@@ -1111,7 +1115,7 @@ module VoxgigStruct
 
     keyspec = getprop(parent, S_BKEY)
     if keyspec
-      setprop(parent, S_BKEY, nil)
+      delprop(parent, S_BKEY)
       return getprop(inj.dparent, keyspec)
     end
 
@@ -1124,12 +1128,12 @@ module VoxgigStruct
   end
 
   def self.transform_ANNO(inj, _val, _ref, _store)
-    setprop(inj.parent, S_BANNO, nil)
+    delprop(inj.parent, S_BANNO)
     nil
   end
 
   def self.transform_META(inj, _val, _ref, _store)
-    setprop(inj.parent, S_DMETA, nil)
+    delprop(inj.parent, S_DMETA)
     nil
   end
 
@@ -1377,7 +1381,11 @@ module VoxgigStruct
 
     tkey = getelem(inj.path, -2)
     target = getelem(nodes_, -2, lambda { getelem(nodes_, -1) })
-    setprop(target, tkey, rval)
+    if rval.nil?
+      delprop(target, tkey)
+    else
+      setprop(target, tkey, rval)
+    end
 
     if islist(target) && inj.prior
       inj.prior.keyI -= 1
@@ -1388,9 +1396,9 @@ module VoxgigStruct
 
   FORMATTER = {
     'identity' => lambda { |_k, v, *_a| v },
-    'upper' => lambda { |_k, v, *_a| isnode(v) ? v : v.to_s.upcase },
-    'lower' => lambda { |_k, v, *_a| isnode(v) ? v : v.to_s.downcase },
-    'string' => lambda { |_k, v, *_a| isnode(v) ? v : v.to_s },
+    'upper' => lambda { |_k, v, *_a| isnode(v) ? v : (v.nil? ? 'null' : '' + v.to_s).upcase },
+    'lower' => lambda { |_k, v, *_a| isnode(v) ? v : (v.nil? ? 'null' : '' + v.to_s).downcase },
+    'string' => lambda { |_k, v, *_a| isnode(v) ? v : (v.nil? ? 'null' : '' + v.to_s) },
     'number' => lambda { |_k, v, *_a|
       if isnode(v)
         v
