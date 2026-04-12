@@ -433,6 +433,7 @@ module VoxgigStruct
       ks = strkey(key)
       parent.delete(ks)
     elsif islist(parent)
+      return parent unless key.to_s.match?(/\A-?\d+\z/)
       begin
         ki = key.to_i
         if 0 <= ki && ki < parent.length
