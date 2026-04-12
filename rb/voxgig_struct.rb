@@ -696,17 +696,83 @@ module VoxgigStruct
   end
 
   # --- Merge function ---
-  #
-  # Accepts an array of nodes and deep merges them (later nodes override earlier ones).
+  # Merge a list of values. Later values have precedence.
+  # Nodes override scalars. Matching node kinds merge recursively.
   def self.merge(val, maxdepth = nil)
+    md = maxdepth.nil? ? MAXDEPTH : [maxdepth, 0].max
+
     return val unless islist(val)
-    list = val.reject { |v| v.nil? || v.equal?(UNDEF) }
-    return nil if list.empty?
-    result = list[0]
-    (1...list.size).each do |i|
-      result = deep_merge(result, list[i])
+
+    lenlist = val.length
+    return nil if lenlist == 0
+    return val[0] if lenlist == 1
+
+    out = getprop(val, 0, {})
+
+    (1...lenlist).each do |oI|
+      obj = val[oI]
+
+      if !isnode(obj)
+        # Non-nodes (including nil) override directly
+        out = obj
+      else
+        cur = [out]
+        dst = [out]
+
+        before_fn = lambda { |key, v, _parent, path|
+          pI = path.length
+
+          if md <= pI
+            while cur.length <= pI; cur << nil; end
+            cur[pI] = v
+            setprop(cur[pI - 1], key, v) if pI > 0 && pI - 1 < cur.length
+            next nil  # stop descending
+          elsif !isnode(v)
+            cur[pI] = v
+          else
+            # Extend arrays as needed
+            while dst.length <= pI; dst << nil; end
+            while cur.length <= pI; cur << nil; end
+
+            dst[pI] = pI > 0 ? getprop(dst[pI - 1], key) : dst[pI]
+            tval = dst[pI]
+
+            if tval.nil?
+              cur[pI] = islist(v) ? [] : {}
+            elsif (islist(v) && islist(tval)) || (ismap(v) && ismap(tval))
+              cur[pI] = tval
+            else
+              cur[pI] = v
+              v = nil  # stop descending
+            end
+          end
+
+          v
+        }
+
+        after_fn = lambda { |key, _v, _parent, path|
+          cI = path.length
+          if cI < 1
+            next (cur.length > 0 ? cur[0] : _v)
+          end
+
+          target = (cI - 1 < cur.length) ? cur[cI - 1] : nil
+          value = (cI < cur.length) ? cur[cI] : nil
+
+          setprop(target, key, value) if target
+          value
+        }
+
+        out = walk(obj, before_fn, after_fn)
+      end
     end
-    result
+
+    if md == 0
+      out = getelem(val, -1)
+      out = islist(out) ? [] : ismap(out) ? {} : out
+    end
+
+    out
   end
 
   # Get value at a key path deep inside a store.
