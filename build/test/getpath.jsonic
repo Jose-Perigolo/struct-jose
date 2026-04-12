@@ -67,6 +67,13 @@ basic: {
     { in: { path: true, store: {} } }
     { in: { path: null, store: {} } }
     { in: { path: {}, store: {} } }
+
+    { in: { path: 'a', store: {a:null} }, out: null }
+    { in: { path: 'a.b', store: {a:{b:null}} }, out: null }
+    { in: { path: 'a', store: {a:{}} }, out: {} }
+    { in: { path: 'a', store: {a:[]} }, out: [] }
+    { in: { path: 'a.b', store: {a:1} } }
+    { in: { path: 'x', store: {a:1} } }
   ]
 }
 

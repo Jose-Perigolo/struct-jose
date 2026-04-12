@@ -41,6 +41,7 @@ module VoxgigRunner
             puts "DEBUG: Arguments for subject: #{args.inspect}" if ENV['DEBUG']
             # In Ruby we assume the subject is a Proc/lambda or a callable object.
             res = testpack[:subject].call(*args)
+            entry["args"] = args
             res = fix_json(res, flags)
             entry["res"] = res
             # Log the result obtained.
@@ -122,7 +123,7 @@ module VoxgigRunner
   def self.check_result(entry, res, struct_utils)
     matched = false
     if entry.key?("match")
-      result = { "in" => entry["in"], "out" => entry["res"], "ctx" => entry["ctx"] }
+      result = { "in" => entry["in"], "out" => entry["res"], "ctx" => entry["ctx"], "args" => entry["args"] }
       match(entry["match"], result, struct_utils)
       matched = true
     end
@@ -164,7 +165,7 @@ module VoxgigRunner
   # If entry["ctx"] or entry["args"] is provided, use that instead.
   # Also, if passing an object, inject client and utility.
   def self.resolve_args(entry, testpack, struct_utils)
-    args = [struct_utils.clone(entry["in"])]
+    args = entry.key?("in") ? [struct_utils.clone(entry["in"])] : [VoxgigStruct::UNDEF]
     if entry.key?("ctx")
       args = [entry["ctx"]]
     elsif entry.key?("args")
@@ -223,7 +224,7 @@ module VoxgigRunner
     walk(check) do |_key, val, _parent, path|
       scalar = !(val.is_a?(Hash) || val.is_a?(Array))
       if scalar
-        baseval = struct_utils.getpath(path, base)
+        baseval = struct_utils.getpath(base, path)
         next if baseval == val
         next if val == UNDEFMARK && baseval.nil?
         unless matchval(val, baseval, struct_utils)
@@ -255,13 +256,30 @@ module VoxgigRunner
 
   # Uses JSON round-trip to test deep equality.
   def self.deep_equal?(a, b)
-    JSON.generate(a) == JSON.generate(b)
+    normalize = lambda { |v|
+      case v
+      when Hash
+        sorted = {}
+        v.keys.sort.each { |k| sorted[k] = normalize.call(v[k]) }
+        sorted
+      when Array
+        v.map { |e| normalize.call(e) }
+      else
+        v
+      end
+    }
+    JSON.generate(normalize.call(a)) == JSON.generate(normalize.call(b))
+  rescue
+    a == b
   end
 
   # Returns a deep copy of a value via JSON round-trip.
   def self.fix_json(val, flags)
     return flags["null"] ? NULLMARK : val if val.nil?
+    return flags["null"] ? NULLMARK : val if val.equal?(VoxgigStruct::UNDEF)
     JSON.parse(JSON.generate(val))
+  rescue
+    val
   end
 
   # Applies a null modifier: if a value is "__NULL__", it replaces it with nil.

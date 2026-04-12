@@ -241,7 +241,14 @@ alts: {
              obj: $.struct.select.alts.data.obj3 }
        out: [{ '$KEY': 1, select: {'$action':bar,zed_id:true}, x: 32} ]
      }
-     
+
+     # empty query matches all
+     { in: { query: {}, obj: {a:{x:1},b:{x:2}} },
+       out: [{x:1,'$KEY':a},{x:2,'$KEY':b}] }
+
+     # query with no matches
+     { in: { query: {z:99}, obj: {a:{x:1},b:{x:2}} },
+       out: [] }
 
   ]
 }

@@ -108,6 +108,20 @@ basic: {
     { in: { data: 4.4, spec: '`$INTEGER`' }, err: 'Expected integer, but found decimal: 4.4.' }
     { in: { data: 5, spec: '`$DECIMAL`' }, err: 'Expected decimal, but found integer: 5.' }
 
+    { in: { data: null, spec: '`$NULL`' }, out: null }
+    { in: { data: 1, spec: '`$NULL`' }, err: 'Expected null, but found integer: 1.' }
+    { in: { data: false, spec: '`$BOOLEAN`' }, out: false }
+    { in: { data: true, spec: '`$NUMBER`' }, err: 'Expected number, but found boolean: true.' }
+    { in: { data: {}, spec: '`$LIST`' }, err: 'Expected list, but found map: {}.' }
+    { in: { data: [], spec: '`$MAP`' }, err: 'Expected map, but found list: [].' }
+
+    { in: { data: {a:1,b:2,c:3}, spec: {a:'`$NUMBER`',b:'`$NUMBER`',c:'`$NUMBER`'}},
+      out: {a:1,b:2,c:3} }
+
+    { in: { data: {a:'X'}, spec: {a:'`$ANY`'}}, out: {a:'X'} }
+    { in: { data: {a:null}, spec: {a:'`$ANY`'}}, out: {a:null} }
+    { in: { data: {a:{}}, spec: {a:'`$ANY`'}}, out: {a:{}} }
+
   ]
 }
 

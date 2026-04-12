@@ -57,6 +57,7 @@ M_KEYPOST = 2
 M_VAL = 4
 _MODE_TO_NUM = {S_MKEYPRE: M_KEYPRE, S_MKEYPOST: M_KEYPOST, S_MVAL: M_VAL}
 _PLACEMENT = {M_VAL: 'value', M_KEYPRE: S_MKEY, M_KEYPOST: S_MKEY}
+MODENAME = {M_VAL: 'val', M_KEYPRE: 'key:pre', M_KEYPOST: 'key:post'}
 
 # Special keys.
 S_DKEY =  '$KEY'
@@ -2764,5 +2765,6 @@ __all__ = [
     'M_KEYPRE',
     'M_KEYPOST',
     'M_VAL',
+    'MODENAME',
 ]
 
