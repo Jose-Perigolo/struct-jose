@@ -1417,7 +1417,7 @@ module VoxgigStruct
     },
     'concat' => lambda { |k, v, *_a|
       if k.nil? && islist(v)
-        items(v, lambda { |n| isnode(n[1]) ? '' : n[1].to_s }).join('')
+        items(v, lambda { |n| isnode(n[1]) ? '' : (n[1].nil? ? 'null' : '' + n[1].to_s) }).join('')
       else
         v
       end
