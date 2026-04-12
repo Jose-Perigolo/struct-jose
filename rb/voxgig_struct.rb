@@ -2082,26 +2082,24 @@ module VoxgigStruct
     end
 
     def setval(val, ancestor = nil)
-      if val.nil?
-        # nil means delete (matching TS undefined behavior)
-        if ancestor.nil? || (ancestor.is_a?(Numeric) && ancestor < 2)
-          VoxgigStruct.delprop(@parent, @key)
-        else
-          VoxgigStruct.delprop(
-            VoxgigStruct.getelem(@nodes, 0 - ancestor),
-            VoxgigStruct.getelem(@path, 0 - ancestor)
-          )
-        end
+      if val.nil? && (ancestor.nil? || (ancestor.is_a?(Numeric) && ancestor < 2))
+        # nil without ancestor: delete from parent (matches TS undefined)
+        VoxgigStruct.delprop(@parent, @key)
+      elsif val.nil? && ancestor.is_a?(Numeric) && ancestor >= 2
+        # nil with ancestor: set to nil in grandparent (preserves key for $ONE/$EXACT)
+        VoxgigStruct.setprop(
+          VoxgigStruct.getelem(@nodes, 0 - ancestor),
+          VoxgigStruct.getelem(@path, 0 - ancestor),
+          val
+        )
+      elsif ancestor.nil? || (ancestor.is_a?(Numeric) && ancestor < 2)
+        VoxgigStruct.setprop(@parent, @key, val)
       else
-        if ancestor.nil? || (ancestor.is_a?(Numeric) && ancestor < 2)
-          VoxgigStruct.setprop(@parent, @key, val)
-        else
-          VoxgigStruct.setprop(
-            VoxgigStruct.getelem(@nodes, 0 - ancestor),
-            VoxgigStruct.getelem(@path, 0 - ancestor),
-            val
-          )
-        end
+        VoxgigStruct.setprop(
+          VoxgigStruct.getelem(@nodes, 0 - ancestor),
+          VoxgigStruct.getelem(@path, 0 - ancestor),
+          val
+        )
       end
     end
 
