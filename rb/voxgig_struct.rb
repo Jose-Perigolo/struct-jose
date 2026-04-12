@@ -1849,7 +1849,13 @@ module VoxgigStruct
       end
 
     elsif exact
-      if cval != pval
+      # In exact mode, check key existence for nil values
+      if cval.nil? && pval.nil?
+        # Both nil: only match if key actually exists in data
+        if ismap(inj.dparent) && !inj.dparent.key?(key.to_s)
+          inj.errs << ('Value at field ' + pathify(inj.path, 1) + ': key not present.')
+        end
+      elsif cval != pval
         pathmsg = size(inj.path) > 1 ? ('at field ' + pathify(inj.path, 1) + ': ') : ''
         inj.errs << ('Value ' + pathmsg + cval.to_s + ' should equal ' + pval.to_s + '.')
       end
@@ -1927,6 +1933,130 @@ module VoxgigStruct
     out
   end
 
+  # --- Select operators ---
+
+  def self.select_AND(inj, _val, _ref, store)
+    if S_MKEYPRE == inj.mode
+      terms = getprop(inj.parent, inj.key)
+      ppath = slice(inj.path, -1)
+      point = getpath(store, ppath)
+
+      vstore = merge([{}, store], 1)
+      vstore[S_DTOP] = point
+
+      terms.each do |term|
+        terrs = []
+        validate(point, term, {
+          'extra' => vstore,
+          'errs' => terrs,
+          'meta' => inj.meta,
+        })
+        if !terrs.empty?
+          inj.errs << ('AND:' + pathify(ppath) + "\u2A2F" + stringify(point) +
+            ' fail:' + stringify(terms))
+        end
+      end
+
+      gkey = getelem(inj.path, -2)
+      gp = getelem(inj.nodes, -2)
+      setprop(gp, gkey, point)
+    end
+    nil
+  end
+
+  def self.select_OR(inj, _val, _ref, store)
+    if S_MKEYPRE == inj.mode
+      terms = getprop(inj.parent, inj.key)
+      ppath = slice(inj.path, -1)
+      point = getpath(store, ppath)
+
+      vstore = merge([{}, store], 1)
+      vstore[S_DTOP] = point
+
+      terms.each do |term|
+        terrs = []
+        validate(point, term, {
+          'extra' => vstore,
+          'errs' => terrs,
+          'meta' => inj.meta,
+        })
+        if terrs.empty?
+          gkey = getelem(inj.path, -2)
+          gp = getelem(inj.nodes, -2)
+          setprop(gp, gkey, point)
+          return nil
+        end
+      end
+
+      inj.errs << ('OR:' + pathify(ppath) + "\u2A2F" + stringify(point) +
+        ' fail:' + stringify(terms))
+    end
+    nil
+  end
+
+  def self.select_NOT(inj, _val, _ref, store)
+    if S_MKEYPRE == inj.mode
+      term = getprop(inj.parent, inj.key)
+      ppath = slice(inj.path, -1)
+      point = getpath(store, ppath)
+
+      vstore = merge([{}, store], 1)
+      vstore[S_DTOP] = point
+
+      terrs = []
+      validate(point, term, {
+        'extra' => vstore,
+        'errs' => terrs,
+        'meta' => inj.meta,
+      })
+
+      if terrs.empty?
+        inj.errs << ('NOT:' + pathify(ppath) + "\u2A2F" + stringify(point) +
+          ' fail:' + stringify(term))
+      end
+
+      gkey = getelem(inj.path, -2)
+      gp = getelem(inj.nodes, -2)
+      setprop(gp, gkey, point)
+    end
+    nil
+  end
+
+  def self.select_CMP(inj, _val, ref, store)
+    if S_MKEYPRE == inj.mode
+      term = getprop(inj.parent, inj.key)
+      gkey = getelem(inj.path, -2)
+      ppath = slice(inj.path, -1)
+      point = getpath(store, ppath)
+
+      pass_test = false
+
+      begin
+        if '$GT' == ref && point > term
+          pass_test = true
+        elsif '$LT' == ref && point < term
+          pass_test = true
+        elsif '$GTE' == ref && point >= term
+          pass_test = true
+        elsif '$LTE' == ref && point <= term
+          pass_test = true
+        elsif '$LIKE' == ref
+          pass_test = true if stringify(point).match?(Regexp.new(term.to_s))
+        end
+      rescue
+      end
+
+      if pass_test
+        gp = getelem(inj.nodes, -2)
+        setprop(gp, gkey, point)
+      else
+        inj.errs << ('CMP: ' + pathify(ppath) + "\u2A2F" + stringify(point) +
+          ' fail:' + ref.to_s + ' ' + stringify(term))
+      end
+    end
+    nil
+  end
+
   # --- select: Select children matching query ---
   def self.select(children, query)
     return [] unless isnode(children)
@@ -1953,11 +2083,23 @@ module VoxgigStruct
       v
     })
 
+    select_extra = {
+      '$AND' => method(:select_AND),
+      '$OR' => method(:select_OR),
+      '$NOT' => method(:select_NOT),
+      '$GT' => method(:select_CMP),
+      '$LT' => method(:select_CMP),
+      '$GTE' => method(:select_CMP),
+      '$LTE' => method(:select_CMP),
+      '$LIKE' => method(:select_CMP),
+    }
+
     children.each do |child|
       terrs = []
       validate(child, clone(q), {
         'errs' => terrs,
         'meta' => { S_BEXACT => true },
+        'extra' => select_extra,
       })
       results << child if terrs.empty?
     end
