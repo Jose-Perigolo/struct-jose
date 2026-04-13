@@ -150,3 +150,8 @@ __pycache__
 package-lock.json
 
 *.local.*
+
+# Zig
+.zig-cache/
+zig-cache/
+zig-out/
