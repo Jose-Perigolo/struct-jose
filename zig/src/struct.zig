@@ -114,3 +114,154 @@ pub const MODENAME = std.StaticStringMap([]const u8).initComptime(.{
     .{ "1", "key:pre" },
     .{ "2", "key:post" },
 });
+
+// Value is a node — defined, and a map (object) or list (array).
+pub fn isnode(val: JsonValue) bool {
+    return switch (val) {
+        .object, .array => true,
+        else => false,
+    };
+}
+
+// Value is a defined map (object) with string keys.
+pub fn ismap(val: JsonValue) bool {
+    return val == .object;
+}
+
+// Value is a defined list (array) with integer keys (indexes).
+pub fn islist(val: JsonValue) bool {
+    return val == .array;
+}
+
+// Value is a defined string (non-empty) or integer key.
+pub fn iskey(val: JsonValue) bool {
+    return switch (val) {
+        .string => |s| s.len > 0,
+        .integer => true,
+        .float => true,
+        else => false,
+    };
+}
+
+// Check for an "empty" value — null, empty string, empty array, empty object.
+pub fn isempty(val: JsonValue) bool {
+    return switch (val) {
+        .null => true,
+        .string => |s| s.len == 0,
+        .array => |a| a.items.len == 0,
+        .object => |o| o.count() == 0,
+        else => false,
+    };
+}
+
+// Value is a function. JSON values are never functions.
+pub fn isfunc(_: JsonValue) bool {
+    return false;
+}
+
+// ============================================================
+// Tests
+// ============================================================
+
+const testing = std.testing;
+
+fn makeTestArray(allocator: Allocator) !JsonValue {
+    var arr = JsonArray.init(allocator);
+    try arr.append(.{ .integer = 1 });
+    return .{ .array = arr };
+}
+
+fn makeTestObject(allocator: Allocator) !JsonValue {
+    var obj = JsonObjectMap.init(allocator);
+    try obj.put("a", .{ .integer = 1 });
+    return .{ .object = obj };
+}
+
+test "isnode" {
+    const a = std.testing.allocator;
+    const arr = try makeTestArray(a);
+    defer arr.array.deinit(a);
+    const obj = try makeTestObject(a);
+    defer {
+        var m = obj.object;
+        m.deinit(a);
+    }
+
+    try testing.expect(!isnode(.{ .integer = 1 }));
+    try testing.expect(!isnode(.{ .string = "a" }));
+    try testing.expect(!isnode(.null));
+    try testing.expect(!isnode(.{ .bool = true }));
+    try testing.expect(isnode(arr));
+    try testing.expect(isnode(obj));
+}
+
+test "ismap" {
+    const a = std.testing.allocator;
+    const obj = try makeTestObject(a);
+    defer {
+        var m = obj.object;
+        m.deinit(a);
+    }
+    const arr = try makeTestArray(a);
+    defer arr.array.deinit(a);
+
+    try testing.expect(ismap(obj));
+    try testing.expect(!ismap(arr));
+    try testing.expect(!ismap(.null));
+    try testing.expect(!ismap(.{ .integer = 1 }));
+}
+
+test "islist" {
+    const a = std.testing.allocator;
+    const arr = try makeTestArray(a);
+    defer arr.array.deinit(a);
+    const obj = try makeTestObject(a);
+    defer {
+        var m = obj.object;
+        m.deinit(a);
+    }
+
+    try testing.expect(islist(arr));
+    try testing.expect(!islist(obj));
+    try testing.expect(!islist(.null));
+    try testing.expect(!islist(.{ .string = "x" }));
+}
+
+test "iskey" {
+    try testing.expect(iskey(.{ .string = "a" }));
+    try testing.expect(!iskey(.{ .string = "" }));
+    try testing.expect(iskey(.{ .integer = 0 }));
+    try testing.expect(iskey(.{ .float = 1.5 }));
+    try testing.expect(!iskey(.null));
+    try testing.expect(!iskey(.{ .bool = true }));
+}
+
+test "isempty" {
+    const a = std.testing.allocator;
+    var empty_arr = JsonArray.init(a);
+    defer empty_arr.deinit(a);
+    var empty_obj = JsonObjectMap.init(a);
+    defer empty_obj.deinit(a);
+    const full_arr = try makeTestArray(a);
+    defer full_arr.array.deinit(a);
+    const full_obj = try makeTestObject(a);
+    defer {
+        var m = full_obj.object;
+        m.deinit(a);
+    }
+
+    try testing.expect(isempty(.null));
+    try testing.expect(isempty(.{ .string = "" }));
+    try testing.expect(isempty(.{ .array = empty_arr }));
+    try testing.expect(isempty(.{ .object = empty_obj }));
+    try testing.expect(!isempty(.{ .string = "a" }));
+    try testing.expect(!isempty(full_arr));
+    try testing.expect(!isempty(full_obj));
+    try testing.expect(!isempty(.{ .integer = 0 }));
+}
+
+test "isfunc" {
+    try testing.expect(!isfunc(.null));
+    try testing.expect(!isfunc(.{ .integer = 1 }));
+    try testing.expect(!isfunc(.{ .string = "f" }));
+}
