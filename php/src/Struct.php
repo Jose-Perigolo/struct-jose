@@ -2914,24 +2914,33 @@ class Struct
     /**
      * Helper method for $AND operator in select queries
      */
-    private static function select_AND(object $state, mixed $val, mixed $current, string $ref, mixed $store): mixed
+    private static function select_AND(object $state, mixed $_val, mixed $_ref, mixed $store): mixed
     {
         if (self::M_KEYPRE === $state->mode) {
             $terms = self::getprop($state->parent, $state->key);
-            $src = self::getprop($store, $state->base, $store);
+
+            $ppath = self::slice($state->path, -1);
+            $point = self::getpath($store, $ppath);
+
+            $vstore = self::merge([(object) [], $store], 1);
+            $vstore->{'$TOP'} = $point;
 
             foreach ($terms as $term) {
                 $terrs = [];
-                self::validate($src, $term, (object) [
-                    'extra' => $store,
+                self::validate($point, $term, (object) [
+                    'extra' => $vstore,
                     'errs' => $terrs,
                     'meta' => $state->meta,
                 ]);
 
                 if (count($terrs) !== 0) {
-                    $state->errs[] = 'AND:' . self::stringify($val) . ' fail:' . self::stringify($term);
+                    $state->errs[] = 'AND:' . self::pathify($ppath) . ': ' . self::stringify($point) . ' fail:' . self::stringify($terms);
                 }
             }
+
+            $gkey = self::getelem($state->path, -2);
+            $gp = self::getelem($state->nodes, -2);
+            self::setprop($gp, $gkey, $point);
         }
         return null;
     }
@@ -2939,26 +2948,35 @@ class Struct
     /**
      * Helper method for $OR operator in select queries
      */
-    private static function select_OR(object $state, mixed $val, mixed $current, string $ref, mixed $store): mixed
+    private static function select_OR(object $state, mixed $_val, mixed $_ref, mixed $store): mixed
     {
         if (self::M_KEYPRE === $state->mode) {
             $terms = self::getprop($state->parent, $state->key);
-            $src = self::getprop($store, $state->base, $store);
+
+            $ppath = self::slice($state->path, -1);
+            $point = self::getpath($store, $ppath);
+
+            $vstore = self::merge([(object) [], $store], 1);
+            $vstore->{'$TOP'} = $point;
 
             foreach ($terms as $term) {
                 $terrs = [];
-                self::validate($src, $term, (object) [
-                    'extra' => $store,
+                self::validate($point, $term, (object) [
+                    'extra' => $vstore,
                     'errs' => $terrs,
                     'meta' => $state->meta,
                 ]);
 
                 if (count($terrs) === 0) {
+                    $gkey = self::getelem($state->path, -2);
+                    $gp = self::getelem($state->nodes, -2);
+                    self::setprop($gp, $gkey, $point);
+
                     return null;
                 }
             }
 
-            $state->errs[] = 'OR:' . self::stringify($val) . ' fail:' . self::stringify($terms);
+            $state->errs[] = 'OR:' . self::pathify($ppath) . ': ' . self::stringify($point) . ' fail:' . self::stringify($terms);
         }
         return null;
     }
@@ -2998,7 +3016,7 @@ class Struct
     /**
      * Helper method for comparison operators in select queries
      */
-    private static function select_CMP(object $state, mixed $_val, string $ref, mixed $store): mixed
+    private static function select_CMP(object $state, mixed $_val, mixed $ref, mixed $store): mixed
     {
         if (self::M_KEYPRE === $state->mode) {
             $term = self::getprop($state->parent, $state->key);
