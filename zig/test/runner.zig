@@ -15,7 +15,11 @@ pub const EXISTSMARK = "__EXISTS__";
 
 pub const TEST_JSON_FILE = "../build/test/test.json";
 
+// Subject that takes only a JsonValue (for simple functions).
 pub const Subject = *const fn (JsonValue) JsonValue;
+
+// Subject that also takes an allocator (for functions that allocate).
+pub const AllocSubject = *const fn (Allocator, JsonValue) JsonValue;
 
 pub const Spec = struct {
     data: JsonValue,
@@ -34,7 +38,7 @@ pub const RunPack = struct {
     file_data: []const u8,
     parsed: std.json.Parsed(JsonValue),
 
-    /// Run all entries in testspec.set against the subject function.
+    /// Run all entries in testspec.set against the subject function (no alloc).
     pub fn runset(self: RunPack, testspec: JsonValue, subject: Subject) !void {
         try self.runsetflags(testspec, .{}, subject);
     }
@@ -57,24 +61,62 @@ pub const RunPack = struct {
                 else => continue,
             };
 
-            // Resolve input: use "in" field if present, else null.
             const in_val: JsonValue = entry.get("in") orelse .null;
 
-            // Resolve expected output.
             const raw_out = entry.get("out");
             const expected: JsonValue = if (raw_out) |o| o else if (flags.null_flag) JsonValue{ .string = NULLMARK } else .null;
 
-            // Check for expected error.
             const err_field = entry.get("err");
 
-            // Call subject.
             const result = subject(in_val);
 
-            // If an error was expected, skip for now (subject returns a value,
-            // not an error).
             if (err_field != null) continue;
 
-            // Compare result with expected.
+            try checkResult(expected, result);
+        }
+    }
+
+    /// Run all entries against an allocator-aware subject function.
+    pub fn runsetAlloc(self: RunPack, testspec: JsonValue, subject: AllocSubject) !void {
+        try self.runsetAllocFlags(testspec, .{}, subject);
+    }
+
+    /// Run with flags against an allocator-aware subject function.
+    pub fn runsetAllocFlags(self: RunPack, testspec: JsonValue, flags: Flags, subject: AllocSubject) !void {
+        const set = switch (testspec) {
+            .object => |obj| obj.get("set") orelse return error.NoSetInSpec,
+            else => return error.SpecNotObject,
+        };
+        const entries = switch (set) {
+            .array => |arr| arr.items,
+            else => return error.SetNotArray,
+        };
+
+        for (entries) |entry_val| {
+            const entry = switch (entry_val) {
+                .object => |obj| obj,
+                else => continue,
+            };
+
+            // Use UNDEF marker when "in" field is missing
+            const has_in = entry.get("in") != null;
+            const in_val: JsonValue = entry.get("in") orelse
+                if (flags.undef_as_null) .null else JsonValue{ .string = UNDEFMARK };
+
+            const raw_out = entry.get("out");
+            const expected: JsonValue = if (raw_out) |o| o else if (flags.null_flag) JsonValue{ .string = NULLMARK } else .null;
+
+            const err_field = entry.get("err");
+            _ = has_in;
+
+            // Use an arena allocator for each test case
+            var arena = std.heap.ArenaAllocator.init(self.allocator);
+            defer arena.deinit();
+
+            const result = subject(arena.allocator(), in_val);
+
+            if (err_field != null) continue;
+
             try checkResult(expected, result);
         }
     }
@@ -87,6 +129,7 @@ pub const RunPack = struct {
 
 pub const Flags = struct {
     null_flag: bool = true,
+    undef_as_null: bool = true,
 };
 
 /// Load test.json and return the "struct" spec.
@@ -96,7 +139,6 @@ pub fn makeRunner(allocator: Allocator) !RunPack {
     const parsed = try std.json.parseFromSlice(JsonValue, allocator, data, .{});
     const root = parsed.value;
 
-    // spec = root["struct"] (mirrors resolveSpec("struct", testfile) in TS)
     const spec_val = switch (root) {
         .object => |obj| obj.get("struct") orelse return error.NoStructInTestJson,
         else => return error.TestJsonNotObject,
@@ -110,10 +152,9 @@ pub fn makeRunner(allocator: Allocator) !RunPack {
     };
 }
 
-// ---- Result comparison (mirrors checkResult / fixJSON in TS runner) ----
+// ---- Result comparison ----
 
 fn checkResult(expected: JsonValue, result: JsonValue) !void {
-    // Direct equality fast-path.
     if (jsonEqual(expected, result)) return;
 
     // NULLMARK means we expect .null
@@ -123,7 +164,6 @@ fn checkResult(expected: JsonValue, result: JsonValue) !void {
         }
     }
 
-    // Mismatch.
     std.debug.print("\n  FAIL: expected {s} got {s}\n", .{
         fmtJson(expected),
         fmtJson(result),
@@ -149,6 +189,14 @@ pub fn jsonEqual(a: JsonValue, b: JsonValue) bool {
     const TagType = std.meta.Tag(JsonValue);
     const tag_a: TagType = a;
     const tag_b: TagType = b;
+
+    // Allow integer/float cross-comparison for numeric equality
+    if ((tag_a == .integer or tag_a == .float) and (tag_b == .integer or tag_b == .float)) {
+        const fa: f64 = if (tag_a == .integer) @floatFromInt(a.integer) else a.float;
+        const fb: f64 = if (tag_b == .integer) @floatFromInt(b.integer) else b.float;
+        return fa == fb;
+    }
+
     if (tag_a != tag_b) return false;
 
     return switch (a) {
