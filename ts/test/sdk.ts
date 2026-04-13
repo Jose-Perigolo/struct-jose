@@ -11,6 +11,7 @@ class SDK {
     this.#utility = {
       struct: new StructUtility(),
       contextify: (ctxmap: any) => ctxmap,
+      makeContext: (ctxmap: any) => ctxmap,
       check: (ctx: any) => {
         return {
           zed: 'ZED' +
