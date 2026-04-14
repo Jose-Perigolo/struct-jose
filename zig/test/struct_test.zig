@@ -719,3 +719,143 @@ test "transform-cmds" {
     defer r.deinit();
     try r.runsetAllocFlags(try getSubSpec(r, "transform", "cmds"), .{ .null_flag = false }, wrap_transform);
 }
+
+// ---- SetPath tests ----
+
+fn wrap_setpath(allocator: Allocator, val: JsonValue) JsonValue {
+    // in: { store, path, val }
+    if (val != .object) return .null;
+    const m = val.object;
+    const store = m.get("store") orelse return .null;
+    const path_v = m.get("path") orelse return .null;
+    const set_val = m.get("val") orelse return .null;
+    return voxgig_struct.setpath(allocator, store, path_v, set_val) catch return .null;
+}
+
+test "minor-setpath" {
+    var r = try runner.makeRunner(testing.allocator);
+    defer r.deinit();
+    try r.runsetAllocFlags(try getMinorSpec(r, "setpath"), .{ .null_flag = false }, wrap_setpath);
+}
+
+// ---- GetPath tests ----
+
+fn wrap_getpath_basic(allocator: Allocator, val: JsonValue) JsonValue {
+    // in: { path, store }
+    if (val != .object) return .null;
+    const m = val.object;
+    const path_v = m.get("path") orelse return .null;
+    const store = m.get("store") orelse return .null;
+    return voxgig_struct.getpath(allocator, path_v, store) catch return .null;
+}
+
+fn wrap_getpath_relative(allocator: Allocator, val: JsonValue) JsonValue {
+    // in: { path, store, dparent }
+    if (val != .object) return .null;
+    const m = val.object;
+    const path_v = m.get("path") orelse return .null;
+    const store = m.get("store") orelse return .null;
+    const dparent = m.get("dparent") orelse .null;
+
+    // Build a minimal Injection with dparent set.
+    var errs = std.ArrayList([]const u8).init(allocator);
+    var init_keys = allocator.alloc([]const u8, 0) catch return .null;
+    var init_path = allocator.alloc([]const u8, 0) catch return .null;
+    var init_nodes = allocator.alloc(JsonValue, 0) catch return .null;
+    var init_dpath = allocator.alloc([]const u8, 0) catch return .null;
+    _ = &init_keys;
+    _ = &init_path;
+    _ = &init_nodes;
+    _ = &init_dpath;
+    var inj = allocator.create(voxgig_struct.Injection) catch return .null;
+    inj.* = voxgig_struct.Injection{
+        .allocator = allocator,
+        .dparent = dparent,
+        .keys = init_keys,
+        .path = init_path,
+        .nodes = init_nodes,
+        .dpath = init_dpath,
+        .errs = &errs,
+    };
+    return voxgig_struct.getpathInj(allocator, path_v, store, inj) catch return .null;
+}
+
+fn wrap_getpath_special(allocator: Allocator, val: JsonValue) JsonValue {
+    // in: { path, store, inj? }
+    if (val != .object) return .null;
+    const m = val.object;
+    const path_v = m.get("path") orelse return .null;
+    const store = m.get("store") orelse return .null;
+    const inj_spec = m.get("inj");
+
+    if (inj_spec) |ij| {
+        var errs = std.ArrayList([]const u8).init(allocator);
+        var init_keys = allocator.alloc([]const u8, 0) catch return .null;
+        var init_path = allocator.alloc([]const u8, 0) catch return .null;
+        var init_nodes = allocator.alloc(JsonValue, 0) catch return .null;
+        var init_dpath = allocator.alloc([]const u8, 0) catch return .null;
+        _ = &init_keys;
+        _ = &init_path;
+        _ = &init_nodes;
+        _ = &init_dpath;
+        var inj = allocator.create(voxgig_struct.Injection) catch return .null;
+        inj.* = voxgig_struct.Injection{
+            .allocator = allocator,
+            .keys = init_keys,
+            .path = init_path,
+            .nodes = init_nodes,
+            .dpath = init_dpath,
+            .errs = &errs,
+        };
+        // Set key from inj spec if present.
+        if (ij == .object) {
+            if (ij.object.get("key")) |key_val| {
+                if (key_val == .string) inj.key = key_val.string;
+            }
+        }
+        return voxgig_struct.getpathInj(allocator, path_v, store, inj) catch return .null;
+    }
+
+    return voxgig_struct.getpath(allocator, path_v, store) catch return .null;
+}
+
+test "getpath-basic" {
+    var r = try runner.makeRunner(testing.allocator);
+    defer r.deinit();
+    try r.runsetAllocFlags(try getSubSpec(r, "getpath", "basic"), .{ .null_flag = false }, wrap_getpath_basic);
+}
+
+test "getpath-relative" {
+    var r = try runner.makeRunner(testing.allocator);
+    defer r.deinit();
+    try r.runsetAllocFlags(try getSubSpec(r, "getpath", "relative"), .{ .null_flag = false }, wrap_getpath_relative);
+}
+
+test "getpath-special" {
+    var r = try runner.makeRunner(testing.allocator);
+    defer r.deinit();
+    try r.runsetAllocFlags(try getSubSpec(r, "getpath", "special"), .{ .null_flag = false }, wrap_getpath_special);
+}
+
+// ---- Inject tests ----
+
+fn wrap_inject(allocator: Allocator, val: JsonValue) JsonValue {
+    // in: { val, store }
+    if (val != .object) return .null;
+    const m = val.object;
+    const inject_val = m.get("val") orelse return .null;
+    const store = m.get("store") orelse return .null;
+    return voxgig_struct.injectVal(allocator, inject_val, store, null) catch return .null;
+}
+
+test "inject-string" {
+    var r = try runner.makeRunner(testing.allocator);
+    defer r.deinit();
+    try r.runsetAllocFlags(try getSubSpec(r, "inject", "string"), .{ .null_flag = false }, wrap_inject);
+}
+
+test "inject-deep" {
+    var r = try runner.makeRunner(testing.allocator);
+    defer r.deinit();
+    try r.runsetAllocFlags(try getSubSpec(r, "inject", "deep"), .{ .null_flag = false }, wrap_inject);
+}

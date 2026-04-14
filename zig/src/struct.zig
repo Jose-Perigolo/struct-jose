@@ -1187,7 +1187,10 @@ fn mergeNodes(
 // ============================================================================
 
 pub fn getpath(allocator: Allocator, path_val: JsonValue, store: JsonValue) !JsonValue {
-    _ = allocator;
+    return getpathInj(allocator, path_val, store, null);
+}
+
+pub fn getpathInj(allocator: Allocator, path_val: JsonValue, store: JsonValue, inj: ?*Injection) !JsonValue {
     var parts_buf: [64][]const u8 = undefined;
     var numparts: usize = 0;
 
@@ -1198,7 +1201,6 @@ pub fn getpath(allocator: Allocator, path_val: JsonValue, store: JsonValue) !Jso
                 parts_buf[0] = S_MT;
                 numparts = 1;
             } else {
-                // Split on dots.
                 var it = std.mem.splitScalar(u8, s, '.');
                 while (it.next()) |part| {
                     if (numparts < parts_buf.len) {
@@ -1224,10 +1226,14 @@ pub fn getpath(allocator: Allocator, path_val: JsonValue, store: JsonValue) !Jso
 
     // Empty path → return the source.
     if (numparts == 1 and parts[0].len == 0) {
+        // Single dot → return dparent if available.
+        if (inj) |ij| {
+            return ij.dparent;
+        }
         return getpropFromStore(store);
     }
 
-    // Single part: check store directly first.
+    // Single part: check store directly first (for $ commands etc).
     if (numparts == 1) {
         if (store == .object) {
             if (store.object.get(parts[0])) |v| {
@@ -1236,34 +1242,65 @@ pub fn getpath(allocator: Allocator, path_val: JsonValue, store: JsonValue) !Jso
         }
     }
 
-    // Resolve through $TOP.
+    // Resolve through $TOP (or dparent for relative paths).
     var val = getpropFromStore(store);
+
+    // Check for relative path: first part is empty string (from leading dot).
+    if (numparts > 0 and parts[0].len == 0 and inj != null) {
+        val = inj.?.dparent;
+        // Skip the empty first part.
+        const rel_parts = parts[1..];
+        for (rel_parts) |part| {
+            if (val == .null) break;
+            val = try resolvePart(allocator, val, part, inj);
+        }
+        return val;
+    }
 
     for (parts) |part| {
         if (val == .null) break;
-
-        // Handle $$ escape.
-        var effective_part = part;
-        _ = effective_part;
-
-        if (val == .object) {
-            val = val.object.get(part) orelse .null;
-        } else if (val == .array) {
-            const idx = std.fmt.parseInt(i64, part, 10) catch {
-                val = .null;
-                break;
-            };
-            if (idx >= 0 and idx < @as(i64, @intCast(val.array.items.len))) {
-                val = val.array.items[@intCast(idx)];
-            } else {
-                val = .null;
-            }
-        } else {
-            val = .null;
-        }
+        val = try resolvePart(allocator, val, part, inj);
     }
 
     return val;
+}
+
+fn resolvePart(allocator: Allocator, val: JsonValue, part_in: []const u8, inj: ?*const Injection) !JsonValue {
+    _ = allocator;
+    // Handle $$ escape → $.
+    var part = part_in;
+    if (std.mem.indexOf(u8, part, "$$")) |_| {
+        var buf = std.ArrayList(u8).init(std.heap.page_allocator);
+        var i: usize = 0;
+        while (i < part.len) {
+            if (i + 1 < part.len and part[i] == '$' and part[i + 1] == '$') {
+                buf.append('$') catch {};
+                i += 2;
+            } else {
+                buf.append(part[i]) catch {};
+                i += 1;
+            }
+        }
+        part = buf.items;
+    }
+
+    // Handle $KEY → replace with injection key.
+    if (std.mem.eql(u8, part, "$KEY")) {
+        if (inj) |ij| {
+            part = ij.key;
+        }
+    }
+
+    if (val == .object) {
+        return val.object.get(part) orelse .null;
+    } else if (val == .array) {
+        const idx = std.fmt.parseInt(i64, part, 10) catch return .null;
+        if (idx >= 0 and idx < @as(i64, @intCast(val.array.items.len))) {
+            return val.array.items[@intCast(idx)];
+        }
+        return .null;
+    }
+    return .null;
 }
 
 fn getpropFromStore(store: JsonValue) JsonValue {
@@ -1641,12 +1678,24 @@ fn injectStr(allocator: Allocator, val: []const u8, store: JsonValue, inj: *Inje
                 var ref = val[i + 1 .. end];
                 ref = resolveSpecialEscapes(allocator, ref);
                 const found = try resolvePathOnly(allocator, ref, store, inj);
-                if (found != .null) {
-                    if (found == .string) {
-                        try result.appendSlice(found.string);
-                    } else {
-                        try result.appendSlice(try stringifyInner(allocator, found));
-                    }
+                if (found == .string) {
+                    try result.appendSlice(found.string);
+                } else if (found == .null) {
+                    // Check if the key actually exists in the store with a null value
+                    // vs being absent. If present, stringify as "null".
+                    const exists = blk: {
+                        if (store == .object) {
+                            if (store.object.get(ref) != null) break :blk true;
+                            // Check in $TOP
+                            if (store.object.get(S_DTOP)) |top| {
+                                if (top == .object and top.object.get(ref) != null) break :blk true;
+                            }
+                        }
+                        break :blk false;
+                    };
+                    if (exists) try result.appendSlice("null");
+                } else {
+                    try result.appendSlice(try stringifyInner(allocator, found));
                 }
                 i = end + 1;
             } else {
