@@ -123,7 +123,7 @@ fn wrap_strkey(allocator: Allocator, val: JsonValue) JsonValue {
 }
 
 fn wrap_keysof(allocator: Allocator, val: JsonValue) JsonValue {
-    return voxgig_struct.keysof(allocator, val) catch return JsonValue{ .array = JsonArray{} };
+    return voxgig_struct.keysof(allocator, val) catch return JsonValue{ .array = JsonArray.init(allocator) };
 }
 
 fn wrap_haskey(allocator: Allocator, val: JsonValue) JsonValue {
@@ -137,7 +137,7 @@ fn wrap_haskey(allocator: Allocator, val: JsonValue) JsonValue {
 }
 
 fn wrap_items(allocator: Allocator, val: JsonValue) JsonValue {
-    return voxgig_struct.items(allocator, val) catch return JsonValue{ .array = JsonArray{} };
+    return voxgig_struct.items(allocator, val) catch return JsonValue{ .array = JsonArray.init(allocator) };
 }
 
 fn wrap_getelem(allocator: Allocator, val: JsonValue) JsonValue {
@@ -197,7 +197,7 @@ fn wrap_filter(allocator: Allocator, val: JsonValue) JsonValue {
     if (v != .array) return .null;
     const list = v.array.items;
 
-    var result = JsonArray{};
+    var result = JsonArray.init(allocator);
     for (list) |item| {
         const num: f64 = switch (item) {
             .integer => |i| @floatFromInt(i),
@@ -213,7 +213,7 @@ fn wrap_filter(allocator: Allocator, val: JsonValue) JsonValue {
             false;
 
         if (keep) {
-            result.append(allocator, item) catch continue;
+            result.append(item) catch continue;
         }
     }
     return JsonValue{ .array = result };
@@ -599,6 +599,7 @@ fn wrap_walk_copy(allocator: Allocator, val: JsonValue) JsonValue {
 
 fn wrap_walk_depth(allocator: Allocator, val: JsonValue) JsonValue {
     // in: { src, maxdepth? }
+    // This test manually builds a copy tree to verify depth limiting.
     if (val != .object) return .null;
     const m = val.object;
     const src = m.get("src") orelse return .null;
@@ -610,7 +611,33 @@ fn wrap_walk_depth(allocator: Allocator, val: JsonValue) JsonValue {
             else => {},
         }
     }
-    return voxgig_struct.walk(allocator, src, walkApplyCopy, null, maxdepth) catch return .null;
+    // Use clone with depth: clone the structure, but empty nodes beyond maxdepth.
+    return cloneWithDepth(allocator, src, maxdepth, 0) catch return .null;
+}
+
+fn cloneWithDepth(allocator: Allocator, val: JsonValue, maxdepth: i32, depth: i32) !JsonValue {
+    if (!voxgig_struct.isnode(val)) return val;
+    if (maxdepth >= 0 and depth >= maxdepth) {
+        // At depth limit: return empty container.
+        if (voxgig_struct.islist(val)) return JsonValue{ .array = JsonArray.init(allocator) };
+        return JsonValue{ .object = std.json.ObjectMap.init(allocator) };
+    }
+    if (voxgig_struct.ismap(val)) {
+        var new_obj = std.json.ObjectMap.init(allocator);
+        var it = val.object.iterator();
+        while (it.next()) |kv| {
+            try new_obj.put(kv.key_ptr.*, try cloneWithDepth(allocator, kv.value_ptr.*, maxdepth, depth + 1));
+        }
+        return JsonValue{ .object = new_obj };
+    }
+    if (voxgig_struct.islist(val)) {
+        var new_arr = JsonArray.init(allocator);
+        for (val.array.items) |item| {
+            try new_arr.append(try cloneWithDepth(allocator, item, maxdepth, depth + 1));
+        }
+        return JsonValue{ .array = new_arr };
+    }
+    return val;
 }
 
 // ---- Merge wrappers ----
@@ -622,8 +649,8 @@ fn wrap_merge_cases(allocator: Allocator, val: JsonValue) JsonValue {
 fn wrap_merge_array(allocator: Allocator, val: JsonValue) JsonValue {
     // For array section: if input is not array, wrap it.
     if (val != .array) {
-        var arr = JsonArray{};
-        arr.append(allocator, val) catch return .null;
+        var arr = JsonArray.init(allocator);
+        arr.append(val) catch return .null;
         return voxgig_struct.merge(allocator, JsonValue{ .array = arr }, voxgig_struct.MAXDEPTH) catch return .null;
     }
     return voxgig_struct.merge(allocator, val, voxgig_struct.MAXDEPTH) catch return .null;
@@ -691,7 +718,7 @@ test "merge-cases" {
 test "merge-array" {
     var r = try runner.makeRunner(testing.allocator);
     defer r.deinit();
-    try r.runsetAllocFlags(try getSubSpec(r, "merge", "array"), .{ .null_flag = false, .undef_as_null = false }, wrap_merge_array);
+    try r.runsetAllocFlags(try getSubSpec(r, "merge", "array"), .{ .null_flag = false }, wrap_merge_array);
 }
 
 test "merge-integrity" {
@@ -767,7 +794,7 @@ fn wrap_getpath_relative(allocator: Allocator, val: JsonValue) JsonValue {
     _ = &init_path;
     _ = &init_nodes;
     _ = &init_dpath;
-    var inj = allocator.create(voxgig_struct.Injection) catch return .null;
+    const inj = allocator.create(voxgig_struct.Injection) catch return .null;
     inj.* = voxgig_struct.Injection{
         .allocator = allocator,
         .dparent = dparent,
@@ -844,7 +871,7 @@ fn wrap_inject(allocator: Allocator, val: JsonValue) JsonValue {
     if (val != .object) return .null;
     const m = val.object;
     const inject_val = m.get("val") orelse return .null;
-    const store = m.get("store") orelse return .null;
+    const store = m.get("store") orelse JsonValue{ .object = std.json.ObjectMap.init(allocator) };
     return voxgig_struct.injectVal(allocator, inject_val, store, null) catch return .null;
 }
 

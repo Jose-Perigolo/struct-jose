@@ -92,7 +92,7 @@ pub const RunPack = struct {
             else => return error.SetNotArray,
         };
 
-        for (entries) |entry_val| {
+        for (entries, 0..) |entry_val, entry_idx| {
             const entry = switch (entry_val) {
                 .object => |obj| obj,
                 else => continue,
@@ -117,7 +117,10 @@ pub const RunPack = struct {
 
             if (err_field != null) continue;
 
-            try checkResult(expected, result);
+            checkResult(expected, result) catch |e| {
+                std.debug.print("  [test entry {d}]\n", .{entry_idx});
+                return e;
+            };
         }
     }
 
