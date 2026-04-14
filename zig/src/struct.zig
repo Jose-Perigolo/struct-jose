@@ -1720,9 +1720,13 @@ pub fn injectVal(allocator: Allocator, val: JsonValue, store: JsonValue, inj_opt
 
     inj.val = current;
 
-    // At root level only, update parent's $TOP to reflect modifications.
-    if (inj.prior == null and inj.parent == .object) {
-        inj.parent.object.put(S_DTOP, current) catch {};
+    // Propagate child node modifications back into the parent.
+    // In Go this is implicit (maps are reference types). In Zig we must
+    // explicitly update the parent's entry since ObjectMap is by-value.
+    // Only propagate node values — scalar/null results are already handled
+    // by setval in the string injection path.
+    if (isnode(current) and isnode(inj.parent)) {
+        inj.parent = setprop(allocator, inj.parent, JsonValue{ .string = inj.key }, current) catch inj.parent;
     }
 
     // Return value is the top-level result.
@@ -1886,6 +1890,10 @@ fn cmdMerge(allocator: Allocator, inj: *Injection, store: JsonValue) !JsonValue 
 
     if (inj.mode == M_KEYPOST) {
         const args = try getprop(allocator, inj.parent, JsonValue{ .string = inj.key }, .null);
+        // Clone parent for precedence BEFORE removing the merge key,
+        // to avoid reading from a map with stale entry pointers.
+        const parent_clone = try clone(allocator, inj.parent);
+
         if (inj.parent == .object) _ = inj.parent.object.fetchOrderedRemove(inj.key);
 
         var merge_list = JsonArray.init(allocator);
@@ -1902,7 +1910,7 @@ fn cmdMerge(allocator: Allocator, inj: *Injection, store: JsonValue) !JsonValue 
             try merge_list.append(args);
         }
 
-        try merge_list.append(try clone(allocator, inj.parent));
+        try merge_list.append(parent_clone);
         inj.parent = try merge(allocator, JsonValue{ .array = merge_list }, MAXDEPTH);
         return JsonValue{ .string = inj.key };
     }
