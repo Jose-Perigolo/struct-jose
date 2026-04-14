@@ -1752,9 +1752,11 @@ fn dispatchCmd(allocator: Allocator, cmd: []const u8, store: JsonValue, inj: *In
     if (std.mem.eql(u8, cmd, "$KEY")) return cmdKey(inj);
     if (std.mem.eql(u8, cmd, "$MERGE")) return try cmdMerge(allocator, inj, store);
     if (std.mem.eql(u8, cmd, "$ANNO")) return cmdAnno(inj);
-
-    // Commands not yet implemented return null.
-    // TODO: $EACH, $PACK, $REF, $FORMAT, $APPLY
+    if (std.mem.eql(u8, cmd, "$FORMAT")) return try cmdFormat(allocator, inj, store);
+    if (std.mem.eql(u8, cmd, "$EACH")) return try cmdEach(allocator, inj, store);
+    if (std.mem.eql(u8, cmd, "$PACK")) return try cmdPack(allocator, inj, store);
+    if (std.mem.eql(u8, cmd, "$REF")) return try cmdRef(allocator, inj, store);
+    if (std.mem.eql(u8, cmd, "$APPLY")) return try cmdApply(allocator, inj);
     return .null;
 }
 
@@ -1772,43 +1774,27 @@ fn cmdDelete(inj: *Injection) JsonValue {
 
 fn cmdKey(inj: *Injection) JsonValue {
     if (inj.mode != M_VAL) return .null;
-
-    // Check for `$KEY` meta property on the parent.
     if (inj.parent == .object) {
         if (inj.parent.object.get(S_BKEY)) |keyspec| {
             _ = inj.parent.object.fetchOrderedRemove(S_BKEY);
             return getprop(inj.allocator, inj.dparent, keyspec, .null) catch .null;
         }
-        // Check for $KEY inside $ANNO.
         if (inj.parent.object.get(S_BANNO)) |anno| {
             if (anno == .object) {
-                if (anno.object.get(S_KEY)) |pkey| {
-                    return pkey;
-                }
+                if (anno.object.get(S_KEY)) |pkey| return pkey;
             }
         }
     }
-
-    // Fallback: second-to-last path element.
-    if (inj.path.len >= 2) {
-        return JsonValue{ .string = inj.path[inj.path.len - 2] };
-    }
+    if (inj.path.len >= 2) return JsonValue{ .string = inj.path[inj.path.len - 2] };
     return .null;
 }
 
 fn cmdMerge(allocator: Allocator, inj: *Injection, store: JsonValue) !JsonValue {
-    if (inj.mode == M_KEYPRE) {
-        // In KEYPRE, just return the key so processing continues.
-        return JsonValue{ .string = inj.key };
-    }
+    if (inj.mode == M_KEYPRE) return JsonValue{ .string = inj.key };
 
     if (inj.mode == M_KEYPOST) {
         const args = try getprop(allocator, inj.parent, JsonValue{ .string = inj.key }, .null);
-
-        // Remove the $MERGE key from parent.
-        if (inj.parent == .object) {
-            _ = inj.parent.object.fetchOrderedRemove(inj.key);
-        }
+        if (inj.parent == .object) _ = inj.parent.object.fetchOrderedRemove(inj.key);
 
         var merge_list = JsonArray{};
         try merge_list.append(allocator, inj.parent);
@@ -1824,24 +1810,481 @@ fn cmdMerge(allocator: Allocator, inj: *Injection, store: JsonValue) !JsonValue 
             try merge_list.append(allocator, args);
         }
 
-        // Literals in parent have precedence.
         try merge_list.append(allocator, try clone(allocator, inj.parent));
-
-        const merged = try merge(allocator, JsonValue{ .array = merge_list }, MAXDEPTH);
-        inj.parent = merged;
-
+        inj.parent = try merge(allocator, JsonValue{ .array = merge_list }, MAXDEPTH);
         return JsonValue{ .string = inj.key };
     }
 
-    // M_VAL for $MERGE in a list context → remove it.
     return .null;
 }
 
 fn cmdAnno(inj: *Injection) JsonValue {
-    if (inj.parent == .object) {
-        _ = inj.parent.object.fetchOrderedRemove(S_BANNO);
-    }
+    if (inj.parent == .object) _ = inj.parent.object.fetchOrderedRemove(S_BANNO);
     return .null;
+}
+
+// ============================================================================
+// $FORMAT — apply a named formatter to a child value.
+// Format: ["`$FORMAT`", "name", child]
+// ============================================================================
+
+fn cmdFormat(allocator: Allocator, inj: *Injection, store: JsonValue) !JsonValue {
+    if (inj.mode != M_VAL) return .null;
+    if (inj.keys.len > 1) inj.keys = inj.keys[0..1];
+
+    if (inj.parent != .array or inj.parent.array.items.len < 3) return .null;
+    const name_val = inj.parent.array.items[1];
+    const child_raw = inj.parent.array.items[2];
+
+    const name = if (name_val == .string) name_val.string else "";
+
+    // Inject the child value first (resolve $COPY etc).
+    const child = try injectChild(allocator, child_raw, store, inj);
+
+    // Find target node and key.
+    const tkey = if (inj.path.len >= 2) inj.path[inj.path.len - 2] else S_DTOP;
+    var target = if (inj.nodes.len >= 2)
+        inj.nodes[inj.nodes.len - 2]
+    else if (inj.nodes.len > 0)
+        inj.nodes[inj.nodes.len - 1]
+    else
+        JsonValue{ .null = {} };
+
+    const out = try applyFormat(allocator, name, child, inj.errs);
+    if (out == .null and !std.mem.eql(u8, name, "identity")) {
+        // Unknown format or error → delete from target.
+        if (target != .null) _ = delprop(allocator, target, JsonValue{ .string = tkey }) catch {};
+        return .null;
+    }
+
+    if (target != .null) _ = setprop(allocator, target, JsonValue{ .string = tkey }, out) catch {};
+    return out;
+}
+
+fn applyFormat(allocator: Allocator, name: []const u8, val: JsonValue, errs: *std.ArrayList([]const u8)) !JsonValue {
+    if (std.mem.eql(u8, name, "upper")) return try walkFormat(allocator, val, fmtUpper);
+    if (std.mem.eql(u8, name, "lower")) return try walkFormat(allocator, val, fmtLower);
+    if (std.mem.eql(u8, name, "string")) return try walkFormat(allocator, val, fmtString);
+    if (std.mem.eql(u8, name, "number")) return try walkFormat(allocator, val, fmtNumber);
+    if (std.mem.eql(u8, name, "integer")) return try walkFormat(allocator, val, fmtInteger);
+    if (std.mem.eql(u8, name, "identity")) return val;
+    if (std.mem.eql(u8, name, "concat")) {
+        if (val == .array) {
+            var buf = std.ArrayList(u8).init(allocator);
+            for (val.array.items) |item| {
+                if (isnode(item)) continue;
+                try buf.appendSlice(try fmtStr(allocator, item));
+            }
+            return JsonValue{ .string = buf.items };
+        }
+        return val;
+    }
+    const msg = try std.fmt.allocPrint(allocator, "$FORMAT: unknown format: {s}.", .{name});
+    try errs.append(msg);
+    return .null;
+}
+
+const FormatFn = *const fn (Allocator, JsonValue) anyerror!JsonValue;
+
+fn walkFormat(allocator: Allocator, val: JsonValue, fmt_fn: FormatFn) !JsonValue {
+    if (val == .object) {
+        var new_obj = JsonObjectMap{};
+        var it = val.object.iterator();
+        while (it.next()) |kv| {
+            try new_obj.put(allocator, kv.key_ptr.*, try walkFormat(allocator, kv.value_ptr.*, fmt_fn));
+        }
+        return JsonValue{ .object = new_obj };
+    }
+    if (val == .array) {
+        var new_arr = try JsonArray.initCapacity(allocator, val.array.items.len);
+        for (val.array.items) |item| {
+            try new_arr.append(allocator, try walkFormat(allocator, item, fmt_fn));
+        }
+        return JsonValue{ .array = new_arr };
+    }
+    return try fmt_fn(allocator, val);
+}
+
+fn fmtStr(allocator: Allocator, val: JsonValue) ![]const u8 {
+    return switch (val) {
+        .null => "null",
+        .bool => |b| if (b) "true" else "false",
+        .string => |s| s,
+        .integer => |i| try std.fmt.allocPrint(allocator, "{d}", .{i}),
+        .float => |f| try std.fmt.allocPrint(allocator, "{d}", .{f}),
+        else => "",
+    };
+}
+
+fn fmtUpper(allocator: Allocator, val: JsonValue) !JsonValue {
+    const s = try fmtStr(allocator, val);
+    var buf = try allocator.alloc(u8, s.len);
+    for (s, 0..) |c, i| buf[i] = std.ascii.toUpper(c);
+    return JsonValue{ .string = buf };
+}
+
+fn fmtLower(allocator: Allocator, val: JsonValue) !JsonValue {
+    const s = try fmtStr(allocator, val);
+    var buf = try allocator.alloc(u8, s.len);
+    for (s, 0..) |c, i| buf[i] = std.ascii.toLower(c);
+    return JsonValue{ .string = buf };
+}
+
+fn fmtString(allocator: Allocator, val: JsonValue) !JsonValue {
+    return JsonValue{ .string = try fmtStr(allocator, val) };
+}
+
+fn fmtNumber(allocator: Allocator, val: JsonValue) !JsonValue {
+    _ = allocator;
+    return switch (val) {
+        .integer => val,
+        .float => val,
+        .string => |s| {
+            if (std.fmt.parseFloat(f64, s)) |f| {
+                if (f == @trunc(f)) return JsonValue{ .integer = @intFromFloat(f) };
+                return JsonValue{ .float = f };
+            } else |_| return JsonValue{ .integer = 0 };
+        },
+        else => JsonValue{ .integer = 0 },
+    };
+}
+
+fn fmtInteger(allocator: Allocator, val: JsonValue) !JsonValue {
+    _ = allocator;
+    return switch (val) {
+        .integer => val,
+        .float => |f| JsonValue{ .integer = @intFromFloat(@trunc(f)) },
+        .string => |s| {
+            if (std.fmt.parseFloat(f64, s)) |f| {
+                return JsonValue{ .integer = @intFromFloat(@trunc(f)) };
+            } else |_| return JsonValue{ .integer = 0 };
+        },
+        else => JsonValue{ .integer = 0 },
+    };
+}
+
+// ============================================================================
+// $EACH — iterate source data, apply child template per item.
+// Format: ["`$EACH`", "source-path", child-template]
+// ============================================================================
+
+fn cmdEach(allocator: Allocator, inj: *Injection, store: JsonValue) !JsonValue {
+    if (inj.mode != M_VAL) return .null;
+    if (inj.keys.len > 1) inj.keys = inj.keys[0..1];
+
+    if (inj.parent != .array or inj.parent.array.items.len < 3) return .null;
+    const srcpath_val = inj.parent.array.items[1];
+    const child_tmpl = inj.parent.array.items[2];
+
+    const srcpath = if (srcpath_val == .string) srcpath_val.string else "";
+
+    // Resolve source data.
+    const src = if (srcpath.len == 0)
+        getpropFromStore(store)
+    else
+        try getpath(allocator, JsonValue{ .string = srcpath }, store);
+
+    // Find target node and key.
+    const tkey = if (inj.path.len >= 2) inj.path[inj.path.len - 2] else S_DTOP;
+    var target = if (inj.nodes.len >= 2)
+        inj.nodes[inj.nodes.len - 2]
+    else if (inj.nodes.len > 0)
+        inj.nodes[inj.nodes.len - 1]
+    else
+        JsonValue{ .null = {} };
+
+    var result_arr = JsonArray{};
+
+    if (islist(src)) {
+        for (src.array.items, 0..) |src_item, idx| {
+            const child_clone = try clone(allocator, child_tmpl);
+            const idx_str = try std.fmt.allocPrint(allocator, "{d}", .{idx});
+
+            // Build a per-item store: merge global store with $TOP = src_item.
+            var item_store = JsonObjectMap{};
+            // Copy global store entries.
+            if (store == .object) {
+                var sit = store.object.iterator();
+                while (sit.next()) |kv| try item_store.put(allocator, kv.key_ptr.*, kv.value_ptr.*);
+            }
+            try item_store.put(allocator, S_DTOP, src_item);
+
+            // Add $ANNO with $KEY = index.
+            if (child_clone == .object) {
+                var anno = JsonObjectMap{};
+                try anno.put(allocator, S_KEY, JsonValue{ .string = idx_str });
+                _ = try setprop(allocator, child_clone, JsonValue{ .string = S_BANNO }, JsonValue{ .object = anno });
+            }
+
+            const injected = try injectVal(allocator, child_clone, JsonValue{ .object = item_store }, null);
+            try result_arr.append(allocator, injected);
+        }
+    } else if (ismap(src)) {
+        // Get sorted items.
+        const src_items = try items(allocator, src);
+        if (src_items == .array) {
+            for (src_items.array.items) |pair| {
+                if (pair != .array or pair.array.items.len < 2) continue;
+                const src_key = pair.array.items[0];
+                const src_val = pair.array.items[1];
+
+                const child_clone = try clone(allocator, child_tmpl);
+
+                var item_store = JsonObjectMap{};
+                if (store == .object) {
+                    var sit = store.object.iterator();
+                    while (sit.next()) |kv| try item_store.put(allocator, kv.key_ptr.*, kv.value_ptr.*);
+                }
+                try item_store.put(allocator, S_DTOP, src_val);
+
+                // Add $ANNO with $KEY = map key.
+                if (child_clone == .object) {
+                    var anno = JsonObjectMap{};
+                    try anno.put(allocator, S_KEY, src_key);
+                    _ = try setprop(allocator, child_clone, JsonValue{ .string = S_BANNO }, JsonValue{ .object = anno });
+                }
+
+                const injected = try injectVal(allocator, child_clone, JsonValue{ .object = item_store }, null);
+                try result_arr.append(allocator, injected);
+            }
+        }
+    }
+
+    const result = JsonValue{ .array = result_arr };
+    if (target != .null) _ = setprop(allocator, target, JsonValue{ .string = tkey }, result) catch {};
+
+    if (result_arr.items.len > 0) return result_arr.items[0];
+    return .null;
+}
+
+// ============================================================================
+// $PACK — convert source list/map to keyed map.
+// Format: map key `$PACK` with value ["source-path", child-spec]
+// ============================================================================
+
+fn cmdPack(allocator: Allocator, inj: *Injection, store: JsonValue) !JsonValue {
+    if (inj.mode != M_KEYPRE) return .null;
+
+    if (inj.parent != .object) return .null;
+    const args_val = try getprop(allocator, inj.parent, JsonValue{ .string = inj.key }, .null);
+    if (args_val != .array or args_val.array.items.len < 2) return .null;
+
+    const srcpath_val = args_val.array.items[0];
+    const childspec_raw = args_val.array.items[1];
+
+    const srcpath = if (srcpath_val == .string) srcpath_val.string else "";
+
+    // Resolve source data.
+    const src_raw = if (srcpath.len == 0)
+        getpropFromStore(store)
+    else
+        try getpath(allocator, JsonValue{ .string = srcpath }, store);
+
+    // Normalize source to list.
+    var src_list = std.ArrayList(JsonValue).init(allocator);
+    var src_keys = std.ArrayList([]const u8).init(allocator);
+
+    if (islist(src_raw)) {
+        for (src_raw.array.items, 0..) |item, idx| {
+            try src_list.append(item);
+            try src_keys.append(try std.fmt.allocPrint(allocator, "{d}", .{idx}));
+        }
+    } else if (ismap(src_raw)) {
+        const src_items = try items(allocator, src_raw);
+        if (src_items == .array) {
+            for (src_items.array.items) |pair| {
+                if (pair != .array or pair.array.items.len < 2) continue;
+                const k = if (pair.array.items[0] == .string) pair.array.items[0].string else "";
+                try src_list.append(pair.array.items[1]);
+                try src_keys.append(k);
+            }
+        }
+    } else return .null;
+
+    // Extract $KEY path and $VAL from child spec.
+    var childspec = try clone(allocator, childspec_raw);
+    var keypath: ?[]const u8 = null;
+    var child_val_spec = childspec;
+
+    if (childspec == .object) {
+        if (childspec.object.get(S_BKEY)) |kp| {
+            if (kp == .string) keypath = kp.string;
+            _ = childspec.object.fetchOrderedRemove(S_BKEY);
+        }
+        if (childspec.object.get(S_BVAL)) |vspec| {
+            child_val_spec = vspec;
+            _ = childspec.object.fetchOrderedRemove(S_BVAL);
+        }
+    }
+
+    // Find target.
+    const tkey = if (inj.path.len >= 2) inj.path[inj.path.len - 2] else S_DTOP;
+    var target = if (inj.nodes.len >= 2)
+        inj.nodes[inj.nodes.len - 2]
+    else if (inj.nodes.len > 0)
+        inj.nodes[inj.nodes.len - 1]
+    else
+        JsonValue{ .null = {} };
+
+    // Build the output map.
+    var result_obj = JsonObjectMap{};
+    for (src_list.items, 0..) |src_item, idx| {
+        // Resolve the key for this item.
+        var item_key: []const u8 = "";
+        if (keypath) |kp| {
+            // Key from source item field or injection.
+            if (std.mem.startsWith(u8, kp, "`")) {
+                // Backtick path: inject to resolve.
+                var key_store = JsonObjectMap{};
+                if (store == .object) {
+                    var sit = store.object.iterator();
+                    while (sit.next()) |kv| try key_store.put(allocator, kv.key_ptr.*, kv.value_ptr.*);
+                }
+                try key_store.put(allocator, S_DTOP, src_item);
+                const key_result = try injectVal(allocator, JsonValue{ .string = kp }, JsonValue{ .object = key_store }, null);
+                if (key_result == .string) item_key = key_result.string;
+            } else {
+                // Direct property path.
+                const kval = try getpath(allocator, JsonValue{ .string = kp }, src_item);
+                if (kval == .string) item_key = kval.string;
+            }
+        } else {
+            item_key = try std.fmt.allocPrint(allocator, "{d}", .{idx});
+        }
+        if (item_key.len == 0) continue;
+
+        // Clone the child template for this item.
+        const child_clone = try clone(allocator, child_val_spec);
+
+        // Build per-item store.
+        var item_store = JsonObjectMap{};
+        if (store == .object) {
+            var sit = store.object.iterator();
+            while (sit.next()) |kv| try item_store.put(allocator, kv.key_ptr.*, kv.value_ptr.*);
+        }
+        try item_store.put(allocator, S_DTOP, src_item);
+
+        // Add $ANNO with $KEY = source key.
+        if (child_clone == .object) {
+            var anno = JsonObjectMap{};
+            try anno.put(allocator, S_KEY, JsonValue{ .string = src_keys.items[idx] });
+            _ = try setprop(allocator, child_clone, JsonValue{ .string = S_BANNO }, JsonValue{ .object = anno });
+        }
+
+        const injected = try injectVal(allocator, child_clone, JsonValue{ .object = item_store }, null);
+        try result_obj.put(allocator, item_key, injected);
+    }
+
+    const result = JsonValue{ .object = result_obj };
+
+    // Remove the $PACK key from parent and set result on target.
+    if (inj.parent == .object) _ = inj.parent.object.fetchOrderedRemove(inj.key);
+    if (target != .null) _ = setprop(allocator, target, JsonValue{ .string = tkey }, result) catch {};
+
+    return .null; // Drop the transform key.
+}
+
+// ============================================================================
+// $REF — reference another spec path (enables recursive templates).
+// Format: ["`$REF`", "spec-path"]
+// ============================================================================
+
+fn cmdRef(allocator: Allocator, inj: *Injection, store: JsonValue) !JsonValue {
+    if (inj.mode != M_VAL) return .null;
+
+    if (inj.parent != .array or inj.parent.array.items.len < 2) return .null;
+    const refpath_val = inj.parent.array.items[1];
+    if (refpath_val != .string) return .null;
+    const refpath = refpath_val.string;
+
+    // Skip remaining keys.
+    inj.key_i = inj.keys.len;
+
+    // Get the original spec from the store.
+    const spec_val = if (store == .object) store.object.get(S_DSPEC) orelse .null else .null;
+    if (spec_val == .null) return .null;
+
+    // Resolve the ref path within the spec.
+    const ref_result = try getpath(allocator, JsonValue{ .string = refpath }, spec_val);
+    if (ref_result == .null) {
+        // Ref not found → delete from parent.
+        const tkey = if (inj.path.len >= 2) inj.path[inj.path.len - 2] else S_DTOP;
+        var target = if (inj.nodes.len >= 2) inj.nodes[inj.nodes.len - 2] else .null;
+        if (target != .null) _ = delprop(allocator, target, JsonValue{ .string = tkey }) catch {};
+        return .null;
+    }
+
+    // Clone the referenced spec and inject it.
+    const tref = try clone(allocator, ref_result);
+    const injected = try injectVal(allocator, tref, store, null);
+
+    // Set the result on the grandparent.
+    _ = try inj.setval(injected, 2);
+
+    return .null;
+}
+
+// ============================================================================
+// $APPLY — apply a custom function (all tests are error cases).
+// Format: ["`$APPLY`", function, child]
+// ============================================================================
+
+fn cmdApply(allocator: Allocator, inj: *Injection) !JsonValue {
+    const ijname = "APPLY";
+
+    if (inj.mode == M_KEYPRE) {
+        const msg = try std.fmt.allocPrint(allocator, "${s}: invalid placement as key, expected: value.", .{ijname});
+        try inj.errs.append(msg);
+        return .null;
+    }
+
+    if (inj.mode == M_VAL) {
+        // Check parent type — must be list.
+        if (inj.parent != .array) {
+            const msg = try std.fmt.allocPrint(allocator, "${s}: invalid placement in parent map, expected: list.", .{ijname});
+            try inj.errs.append(msg);
+            return .null;
+        }
+
+        // Check arguments.
+        if (inj.parent.array.items.len >= 2) {
+            const arg = inj.parent.array.items[1];
+            // In Zig JSON, functions don't exist, so any non-function argument is an error.
+            const arg_type = typify(arg);
+            const arg_type_name = typename(arg_type);
+            const arg_str = try stringify(allocator, arg, 22);
+            const msg = try std.fmt.allocPrint(allocator, "${s}: invalid argument: {s} ({s} at position 1) is not of type: function.", .{ ijname, arg_str, arg_type_name });
+            try inj.errs.append(msg);
+        }
+
+        // Delete from target.
+        const tkey = if (inj.path.len >= 2) inj.path[inj.path.len - 2] else S_DTOP;
+        var target = if (inj.nodes.len >= 2) inj.nodes[inj.nodes.len - 2] else .null;
+        if (target != .null) _ = delprop(allocator, target, JsonValue{ .string = tkey }) catch {};
+    }
+
+    return .null;
+}
+
+// ============================================================================
+// injectChild — inject a child value using the parent injection context.
+// ============================================================================
+
+fn injectChild(allocator: Allocator, child_raw: JsonValue, store: JsonValue, inj: *Injection) !JsonValue {
+    // For simple cases: inject using the current context.
+    var child_clone = try clone(allocator, child_raw);
+
+    // Build store with correct data context.
+    var child_store = JsonObjectMap{};
+    if (store == .object) {
+        var sit = store.object.iterator();
+        while (sit.next()) |kv| try child_store.put(allocator, kv.key_ptr.*, kv.value_ptr.*);
+    }
+    // Set $TOP to the data parent so $COPY works.
+    child_store.put(allocator, S_DTOP, inj.dparent) catch {};
+
+    child_clone = try injectVal(allocator, child_clone, JsonValue{ .object = child_store }, null);
+    return child_clone;
 }
 
 // ============================================================================
@@ -1854,8 +2297,12 @@ pub fn transform(allocator: Allocator, data: JsonValue, spec: JsonValue) !JsonVa
     var spec_clone = try clone(allocator, spec);
     const data_clone = if (data == .null) JsonValue{ .null = {} } else try clone(allocator, data);
 
+    // Store the original spec for $REF.
+    const orig_spec = try clone(allocator, spec);
+
     var store = JsonObjectMap{};
     try store.put(allocator, S_DTOP, data_clone);
+    try store.put(allocator, S_DSPEC, orig_spec);
     const store_val = JsonValue{ .object = store };
 
     return try injectVal(allocator, spec_clone, store_val, null);

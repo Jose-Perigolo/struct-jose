@@ -859,3 +859,35 @@ test "inject-deep" {
     defer r.deinit();
     try r.runsetAllocFlags(try getSubSpec(r, "inject", "deep"), .{ .null_flag = false }, wrap_inject);
 }
+
+// ---- Additional transform tests ----
+
+test "transform-each" {
+    var r = try runner.makeRunner(testing.allocator);
+    defer r.deinit();
+    try r.runsetAllocFlags(try getSubSpec(r, "transform", "each"), .{ .null_flag = false }, wrap_transform);
+}
+
+test "transform-pack" {
+    var r = try runner.makeRunner(testing.allocator);
+    defer r.deinit();
+    try r.runsetAllocFlags(try getSubSpec(r, "transform", "pack"), .{ .null_flag = false }, wrap_transform);
+}
+
+test "transform-ref" {
+    var r = try runner.makeRunner(testing.allocator);
+    defer r.deinit();
+    try r.runsetAllocFlags(try getSubSpec(r, "transform", "ref"), .{ .null_flag = false }, wrap_transform);
+}
+
+test "transform-format" {
+    var r = try runner.makeRunner(testing.allocator);
+    defer r.deinit();
+    try r.runsetAllocFlags(try getSubSpec(r, "transform", "format"), .{ .null_flag = false }, wrap_transform);
+}
+
+test "transform-apply" {
+    var r = try runner.makeRunner(testing.allocator);
+    defer r.deinit();
+    try r.runsetAllocFlags(try getSubSpec(r, "transform", "apply"), .{ .null_flag = false }, wrap_transform);
+}
