@@ -937,3 +937,86 @@ test "transform-apply" {
     defer r.deinit();
     try r.runsetAllocFlags(try getSubSpec(r, "transform", "apply"), .{ .null_flag = false }, wrap_transform);
 }
+
+// ---- Validate tests ----
+
+fn wrap_validate(allocator: Allocator, val: JsonValue) JsonValue {
+    // in: { data, spec }
+    if (val != .object) return .null;
+    const m = val.object;
+    const data = m.get("data") orelse .null;
+    const spec = m.get("spec") orelse return .null;
+    const result = voxgig_struct.validate(allocator, data, spec) catch return .null;
+    return result.out;
+}
+
+test "validate-basic" {
+    var r = try runner.makeRunner(testing.allocator);
+    defer r.deinit();
+    try r.runsetAllocFlags(try getSubSpec(r, "validate", "basic"), .{ .null_flag = false }, wrap_validate);
+}
+
+test "validate-child" {
+    var r = try runner.makeRunner(testing.allocator);
+    defer r.deinit();
+    try r.runsetAllocFlags(try getSubSpec(r, "validate", "child"), .{ .null_flag = false }, wrap_validate);
+}
+
+test "validate-one" {
+    var r = try runner.makeRunner(testing.allocator);
+    defer r.deinit();
+    try r.runsetAllocFlags(try getSubSpec(r, "validate", "one"), .{ .null_flag = false }, wrap_validate);
+}
+
+test "validate-exact" {
+    var r = try runner.makeRunner(testing.allocator);
+    defer r.deinit();
+    try r.runsetAllocFlags(try getSubSpec(r, "validate", "exact"), .{ .null_flag = false }, wrap_validate);
+}
+
+test "validate-invalid" {
+    var r = try runner.makeRunner(testing.allocator);
+    defer r.deinit();
+    try r.runsetAllocFlags(try getSubSpec(r, "validate", "invalid"), .{ .null_flag = false }, wrap_validate);
+}
+
+test "validate-special" {
+    var r = try runner.makeRunner(testing.allocator);
+    defer r.deinit();
+    try r.runsetAllocFlags(try getSubSpec(r, "validate", "special"), .{ .null_flag = false }, wrap_validate);
+}
+
+// ---- Select tests ----
+
+fn wrap_select(allocator: Allocator, val: JsonValue) JsonValue {
+    // in: { obj, query }
+    if (val != .object) return .null;
+    const m = val.object;
+    const obj = m.get("obj") orelse return .null;
+    const query = m.get("query") orelse return .null;
+    return voxgig_struct.selectFn(allocator, obj, query) catch return .null;
+}
+
+test "select-basic" {
+    var r = try runner.makeRunner(testing.allocator);
+    defer r.deinit();
+    try r.runsetAllocFlags(try getSubSpec(r, "select", "basic"), .{ .null_flag = false }, wrap_select);
+}
+
+test "select-operators" {
+    var r = try runner.makeRunner(testing.allocator);
+    defer r.deinit();
+    try r.runsetAllocFlags(try getSubSpec(r, "select", "operators"), .{ .null_flag = false }, wrap_select);
+}
+
+test "select-edge" {
+    var r = try runner.makeRunner(testing.allocator);
+    defer r.deinit();
+    try r.runsetAllocFlags(try getSubSpec(r, "select", "edge"), .{ .null_flag = false }, wrap_select);
+}
+
+test "select-alts" {
+    var r = try runner.makeRunner(testing.allocator);
+    defer r.deinit();
+    try r.runsetAllocFlags(try getSubSpec(r, "select", "alts"), .{ .null_flag = false }, wrap_select);
+}

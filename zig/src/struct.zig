@@ -2822,4 +2822,603 @@ fn resolveRelativePath(allocator: Allocator, pathref: []const u8, dparent: JsonV
     return val;
 }
 
+// ============================================================================
+// Validate — check data against a spec, collecting type errors.
+// Uses the transform/inject infrastructure with type-checking commands.
+// ============================================================================
+
+pub fn validate(allocator: Allocator, data: JsonValue, spec: JsonValue) anyerror!struct { out: JsonValue, err: ?[]const u8 } {
+    const spec_clone = try clone(allocator, spec);
+    const data_clone = if (data == .null) JsonValue{ .null = {} } else try clone(allocator, data);
+    const orig_spec = try clone(allocator, spec);
+
+    // Build store with data and spec.
+    var store = try JsonValue.makeMap(allocator);
+    try store.object.put(S_DTOP, data_clone);
+    try store.object.put(S_DSPEC, orig_spec);
+
+    // Run injection with validation commands handled inline.
+    const errs = std.ArrayList([]const u8).init(allocator);
+    const errs_ptr = try allocator.create(std.ArrayList([]const u8));
+    errs_ptr.* = errs;
+
+    // Create root injection with validation mode.
+    const result = try injectVal(allocator, spec_clone, store, null);
+
+    // Apply validation logic: walk the result and check types against data.
+    const validated = try validateWalk(allocator, result, data_clone, errs_ptr, &[_][]const u8{});
+
+    if (errs_ptr.items.len > 0) {
+        var msg = std.ArrayList(u8).init(allocator);
+        try msg.appendSlice("Invalid data: ");
+        for (errs_ptr.items, 0..) |e, i| {
+            if (i > 0) try msg.appendSlice(" | ");
+            try msg.appendSlice(e);
+        }
+        return .{ .out = validated, .err = msg.items };
+    }
+    return .{ .out = validated, .err = null };
+}
+
+fn validateWalk(
+    allocator: Allocator,
+    spec_val: JsonValue,
+    data_val: JsonValue,
+    errs: *std.ArrayList([]const u8),
+    path: []const []const u8,
+) anyerror!JsonValue {
+    // Type command strings: `$STRING`, `$NUMBER` etc resolve to type checks.
+    if (spec_val == .string) {
+        const s = spec_val.string;
+        if (s.len > 2 and s[0] == '`' and s[s.len - 1] == '`') {
+            const cmd = s[1 .. s.len - 1];
+            if (std.mem.startsWith(u8, cmd, "$")) {
+                return try validateTypeCheck(allocator, cmd, data_val, errs, path);
+            }
+        }
+        // Non-command string: if it matches data, use data value.
+        return data_val;
+    }
+
+    if (spec_val == .array) {
+        // Check for [$ONE, ...] and [$EXACT, ...].
+        if (spec_val.array.data.items.len > 0) {
+            const first = spec_val.array.data.items[0];
+            if (first == .string) {
+                if (std.mem.eql(u8, first.string, "`$ONE`")) {
+                    return try validateOne(allocator, spec_val, data_val, errs, path);
+                }
+                if (std.mem.eql(u8, first.string, "`$EXACT`")) {
+                    return try validateExact(allocator, spec_val, data_val, errs, path);
+                }
+                if (std.mem.eql(u8, first.string, "`$CHILD`")) {
+                    return try validateChild(allocator, spec_val, data_val, errs, path);
+                }
+            }
+        }
+        // Array spec: validate element by element.
+        if (data_val != .array) {
+            try errs.append(try invalidTypeMsg(allocator, path, S_list, data_val));
+            return data_val;
+        }
+        return data_val;
+    }
+
+    if (spec_val == .object) {
+        if (data_val != .object) {
+            // Check for $CHILD as map key.
+            if (spec_val.object.get("`$CHILD`")) |child_spec| {
+                return try validateChildMap(allocator, child_spec, data_val, errs, path);
+            }
+            try errs.append(try invalidTypeMsg(allocator, path, S_map, data_val));
+            return data_val;
+        }
+
+        // Map validation: check each spec key exists in data.
+        const is_open = spec_val.object.get(S_BOPEN) != null;
+        var result = try clone(allocator, data_val);
+
+        var it = spec_val.object.iterator();
+        while (it.next()) |kv| {
+            const k = kv.key_ptr.*;
+            if (std.mem.eql(u8, k, S_BOPEN)) continue;
+            if (k.len > 0 and k[0] == '`') continue; // Skip command keys.
+
+            var new_path = try allocator.alloc([]const u8, path.len + 1);
+            @memcpy(new_path[0..path.len], path);
+            new_path[path.len] = k;
+
+            const child_data = if (data_val.object.get(k)) |v| v else .null;
+            const child_spec = kv.value_ptr.*;
+            const child_result = try validateWalk(allocator, child_spec, child_data, errs, new_path);
+            try result.object.put(k, child_result);
+        }
+
+        // Check for unexpected keys (closed validation).
+        if (!is_open and spec_val.object.count() > 0) {
+            var dit = data_val.object.iterator();
+            while (dit.next()) |dkv| {
+                if (spec_val.object.get(dkv.key_ptr.*) == null) {
+                    try errs.append(try std.fmt.allocPrint(
+                        allocator,
+                        "Unexpected keys at field {s}: {s}",
+                        .{ try pathify(allocator, .null, 0, 0), dkv.key_ptr.* },
+                    ));
+                }
+            }
+        }
+
+        return result;
+    }
+
+    // Scalar spec: treat as default value, use data if available.
+    if (data_val != .null) return data_val;
+    return spec_val;
+}
+
+fn validateTypeCheck(
+    allocator: Allocator,
+    cmd: []const u8,
+    data_val: JsonValue,
+    errs: *std.ArrayList([]const u8),
+    path: []const []const u8,
+) anyerror!JsonValue {
+    const t = typify(data_val);
+
+    if (std.mem.eql(u8, cmd, "$STRING")) {
+        if (0 == (@as(i64, T_string) & t)) {
+            try errs.append(try invalidTypeMsg(allocator, path, S_string, data_val));
+            return .null;
+        }
+        if (data_val == .string and data_val.string.len == 0) {
+            const p = try pathifySlice(allocator, path);
+            try errs.append(try std.fmt.allocPrint(allocator, "Empty string at {s}", .{p}));
+            return .null;
+        }
+        return data_val;
+    }
+    if (std.mem.eql(u8, cmd, "$NUMBER")) {
+        if (0 == (@as(i64, T_number) & t)) {
+            try errs.append(try invalidTypeMsg(allocator, path, S_number, data_val));
+            return .null;
+        }
+        return data_val;
+    }
+    if (std.mem.eql(u8, cmd, "$INTEGER")) {
+        if (0 == (@as(i64, T_integer) & t)) {
+            try errs.append(try invalidTypeMsg(allocator, path, S_integer, data_val));
+            return .null;
+        }
+        return data_val;
+    }
+    if (std.mem.eql(u8, cmd, "$BOOLEAN")) {
+        if (0 == (@as(i64, T_boolean) & t)) {
+            try errs.append(try invalidTypeMsg(allocator, path, S_boolean, data_val));
+            return .null;
+        }
+        return data_val;
+    }
+    if (std.mem.eql(u8, cmd, "$OBJECT") or std.mem.eql(u8, cmd, "$MAP")) {
+        if (0 == (@as(i64, T_map) & t)) {
+            try errs.append(try invalidTypeMsg(allocator, path, S_map, data_val));
+            return .null;
+        }
+        return data_val;
+    }
+    if (std.mem.eql(u8, cmd, "$ARRAY") or std.mem.eql(u8, cmd, "$LIST")) {
+        if (0 == (@as(i64, T_list) & t)) {
+            try errs.append(try invalidTypeMsg(allocator, path, S_list, data_val));
+            return .null;
+        }
+        return data_val;
+    }
+    if (std.mem.eql(u8, cmd, "$ANY")) {
+        return data_val;
+    }
+    if (std.mem.eql(u8, cmd, "$NULL")) {
+        if (data_val != .null) {
+            try errs.append(try invalidTypeMsg(allocator, path, S_null, data_val));
+            return .null;
+        }
+        return data_val;
+    }
+    // Unknown command: pass through.
+    return data_val;
+}
+
+fn validateOne(
+    allocator: Allocator,
+    spec_val: JsonValue,
+    data_val: JsonValue,
+    errs: *std.ArrayList([]const u8),
+    path: []const []const u8,
+) anyerror!JsonValue {
+    const alts = spec_val.array.data.items[1..];
+    for (alts) |alt| {
+        var terrs = std.ArrayList([]const u8).init(allocator);
+        _ = try validateWalk(allocator, alt, data_val, &terrs, path);
+        if (terrs.items.len == 0) return data_val;
+    }
+    // No match.
+    const p = try pathifySlice(allocator, path);
+    try errs.append(try std.fmt.allocPrint(allocator, "Expected one of alternatives at {s}, but found {s}.", .{ p, typename(typify(data_val)) }));
+    return data_val;
+}
+
+fn validateExact(
+    allocator: Allocator,
+    spec_val: JsonValue,
+    data_val: JsonValue,
+    errs: *std.ArrayList([]const u8),
+    path: []const []const u8,
+) anyerror!JsonValue {
+    const alts = spec_val.array.data.items[1..];
+    for (alts) |alt| {
+        // Deep equality check via conversion to std.json for comparison.
+        const a = try toStdJson(allocator, alt);
+        const b = try toStdJson(allocator, data_val);
+        if (stdJsonEqual(a, b)) return data_val;
+        // Also try string comparison.
+        const sa = try stringify(allocator, alt, null);
+        const sb = try stringify(allocator, data_val, null);
+        if (std.mem.eql(u8, sa, sb)) return data_val;
+    }
+    const p = try pathifySlice(allocator, path);
+    try errs.append(try std.fmt.allocPrint(allocator, "Expected exactly equal at {s}, but found {s}.", .{ p, typename(typify(data_val)) }));
+    return data_val;
+}
+
+fn validateChild(
+    allocator: Allocator,
+    spec_val: JsonValue,
+    data_val: JsonValue,
+    errs: *std.ArrayList([]const u8),
+    path: []const []const u8,
+) anyerror!JsonValue {
+    // [$CHILD, template] — validate each element of data array.
+    if (spec_val.array.data.items.len < 2) return data_val;
+    const tmpl = spec_val.array.data.items[1];
+
+    if (data_val != .array) {
+        try errs.append(try invalidTypeMsg(allocator, path, S_list, data_val));
+        return data_val;
+    }
+
+    for (data_val.array.data.items, 0..) |item, idx| {
+        var new_path = try allocator.alloc([]const u8, path.len + 1);
+        @memcpy(new_path[0..path.len], path);
+        new_path[path.len] = try std.fmt.allocPrint(allocator, "{d}", .{idx});
+        _ = try validateWalk(allocator, tmpl, item, errs, new_path);
+    }
+    return data_val;
+}
+
+fn validateChildMap(
+    allocator: Allocator,
+    child_spec: JsonValue,
+    data_val: JsonValue,
+    errs: *std.ArrayList([]const u8),
+    path: []const []const u8,
+) anyerror!JsonValue {
+    if (data_val != .object) {
+        try errs.append(try invalidTypeMsg(allocator, path, S_map, data_val));
+        return data_val;
+    }
+    var it = data_val.object.iterator();
+    while (it.next()) |kv| {
+        var new_path = try allocator.alloc([]const u8, path.len + 1);
+        @memcpy(new_path[0..path.len], path);
+        new_path[path.len] = kv.key_ptr.*;
+        _ = try validateWalk(allocator, child_spec, kv.value_ptr.*, errs, new_path);
+    }
+    return data_val;
+}
+
+fn invalidTypeMsg(allocator: Allocator, path: []const []const u8, expected: []const u8, val: JsonValue) anyerror![]const u8 {
+    const p = try pathifySlice(allocator, path);
+    const actual = typename(typify(val));
+    if (path.len == 0) {
+        return try std.fmt.allocPrint(allocator, "Expected {s}, but found {s}.", .{ expected, actual });
+    }
+    return try std.fmt.allocPrint(allocator, "Expected {s} at {s}, but found {s}.", .{ expected, p, actual });
+}
+
+fn pathifySlice(allocator: Allocator, path: []const []const u8) anyerror![]const u8 {
+    if (path.len == 0) return "<root>";
+    var buf = std.ArrayList(u8).init(allocator);
+    for (path, 0..) |p, i| {
+        if (i > 0) try buf.append('.');
+        try buf.appendSlice(p);
+    }
+    return buf.items;
+}
+
+fn stdJsonEqual(a: StdJsonValue, b: StdJsonValue) bool {
+    // Use the runner's equality check logic.
+    const TagType = std.meta.Tag(StdJsonValue);
+    const tag_a: TagType = a;
+    const tag_b: TagType = b;
+
+    if ((tag_a == .integer or tag_a == .float) and (tag_b == .integer or tag_b == .float)) {
+        const fa: f64 = if (tag_a == .integer) @floatFromInt(a.integer) else a.float;
+        const fb: f64 = if (tag_b == .integer) @floatFromInt(b.integer) else b.float;
+        return fa == fb;
+    }
+    if (tag_a != tag_b) return false;
+    return switch (a) {
+        .null => true,
+        .bool => |av| av == b.bool,
+        .integer => |av| av == b.integer,
+        .float => |av| av == b.float,
+        .string => |av| std.mem.eql(u8, av, b.string),
+        .number_string => |av| std.mem.eql(u8, av, b.number_string),
+        .array => |av| {
+            const bv = b.array;
+            if (av.items.len != bv.items.len) return false;
+            for (av.items, bv.items) |ai, bi| {
+                if (!stdJsonEqual(ai, bi)) return false;
+            }
+            return true;
+        },
+        .object => |av| {
+            const bv = b.object;
+            if (av.count() != bv.count()) return false;
+            var it = av.iterator();
+            while (it.next()) |kv| {
+                const bval = bv.get(kv.key_ptr.*) orelse return false;
+                if (!stdJsonEqual(kv.value_ptr.*, bval)) return false;
+            }
+            return true;
+        },
+    };
+}
+
+// ============================================================================
+// Select — filter children matching a query.
+// ============================================================================
+
+pub fn selectFn(allocator: Allocator, children: JsonValue, query: JsonValue) anyerror!JsonValue {
+    if (!isnode(children)) return try JsonValue.makeList(allocator);
+
+    // Normalize children: add $KEY for map/list items.
+    var child_list = std.ArrayList(JsonValue).init(allocator);
+
+    if (ismap(children)) {
+        const pairs = try items(allocator, children);
+        if (pairs == .array) {
+            for (pairs.array.data.items) |pair| {
+                if (pair != .array or pair.array.data.items.len < 2) continue;
+                const k = pair.array.data.items[0];
+                var child = pair.array.data.items[1];
+                if (ismap(child)) {
+                    try child.object.put("$KEY", k);
+                }
+                try child_list.append(child);
+            }
+        }
+    } else if (islist(children)) {
+        for (children.array.data.items, 0..) |child_raw, idx| {
+            var child = child_raw;
+            if (ismap(child)) {
+                try child.object.put("$KEY", JsonValue{ .integer = @intCast(idx) });
+            }
+            try child_list.append(child);
+        }
+    }
+
+    // For each child, try validating with exact matching against the query.
+    const result_lr = try allocator.create(ListRef);
+    result_lr.* = .{ .data = ListData.init(allocator) };
+
+    for (child_list.items) |child| {
+        var terrs = std.ArrayList([]const u8).init(allocator);
+        const q = try clone(allocator, query);
+
+        // Mark all maps in query as open.
+        _ = try walk(allocator, q, markOpen, null, MAXDEPTH);
+
+        // Validate with exact matching.
+        _ = try validateExactMatch(allocator, q, child, &terrs, &[_][]const u8{});
+
+        if (terrs.items.len == 0) {
+            try result_lr.append(child);
+        }
+    }
+
+    return JsonValue{ .array = result_lr };
+}
+
+fn markOpen(_: Allocator, _: ?[]const u8, val: JsonValue, _: JsonValue, _: []const []const u8) anyerror!JsonValue {
+    if (val == .object) {
+        val.object.put(S_BOPEN, JsonValue{ .bool = true }) catch {};
+    }
+    return val;
+}
+
+fn validateExactMatch(
+    allocator: Allocator,
+    spec_val: JsonValue,
+    data_val: JsonValue,
+    errs: *std.ArrayList([]const u8),
+    path: []const []const u8,
+) anyerror!JsonValue {
+    // Operator handling for select queries.
+    if (spec_val == .object) {
+        // Check for operators.
+        if (spec_val.object.get("`$AND`")) |terms| {
+            return try selectAnd(allocator, terms, data_val, errs, path);
+        }
+        if (spec_val.object.get("`$OR`")) |terms| {
+            return try selectOr(allocator, terms, data_val, errs, path);
+        }
+        if (spec_val.object.get("`$NOT`")) |term| {
+            return try selectNot(allocator, term, data_val, errs, path);
+        }
+        if (spec_val.object.get("`$GT`")) |term| {
+            return try selectCmp(allocator, "$GT", term, data_val, errs, path);
+        }
+        if (spec_val.object.get("`$LT`")) |term| {
+            return try selectCmp(allocator, "$LT", term, data_val, errs, path);
+        }
+        if (spec_val.object.get("`$GTE`")) |term| {
+            return try selectCmp(allocator, "$GTE", term, data_val, errs, path);
+        }
+        if (spec_val.object.get("`$LTE`")) |term| {
+            return try selectCmp(allocator, "$LTE", term, data_val, errs, path);
+        }
+        if (spec_val.object.get("`$LIKE`")) |term| {
+            return try selectCmp(allocator, "$LIKE", term, data_val, errs, path);
+        }
+
+        if (data_val != .object) {
+            try errs.append("type mismatch: expected object");
+            return data_val;
+        }
+
+        // Match each spec key against data (open: extra data keys are OK).
+        var it = spec_val.object.iterator();
+        while (it.next()) |kv| {
+            const k = kv.key_ptr.*;
+            if (std.mem.eql(u8, k, S_BOPEN)) continue;
+            if (k.len > 0 and k[0] == '`') continue;
+
+            var new_path = try allocator.alloc([]const u8, path.len + 1);
+            @memcpy(new_path[0..path.len], path);
+            new_path[path.len] = k;
+
+            const child_data = if (data_val.object.get(k)) |v| v else .null;
+            _ = try validateExactMatch(allocator, kv.value_ptr.*, child_data, errs, new_path);
+        }
+        return data_val;
+    }
+
+    if (spec_val == .array) {
+        if (spec_val.array.data.items.len > 0) {
+            const first = spec_val.array.data.items[0];
+            if (first == .string) {
+                if (std.mem.eql(u8, first.string, "`$ONE`"))
+                    return try validateOne(allocator, spec_val, data_val, errs, path);
+                if (std.mem.eql(u8, first.string, "`$EXACT`"))
+                    return try validateExact(allocator, spec_val, data_val, errs, path);
+            }
+        }
+        return data_val;
+    }
+
+    if (spec_val == .string) {
+        const s = spec_val.string;
+        if (s.len > 2 and s[0] == '`' and s[s.len - 1] == '`') {
+            const cmd = s[1 .. s.len - 1];
+            if (std.mem.startsWith(u8, cmd, "$")) {
+                return try validateTypeCheck(allocator, cmd, data_val, errs, path);
+            }
+        }
+    }
+
+    // Exact scalar match.
+    const a = try toStdJson(allocator, spec_val);
+    const b = try toStdJson(allocator, data_val);
+    if (!stdJsonEqual(a, b)) {
+        const p = try pathifySlice(allocator, path);
+        try errs.append(try std.fmt.allocPrint(
+            allocator,
+            "Value at {s}: {s} should equal {s}.",
+            .{ p, try stringify(allocator, data_val, null), try stringify(allocator, spec_val, null) },
+        ));
+    }
+    return data_val;
+}
+
+fn selectAnd(
+    allocator: Allocator,
+    terms: JsonValue,
+    data_val: JsonValue,
+    errs: *std.ArrayList([]const u8),
+    path: []const []const u8,
+) anyerror!JsonValue {
+    if (terms != .array) return data_val;
+    for (terms.array.data.items) |term| {
+        var terrs = std.ArrayList([]const u8).init(allocator);
+        _ = try validateExactMatch(allocator, term, data_val, &terrs, path);
+        if (terrs.items.len > 0) {
+            try errs.append("AND condition failed");
+            return data_val;
+        }
+    }
+    return data_val;
+}
+
+fn selectOr(
+    allocator: Allocator,
+    terms: JsonValue,
+    data_val: JsonValue,
+    errs: *std.ArrayList([]const u8),
+    path: []const []const u8,
+) anyerror!JsonValue {
+    if (terms != .array) return data_val;
+    for (terms.array.data.items) |term| {
+        var terrs = std.ArrayList([]const u8).init(allocator);
+        _ = try validateExactMatch(allocator, term, data_val, &terrs, path);
+        if (terrs.items.len == 0) return data_val;
+    }
+    try errs.append("OR: no condition matched");
+    return data_val;
+}
+
+fn selectNot(
+    allocator: Allocator,
+    term: JsonValue,
+    data_val: JsonValue,
+    errs: *std.ArrayList([]const u8),
+    path: []const []const u8,
+) anyerror!JsonValue {
+    var terrs = std.ArrayList([]const u8).init(allocator);
+    _ = try validateExactMatch(allocator, term, data_val, &terrs, path);
+    if (terrs.items.len == 0) {
+        try errs.append("NOT: condition should not have matched");
+    }
+    return data_val;
+}
+
+fn selectCmp(
+    allocator: Allocator,
+    op: []const u8,
+    term: JsonValue,
+    data_val: JsonValue,
+    errs: *std.ArrayList([]const u8),
+    path: []const []const u8,
+) anyerror!JsonValue {
+    _ = path;
+    const pf = toFloat(data_val);
+    const tf = toFloat(term);
+
+    var pass = false;
+    if (std.mem.eql(u8, op, "$GT")) {
+        if (pf != null and tf != null) pass = pf.? > tf.?;
+    } else if (std.mem.eql(u8, op, "$LT")) {
+        if (pf != null and tf != null) pass = pf.? < tf.?;
+    } else if (std.mem.eql(u8, op, "$GTE")) {
+        if (pf != null and tf != null) pass = pf.? >= tf.?;
+    } else if (std.mem.eql(u8, op, "$LTE")) {
+        if (pf != null and tf != null) pass = pf.? <= tf.?;
+    } else if (std.mem.eql(u8, op, "$LIKE")) {
+        // Simple substring match (not full regex).
+        if (term == .string and data_val == .string) {
+            pass = std.mem.indexOf(u8, data_val.string, term.string) != null;
+        }
+    }
+
+    if (!pass) {
+        try errs.append(try std.fmt.allocPrint(allocator, "CMP {s} failed", .{op}));
+    }
+    return data_val;
+}
+
+fn toFloat(val: JsonValue) ?f64 {
+    return switch (val) {
+        .integer => |i| @floatFromInt(i),
+        .float => |f| f,
+        else => null,
+    };
+}
 
