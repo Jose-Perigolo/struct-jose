@@ -2143,7 +2143,28 @@ fn cmdMerge(allocator: Allocator, inj: *Injection, store: JsonValue) !JsonValue 
 
         // Literals in parent have precedence.
         try merge_list.append(parent_clone);
-        inj.parent = try merge(allocator, JsonValue{ .array = merge_list }, MAXDEPTH);
+        const merged = try merge(allocator, JsonValue{ .array = merge_list }, MAXDEPTH);
+
+        // Copy merge result INTO the existing *MapRef to preserve pointer identity.
+        // Go's Merge modifies the first element in place; outer references see changes.
+        if (merged == .object and inj.parent == .object) {
+            // Clear existing entries and copy from merged result.
+            const parent_map = inj.parent.object;
+            // Remove all existing keys.
+            const existing_keys = try keysof(allocator, inj.parent);
+            if (existing_keys == .array) {
+                for (existing_keys.array.data.items) |k| {
+                    if (k == .string) _ = parent_map.fetchOrderedRemove(k.string);
+                }
+            }
+            // Copy in merged entries.
+            var it = merged.object.iterator();
+            while (it.next()) |kv| {
+                try parent_map.put(kv.key_ptr.*, kv.value_ptr.*);
+            }
+        } else {
+            inj.parent = merged;
+        }
         return JsonValue{ .string = inj.key };
     }
 
@@ -2328,73 +2349,117 @@ fn cmdEach(allocator: Allocator, inj: *Injection, store: JsonValue) !JsonValue {
     else
         JsonValue{ .null = {} };
 
-    const result_arr_lr = try allocator.create(ListRef);
-        result_arr_lr.* = .{ .data = ListData.init(allocator) };
-        const result_arr = result_arr_lr;
+    const ckey = if (inj.path.len >= 2) inj.path[inj.path.len - 2] else S_DTOP;
+
+    // Build source value list and key list.
+    var src_vals = std.ArrayList(JsonValue).init(allocator);
+    var src_keys = std.ArrayList([]const u8).init(allocator);
+    var tval_items = std.ArrayList(JsonValue).init(allocator);
 
     if (islist(src)) {
         for (src.array.data.items, 0..) |src_item, idx| {
-            const child_clone = try clone(allocator, child_tmpl);
-            const idx_str = try std.fmt.allocPrint(allocator, "{d}", .{idx});
-
-            // Build a per-item store: merge global store with $TOP = src_item.
-            const item_store = try allocator.create(MapRef);
-        item_store.* = .{ .data = MapData.init(allocator) };
-            // Copy global store entries.
-            if (store == .object) {
-                var sit = store.object.iterator();
-                while (sit.next()) |kv| try item_store.put(kv.key_ptr.*, kv.value_ptr.*);
-            }
-            try item_store.put(S_DTOP, src_item);
-
-            // Add $ANNO with $KEY = index.
-            if (child_clone == .object) {
-                const anno = try allocator.create(MapRef);
-        anno.* = .{ .data = MapData.init(allocator) };
-                try anno.put(S_KEY, JsonValue{ .string = idx_str });
-                _ = try setprop(allocator, child_clone, JsonValue{ .string = S_BANNO }, JsonValue{ .object = anno });
-            }
-
-            const injected = try injectVal(allocator, child_clone, JsonValue{ .object = item_store }, null);
-            try result_arr.append(injected);
+            try src_vals.append(src_item);
+            try src_keys.append(try std.fmt.allocPrint(allocator, "{d}", .{idx}));
+            try tval_items.append(try clone(allocator, child_tmpl));
         }
     } else if (ismap(src)) {
-        // Get sorted items.
         const src_items = try items(allocator, src);
         if (src_items == .array) {
             for (src_items.array.data.items) |pair| {
                 if (pair != .array or pair.array.data.items.len < 2) continue;
-                const src_key = pair.array.data.items[0];
-                const src_val = pair.array.data.items[1];
-
-                const child_clone = try clone(allocator, child_tmpl);
-
-                const item_store = try allocator.create(MapRef);
-        item_store.* = .{ .data = MapData.init(allocator) };
-                if (store == .object) {
-                    var sit = store.object.iterator();
-                    while (sit.next()) |kv| try item_store.put(kv.key_ptr.*, kv.value_ptr.*);
-                }
-                try item_store.put(S_DTOP, src_val);
-
-                // Add $ANNO with $KEY = map key.
-                if (child_clone == .object) {
+                const sk = if (pair.array.data.items[0] == .string) pair.array.data.items[0].string else "";
+                try src_vals.append(pair.array.data.items[1]);
+                try src_keys.append(sk);
+                const cclone = try clone(allocator, child_tmpl);
+                // Add $ANNO with $KEY for map sources.
+                if (cclone == .object) {
                     const anno = try allocator.create(MapRef);
-        anno.* = .{ .data = MapData.init(allocator) };
-                    try anno.put(S_KEY, src_key);
-                    _ = try setprop(allocator, child_clone, JsonValue{ .string = S_BANNO }, JsonValue{ .object = anno });
+                    anno.* = .{ .data = MapData.init(allocator) };
+                    try anno.put(S_KEY, pair.array.data.items[0]);
+                    _ = try setprop(allocator, cclone, JsonValue{ .string = S_BANNO }, JsonValue{ .object = anno });
                 }
-
-                const injected = try injectVal(allocator, child_clone, JsonValue{ .object = item_store }, null);
-                try result_arr.append(injected);
+                try tval_items.append(cclone);
             }
         }
     }
 
-    const result = JsonValue{ .array = result_arr };
+    // Build result by injecting each template with proper data context.
+    const result_lr = try allocator.create(ListRef);
+    result_lr.* = .{ .data = ListData.init(allocator) };
+
+    if (src_vals.items.len > 0) {
+        // Build dpath for ancestor resolution: [$TOP, ...srcpath_parts, "$:"+ckey].
+        var dpath_list = std.ArrayList([]const u8).init(allocator);
+        try dpath_list.append(S_DTOP);
+        if (srcpath.len > 0) {
+            var spit = std.mem.splitScalar(u8, srcpath, '.');
+            while (spit.next()) |sp| try dpath_list.append(sp);
+        }
+        try dpath_list.append(try std.fmt.allocPrint(allocator, "$:{s}", .{ckey}));
+
+        // Build wrapped data parent: {ckey: src_vals_array}
+        const src_arr_lr = try allocator.create(ListRef);
+        src_arr_lr.* = .{ .data = ListData.init(allocator) };
+        for (src_vals.items) |sv| try src_arr_lr.append(sv);
+
+        const tcur_inner = try allocator.create(MapRef);
+        tcur_inner.* = .{ .data = MapData.init(allocator) };
+        try tcur_inner.put(ckey, JsonValue{ .array = src_arr_lr });
+        var tcur: JsonValue = JsonValue{ .object = tcur_inner };
+
+        // If nested, add another layer.
+        if (inj.path.len > 3) {
+            const pkey = if (inj.path.len >= 3) inj.path[inj.path.len - 3] else S_DTOP;
+            const outer = try allocator.create(MapRef);
+            outer.* = .{ .data = MapData.init(allocator) };
+            try outer.put(pkey, tcur);
+            tcur = JsonValue{ .object = outer };
+            try dpath_list.append(try std.fmt.allocPrint(allocator, "$:{s}", .{pkey}));
+        }
+
+        // Build tval (list of cloned templates).
+        const tval_lr = try allocator.create(ListRef);
+        tval_lr.* = .{ .data = ListData.init(allocator) };
+        for (tval_items.items) |ti| try tval_lr.append(ti);
+
+        // Build child injection path (remove last element from inj.path).
+        const tpath = if (inj.path.len > 0) inj.path[0 .. inj.path.len - 1] else inj.path;
+
+        // Create child injection with proper data context.
+        const errs = inj.errs;
+        const tinj = try allocator.create(Injection);
+        tinj.* = Injection{
+            .allocator = allocator,
+            .mode = M_VAL,
+            .key = ckey,
+            .val = JsonValue{ .array = tval_lr },
+            .parent = if (inj.nodes.len > 0) inj.nodes[inj.nodes.len - 1] else .null,
+            .base = inj.base,
+            .dparent = tcur,
+            .keys = try allocator.alloc([]const u8, 1),
+            .path = tpath,
+            .nodes = if (inj.nodes.len > 0) inj.nodes[inj.nodes.len - 1 ..] else inj.nodes,
+            .dpath = dpath_list.items,
+            .errs = errs,
+        };
+        tinj.keys[0] = ckey;
+
+        // Set tval on the parent node.
+        _ = try setprop(allocator, tinj.parent, JsonValue{ .string = ckey }, JsonValue{ .array = tval_lr });
+
+        // Inject the template list.
+        _ = try injectVal(allocator, JsonValue{ .array = tval_lr }, store, tinj);
+
+        // Collect results.
+        for (tval_lr.data.items) |item| {
+            try result_lr.append(item);
+        }
+    }
+
+    const result = JsonValue{ .array = result_lr };
     if (target != .null) _ = setprop(allocator, target, JsonValue{ .string = tkey }, result) catch {};
 
-    if (result_arr.data.items.len > 0) return result_arr.data.items[0];
+    if (result_lr.data.items.len > 0) return result_lr.data.items[0];
     return .null;
 }
 
@@ -2508,11 +2573,16 @@ fn cmdPack(allocator: Allocator, inj: *Injection, store: JsonValue) !JsonValue {
         }
         try item_store.put(S_DTOP, src_item);
 
-        // Add $ANNO with $KEY = source key.
+        // Add $ANNO with $KEY. For map sources, use the source key.
+        // For array sources, use the resolved item_key (supports $KEY=$COPY).
         if (child_clone == .object) {
             const anno = try allocator.create(MapRef);
-        anno.* = .{ .data = MapData.init(allocator) };
-            try anno.put(S_KEY, JsonValue{ .string = src_keys.items[idx] });
+            anno.* = .{ .data = MapData.init(allocator) };
+            const anno_key = if (idx < src_keys.items.len)
+                JsonValue{ .string = src_keys.items[idx] }
+            else
+                JsonValue{ .string = item_key };
+            try anno.put(S_KEY, anno_key);
             _ = try setprop(allocator, child_clone, JsonValue{ .string = S_BANNO }, JsonValue{ .object = anno });
         }
 
@@ -2559,12 +2629,61 @@ fn cmdRef(allocator: Allocator, inj: *Injection, store: JsonValue) !JsonValue {
         return .null;
     }
 
-    // Clone the referenced spec and inject it.
+    // Clone the referenced spec and inject it with proper data context.
     const tref = try clone(allocator, ref_result);
-    const injected = try injectVal(allocator, tref, store, null);
+
+    // Compute paths following Go: tpath = path[:-1], cpath = path[:-3]
+    const tpath = if (inj.path.len > 0) inj.path[0 .. inj.path.len - 1] else inj.path;
+    const cpath = if (inj.path.len > 3) inj.path[0 .. inj.path.len - 3] else &[_][]const u8{};
+
+    // Resolve data at these paths.
+    const tcur = if (cpath.len > 0) blk: {
+        var joined = std.ArrayList(u8).init(allocator);
+        for (cpath, 0..) |p, pi| {
+            if (pi > 0) try joined.append('.');
+            try joined.appendSlice(p);
+        }
+        break :blk try getpath(allocator, JsonValue{ .string = joined.items }, store);
+    } else store;
+
+    // Build child injection with proper context.
+    const lastPath = if (tpath.len > 0) tpath[tpath.len - 1] else S_DTOP;
+    const tinj = try allocator.create(Injection);
+    const tinj_nodes_src = if (inj.nodes.len > 1) inj.nodes[0 .. inj.nodes.len - 1] else inj.nodes[0..0];
+    const tinj_nodes = try allocator.alloc(JsonValue, tinj_nodes_src.len);
+    @memcpy(tinj_nodes, tinj_nodes_src);
+    const tinj_dpath = try allocator.alloc([]const u8, cpath.len);
+    @memcpy(tinj_dpath, cpath);
+    tinj.* = Injection{
+        .allocator = allocator,
+        .mode = M_VAL,
+        .key = lastPath,
+        .val = tref,
+        .parent = if (inj.nodes.len >= 2) inj.nodes[inj.nodes.len - 2] else .null,
+        .base = inj.base,
+        .dparent = tcur,
+        .keys = try allocator.alloc([]const u8, 1),
+        .path = tpath,
+        .nodes = tinj_nodes,
+        .dpath = tinj_dpath,
+        .meta = inj.meta,
+        .errs = inj.errs,
+    };
+    tinj.keys[0] = lastPath;
+
+    _ = try injectVal(allocator, tref, store, tinj);
+    const rval = tinj.val;
 
     // Set the result on the grandparent.
-    _ = try inj.setval(injected, 2);
+    _ = try inj.setval(rval, 2);
+
+    // Adjust prior key index if grandparent is a list.
+    if (inj.prior) |prior| {
+        const gp = if (inj.nodes.len >= 2) inj.nodes[inj.nodes.len - 2] else .null;
+        if (islist(gp)) {
+            if (prior.key_i > 0) prior.key_i -= 1;
+        }
+    }
 
     return .null;
 }
