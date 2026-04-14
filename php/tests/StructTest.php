@@ -960,6 +960,78 @@ class StructTest extends TestCase
         $this->assertNotSame($x, $xc);
     }
 
+    public function testMinorEdgeCloneClosures(): void
+    {
+        // Closure preserved by reference in an object.
+        $fn = function ($x) { return $x + 1; };
+        $obj = (object) ['a' => 1, 'f' => $fn];
+        $cloned = Struct::clone($obj);
+        $this->assertSame($fn, $cloned->f);
+        $this->assertEquals(1, $cloned->a);
+        $this->assertNotSame($obj, $cloned);
+
+        // Closure preserved in a nested object.
+        $fn2 = fn($x) => $x * 2;
+        $nested = (object) ['x' => (object) ['y' => $fn2, 'z' => 3]];
+        $clonedNested = Struct::clone($nested);
+        $this->assertSame($fn2, $clonedNested->x->y);
+        $this->assertEquals(3, $clonedNested->x->z);
+        $this->assertNotSame($nested->x, $clonedNested->x);
+
+        // Closure preserved in an array.
+        $fn3 = function () { return 'hello'; };
+        $arr = [$fn3, 1, 'two'];
+        $clonedArr = Struct::clone($arr);
+        $this->assertSame($fn3, $clonedArr[0]);
+        $this->assertEquals(1, $clonedArr[1]);
+        $this->assertEquals('two', $clonedArr[2]);
+
+        // Multiple closures preserved independently.
+        $fnA = function () { return 'A'; };
+        $fnB = function () { return 'B'; };
+        $multi = (object) ['a' => $fnA, 'b' => $fnB, 'c' => 99];
+        $clonedMulti = Struct::clone($multi);
+        $this->assertSame($fnA, $clonedMulti->a);
+        $this->assertSame($fnB, $clonedMulti->b);
+        $this->assertNotSame($fnA, $fnB);
+        $this->assertEquals(99, $clonedMulti->c);
+
+        // String that happens to be a callable name is NOT treated as a
+        // function — it must remain an ordinary string after clone.
+        $strCallable = (object) ['a' => 'strlen', 'b' => 'array_map'];
+        $clonedStr = Struct::clone($strCallable);
+        $this->assertIsString($clonedStr->a);
+        $this->assertEquals('strlen', $clonedStr->a);
+        $this->assertIsString($clonedStr->b);
+        $this->assertEquals('array_map', $clonedStr->b);
+
+        // String that looks like a function placeholder is not corrupted.
+        $placeholder = (object) ['v' => '`$FUNCTION:0`'];
+        $clonedPlaceholder = Struct::clone($placeholder);
+        $this->assertEquals('`$FUNCTION:0`', $clonedPlaceholder->v);
+
+        // Invokable object preserved by reference.
+        $invokable = new class {
+            public function __invoke(): string { return 'invoked'; }
+        };
+        $objWithInvokable = (object) ['f' => $invokable];
+        $clonedInvokable = Struct::clone($objWithInvokable);
+        $this->assertSame($invokable, $clonedInvokable->f);
+
+        // Bare closure as top-level value.
+        $topFn = function () { return 42; };
+        $clonedTopFn = Struct::clone($topFn);
+        $this->assertSame($topFn, $clonedTopFn);
+
+        // Null and scalars still clone correctly alongside closures.
+        $mixed = (object) ['f' => $fn, 'n' => null, 's' => 'text', 'i' => 7];
+        $clonedMixed = Struct::clone($mixed);
+        $this->assertSame($fn, $clonedMixed->f);
+        $this->assertNull($clonedMixed->n);
+        $this->assertEquals('text', $clonedMixed->s);
+        $this->assertEquals(7, $clonedMixed->i);
+    }
+
     public function testMinorEdgeGetelem(): void
     {
         $this->assertEquals(2, Struct::getelem([], 1, function () { return 2; }));
