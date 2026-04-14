@@ -11,39 +11,41 @@ const voxgig_struct = @import("voxgig-struct");
 const runner = @import("runner.zig");
 
 const Allocator = std.mem.Allocator;
-const JsonValue = std.json.Value;
-const JsonArray = std.json.Array;
+const JsonValue = voxgig_struct.JsonValue;
+const StdJsonValue = std.json.Value;
 
 // NOTE: tests are (mostly) in order of increasing dependence.
 
-// Wrap library functions as runner.Subject (fn(JsonValue) JsonValue).
+// Wrap library functions as runner.Subject (fn(StdJsonValue) StdJsonValue).
+// All wrappers now use AllocSubject (takes Allocator + our JsonValue).
+// The runner converts std.json → JsonValue before calling, and back after.
 
-fn wrap_isnode(val: JsonValue) JsonValue {
+fn wrap_isnode(_: Allocator, val: JsonValue) JsonValue {
     return .{ .bool = voxgig_struct.isnode(val) };
 }
 
-fn wrap_ismap(val: JsonValue) JsonValue {
+fn wrap_ismap(_: Allocator, val: JsonValue) JsonValue {
     return .{ .bool = voxgig_struct.ismap(val) };
 }
 
-fn wrap_islist(val: JsonValue) JsonValue {
+fn wrap_islist(_: Allocator, val: JsonValue) JsonValue {
     return .{ .bool = voxgig_struct.islist(val) };
 }
 
-fn wrap_iskey(val: JsonValue) JsonValue {
+fn wrap_iskey(_: Allocator, val: JsonValue) JsonValue {
     return .{ .bool = voxgig_struct.iskey(val) };
 }
 
-fn wrap_isempty(val: JsonValue) JsonValue {
+fn wrap_isempty(_: Allocator, val: JsonValue) JsonValue {
     return .{ .bool = voxgig_struct.isempty(val) };
 }
 
-fn wrap_isfunc(val: JsonValue) JsonValue {
+fn wrap_isfunc(_: Allocator, val: JsonValue) JsonValue {
     return .{ .bool = voxgig_struct.isfunc(val) };
 }
 
-// Helper: get a nested spec section.
-fn getMinorSpec(r: runner.RunPack, name: []const u8) !JsonValue {
+// Helper: get a nested spec section (operates on std.json for the test runner).
+fn getMinorSpec(r: runner.RunPack, name: []const u8) !StdJsonValue {
     const minor = r.spec.get("minor") orelse return error.NoMinorSpec;
     return switch (minor) {
         .object => |obj| obj.get(name) orelse return error.NoSpec,
@@ -56,37 +58,37 @@ fn getMinorSpec(r: runner.RunPack, name: []const u8) !JsonValue {
 test "minor-isnode" {
     var r = try runner.makeRunner(testing.allocator);
     defer r.deinit();
-    try r.runset(try getMinorSpec(r, "isnode"), wrap_isnode);
+    try r.runsetAlloc(try getMinorSpec(r, "isnode"), wrap_isnode);
 }
 
 test "minor-ismap" {
     var r = try runner.makeRunner(testing.allocator);
     defer r.deinit();
-    try r.runset(try getMinorSpec(r, "ismap"), wrap_ismap);
+    try r.runsetAlloc(try getMinorSpec(r, "ismap"), wrap_ismap);
 }
 
 test "minor-islist" {
     var r = try runner.makeRunner(testing.allocator);
     defer r.deinit();
-    try r.runset(try getMinorSpec(r, "islist"), wrap_islist);
+    try r.runsetAlloc(try getMinorSpec(r, "islist"), wrap_islist);
 }
 
 test "minor-iskey" {
     var r = try runner.makeRunner(testing.allocator);
     defer r.deinit();
-    try r.runsetflags(try getMinorSpec(r, "iskey"), .{ .null_flag = false }, wrap_iskey);
+    try r.runsetAllocFlags(try getMinorSpec(r, "iskey"), .{ .null_flag = false }, wrap_iskey);
 }
 
 test "minor-isempty" {
     var r = try runner.makeRunner(testing.allocator);
     defer r.deinit();
-    try r.runsetflags(try getMinorSpec(r, "isempty"), .{ .null_flag = false }, wrap_isempty);
+    try r.runsetAllocFlags(try getMinorSpec(r, "isempty"), .{ .null_flag = false }, wrap_isempty);
 }
 
 test "minor-isfunc" {
     var r = try runner.makeRunner(testing.allocator);
     defer r.deinit();
-    try r.runset(try getMinorSpec(r, "isfunc"), wrap_isfunc);
+    try r.runsetAlloc(try getMinorSpec(r, "isfunc"), wrap_isfunc);
 }
 
 // ---- Allocator-aware wrappers for new functions ----
@@ -123,7 +125,7 @@ fn wrap_strkey(allocator: Allocator, val: JsonValue) JsonValue {
 }
 
 fn wrap_keysof(allocator: Allocator, val: JsonValue) JsonValue {
-    return voxgig_struct.keysof(allocator, val) catch return JsonValue{ .array = JsonArray.init(allocator) };
+    return voxgig_struct.keysof(allocator, val) catch return .null;
 }
 
 fn wrap_haskey(allocator: Allocator, val: JsonValue) JsonValue {
@@ -137,7 +139,7 @@ fn wrap_haskey(allocator: Allocator, val: JsonValue) JsonValue {
 }
 
 fn wrap_items(allocator: Allocator, val: JsonValue) JsonValue {
-    return voxgig_struct.items(allocator, val) catch return JsonValue{ .array = JsonArray.init(allocator) };
+    return voxgig_struct.items(allocator, val) catch return .null;
 }
 
 fn wrap_getelem(allocator: Allocator, val: JsonValue) JsonValue {
@@ -195,9 +197,10 @@ fn wrap_filter(allocator: Allocator, val: JsonValue) JsonValue {
     const check_name = (m.get("check") orelse return .null).string;
 
     if (v != .array) return .null;
-    const list = v.array.items;
+    const list = v.array.data.items;
 
-    var result = JsonArray.init(allocator);
+    const result_lr = allocator.create(voxgig_struct.ListRef) catch return .null;
+        result_lr.* = .{ .data = voxgig_struct.ListData.init(allocator) };
     for (list) |item| {
         const num: f64 = switch (item) {
             .integer => |i| @floatFromInt(i),
@@ -213,10 +216,10 @@ fn wrap_filter(allocator: Allocator, val: JsonValue) JsonValue {
             false;
 
         if (keep) {
-            result.append(item) catch continue;
+            result_lr.data.append(item) catch continue;
         }
     }
-    return JsonValue{ .array = result };
+    return JsonValue{ .array = result_lr };
 }
 
 fn wrap_delprop(allocator: Allocator, val: JsonValue) JsonValue {
@@ -548,7 +551,7 @@ fn getSpec(r: runner.RunPack, name: []const u8) !JsonValue {
     return r.spec.get(name) orelse return error.NoSpec;
 }
 
-fn getSubSpec(r: runner.RunPack, section: []const u8, sub: []const u8) !JsonValue {
+fn getSubSpec(r: runner.RunPack, section: []const u8, sub: []const u8) !StdJsonValue {
     const sec = r.spec.get(section) orelse return error.NoSpec;
     return switch (sec) {
         .object => |obj| obj.get(sub) orelse return error.NoSubSpec,
@@ -619,23 +622,24 @@ fn cloneWithDepth(allocator: Allocator, val: JsonValue, maxdepth: i32, depth: i3
     if (!voxgig_struct.isnode(val)) return val;
     if (maxdepth >= 0 and depth >= maxdepth) {
         // At depth limit: return empty container.
-        if (voxgig_struct.islist(val)) return JsonValue{ .array = JsonArray.init(allocator) };
-        return JsonValue{ .object = std.json.ObjectMap.init(allocator) };
+        if (voxgig_struct.islist(val)) return JsonValue.makeList(allocator) catch return .null;
+        return JsonValue.makeMap(allocator) catch return .null;
     }
     if (voxgig_struct.ismap(val)) {
-        var new_obj = std.json.ObjectMap.init(allocator);
+        const new_obj_ref = allocator.create(voxgig_struct.MapRef) catch return .null; new_obj_ref.* = .{ .data = voxgig_struct.MapData.init(allocator) };
         var it = val.object.iterator();
         while (it.next()) |kv| {
-            try new_obj.put(kv.key_ptr.*, try cloneWithDepth(allocator, kv.value_ptr.*, maxdepth, depth + 1));
+            try new_obj_ref.put(kv.key_ptr.*, try cloneWithDepth(allocator, kv.value_ptr.*, maxdepth, depth + 1));
         }
-        return JsonValue{ .object = new_obj };
+        return JsonValue{ .object = new_obj_ref };
     }
     if (voxgig_struct.islist(val)) {
-        var new_arr = JsonArray.init(allocator);
-        for (val.array.items) |item| {
-            try new_arr.append(try cloneWithDepth(allocator, item, maxdepth, depth + 1));
+        const new_arr_lr = allocator.create(voxgig_struct.ListRef) catch return .null;
+        new_arr_lr.* = .{ .data = voxgig_struct.ListData.init(allocator) };
+        for (val.array.data.items) |item| {
+            try new_arr_lr.data.append(try cloneWithDepth(allocator, item, maxdepth, depth + 1));
         }
-        return JsonValue{ .array = new_arr };
+        return JsonValue{ .array = new_arr_lr };
     }
     return val;
 }
@@ -649,9 +653,10 @@ fn wrap_merge_cases(allocator: Allocator, val: JsonValue) JsonValue {
 fn wrap_merge_array(allocator: Allocator, val: JsonValue) JsonValue {
     // For array section: if input is not array, wrap it.
     if (val != .array) {
-        var arr = JsonArray.init(allocator);
-        arr.append(val) catch return .null;
-        return voxgig_struct.merge(allocator, JsonValue{ .array = arr }, voxgig_struct.MAXDEPTH) catch return .null;
+        const arr_lr = allocator.create(voxgig_struct.ListRef) catch return .null;
+        arr_lr.* = .{ .data = voxgig_struct.ListData.init(allocator) };
+        arr_lr.data.append(val) catch return .null;
+        return voxgig_struct.merge(allocator, JsonValue{ .array = arr_lr }, voxgig_struct.MAXDEPTH) catch return .null;
     }
     return voxgig_struct.merge(allocator, val, voxgig_struct.MAXDEPTH) catch return .null;
 }
@@ -871,7 +876,7 @@ fn wrap_inject(allocator: Allocator, val: JsonValue) JsonValue {
     if (val != .object) return .null;
     const m = val.object;
     const inject_val = m.get("val") orelse return .null;
-    const store = m.get("store") orelse JsonValue{ .object = std.json.ObjectMap.init(allocator) };
+    const store = m.get("store") orelse JsonValue.makeMap(allocator) catch .null;
     return voxgig_struct.injectVal(allocator, inject_val, store, null) catch return .null;
 }
 

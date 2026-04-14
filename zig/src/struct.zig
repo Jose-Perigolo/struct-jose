@@ -8,9 +8,137 @@
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
-const JsonValue = std.json.Value;
-const JsonArray = std.json.Array;
-const JsonObjectMap = std.json.ObjectMap;
+
+// Keep std.json types for parsing at the boundary.
+pub const StdJsonValue = std.json.Value;
+
+// ============================================================================
+// MapRef / ListRef — heap-allocated wrappers for pointer-stable mutations.
+// All holders of the same *MapRef / *ListRef see mutations.
+// ============================================================================
+
+pub const MapData = std.StringArrayHashMap(JsonValue);
+pub const ListData = std.ArrayList(JsonValue);
+
+pub const MapRef = struct {
+    data: MapData,
+
+    pub fn get(self: *const MapRef, key: []const u8) ?JsonValue {
+        return self.data.get(key);
+    }
+
+    pub fn put(self: *MapRef, key: []const u8, val: JsonValue) !void {
+        try self.data.put(key, val);
+    }
+
+    pub fn count(self: *const MapRef) usize {
+        return @intCast(self.data.count());
+    }
+
+    pub fn iterator(self: *const MapRef) MapData.Iterator {
+        return self.data.iterator();
+    }
+
+    pub fn fetchOrderedRemove(self: *MapRef, key: []const u8) ?MapData.KV {
+        return self.data.fetchOrderedRemove(key);
+    }
+};
+
+pub const ListRef = struct {
+    data: ListData,
+
+    pub fn append(self: *ListRef, val: JsonValue) !void {
+        try self.data.append(val);
+    }
+
+    pub fn orderedRemove(self: *ListRef, idx: usize) JsonValue {
+        return self.data.orderedRemove(idx);
+    }
+
+    pub fn insert(self: *ListRef, idx: usize, val: JsonValue) !void {
+        try self.data.insert(idx, val);
+    }
+};
+
+// Custom value type with pointer-stable containers.
+pub const JsonValue = union(enum) {
+    null,
+    bool: bool,
+    integer: i64,
+    float: f64,
+    string: []const u8,
+    number_string: []const u8,
+    object: *MapRef,
+    array: *ListRef,
+
+    pub fn makeMap(allocator: Allocator) !JsonValue {
+        const mr = try allocator.create(MapRef);
+        mr.* = .{ .data = MapData.init(allocator) };
+        return JsonValue{ .object = mr };
+    }
+
+    pub fn makeList(allocator: Allocator) !JsonValue {
+        const lr = try allocator.create(ListRef);
+        lr.* = .{ .data = ListData.init(allocator) };
+        return JsonValue{ .array = lr };
+    }
+};
+
+// Convert from std.json.Value to our pointer-stable JsonValue.
+pub fn fromStdJson(allocator: Allocator, jv: StdJsonValue) anyerror!JsonValue {
+    return switch (jv) {
+        .null => JsonValue{ .null = {} },
+        .bool => |b| JsonValue{ .bool = b },
+        .integer => |i| JsonValue{ .integer = i },
+        .float => |f| JsonValue{ .float = f },
+        .string => |s| JsonValue{ .string = s },
+        .number_string => |s| JsonValue{ .number_string = s },
+        .object => |obj| {
+            const mr = try allocator.create(MapRef);
+            mr.* = .{ .data = MapData.init(allocator) };
+            var it = obj.iterator();
+            while (it.next()) |kv| {
+                try mr.data.put(kv.key_ptr.*, try fromStdJson(allocator, kv.value_ptr.*));
+            }
+            return JsonValue{ .object = mr };
+        },
+        .array => |arr| {
+            const lr = try allocator.create(ListRef);
+            lr.* = .{ .data = ListData.init(allocator) };
+            for (arr.items) |item| {
+                try lr.data.append(try fromStdJson(allocator, item));
+            }
+            return JsonValue{ .array = lr };
+        },
+    };
+}
+
+// Convert from our JsonValue back to std.json.Value.
+pub fn toStdJson(allocator: Allocator, v: JsonValue) anyerror!StdJsonValue {
+    return switch (v) {
+        .null => StdJsonValue{ .null = {} },
+        .bool => |b| StdJsonValue{ .bool = b },
+        .integer => |i| StdJsonValue{ .integer = i },
+        .float => |f| StdJsonValue{ .float = f },
+        .string => |s| StdJsonValue{ .string = s },
+        .number_string => |s| StdJsonValue{ .number_string = s },
+        .object => |mr| {
+            var obj = std.json.ObjectMap.init(allocator);
+            var it = mr.data.iterator();
+            while (it.next()) |kv| {
+                try obj.put(kv.key_ptr.*, try toStdJson(allocator, kv.value_ptr.*));
+            }
+            return StdJsonValue{ .object = obj };
+        },
+        .array => |lr| {
+            var arr = std.json.Array.init(allocator);
+            for (lr.data.items) |item| {
+                try arr.append(try toStdJson(allocator, item));
+            }
+            return StdJsonValue{ .array = arr };
+        },
+    };
+}
 
 // Mode value for inject step (bitfield).
 pub const M_KEYPRE: i32 = 1;
@@ -148,7 +276,7 @@ pub fn isempty(val: JsonValue) bool {
     return switch (val) {
         .null => true,
         .string => |s| s.len == 0,
-        .array => |a| a.items.len == 0,
+        .array => |a| a.data.items.len == 0,
         .object => |o| o.count() == 0,
         else => false,
     };
@@ -200,7 +328,7 @@ pub fn typify(val: JsonValue) i64 {
 // Get the integer size of a value.
 pub fn size(val: JsonValue) i64 {
     return switch (val) {
-        .array => |a| @intCast(a.items.len),
+        .array => |a| @intCast(a.data.items.len),
         .object => |o| @intCast(o.count()),
         .string => |s| @intCast(s.len),
         .integer => |i| i,
@@ -229,7 +357,7 @@ pub fn getelem(allocator: Allocator, val: JsonValue, key: JsonValue, alt: JsonVa
 
     if (val != .array) return alt;
 
-    const list = val.array.items;
+    const list = val.array.data.items;
 
     // Get the key as string first
     const ks = try strkey(allocator, key);
@@ -272,8 +400,8 @@ pub fn getprop(allocator: Allocator, val: JsonValue, key: JsonValue, alt: JsonVa
             else => {},
         }
         if (ki) |idx| {
-            if (idx >= 0 and idx < @as(i64, @intCast(val.array.items.len))) {
-                return val.array.items[@intCast(idx)];
+            if (idx >= 0 and idx < @as(i64, @intCast(val.array.data.items.len))) {
+                return val.array.data.items[@intCast(idx)];
             }
         }
         return alt;
@@ -295,7 +423,7 @@ pub fn keysof(allocator: Allocator, val: JsonValue) !JsonValue {
         }
         std.mem.sort([]const u8, key_strs.items, {}, stringLessThan);
 
-        var arr = try JsonArray.initCapacity(allocator, obj.count());
+        const arr_lr2 = try allocator.create(ListRef); arr_lr2.* = .{ .data = try ListData.initCapacity(allocator, obj.count()) }; const arr = arr_lr2;
         for (key_strs.items) |k| {
             try arr.append(JsonValue{ .string = k });
         }
@@ -303,8 +431,10 @@ pub fn keysof(allocator: Allocator, val: JsonValue) !JsonValue {
     }
 
     if (val == .array) {
-        const list = val.array.items;
-        var arr = try JsonArray.initCapacity(allocator, list.len);
+        const list = val.array.data.items;
+        const arr_lr = try allocator.create(ListRef);
+        arr_lr.* = .{ .data = try ListData.initCapacity(allocator, list.len) };
+        const arr = arr_lr;
         for (0..list.len) |i| {
             const s = try std.fmt.allocPrint(allocator, "{d}", .{i});
             try arr.append(JsonValue{ .string = s });
@@ -312,7 +442,7 @@ pub fn keysof(allocator: Allocator, val: JsonValue) !JsonValue {
         return JsonValue{ .array = arr };
     }
 
-    return JsonValue{ .array = JsonArray.init(allocator) };
+    return try JsonValue.makeList(allocator);
 }
 
 fn stringLessThan(_: void, a: []const u8, b: []const u8) bool {
@@ -338,9 +468,11 @@ pub fn items(allocator: Allocator, val: JsonValue) !JsonValue {
         }
         std.mem.sort([]const u8, key_strs.items, {}, stringLessThan);
 
-        var arr = try JsonArray.initCapacity(allocator, obj.count());
+        const arr_lr2 = try allocator.create(ListRef); arr_lr2.* = .{ .data = try ListData.initCapacity(allocator, obj.count()) }; const arr = arr_lr2;
         for (key_strs.items) |k| {
-            var pair = try JsonArray.initCapacity(allocator, 2);
+            const pair_lr = try allocator.create(ListRef);
+        pair_lr.* = .{ .data = try ListData.initCapacity(allocator, 2) };
+        const pair = pair_lr;
             try pair.append(JsonValue{ .string = k });
             try pair.append(obj.get(k).?);
             try arr.append(JsonValue{ .array = pair });
@@ -349,10 +481,14 @@ pub fn items(allocator: Allocator, val: JsonValue) !JsonValue {
     }
 
     if (val == .array) {
-        const list = val.array.items;
-        var arr = try JsonArray.initCapacity(allocator, list.len);
+        const list = val.array.data.items;
+        const arr_lr = try allocator.create(ListRef);
+        arr_lr.* = .{ .data = try ListData.initCapacity(allocator, list.len) };
+        const arr = arr_lr;
         for (list, 0..) |v, i| {
-            var pair = try JsonArray.initCapacity(allocator, 2);
+            const pair_lr = try allocator.create(ListRef);
+        pair_lr.* = .{ .data = try ListData.initCapacity(allocator, 2) };
+        const pair = pair_lr;
             const idx_str = try std.fmt.allocPrint(allocator, "{d}", .{i});
             try pair.append(JsonValue{ .string = idx_str });
             try pair.append(v);
@@ -361,22 +497,24 @@ pub fn items(allocator: Allocator, val: JsonValue) !JsonValue {
         return JsonValue{ .array = arr };
     }
 
-    return JsonValue{ .array = JsonArray.init(allocator) };
+    return try JsonValue.makeList(allocator);
 }
 
 // Flatten nested arrays up to a specified depth.
 pub fn flatten(allocator: Allocator, val: JsonValue, depth: i64) !JsonValue {
     if (val != .array) return val;
-    const result = try flattenDepth(allocator, val.array.items, depth);
+    const result = try flattenDepth(allocator, val.array.data.items, depth);
     return JsonValue{ .array = result };
 }
 
-fn flattenDepth(allocator: Allocator, arr: []const JsonValue, depth: i64) !JsonArray {
-    var result = JsonArray.init(allocator);
+fn flattenDepth(allocator: Allocator, arr: []const JsonValue, depth: i64) !*ListRef {
+    const result_lr = try allocator.create(ListRef);
+        result_lr.* = .{ .data = ListData.init(allocator) };
+        const result = result_lr;
     for (arr) |item| {
         if (depth > 0 and item == .array) {
-            const sub = try flattenDepth(allocator, item.array.items, depth - 1);
-            for (sub.items) |subitem| {
+            const sub = try flattenDepth(allocator, item.array.data.items, depth - 1);
+            for (sub.data.items) |subitem| {
                 try result.append(subitem);
             }
         } else {
@@ -390,8 +528,9 @@ fn flattenDepth(allocator: Allocator, arr: []const JsonValue, depth: i64) !JsonA
 pub fn clone(allocator: Allocator, val: JsonValue) !JsonValue {
     return switch (val) {
         .object => |obj| {
-            var new_obj = JsonObjectMap.init(allocator);
-            try new_obj.ensureTotalCapacity(@intCast(obj.count()));
+            const new_obj = try allocator.create(MapRef);
+        new_obj.* = .{ .data = MapData.init(allocator) };
+            try new_obj.data.ensureTotalCapacity(@intCast(obj.count()));
             var it = obj.iterator();
             while (it.next()) |kv| {
                 const cloned_val = try clone(allocator, kv.value_ptr.*);
@@ -400,8 +539,10 @@ pub fn clone(allocator: Allocator, val: JsonValue) !JsonValue {
             return JsonValue{ .object = new_obj };
         },
         .array => |arr| {
-            var new_arr = try JsonArray.initCapacity(allocator, arr.items.len);
-            for (arr.items) |item| {
+            const new_arr_lr = try allocator.create(ListRef);
+        new_arr_lr.* = .{ .data = try ListData.initCapacity(allocator, arr.data.items.len) };
+        const new_arr = new_arr_lr;
+            for (arr.data.items) |item| {
                 const cloned_item = try clone(allocator, item);
                 try new_arr.append(cloned_item);
             }
@@ -435,7 +576,7 @@ pub fn delprop(allocator: Allocator, parent: JsonValue, key: JsonValue) !JsonVal
             else => {},
         }
         if (ki) |idx| {
-            const plen: i64 = @intCast(parent.array.items.len);
+            const plen: i64 = @intCast(parent.array.data.items.len);
             // No negative index support for delprop
             if (idx >= 0 and idx < plen) {
                 var arr = parent.array;
@@ -478,14 +619,14 @@ pub fn setprop(allocator: Allocator, parent: JsonValue, key: JsonValue, newval: 
         }
         if (ki) |idx| {
             var arr = parent.array;
-            const plen: i64 = @intCast(arr.items.len);
+            const plen: i64 = @intCast(arr.data.items.len);
             if (idx >= 0) {
                 if (idx >= plen) {
                     // Append
                     try arr.append(newval);
                 } else {
                     // Replace
-                    arr.items[@intCast(idx)] = newval;
+                    arr.data.items[@intCast(idx)] = newval;
                 }
             } else {
                 // Prepend
@@ -554,7 +695,7 @@ fn isUrlSafe(c: u8) bool {
 pub fn join(allocator: Allocator, arr: JsonValue, sep: []const u8, urlMode: bool) ![]const u8 {
     if (arr != .array) return S_MT;
 
-    const items_list = arr.array.items;
+    const items_list = arr.array.data.items;
     const sarr: usize = items_list.len;
 
     // Filter to non-empty strings
@@ -693,15 +834,15 @@ fn jsonifyWrite(val: JsonValue, writer: anytype, indent_size: usize, offset: usi
             try writer.writeByte('"');
         },
         .array => |arr| {
-            if (arr.items.len == 0) {
+            if (arr.data.items.len == 0) {
                 try writer.writeAll("[]");
                 return;
             }
             try writer.writeAll("[\n");
-            for (arr.items, 0..) |item, i| {
+            for (arr.data.items, 0..) |item, i| {
                 try writeIndent(writer, offset + indent_size * (depth + 1));
                 try jsonifyWrite(item, writer, indent_size, offset, depth + 1);
-                if (i < arr.items.len - 1) {
+                if (i < arr.data.items.len - 1) {
                     try writer.writeByte(',');
                 }
                 try writer.writeByte('\n');
@@ -779,7 +920,7 @@ fn jsonifyCompactWrite(val: JsonValue, writer: anytype) !void {
         },
         .array => |arr| {
             try writer.writeByte('[');
-            for (arr.items, 0..) |item, i| {
+            for (arr.data.items, 0..) |item, i| {
                 if (i > 0) try writer.writeByte(',');
                 try jsonifyCompactWrite(item, writer);
             }
@@ -839,10 +980,10 @@ fn stringifyInner(allocator: Allocator, val: JsonValue) ![]const u8 {
         .array => |arr| {
             var result = std.ArrayList(u8).init(allocator);
             try result.append('[');
-            for (arr.items, 0..) |item, i| {
+            for (arr.data.items, 0..) |item, i| {
                 const s = try stringifyInner(allocator, item);
                 try result.appendSlice(s);
-                if (i < arr.items.len - 1) {
+                if (i < arr.data.items.len - 1) {
                     try result.append(',');
                 }
             }
@@ -884,7 +1025,7 @@ pub fn pathify(allocator: Allocator, val: JsonValue, from: usize, end: usize) ![
 
     if (val == .array) {
         path = std.ArrayList([]const u8).init(allocator);
-        for (val.array.items) |item| {
+        for (val.array.data.items) |item| {
             switch (item) {
                 .string => |s| try path.?.append(s),
                 .integer => |i| try path.?.append(try std.fmt.allocPrint(allocator, "{d}", .{i})),
@@ -999,8 +1140,10 @@ pub fn slice(allocator: Allocator, val: JsonValue, start_in: ?i64, end_in: ?i64)
         if (val == .array) {
             const s_usize: usize = @intCast(start);
             const e_usize: usize = @intCast(end_val);
-            const src = val.array.items[s_usize..e_usize];
-            var new_arr = try JsonArray.initCapacity(allocator, src.len);
+            const src = val.array.data.items[s_usize..e_usize];
+            const new_arr_lr = try allocator.create(ListRef);
+        new_arr_lr.* = .{ .data = try ListData.initCapacity(allocator, src.len) };
+        const new_arr = new_arr_lr;
             for (src) |item| {
                 try new_arr.append(item);
             }
@@ -1013,7 +1156,9 @@ pub fn slice(allocator: Allocator, val: JsonValue, start_in: ?i64, end_in: ?i64)
         }
     } else {
         if (val == .array) {
-            var empty_arr = JsonArray.init(allocator);
+            const empty_arr_lr = try allocator.create(ListRef);
+        empty_arr_lr.* = .{ .data = ListData.init(allocator) };
+        const empty_arr = empty_arr_lr;
             _ = &empty_arr;
             return JsonValue{ .array = empty_arr };
         }
@@ -1093,10 +1238,10 @@ fn walkDescend(
         // Get items (sorted key-value pairs).
         const kv_pairs = try items(allocator, out);
         if (kv_pairs == .array) {
-            for (kv_pairs.array.items) |pair| {
-                if (pair != .array or pair.array.items.len < 2) continue;
-                const ckey_val = pair.array.items[0];
-                const child = pair.array.items[1];
+            for (kv_pairs.array.data.items) |pair| {
+                if (pair != .array or pair.array.data.items.len < 2) continue;
+                const ckey_val = pair.array.data.items[0];
+                const child = pair.array.data.items[1];
                 const ckey = if (ckey_val == .string) ckey_val.string else "";
 
                 // Build new path.
@@ -1136,7 +1281,7 @@ fn walkDescend(
 pub fn merge(allocator: Allocator, val: JsonValue, maxdepth: i32) !JsonValue {
     if (val != .array) return val;
 
-    const list = val.array.items;
+    const list = val.array.data.items;
     if (list.len == 0) return .null;
     if (list.len == 1) return list[0];
 
@@ -1145,9 +1290,10 @@ pub fn merge(allocator: Allocator, val: JsonValue, maxdepth: i32) !JsonValue {
     // Special case: depth 0 returns empty container of last element's type.
     if (md == 0) {
         const last = list[list.len - 1];
-        if (islist(last)) return JsonValue{ .array = JsonArray.init(allocator) };
+        if (islist(last)) return try JsonValue.makeList(allocator);
         if (ismap(last)) {
-            var obj = JsonObjectMap.init(allocator);
+            const obj = try allocator.create(MapRef);
+        obj.* = .{ .data = MapData.init(allocator) };
             _ = &obj;
             return JsonValue{ .object = obj };
         }
@@ -1213,10 +1359,10 @@ fn mergeNodes(
     // Both lists: element-by-element overlay.
     if (islist(src) and islist(dst)) {
         var result = try clone(allocator, dst);
-        for (src.array.items, 0..) |item, i| {
+        for (src.array.data.items, 0..) |item, i| {
             const idx_json = JsonValue{ .integer = @intCast(i) };
-            if (i < dst.array.items.len) {
-                const dst_item = dst.array.items[i];
+            if (i < dst.array.data.items.len) {
+                const dst_item = dst.array.data.items[i];
                 if (isnode(item) and isnode(dst_item)) {
                     const merged = try mergeNodes(allocator, dst_item, item, maxdepth, depth + 1);
                     result = try setprop(allocator, result, idx_json, merged);
@@ -1262,7 +1408,7 @@ pub fn getpathInj(allocator: Allocator, path_val: JsonValue, store: JsonValue, i
             }
         },
         .array => |arr| {
-            for (arr.items) |item| {
+            for (arr.data.items) |item| {
                 if (numparts < parts_buf.len) {
                     parts_buf[numparts] = if (item == .string) item.string else "";
                     numparts += 1;
@@ -1353,8 +1499,8 @@ fn resolvePart(allocator: Allocator, val: JsonValue, part_in: []const u8, inj: ?
         return val.object.get(part) orelse .null;
     } else if (val == .array) {
         const idx = std.fmt.parseInt(i64, part, 10) catch return .null;
-        if (idx >= 0 and idx < @as(i64, @intCast(val.array.items.len))) {
-            return val.array.items[@intCast(idx)];
+        if (idx >= 0 and idx < @as(i64, @intCast(val.array.data.items.len))) {
+            return val.array.data.items[@intCast(idx)];
         }
         return .null;
     }
@@ -1389,7 +1535,7 @@ pub fn setpath(allocator: Allocator, store: JsonValue, path_val: JsonValue, val:
             }
         },
         .array => |arr| {
-            for (arr.items) |item| {
+            for (arr.data.items) |item| {
                 if (numparts < parts_buf.len) {
                     switch (item) {
                         .string => |s| {
@@ -1426,9 +1572,9 @@ pub fn setpath(allocator: Allocator, store: JsonValue, path_val: JsonValue, val:
         if (!isnode(next)) {
             // Create array if the next part is a numeric from an array path, else object.
             if (i + 1 < numparts and is_numeric[i + 1]) {
-                next = JsonValue{ .array = JsonArray.init(allocator) };
+                next = try JsonValue.makeList(allocator);
             } else {
-                next = JsonValue{ .object = JsonObjectMap.init(allocator) };
+                next = try JsonValue.makeMap(allocator);
             }
             parent = try setprop(allocator, parent, key_json, next);
         }
@@ -1586,7 +1732,8 @@ pub fn injectVal(allocator: Allocator, val: JsonValue, store: JsonValue, inj_opt
 
     if (inj_opt == null or (inj_opt != null and inj_opt.?.mode == 0)) {
         // Root injection: wrap val in a virtual parent.
-        var parent_obj = JsonObjectMap.init(allocator);
+        const parent_obj = try allocator.create(MapRef);
+        parent_obj.* = .{ .data = MapData.init(allocator) };
         try parent_obj.put(S_DTOP, val);
         const parent_val = JsonValue{ .object = parent_obj };
 
@@ -1642,7 +1789,7 @@ pub fn injectVal(allocator: Allocator, val: JsonValue, store: JsonValue, inj_opt
 
         const all_keys = try keysof(allocator, current);
         if (all_keys == .array) {
-            for (all_keys.array.items) |k| {
+            for (all_keys.array.data.items) |k| {
                 if (k != .string) continue;
                 const ks = k.string;
                 if (std.mem.indexOf(u8, ks, S_DS) != null) {
@@ -1720,14 +1867,8 @@ pub fn injectVal(allocator: Allocator, val: JsonValue, store: JsonValue, inj_opt
 
     inj.val = current;
 
-    // Propagate child node modifications back into the parent.
-    // In Go this is implicit (maps are reference types). In Zig we must
-    // explicitly update the parent's entry since ObjectMap is by-value.
-    // Only propagate node values — scalar/null results are already handled
-    // by setval in the string injection path.
-    if (isnode(current) and isnode(inj.parent)) {
-        inj.parent = setprop(allocator, inj.parent, JsonValue{ .string = inj.key }, current) catch inj.parent;
-    }
+    // With pointer-stable MapRef/ListRef, mutations through any holder
+    // are visible everywhere. No explicit propagation needed.
 
     // Return value is the top-level result.
     return try getprop(allocator, inj.parent, JsonValue{ .string = S_DTOP }, .null);
@@ -1896,14 +2037,16 @@ fn cmdMerge(allocator: Allocator, inj: *Injection, store: JsonValue) !JsonValue 
 
         if (inj.parent == .object) _ = inj.parent.object.fetchOrderedRemove(inj.key);
 
-        var merge_list = JsonArray.init(allocator);
+        const merge_list_lr = try allocator.create(ListRef);
+        merge_list_lr.* = .{ .data = ListData.init(allocator) };
+        const merge_list = merge_list_lr;
         try merge_list.append(inj.parent);
 
         if (args == .string and args.string.len == 0) {
             const top = getpropFromStore(store);
             if (top != .null) try merge_list.append(try clone(allocator, top));
         } else if (args == .array) {
-            for (args.array.items) |item| {
+            for (args.array.data.items) |item| {
                 if (item != .null) try merge_list.append(item);
             }
         } else if (args != .null) {
@@ -1932,9 +2075,9 @@ fn cmdFormat(allocator: Allocator, inj: *Injection, store: JsonValue) !JsonValue
     if (inj.mode != M_VAL) return .null;
     if (inj.keys.len > 1) inj.keys = inj.keys[0..1];
 
-    if (inj.parent != .array or inj.parent.array.items.len < 3) return .null;
-    const name_val = inj.parent.array.items[1];
-    const child_raw = inj.parent.array.items[2];
+    if (inj.parent != .array or inj.parent.array.data.items.len < 3) return .null;
+    const name_val = inj.parent.array.data.items[1];
+    const child_raw = inj.parent.array.data.items[2];
 
     const name = if (name_val == .string) name_val.string else "";
 
@@ -1971,7 +2114,7 @@ fn applyFormat(allocator: Allocator, name: []const u8, val: JsonValue, errs: *st
     if (std.mem.eql(u8, name, "concat")) {
         if (val == .array) {
             var buf = std.ArrayList(u8).init(allocator);
-            for (val.array.items) |item| {
+            for (val.array.data.items) |item| {
                 if (isnode(item)) continue;
                 try buf.appendSlice(try fmtStr(allocator, item));
             }
@@ -1988,7 +2131,8 @@ const FormatFn = *const fn (Allocator, JsonValue) anyerror!JsonValue;
 
 fn walkFormat(allocator: Allocator, val: JsonValue, fmt_fn: FormatFn) !JsonValue {
     if (val == .object) {
-        var new_obj = JsonObjectMap.init(allocator);
+        const new_obj = try allocator.create(MapRef);
+        new_obj.* = .{ .data = MapData.init(allocator) };
         var it = val.object.iterator();
         while (it.next()) |kv| {
             try new_obj.put(kv.key_ptr.*, try walkFormat(allocator, kv.value_ptr.*, fmt_fn));
@@ -1996,8 +2140,10 @@ fn walkFormat(allocator: Allocator, val: JsonValue, fmt_fn: FormatFn) !JsonValue
         return JsonValue{ .object = new_obj };
     }
     if (val == .array) {
-        var new_arr = try JsonArray.initCapacity(allocator, val.array.items.len);
-        for (val.array.items) |item| {
+        const new_arr_lr = try allocator.create(ListRef);
+        new_arr_lr.* = .{ .data = try ListData.initCapacity(allocator, val.array.data.items.len) };
+        const new_arr = new_arr_lr;
+        for (val.array.data.items) |item| {
             try new_arr.append(try walkFormat(allocator, item, fmt_fn));
         }
         return JsonValue{ .array = new_arr };
@@ -2072,9 +2218,9 @@ fn cmdEach(allocator: Allocator, inj: *Injection, store: JsonValue) !JsonValue {
     if (inj.mode != M_VAL) return .null;
     if (inj.keys.len > 1) inj.keys = inj.keys[0..1];
 
-    if (inj.parent != .array or inj.parent.array.items.len < 3) return .null;
-    const srcpath_val = inj.parent.array.items[1];
-    const child_tmpl = inj.parent.array.items[2];
+    if (inj.parent != .array or inj.parent.array.data.items.len < 3) return .null;
+    const srcpath_val = inj.parent.array.data.items[1];
+    const child_tmpl = inj.parent.array.data.items[2];
 
     const srcpath = if (srcpath_val == .string) srcpath_val.string else "";
 
@@ -2093,15 +2239,18 @@ fn cmdEach(allocator: Allocator, inj: *Injection, store: JsonValue) !JsonValue {
     else
         JsonValue{ .null = {} };
 
-    var result_arr = JsonArray.init(allocator);
+    const result_arr_lr = try allocator.create(ListRef);
+        result_arr_lr.* = .{ .data = ListData.init(allocator) };
+        const result_arr = result_arr_lr;
 
     if (islist(src)) {
-        for (src.array.items, 0..) |src_item, idx| {
+        for (src.array.data.items, 0..) |src_item, idx| {
             const child_clone = try clone(allocator, child_tmpl);
             const idx_str = try std.fmt.allocPrint(allocator, "{d}", .{idx});
 
             // Build a per-item store: merge global store with $TOP = src_item.
-            var item_store = JsonObjectMap.init(allocator);
+            const item_store = try allocator.create(MapRef);
+        item_store.* = .{ .data = MapData.init(allocator) };
             // Copy global store entries.
             if (store == .object) {
                 var sit = store.object.iterator();
@@ -2111,7 +2260,8 @@ fn cmdEach(allocator: Allocator, inj: *Injection, store: JsonValue) !JsonValue {
 
             // Add $ANNO with $KEY = index.
             if (child_clone == .object) {
-                var anno = JsonObjectMap.init(allocator);
+                const anno = try allocator.create(MapRef);
+        anno.* = .{ .data = MapData.init(allocator) };
                 try anno.put(S_KEY, JsonValue{ .string = idx_str });
                 _ = try setprop(allocator, child_clone, JsonValue{ .string = S_BANNO }, JsonValue{ .object = anno });
             }
@@ -2123,14 +2273,15 @@ fn cmdEach(allocator: Allocator, inj: *Injection, store: JsonValue) !JsonValue {
         // Get sorted items.
         const src_items = try items(allocator, src);
         if (src_items == .array) {
-            for (src_items.array.items) |pair| {
-                if (pair != .array or pair.array.items.len < 2) continue;
-                const src_key = pair.array.items[0];
-                const src_val = pair.array.items[1];
+            for (src_items.array.data.items) |pair| {
+                if (pair != .array or pair.array.data.items.len < 2) continue;
+                const src_key = pair.array.data.items[0];
+                const src_val = pair.array.data.items[1];
 
                 const child_clone = try clone(allocator, child_tmpl);
 
-                var item_store = JsonObjectMap.init(allocator);
+                const item_store = try allocator.create(MapRef);
+        item_store.* = .{ .data = MapData.init(allocator) };
                 if (store == .object) {
                     var sit = store.object.iterator();
                     while (sit.next()) |kv| try item_store.put(kv.key_ptr.*, kv.value_ptr.*);
@@ -2139,7 +2290,8 @@ fn cmdEach(allocator: Allocator, inj: *Injection, store: JsonValue) !JsonValue {
 
                 // Add $ANNO with $KEY = map key.
                 if (child_clone == .object) {
-                    var anno = JsonObjectMap.init(allocator);
+                    const anno = try allocator.create(MapRef);
+        anno.* = .{ .data = MapData.init(allocator) };
                     try anno.put(S_KEY, src_key);
                     _ = try setprop(allocator, child_clone, JsonValue{ .string = S_BANNO }, JsonValue{ .object = anno });
                 }
@@ -2153,7 +2305,7 @@ fn cmdEach(allocator: Allocator, inj: *Injection, store: JsonValue) !JsonValue {
     const result = JsonValue{ .array = result_arr };
     if (target != .null) _ = setprop(allocator, target, JsonValue{ .string = tkey }, result) catch {};
 
-    if (result_arr.items.len > 0) return result_arr.items[0];
+    if (result_arr.data.items.len > 0) return result_arr.data.items[0];
     return .null;
 }
 
@@ -2167,10 +2319,10 @@ fn cmdPack(allocator: Allocator, inj: *Injection, store: JsonValue) !JsonValue {
 
     if (inj.parent != .object) return .null;
     const args_val = try getprop(allocator, inj.parent, JsonValue{ .string = inj.key }, .null);
-    if (args_val != .array or args_val.array.items.len < 2) return .null;
+    if (args_val != .array or args_val.array.data.items.len < 2) return .null;
 
-    const srcpath_val = args_val.array.items[0];
-    const childspec_raw = args_val.array.items[1];
+    const srcpath_val = args_val.array.data.items[0];
+    const childspec_raw = args_val.array.data.items[1];
 
     const srcpath = if (srcpath_val == .string) srcpath_val.string else "";
 
@@ -2185,17 +2337,17 @@ fn cmdPack(allocator: Allocator, inj: *Injection, store: JsonValue) !JsonValue {
     var src_keys = std.ArrayList([]const u8).init(allocator);
 
     if (islist(src_raw)) {
-        for (src_raw.array.items, 0..) |item, idx| {
+        for (src_raw.array.data.items, 0..) |item, idx| {
             try src_list.append(item);
             try src_keys.append(try std.fmt.allocPrint(allocator, "{d}", .{idx}));
         }
     } else if (ismap(src_raw)) {
         const src_items = try items(allocator, src_raw);
         if (src_items == .array) {
-            for (src_items.array.items) |pair| {
-                if (pair != .array or pair.array.items.len < 2) continue;
-                const k = if (pair.array.items[0] == .string) pair.array.items[0].string else "";
-                try src_list.append(pair.array.items[1]);
+            for (src_items.array.data.items) |pair| {
+                if (pair != .array or pair.array.data.items.len < 2) continue;
+                const k = if (pair.array.data.items[0] == .string) pair.array.data.items[0].string else "";
+                try src_list.append(pair.array.data.items[1]);
                 try src_keys.append(k);
             }
         }
@@ -2227,7 +2379,8 @@ fn cmdPack(allocator: Allocator, inj: *Injection, store: JsonValue) !JsonValue {
         JsonValue{ .null = {} };
 
     // Build the output map.
-    var result_obj = JsonObjectMap.init(allocator);
+    const result_obj = try allocator.create(MapRef);
+        result_obj.* = .{ .data = MapData.init(allocator) };
     for (src_list.items, 0..) |src_item, idx| {
         // Resolve the key for this item.
         var item_key: []const u8 = "";
@@ -2235,7 +2388,8 @@ fn cmdPack(allocator: Allocator, inj: *Injection, store: JsonValue) !JsonValue {
             // Key from source item field or injection.
             if (std.mem.startsWith(u8, kp, "`")) {
                 // Backtick path: inject to resolve.
-                var key_store = JsonObjectMap.init(allocator);
+                const key_store = try allocator.create(MapRef);
+        key_store.* = .{ .data = MapData.init(allocator) };
                 if (store == .object) {
                     var sit = store.object.iterator();
                     while (sit.next()) |kv| try key_store.put(kv.key_ptr.*, kv.value_ptr.*);
@@ -2257,7 +2411,8 @@ fn cmdPack(allocator: Allocator, inj: *Injection, store: JsonValue) !JsonValue {
         const child_clone = try clone(allocator, child_val_spec);
 
         // Build per-item store.
-        var item_store = JsonObjectMap.init(allocator);
+        const item_store = try allocator.create(MapRef);
+        item_store.* = .{ .data = MapData.init(allocator) };
         if (store == .object) {
             var sit = store.object.iterator();
             while (sit.next()) |kv| try item_store.put(kv.key_ptr.*, kv.value_ptr.*);
@@ -2266,7 +2421,8 @@ fn cmdPack(allocator: Allocator, inj: *Injection, store: JsonValue) !JsonValue {
 
         // Add $ANNO with $KEY = source key.
         if (child_clone == .object) {
-            var anno = JsonObjectMap.init(allocator);
+            const anno = try allocator.create(MapRef);
+        anno.* = .{ .data = MapData.init(allocator) };
             try anno.put(S_KEY, JsonValue{ .string = src_keys.items[idx] });
             _ = try setprop(allocator, child_clone, JsonValue{ .string = S_BANNO }, JsonValue{ .object = anno });
         }
@@ -2292,8 +2448,8 @@ fn cmdPack(allocator: Allocator, inj: *Injection, store: JsonValue) !JsonValue {
 fn cmdRef(allocator: Allocator, inj: *Injection, store: JsonValue) !JsonValue {
     if (inj.mode != M_VAL) return .null;
 
-    if (inj.parent != .array or inj.parent.array.items.len < 2) return .null;
-    const refpath_val = inj.parent.array.items[1];
+    if (inj.parent != .array or inj.parent.array.data.items.len < 2) return .null;
+    const refpath_val = inj.parent.array.data.items[1];
     if (refpath_val != .string) return .null;
     const refpath = refpath_val.string;
 
@@ -2347,8 +2503,8 @@ fn cmdApply(allocator: Allocator, inj: *Injection) !JsonValue {
         }
 
         // Check arguments.
-        if (inj.parent.array.items.len >= 2) {
-            const arg = inj.parent.array.items[1];
+        if (inj.parent.array.data.items.len >= 2) {
+            const arg = inj.parent.array.data.items[1];
             // In Zig JSON, functions don't exist, so any non-function argument is an error.
             const arg_type = typify(arg);
             const arg_type_name = typename(arg_type);
@@ -2375,7 +2531,8 @@ fn injectChild(allocator: Allocator, child_raw: JsonValue, store: JsonValue, inj
     var child_clone = try clone(allocator, child_raw);
 
     // Build store with correct data context.
-    var child_store = JsonObjectMap.init(allocator);
+    const child_store = try allocator.create(MapRef);
+        child_store.* = .{ .data = MapData.init(allocator) };
     if (store == .object) {
         var sit = store.object.iterator();
         while (sit.next()) |kv| try child_store.put(kv.key_ptr.*, kv.value_ptr.*);
@@ -2400,7 +2557,8 @@ pub fn transform(allocator: Allocator, data: JsonValue, spec: JsonValue) !JsonVa
     // Store the original spec for $REF.
     const orig_spec = try clone(allocator, spec);
 
-    var store = JsonObjectMap.init(allocator);
+    const store = try allocator.create(MapRef);
+        store.* = .{ .data = MapData.init(allocator) };
     try store.put(S_DTOP, data_clone);
     try store.put(S_DSPEC, orig_spec);
     const store_val = JsonValue{ .object = store };

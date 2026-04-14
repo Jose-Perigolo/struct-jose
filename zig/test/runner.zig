@@ -5,9 +5,8 @@ const std = @import("std");
 const voxgig_struct = @import("voxgig-struct");
 
 const Allocator = std.mem.Allocator;
-const JsonValue = std.json.Value;
-const JsonObjectMap = std.json.ObjectMap;
-const JsonArray = std.json.Array;
+const StdJsonValue = std.json.Value;
+const JsonValue = voxgig_struct.JsonValue;
 
 pub const NULLMARK = "__NULL__";
 pub const UNDEFMARK = "__UNDEF__";
@@ -15,16 +14,16 @@ pub const EXISTSMARK = "__EXISTS__";
 
 pub const TEST_JSON_FILE = "../build/test/test.json";
 
-// Subject that takes only a JsonValue (for simple functions).
-pub const Subject = *const fn (JsonValue) JsonValue;
+// Subject that takes only a std.json.Value (for simple is* functions).
+pub const Subject = *const fn (StdJsonValue) StdJsonValue;
 
-// Subject that also takes an allocator (for functions that allocate).
+// Subject that takes an allocator and our JsonValue type.
 pub const AllocSubject = *const fn (Allocator, JsonValue) JsonValue;
 
 pub const Spec = struct {
-    data: JsonValue,
+    data: StdJsonValue,
 
-    pub fn get(self: Spec, key: []const u8) ?JsonValue {
+    pub fn get(self: Spec, key: []const u8) ?StdJsonValue {
         return switch (self.data) {
             .object => |obj| obj.get(key),
             else => null,
@@ -36,15 +35,15 @@ pub const RunPack = struct {
     spec: Spec,
     allocator: Allocator,
     file_data: []const u8,
-    parsed: std.json.Parsed(JsonValue),
+    parsed: std.json.Parsed(StdJsonValue),
 
-    /// Run all entries in testspec.set against the subject function (no alloc).
-    pub fn runset(self: RunPack, testspec: JsonValue, subject: Subject) !void {
+    /// Run all entries in testspec.set against the subject function (no alloc, std types).
+    pub fn runset(self: RunPack, testspec: StdJsonValue, subject: Subject) !void {
         try self.runsetflags(testspec, .{}, subject);
     }
 
     /// Run with flags (e.g. .{ .null_flag = false }).
-    pub fn runsetflags(self: RunPack, testspec: JsonValue, flags: Flags, subject: Subject) !void {
+    pub fn runsetflags(self: RunPack, testspec: StdJsonValue, flags: Flags, subject: Subject) !void {
         _ = self;
         const set = switch (testspec) {
             .object => |obj| obj.get("set") orelse return error.NoSetInSpec,
@@ -61,28 +60,24 @@ pub const RunPack = struct {
                 else => continue,
             };
 
-            const in_val: JsonValue = entry.get("in") orelse .null;
-
+            const in_val: StdJsonValue = entry.get("in") orelse .null;
             const raw_out = entry.get("out");
-            const expected: JsonValue = if (raw_out) |o| o else if (flags.null_flag) JsonValue{ .string = NULLMARK } else .null;
-
+            const expected: StdJsonValue = if (raw_out) |o| o else if (flags.null_flag) StdJsonValue{ .string = NULLMARK } else .null;
             const err_field = entry.get("err");
 
             const result = subject(in_val);
-
             if (err_field != null) continue;
-
             try checkResult(expected, result);
         }
     }
 
-    /// Run all entries against an allocator-aware subject function.
-    pub fn runsetAlloc(self: RunPack, testspec: JsonValue, subject: AllocSubject) !void {
+    /// Run all entries against an allocator-aware subject (uses our JsonValue type).
+    pub fn runsetAlloc(self: RunPack, testspec: StdJsonValue, subject: AllocSubject) !void {
         try self.runsetAllocFlags(testspec, .{}, subject);
     }
 
-    /// Run with flags against an allocator-aware subject function.
-    pub fn runsetAllocFlags(self: RunPack, testspec: JsonValue, flags: Flags, subject: AllocSubject) !void {
+    /// Run with flags against an allocator-aware subject.
+    pub fn runsetAllocFlags(self: RunPack, testspec: StdJsonValue, flags: Flags, subject: AllocSubject) !void {
         const set = switch (testspec) {
             .object => |obj| obj.get("set") orelse return error.NoSetInSpec,
             else => return error.SpecNotObject,
@@ -98,24 +93,30 @@ pub const RunPack = struct {
                 else => continue,
             };
 
-            // Use UNDEF marker when "in" field is missing
             const has_in = entry.get("in") != null;
-            const in_val: JsonValue = entry.get("in") orelse
-                if (flags.undef_as_null) .null else JsonValue{ .string = UNDEFMARK };
+            const in_val_std: StdJsonValue = entry.get("in") orelse
+                if (flags.undef_as_null) .null else StdJsonValue{ .string = UNDEFMARK };
 
             const raw_out = entry.get("out");
-            const expected: JsonValue = if (raw_out) |o| o else if (flags.null_flag) JsonValue{ .string = NULLMARK } else .null;
+            const expected: StdJsonValue = if (raw_out) |o| o else if (flags.null_flag) StdJsonValue{ .string = NULLMARK } else .null;
 
             const err_field = entry.get("err");
             _ = has_in;
 
-            // Use an arena allocator for each test case
+            // Use an arena allocator for each test case.
             var arena = std.heap.ArenaAllocator.init(self.allocator);
             defer arena.deinit();
+            const alloc = arena.allocator();
 
-            const result = subject(arena.allocator(), in_val);
+            // Convert std.json input to our JsonValue type.
+            const in_val = voxgig_struct.fromStdJson(alloc, in_val_std) catch .null;
+
+            const result_jval = subject(alloc, in_val);
 
             if (err_field != null) continue;
+
+            // Convert our result back to std.json for comparison.
+            const result = voxgig_struct.toStdJson(alloc, result_jval) catch StdJsonValue{ .null = {} };
 
             checkResult(expected, result) catch |e| {
                 std.debug.print("  [test entry {d}]\n", .{entry_idx});
@@ -139,7 +140,7 @@ pub const Flags = struct {
 pub fn makeRunner(allocator: Allocator) !RunPack {
     const path = TEST_JSON_FILE;
     const data = try std.fs.cwd().readFileAlloc(allocator, path, 10 * 1024 * 1024);
-    const parsed = try std.json.parseFromSlice(JsonValue, allocator, data, .{});
+    const parsed = try std.json.parseFromSlice(StdJsonValue, allocator, data, .{});
     const root = parsed.value;
 
     const spec_val = switch (root) {
@@ -155,12 +156,11 @@ pub fn makeRunner(allocator: Allocator) !RunPack {
     };
 }
 
-// ---- Result comparison ----
+// ---- Result comparison (operates on std.json.Value) ----
 
-fn checkResult(expected: JsonValue, result: JsonValue) !void {
+fn checkResult(expected: StdJsonValue, result: StdJsonValue) !void {
     if (jsonEqual(expected, result)) return;
 
-    // NULLMARK means we expect .null
     if (expected == .string) {
         if (std.mem.eql(u8, expected.string, NULLMARK)) {
             if (result == .null) return;
@@ -174,7 +174,7 @@ fn checkResult(expected: JsonValue, result: JsonValue) !void {
     return error.ResultMismatch;
 }
 
-fn fmtJson(val: JsonValue) []const u8 {
+fn fmtJson(val: StdJsonValue) []const u8 {
     return switch (val) {
         .null => "null",
         .bool => |b| if (b) "true" else "false",
@@ -187,13 +187,13 @@ fn fmtJson(val: JsonValue) []const u8 {
     };
 }
 
-/// Deep equality for JsonValue.
-pub fn jsonEqual(a: JsonValue, b: JsonValue) bool {
-    const TagType = std.meta.Tag(JsonValue);
+/// Deep equality for std.json.Value.
+pub fn jsonEqual(a: StdJsonValue, b: StdJsonValue) bool {
+    const TagType = std.meta.Tag(StdJsonValue);
     const tag_a: TagType = a;
     const tag_b: TagType = b;
 
-    // Allow integer/float cross-comparison for numeric equality
+    // Allow integer/float cross-comparison for numeric equality.
     if ((tag_a == .integer or tag_a == .float) and (tag_b == .integer or tag_b == .float)) {
         const fa: f64 = if (tag_a == .integer) @floatFromInt(a.integer) else a.float;
         const fb: f64 = if (tag_b == .integer) @floatFromInt(b.integer) else b.float;
