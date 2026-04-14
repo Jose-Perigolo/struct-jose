@@ -994,3 +994,668 @@ pub fn pad(allocator: Allocator, s: []const u8, padding: i64, padchar: u8) ![]co
     }
 }
 
+// ============================================================================
+// Walk — depth-first tree traversal with before/after callbacks.
+// ============================================================================
+
+pub const WalkApply = *const fn (
+    allocator: Allocator,
+    key: ?[]const u8,
+    val: JsonValue,
+    parent: JsonValue,
+    path: []const []const u8,
+) !JsonValue;
+
+pub fn walk(
+    allocator: Allocator,
+    val: JsonValue,
+    before: ?WalkApply,
+    after: ?WalkApply,
+    maxdepth: i32,
+) !JsonValue {
+    return walkDescend(allocator, val, before, after, maxdepth, null, .null, &.{});
+}
+
+fn walkDescend(
+    allocator: Allocator,
+    val_in: JsonValue,
+    before: ?WalkApply,
+    after: ?WalkApply,
+    maxdepth: i32,
+    key: ?[]const u8,
+    parent: JsonValue,
+    path: []const []const u8,
+) !JsonValue {
+    var out = val_in;
+
+    // Apply before callback.
+    if (before) |apply| {
+        out = try apply(allocator, key, out, parent, path);
+    }
+
+    // Check depth limit.
+    if (maxdepth == 0 or (path.len > 0 and maxdepth > 0 and maxdepth <= @as(i32, @intCast(path.len)))) {
+        return out;
+    }
+
+    if (isnode(out)) {
+        // Get items (sorted key-value pairs).
+        const kv_pairs = try items(allocator, out);
+        if (kv_pairs == .array) {
+            for (kv_pairs.array.items) |pair| {
+                if (pair != .array or pair.array.items.len < 2) continue;
+                const ckey_val = pair.array.items[0];
+                const child = pair.array.items[1];
+                const ckey = if (ckey_val == .string) ckey_val.string else "";
+
+                // Build new path.
+                var new_path = try allocator.alloc([]const u8, path.len + 1);
+                @memcpy(new_path[0..path.len], path);
+                new_path[path.len] = ckey;
+
+                const new_child = try walkDescend(
+                    allocator,
+                    child,
+                    before,
+                    after,
+                    maxdepth,
+                    ckey,
+                    out,
+                    new_path,
+                );
+
+                // Update the output with the new child value.
+                out = try setprop(allocator, out, ckey_val, new_child);
+            }
+        }
+    }
+
+    // Apply after callback.
+    if (after) |apply| {
+        out = try apply(allocator, key, out, parent, path);
+    }
+
+    return out;
+}
+
+// ============================================================================
+// Merge — deep-merge a list of values. Later values override.
+// ============================================================================
+
+pub fn merge(allocator: Allocator, val: JsonValue, maxdepth: i32) !JsonValue {
+    if (val != .array) return val;
+
+    const list = val.array.items;
+    if (list.len == 0) return .null;
+    if (list.len == 1) return list[0];
+
+    const md: i32 = if (maxdepth < 0) 0 else maxdepth;
+
+    // Special case: depth 0 returns empty container of last element's type.
+    if (md == 0) {
+        const last = list[list.len - 1];
+        if (islist(last)) return JsonValue{ .array = JsonArray{} };
+        if (ismap(last)) {
+            var obj = JsonObjectMap{};
+            _ = &obj;
+            return JsonValue{ .object = obj };
+        }
+        return last;
+    }
+
+    var out = try clone(allocator, list[0]);
+
+    for (list[1..]) |obj| {
+        if (!isnode(obj)) {
+            out = obj;
+        } else {
+            out = try mergeNodes(allocator, out, obj, md, 0);
+        }
+    }
+
+    return out;
+}
+
+fn mergeNodes(
+    allocator: Allocator,
+    dst: JsonValue,
+    src: JsonValue,
+    maxdepth: i32,
+    depth: i32,
+) !JsonValue {
+    // At depth limit: just replace.
+    if (maxdepth > 0 and depth >= maxdepth) {
+        return src;
+    }
+
+    if (!isnode(src)) return src;
+    if (!isnode(dst)) return try clone(allocator, src);
+
+    // Types differ: src wins.
+    if ((ismap(src) and !ismap(dst)) or (islist(src) and !islist(dst))) {
+        return try clone(allocator, src);
+    }
+
+    // Both maps: deep merge.
+    if (ismap(src) and ismap(dst)) {
+        var result = try clone(allocator, dst);
+        var it = src.object.iterator();
+        while (it.next()) |kv| {
+            const key_str = kv.key_ptr.*;
+            const src_val = kv.value_ptr.*;
+            const key_json = JsonValue{ .string = key_str };
+
+            if (result.object.get(key_str)) |dst_val| {
+                if (isnode(src_val) and isnode(dst_val)) {
+                    const merged = try mergeNodes(allocator, dst_val, src_val, maxdepth, depth + 1);
+                    result = try setprop(allocator, result, key_json, merged);
+                } else {
+                    result = try setprop(allocator, result, key_json, src_val);
+                }
+            } else {
+                result = try setprop(allocator, result, key_json, src_val);
+            }
+        }
+        return result;
+    }
+
+    // Both lists: element-by-element overlay.
+    if (islist(src) and islist(dst)) {
+        var result = try clone(allocator, dst);
+        for (src.array.items, 0..) |item, i| {
+            const idx_json = JsonValue{ .integer = @intCast(i) };
+            if (i < dst.array.items.len) {
+                const dst_item = dst.array.items[i];
+                if (isnode(item) and isnode(dst_item)) {
+                    const merged = try mergeNodes(allocator, dst_item, item, maxdepth, depth + 1);
+                    result = try setprop(allocator, result, idx_json, merged);
+                } else {
+                    result = try setprop(allocator, result, idx_json, item);
+                }
+            } else {
+                result = try setprop(allocator, result, idx_json, item);
+            }
+        }
+        return result;
+    }
+
+    return src;
+}
+
+// ============================================================================
+// GetPath — resolve a dotted path string against a store.
+// ============================================================================
+
+pub fn getpath(allocator: Allocator, path_val: JsonValue, store: JsonValue) !JsonValue {
+    _ = allocator;
+    var parts_buf: [64][]const u8 = undefined;
+    var numparts: usize = 0;
+
+    // Parse path into parts.
+    switch (path_val) {
+        .string => |s| {
+            if (s.len == 0) {
+                parts_buf[0] = S_MT;
+                numparts = 1;
+            } else {
+                // Split on dots.
+                var it = std.mem.splitScalar(u8, s, '.');
+                while (it.next()) |part| {
+                    if (numparts < parts_buf.len) {
+                        parts_buf[numparts] = part;
+                        numparts += 1;
+                    }
+                }
+            }
+        },
+        .array => |arr| {
+            for (arr.items) |item| {
+                if (numparts < parts_buf.len) {
+                    parts_buf[numparts] = if (item == .string) item.string else "";
+                    numparts += 1;
+                }
+            }
+        },
+        .null => return getpropFromStore(store),
+        else => return .null,
+    }
+
+    const parts = parts_buf[0..numparts];
+
+    // Empty path → return the source.
+    if (numparts == 1 and parts[0].len == 0) {
+        return getpropFromStore(store);
+    }
+
+    // Single part: check store directly first.
+    if (numparts == 1) {
+        if (store == .object) {
+            if (store.object.get(parts[0])) |v| {
+                return v;
+            }
+        }
+    }
+
+    // Resolve through $TOP.
+    var val = getpropFromStore(store);
+
+    for (parts) |part| {
+        if (val == .null) break;
+
+        // Handle $$ escape.
+        var effective_part = part;
+        _ = effective_part;
+
+        if (val == .object) {
+            val = val.object.get(part) orelse .null;
+        } else if (val == .array) {
+            const idx = std.fmt.parseInt(i64, part, 10) catch {
+                val = .null;
+                break;
+            };
+            if (idx >= 0 and idx < @as(i64, @intCast(val.array.items.len))) {
+                val = val.array.items[@intCast(idx)];
+            } else {
+                val = .null;
+            }
+        } else {
+            val = .null;
+        }
+    }
+
+    return val;
+}
+
+fn getpropFromStore(store: JsonValue) JsonValue {
+    if (store == .object) {
+        return store.object.get(S_DTOP) orelse store;
+    }
+    return store;
+}
+
+// ============================================================================
+// SetPath — set a value at a dotted path in a store.
+// ============================================================================
+
+pub fn setpath(allocator: Allocator, store: JsonValue, path_val: JsonValue, val: JsonValue) !JsonValue {
+    var parts_buf: [64][]const u8 = undefined;
+    var numparts: usize = 0;
+
+    switch (path_val) {
+        .string => |s| {
+            var it = std.mem.splitScalar(u8, s, '.');
+            while (it.next()) |part| {
+                if (numparts < parts_buf.len) {
+                    parts_buf[numparts] = part;
+                    numparts += 1;
+                }
+            }
+        },
+        else => return store,
+    }
+
+    if (numparts == 0) return store;
+
+    const parts = parts_buf[0..numparts];
+    var parent = getpropFromStore(store);
+
+    // Navigate to the parent of the final key, creating nodes as needed.
+    var i: usize = 0;
+    while (i < numparts - 1) : (i += 1) {
+        const part = parts[i];
+        const key_json = JsonValue{ .string = part };
+        var next = try getprop(allocator, parent, key_json, .null);
+        if (!isnode(next)) {
+            next = JsonValue{ .object = JsonObjectMap{} };
+            parent = try setprop(allocator, parent, key_json, next);
+        }
+        parent = next;
+    }
+
+    // Set the final value.
+    const last_key = JsonValue{ .string = parts[numparts - 1] };
+    _ = try setprop(allocator, parent, last_key, val);
+
+    return store;
+}
+
+// ============================================================================
+// Transform — apply a specification template to data.
+// ============================================================================
+
+pub fn transform(allocator: Allocator, data: JsonValue, spec: JsonValue) !JsonValue {
+    if (spec == .null) return spec;
+
+    var spec_clone = try clone(allocator, spec);
+
+    var data_clone = if (data == .null) JsonValue{ .null = {} } else try clone(allocator, data);
+
+    var store = JsonObjectMap{};
+    try store.put(allocator, S_DTOP, data_clone);
+    const store_val = JsonValue{ .object = store };
+
+    spec_clone = try tfInject(allocator, spec_clone, store_val, data_clone, S_DTOP);
+    return spec_clone;
+}
+
+// ============================================================================
+// Inject — recursive injection of store values into a spec tree.
+// Tracks data parent context for $COPY and relative path resolution.
+// ============================================================================
+
+fn tfInject(
+    allocator: Allocator,
+    val: JsonValue,
+    store: JsonValue,
+    dparent: JsonValue,
+    key: []const u8,
+) !JsonValue {
+    if (isnode(val)) {
+        // For node values, descend data context: the data parent for the
+        // node's children is the data value at this key in the current
+        // data parent.
+        const child_data = if (isnode(dparent))
+            (try getprop(allocator, dparent, JsonValue{ .string = key }, .null))
+        else
+            JsonValue{ .null = {} };
+        return try tfInjectNode(allocator, val, store, child_data);
+    }
+    if (val == .string) {
+        return try tfInjectStr(allocator, val.string, store, dparent, key);
+    }
+    return val;
+}
+
+fn tfInjectNode(
+    allocator: Allocator,
+    val_in: JsonValue,
+    store: JsonValue,
+    dparent: JsonValue,
+) !JsonValue {
+    var val = val_in;
+
+    // Get sorted keys: normal first, then $ transform keys.
+    const all_keys = try keysof(allocator, val);
+    if (all_keys != .array) return val;
+
+    var normal_keys = std.ArrayList([]const u8).init(allocator);
+    var transform_keys = std.ArrayList([]const u8).init(allocator);
+
+    for (all_keys.array.items) |k| {
+        if (k != .string) continue;
+        const ks = k.string;
+        if (std.mem.indexOf(u8, ks, S_DS) != null) {
+            try transform_keys.append(ks);
+        } else {
+            try normal_keys.append(ks);
+        }
+    }
+
+    var node_keys = std.ArrayList([]const u8).init(allocator);
+    for (normal_keys.items) |k| try node_keys.append(k);
+    for (transform_keys.items) |k| try node_keys.append(k);
+
+    var nkI: usize = 0;
+    while (nkI < node_keys.items.len) : (nkI += 1) {
+        const nodekey = node_keys.items[nkI];
+
+        // KEYPRE: handle $MERGE command keys and $ANNO.
+        if (val == .object) {
+            if (isMergeKey(nodekey)) {
+                val = try handleMergeCmd(allocator, nodekey, val, store, dparent);
+                continue;
+            }
+            if (std.mem.eql(u8, nodekey, S_BANNO)) {
+                _ = val.object.fetchOrderedRemove(S_BANNO);
+                continue;
+            }
+        }
+
+        // VAL: recursively inject the child value.
+        if (val == .object) {
+            if (val.object.get(nodekey)) |child_val| {
+                // For string children, pass dparent (parent level) so $COPY
+                // can look up the key. For node children, pass the data
+                // value at this child's key for further descent.
+                const injected = try tfInject(allocator, child_val, store, dparent, nodekey);
+
+                // $DELETE: injected returns null for non-null original.
+                if (injected == .null and child_val != .null) {
+                    _ = val.object.fetchOrderedRemove(nodekey);
+                } else {
+                    val = try setprop(allocator, val, JsonValue{ .string = nodekey }, injected);
+                }
+            }
+        } else if (val == .array) {
+            const idx = std.fmt.parseInt(usize, nodekey, 10) catch continue;
+            if (idx < val.array.items.len) {
+                const child_val = val.array.items[idx];
+                // Data context for array child.
+                const child_dparent = if (islist(dparent) and idx < dparent.array.items.len)
+                    dparent.array.items[idx]
+                else
+                    JsonValue{ .null = {} };
+
+                const injected = try tfInject(allocator, child_val, store, child_dparent, nodekey);
+                val.array.items[idx] = injected;
+            }
+        }
+    }
+
+    return val;
+}
+
+fn isMergeKey(key: []const u8) bool {
+    if (key.len < 8) return false;
+    if (!std.mem.startsWith(u8, key, "`$MERGE")) return false;
+    if (key[key.len - 1] != '`') return false;
+    return true;
+}
+
+fn handleMergeCmd(
+    allocator: Allocator,
+    nodekey: []const u8,
+    parent_in: JsonValue,
+    store: JsonValue,
+    dparent: JsonValue,
+) !JsonValue {
+    var parent = parent_in;
+    if (parent != .object) return parent;
+
+    const args_val = parent.object.get(nodekey) orelse .null;
+    _ = parent.object.fetchOrderedRemove(nodekey);
+
+    var merge_list = JsonArray{};
+    try merge_list.append(allocator, parent);
+
+    if (args_val == .string) {
+        if (args_val.string.len == 0) {
+            // Empty string → merge with $TOP data.
+            const top = getpropFromStore(store);
+            if (top != .null) try merge_list.append(allocator, try clone(allocator, top));
+        } else {
+            const resolved = try tfInjectStr(allocator, args_val.string, store, dparent, S_DTOP);
+            if (resolved != .null) try merge_list.append(allocator, resolved);
+        }
+    } else if (args_val == .array) {
+        for (args_val.array.items) |item| {
+            const resolved = try tfInject(allocator, item, store, dparent, S_DTOP);
+            if (resolved != .null) try merge_list.append(allocator, resolved);
+        }
+    }
+
+    // Literals in parent have precedence.
+    try merge_list.append(allocator, try clone(allocator, parent));
+
+    return try merge(allocator, JsonValue{ .array = merge_list }, MAXDEPTH);
+}
+
+// ============================================================================
+// tfInjectStr — resolve backtick references in a string value.
+// dparent: data node at the parent level (for $COPY and relative paths).
+// key: the current key in the parent spec node.
+// ============================================================================
+
+fn tfInjectStr(
+    allocator: Allocator,
+    val: []const u8,
+    store: JsonValue,
+    dparent: JsonValue,
+    key: []const u8,
+) !JsonValue {
+    if (val.len == 0) return JsonValue{ .string = S_MT };
+
+    // Full injection: entire string is `path`
+    if (val.len >= 2 and val[0] == '`' and val[val.len - 1] == '`') {
+        var inner_bt: usize = 0;
+        for (val[1 .. val.len - 1]) |c| {
+            if (c == '`') inner_bt += 1;
+        }
+        if (inner_bt == 0) {
+            var pathref = val[1 .. val.len - 1];
+            // Strip trailing digits for numbered commands (e.g. $MERGE0).
+            pathref = stripCmdDigits(pathref);
+            pathref = resolveSpecialEscapes(allocator, pathref);
+            return try resolveFullInjection(allocator, pathref, store, dparent, key);
+        }
+    }
+
+    // No backticks → return as-is.
+    if (std.mem.indexOf(u8, val, "`") == null) {
+        return JsonValue{ .string = val };
+    }
+
+    // Partial injection: replace each `ref` segment.
+    var result = std.ArrayList(u8).init(allocator);
+    var i: usize = 0;
+    while (i < val.len) {
+        if (val[i] == '`') {
+            const close = std.mem.indexOfScalarPos(u8, val, i + 1, '`');
+            if (close) |end| {
+                var ref = val[i + 1 .. end];
+                ref = resolveSpecialEscapes(allocator, ref);
+                const found = try resolvePartialInjection(allocator, ref, store, dparent);
+                if (found != .null) {
+                    if (found == .string) {
+                        try result.appendSlice(found.string);
+                    } else {
+                        try result.appendSlice(try stringifyInner(allocator, found));
+                    }
+                }
+                i = end + 1;
+            } else {
+                try result.append(val[i]);
+                i += 1;
+            }
+        } else {
+            try result.append(val[i]);
+            i += 1;
+        }
+    }
+    return JsonValue{ .string = result.items };
+}
+
+fn stripCmdDigits(pathref: []const u8) []const u8 {
+    if (pathref.len == 0 or pathref[0] != '$') return pathref;
+    var end: usize = pathref.len;
+    while (end > 1 and pathref[end - 1] >= '0' and pathref[end - 1] <= '9') end -= 1;
+    return pathref[0..end];
+}
+
+fn resolveSpecialEscapes(allocator: Allocator, pathref: []const u8) []const u8 {
+    if (pathref.len <= 3) return pathref;
+    if (std.mem.indexOf(u8, pathref, "$BT") == null and
+        std.mem.indexOf(u8, pathref, "$DS") == null) return pathref;
+    var result = std.ArrayList(u8).init(allocator);
+    var i: usize = 0;
+    while (i < pathref.len) {
+        if (i + 3 <= pathref.len and std.mem.eql(u8, pathref[i .. i + 3], "$BT")) {
+            result.append('`') catch {};
+            i += 3;
+        } else if (i + 3 <= pathref.len and std.mem.eql(u8, pathref[i .. i + 3], "$DS")) {
+            result.append('$') catch {};
+            i += 3;
+        } else {
+            result.append(pathref[i]) catch {};
+            i += 1;
+        }
+    }
+    return result.items;
+}
+
+// Resolve a full injection (entire string was `path`). Can return any type.
+fn resolveFullInjection(
+    allocator: Allocator,
+    pathref: []const u8,
+    store: JsonValue,
+    dparent: JsonValue,
+    key: []const u8,
+) !JsonValue {
+    // Built-in commands.
+    if (std.mem.eql(u8, pathref, "$COPY")) {
+        return try getprop(allocator, dparent, JsonValue{ .string = key }, .null);
+    }
+    if (std.mem.eql(u8, pathref, "$DELETE")) return .null;
+    if (std.mem.eql(u8, pathref, "$BT")) return JsonValue{ .string = S_BT };
+    if (std.mem.eql(u8, pathref, "$DS")) return JsonValue{ .string = S_DS };
+    if (std.mem.eql(u8, pathref, "$KEY")) return JsonValue{ .string = key };
+    if (std.mem.eql(u8, pathref, "$TOP")) return getpropFromStore(store);
+
+    // Relative path (starts with .).
+    if (pathref.len > 0 and pathref[0] == '.') {
+        return try resolveRelativePath(allocator, pathref, dparent);
+    }
+
+    // Absolute path from $TOP.
+    return try getpath(allocator, JsonValue{ .string = pathref }, store);
+}
+
+// Resolve a partial injection (backtick segment within a larger string).
+// Always returns a value to be stringified.
+fn resolvePartialInjection(
+    allocator: Allocator,
+    pathref: []const u8,
+    store: JsonValue,
+    dparent: JsonValue,
+) !JsonValue {
+    if (std.mem.eql(u8, pathref, "$BT")) return JsonValue{ .string = S_BT };
+    if (std.mem.eql(u8, pathref, "$DS")) return JsonValue{ .string = S_DS };
+
+    // Relative path.
+    if (pathref.len > 0 and pathref[0] == '.') {
+        return try resolveRelativePath(allocator, pathref, dparent);
+    }
+
+    // Absolute path.
+    return try getpath(allocator, JsonValue{ .string = pathref }, store);
+}
+
+// Resolve a relative path (starting with .) against the data parent.
+fn resolveRelativePath(allocator: Allocator, pathref: []const u8, dparent: JsonValue) !JsonValue {
+    // Count leading dots to determine how many levels up.
+    var dots: usize = 0;
+    while (dots < pathref.len and pathref[dots] == '.') dots += 1;
+
+    const rest = pathref[dots..];
+    if (rest.len == 0) {
+        // Just dots → return dparent (for single dot: current data parent).
+        return dparent;
+    }
+
+    // For single dot prefix: resolve rest against dparent.
+    var val = dparent;
+    var it = std.mem.splitScalar(u8, rest, '.');
+    while (it.next()) |part| {
+        if (val == .null) break;
+        val = try getprop(allocator, val, JsonValue{ .string = part }, .null);
+    }
+    return val;
+}
+
+fn getpropFromStore(store: JsonValue) JsonValue {
+    if (store == .object) {
+        return store.object.get(S_DTOP) orelse store;
+    }
+    return store;
+}
+

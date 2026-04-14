@@ -541,3 +541,181 @@ test "minor-pad" {
     defer r.deinit();
     try r.runsetAllocFlags(try getMinorSpec(r, "pad"), .{ .null_flag = false }, wrap_pad);
 }
+
+// ---- Walk, Merge, and Transform helpers ----
+
+fn getSpec(r: runner.RunPack, name: []const u8) !JsonValue {
+    return r.spec.get(name) orelse return error.NoSpec;
+}
+
+fn getSubSpec(r: runner.RunPack, section: []const u8, sub: []const u8) !JsonValue {
+    const sec = r.spec.get(section) orelse return error.NoSpec;
+    return switch (sec) {
+        .object => |obj| obj.get(sub) orelse return error.NoSubSpec,
+        else => return error.SpecNotObject,
+    };
+}
+
+// ---- Walk wrappers ----
+
+fn walkApplyBasic(_: Allocator, key: ?[]const u8, val: JsonValue, _: JsonValue, path: []const []const u8) !JsonValue {
+    _ = key;
+    // If value is a string, append ~path.
+    if (val == .string) {
+        // Build path string.
+        var total_len: usize = val.string.len + 1; // +1 for '~'
+        for (path) |p| total_len += p.len;
+        if (path.len > 1) total_len += path.len - 1; // dots between parts
+
+        var buf = std.ArrayList(u8).init(std.heap.page_allocator);
+        buf.appendSlice(val.string) catch return val;
+        buf.append('~') catch return val;
+        for (path, 0..) |p, i| {
+            if (i > 0) buf.append('.') catch {};
+            buf.appendSlice(p) catch {};
+        }
+        return JsonValue{ .string = buf.items };
+    }
+    return val;
+}
+
+fn walkApplyCopy(_: Allocator, _: ?[]const u8, val: JsonValue, _: JsonValue, _: []const []const u8) !JsonValue {
+    return val;
+}
+
+fn wrap_walk_basic(allocator: Allocator, val: JsonValue) JsonValue {
+    if (val == .string and std.mem.eql(u8, val.string, runner.NULLMARK)) {
+        return .null;
+    }
+    return voxgig_struct.walk(allocator, val, walkApplyBasic, null, voxgig_struct.MAXDEPTH) catch return .null;
+}
+
+fn wrap_walk_copy(allocator: Allocator, val: JsonValue) JsonValue {
+    if (val == .string and std.mem.eql(u8, val.string, runner.UNDEFMARK)) {
+        return .null;
+    }
+    return voxgig_struct.walk(allocator, val, walkApplyCopy, null, voxgig_struct.MAXDEPTH) catch return .null;
+}
+
+fn wrap_walk_depth(allocator: Allocator, val: JsonValue) JsonValue {
+    // in: { src, maxdepth? }
+    if (val != .object) return .null;
+    const m = val.object;
+    const src = m.get("src") orelse return .null;
+    var maxdepth: i32 = voxgig_struct.MAXDEPTH;
+    if (m.get("maxdepth")) |md| {
+        switch (md) {
+            .integer => |i| maxdepth = @intCast(i),
+            .float => |f| maxdepth = @intFromFloat(f),
+            else => {},
+        }
+    }
+    return voxgig_struct.walk(allocator, src, walkApplyCopy, null, maxdepth) catch return .null;
+}
+
+// ---- Merge wrappers ----
+
+fn wrap_merge_cases(allocator: Allocator, val: JsonValue) JsonValue {
+    return voxgig_struct.merge(allocator, val, voxgig_struct.MAXDEPTH) catch return .null;
+}
+
+fn wrap_merge_array(allocator: Allocator, val: JsonValue) JsonValue {
+    // For array section: if input is not array, wrap it.
+    if (val != .array) {
+        var arr = JsonArray{};
+        arr.append(allocator, val) catch return .null;
+        return voxgig_struct.merge(allocator, JsonValue{ .array = arr }, voxgig_struct.MAXDEPTH) catch return .null;
+    }
+    return voxgig_struct.merge(allocator, val, voxgig_struct.MAXDEPTH) catch return .null;
+}
+
+fn wrap_merge_depth(allocator: Allocator, val: JsonValue) JsonValue {
+    // in: { val, depth }
+    if (val != .object) return .null;
+    const m = val.object;
+    const v = m.get("val") orelse return .null;
+    var depth: i32 = voxgig_struct.MAXDEPTH;
+    if (m.get("depth")) |d| {
+        switch (d) {
+            .integer => |i| depth = @intCast(i),
+            .float => |f| depth = @intFromFloat(f),
+            else => {},
+        }
+    }
+    return voxgig_struct.merge(allocator, v, depth) catch return .null;
+}
+
+fn wrap_merge_integrity(allocator: Allocator, val: JsonValue) JsonValue {
+    return voxgig_struct.merge(allocator, val, voxgig_struct.MAXDEPTH) catch return .null;
+}
+
+// ---- Transform wrappers ----
+
+fn wrap_transform(allocator: Allocator, val: JsonValue) JsonValue {
+    // in: { data?, spec? }
+    if (val != .object) return .null;
+    const m = val.object;
+    const data = m.get("data") orelse .null;
+    const spec = m.get("spec") orelse return .null;
+    return voxgig_struct.transform(allocator, data, spec) catch return .null;
+}
+
+// ---- Walk tests ----
+
+test "walk-basic" {
+    var r = try runner.makeRunner(testing.allocator);
+    defer r.deinit();
+    try r.runsetAllocFlags(try getSubSpec(r, "walk", "basic"), .{ .null_flag = false }, wrap_walk_basic);
+}
+
+test "walk-copy" {
+    var r = try runner.makeRunner(testing.allocator);
+    defer r.deinit();
+    try r.runsetAllocFlags(try getSubSpec(r, "walk", "copy"), .{ .null_flag = false, .undef_as_null = false }, wrap_walk_copy);
+}
+
+test "walk-depth" {
+    var r = try runner.makeRunner(testing.allocator);
+    defer r.deinit();
+    try r.runsetAlloc(try getSubSpec(r, "walk", "depth"), wrap_walk_depth);
+}
+
+// ---- Merge tests ----
+
+test "merge-cases" {
+    var r = try runner.makeRunner(testing.allocator);
+    defer r.deinit();
+    try r.runsetAllocFlags(try getSubSpec(r, "merge", "cases"), .{ .null_flag = false }, wrap_merge_cases);
+}
+
+test "merge-array" {
+    var r = try runner.makeRunner(testing.allocator);
+    defer r.deinit();
+    try r.runsetAllocFlags(try getSubSpec(r, "merge", "array"), .{ .null_flag = false, .undef_as_null = false }, wrap_merge_array);
+}
+
+test "merge-integrity" {
+    var r = try runner.makeRunner(testing.allocator);
+    defer r.deinit();
+    try r.runsetAllocFlags(try getSubSpec(r, "merge", "integrity"), .{ .null_flag = false }, wrap_merge_integrity);
+}
+
+test "merge-depth" {
+    var r = try runner.makeRunner(testing.allocator);
+    defer r.deinit();
+    try r.runsetAllocFlags(try getSubSpec(r, "merge", "depth"), .{ .null_flag = false }, wrap_merge_depth);
+}
+
+// ---- Transform tests ----
+
+test "transform-paths" {
+    var r = try runner.makeRunner(testing.allocator);
+    defer r.deinit();
+    try r.runsetAllocFlags(try getSubSpec(r, "transform", "paths"), .{ .null_flag = false }, wrap_transform);
+}
+
+test "transform-cmds" {
+    var r = try runner.makeRunner(testing.allocator);
+    defer r.deinit();
+    try r.runsetAllocFlags(try getSubSpec(r, "transform", "cmds"), .{ .null_flag = false }, wrap_transform);
+}
