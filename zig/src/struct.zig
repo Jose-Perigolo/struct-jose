@@ -1383,11 +1383,11 @@ fn mergeNodes(
 // GetPath — resolve a dotted path string against a store.
 // ============================================================================
 
-pub fn getpath(allocator: Allocator, path_val: JsonValue, store: JsonValue) !JsonValue {
+pub fn getpath(allocator: Allocator, path_val: JsonValue, store: JsonValue) anyerror!JsonValue {
     return getpathInj(allocator, path_val, store, null);
 }
 
-pub fn getpathInj(allocator: Allocator, path_val: JsonValue, store: JsonValue, inj: ?*Injection) !JsonValue {
+pub fn getpathInj(allocator: Allocator, path_val: JsonValue, store: JsonValue, inj: ?*Injection) anyerror!JsonValue {
     var parts_buf: [64][]const u8 = undefined;
     var numparts: usize = 0;
 
@@ -1426,14 +1426,14 @@ pub fn getpathInj(allocator: Allocator, path_val: JsonValue, store: JsonValue, i
 
     const parts = parts_buf[0..numparts];
 
-    // Empty path or single dot "." → return source/dparent.
-    const all_empty = blk: {
-        for (parts) |p| {
-            if (p.len > 0) break :blk false;
-        }
-        break :blk true;
-    };
-    if (all_empty) {
+    // Single empty part (empty string path) → return source/dparent.
+    // But NOT for multiple empty parts (.. ancestor paths).
+    if (numparts == 1 and parts[0].len == 0) {
+        if (inj) |ij| return ij.dparent;
+        return getpropFromStore(store);
+    }
+    // Single "." (splits to ["",""]) → return dparent.
+    if (numparts == 2 and parts[0].len == 0 and parts[1].len == 0) {
         if (inj) |ij| return ij.dparent;
         return getpropFromStore(store);
     }
@@ -1450,20 +1450,90 @@ pub fn getpathInj(allocator: Allocator, path_val: JsonValue, store: JsonValue, i
     // Resolve through $TOP (or dparent for relative paths).
     var val = getpropFromStore(store);
 
-    // Check for relative path: first part is empty string (from leading dot).
-    if (numparts > 0 and parts[0].len == 0 and inj != null) {
-        val = inj.?.dparent;
-        // Skip the empty first part.
-        const rel_parts = parts[1..];
-        for (rel_parts) |part| {
-            if (val == .null) break;
-            val = try resolvePart(allocator, val, part, inj);
-        }
-        return val;
-    }
-
-    for (parts) |part| {
+    var pI: usize = 0;
+    while (pI < numparts) : (pI += 1) {
         if (val == .null) break;
+        const part = parts[pI];
+
+        // Handle $REF:subpath$ — resolve subpath in $SPEC, use result as part.
+        if (inj != null and part.len > 5 and std.mem.startsWith(u8, part, "$REF:") and part[part.len - 1] == '$') {
+            const subpath = part[5 .. part.len - 1];
+            const spec_val = if (store == .object) store.object.get(S_DSPEC) orelse .null else .null;
+            if (spec_val != .null) {
+                const result = try getpath(allocator, JsonValue{ .string = subpath }, spec_val);
+                const effective = try stringify(allocator, result, null);
+                val = try resolvePart(allocator, val, effective, inj);
+            }
+            continue;
+        }
+
+        // Handle $GET:subpath$ — resolve subpath in store data, use result as part.
+        if (inj != null and part.len > 5 and std.mem.startsWith(u8, part, "$GET:") and part[part.len - 1] == '$') {
+            const subpath = part[5 .. part.len - 1];
+            const result = try getpath(allocator, JsonValue{ .string = subpath }, store);
+            const effective = try stringify(allocator, result, null);
+            val = try resolvePart(allocator, val, effective, inj);
+            continue;
+        }
+
+        // Handle $META:subpath$ — resolve subpath in injection metadata.
+        if (inj != null and part.len > 6 and std.mem.startsWith(u8, part, "$META:") and part[part.len - 1] == '$') {
+            const subpath = part[6 .. part.len - 1];
+            const ij = inj.?;
+            if (ij.meta != .null) {
+                const result = try getpathInj(allocator, JsonValue{ .string = subpath }, ij.meta, null);
+                const effective = try stringify(allocator, result, null);
+                val = try resolvePart(allocator, val, effective, inj);
+            }
+            continue;
+        }
+
+        // Handle empty parts (from consecutive dots): ancestor traversal.
+        if (part.len == 0) {
+            // Count consecutive empty parts as ascend levels.
+            var ascends: usize = 0;
+            while (pI + 1 < numparts and parts[pI + 1].len == 0) {
+                ascends += 1;
+                pI += 1;
+            }
+
+            if (inj != null and ascends > 0) {
+                const ij = inj.?;
+                // Last group of dots with no trailing part: adjust.
+                if (pI == numparts - 1) {
+                    if (ascends > 0) ascends -= 1;
+                }
+
+                if (ascends == 0) {
+                    val = ij.dparent;
+                } else {
+                    // Build full path from dpath minus ascends, plus remaining parts.
+                    const dpath = ij.dpath;
+                    const cutLen = if (ascends > dpath.len) 0 else dpath.len - ascends;
+                    var fullpath = std.ArrayList([]const u8).init(allocator);
+                    for (dpath[0..cutLen]) |dp| try fullpath.append(dp);
+                    if (pI + 1 < numparts) {
+                        for (parts[pI + 1 .. numparts]) |rp| try fullpath.append(rp);
+                    }
+                    if (ascends <= dpath.len) {
+                        // Rejoin as dotted string and re-resolve from store.
+                        var joined = std.ArrayList(u8).init(allocator);
+                        for (fullpath.items, 0..) |fp, fi| {
+                            if (fi > 0) try joined.append('.');
+                            try joined.appendSlice(fp);
+                        }
+                        val = try getpath(allocator, JsonValue{ .string = joined.items }, store);
+                    } else {
+                        val = .null;
+                    }
+                    return val;
+                }
+            } else {
+                val = if (inj) |ij| ij.dparent else val;
+            }
+            continue;
+        }
+
         val = try resolvePart(allocator, val, part, inj);
     }
 
@@ -1609,6 +1679,9 @@ pub const Injection = struct {
     nodes: []JsonValue,
     dpath: [][]const u8,
 
+    // Metadata for injection context.
+    meta: JsonValue = .null,
+
     // Shared error collector (pointer so all children share it).
     errs: *std.ArrayList([]const u8),
 
@@ -1651,6 +1724,7 @@ pub const Injection = struct {
             .path = new_path,
             .nodes = new_nodes,
             .dpath = new_dpath,
+            .meta = self.meta,
             .errs = self.errs,
         };
         return c;
@@ -2031,11 +2105,13 @@ fn cmdMerge(allocator: Allocator, inj: *Injection, store: JsonValue) !JsonValue 
 
     if (inj.mode == M_KEYPOST) {
         const args = try getprop(allocator, inj.parent, JsonValue{ .string = inj.key }, .null);
-        // Clone parent for precedence BEFORE removing the merge key,
-        // to avoid reading from a map with stale entry pointers.
-        const parent_clone = try clone(allocator, inj.parent);
 
+        // Remove $MERGE key from parent first.
         if (inj.parent == .object) _ = inj.parent.object.fetchOrderedRemove(inj.key);
+
+        // Clone parent AFTER removing (Go does Clone(inj.Parent) post-remove).
+        // With *MapRef, the clone reads from the same pointer data.
+        const parent_clone = try clone(allocator, inj.parent);
 
         const merge_list_lr = try allocator.create(ListRef);
         merge_list_lr.* = .{ .data = ListData.init(allocator) };
@@ -2053,6 +2129,7 @@ fn cmdMerge(allocator: Allocator, inj: *Injection, store: JsonValue) !JsonValue 
             try merge_list.append(args);
         }
 
+        // Literals in parent have precedence.
         try merge_list.append(parent_clone);
         inj.parent = try merge(allocator, JsonValue{ .array = merge_list }, MAXDEPTH);
         return JsonValue{ .string = inj.key };

@@ -782,23 +782,34 @@ fn wrap_getpath_basic(allocator: Allocator, val: JsonValue) JsonValue {
 }
 
 fn wrap_getpath_relative(allocator: Allocator, val: JsonValue) JsonValue {
-    // in: { path, store, dparent }
+    // in: { path, store, dparent, dpath? }
     if (val != .object) return .null;
     const m = val.object;
     const path_v = m.get("path") orelse return .null;
     const store = m.get("store") orelse return .null;
     const dparent = m.get("dparent") orelse .null;
 
-    // Build a minimal Injection with dparent set.
+    // Parse dpath string into slice.
+    var dpath_buf: [32][]const u8 = undefined;
+    var dpath_len: usize = 0;
+    if (m.get("dpath")) |dp| {
+        if (dp == .string and dp.string.len > 0) {
+            var it = std.mem.splitScalar(u8, dp.string, '.');
+            while (it.next()) |part| {
+                if (dpath_len < dpath_buf.len) {
+                    dpath_buf[dpath_len] = part;
+                    dpath_len += 1;
+                }
+            }
+        }
+    }
+
     var errs = std.ArrayList([]const u8).init(allocator);
-    var init_keys = allocator.alloc([]const u8, 0) catch return .null;
-    var init_path = allocator.alloc([]const u8, 0) catch return .null;
-    var init_nodes = allocator.alloc(JsonValue, 0) catch return .null;
-    var init_dpath = allocator.alloc([]const u8, 0) catch return .null;
-    _ = &init_keys;
-    _ = &init_path;
-    _ = &init_nodes;
-    _ = &init_dpath;
+    const init_keys = allocator.alloc([]const u8, 0) catch return .null;
+    const init_path = allocator.alloc([]const u8, 0) catch return .null;
+    const init_nodes = allocator.alloc(JsonValue, 0) catch return .null;
+    const init_dpath = allocator.alloc([]const u8, dpath_len) catch return .null;
+    @memcpy(init_dpath, dpath_buf[0..dpath_len]);
     const inj = allocator.create(voxgig_struct.Injection) catch return .null;
     inj.* = voxgig_struct.Injection{
         .allocator = allocator,
@@ -830,7 +841,7 @@ fn wrap_getpath_special(allocator: Allocator, val: JsonValue) JsonValue {
         _ = &init_path;
         _ = &init_nodes;
         _ = &init_dpath;
-        var inj = allocator.create(voxgig_struct.Injection) catch return .null;
+        const inj = allocator.create(voxgig_struct.Injection) catch return .null;
         inj.* = voxgig_struct.Injection{
             .allocator = allocator,
             .keys = init_keys,
@@ -839,10 +850,13 @@ fn wrap_getpath_special(allocator: Allocator, val: JsonValue) JsonValue {
             .dpath = init_dpath,
             .errs = &errs,
         };
-        // Set key from inj spec if present.
+        // Set key and meta from inj spec if present.
         if (ij == .object) {
             if (ij.object.get("key")) |key_val| {
                 if (key_val == .string) inj.key = key_val.string;
+            }
+            if (ij.object.get("meta")) |meta_val| {
+                inj.meta = meta_val;
             }
         }
         return voxgig_struct.getpathInj(allocator, path_v, store, inj) catch return .null;
