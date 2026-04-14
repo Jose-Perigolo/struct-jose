@@ -1450,6 +1450,18 @@ pub fn getpathInj(allocator: Allocator, path_val: JsonValue, store: JsonValue, i
     // Resolve through $TOP (or dparent for relative paths).
     var val = getpropFromStore(store);
 
+    // Meta-path syntax: "name$~rest" or "name$=rest" on the first part.
+    if (numparts > 0 and inj != null and inj.?.meta != .null) {
+        const first = parts[0];
+        // Find "$~" or "$=" in first part.
+        if (std.mem.indexOf(u8, first, "$~") orelse std.mem.indexOf(u8, first, "$=")) |dpos| {
+            const meta_key = first[0..dpos];
+            const rest = first[dpos + 2 ..];
+            val = try getprop(allocator, inj.?.meta, JsonValue{ .string = meta_key }, .null);
+            parts_buf[0] = rest;
+        }
+    }
+
     var pI: usize = 0;
     while (pI < numparts) : (pI += 1) {
         if (val == .null) break;
