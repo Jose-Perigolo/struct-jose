@@ -1816,6 +1816,8 @@ pub const Injection = struct {
     mode: i32 = M_VAL,
     full: bool = false,
     skip: bool = false, // Set by handlers to suppress setval.
+    validate_mode: bool = false, // Enables $STRING/$NUMBER/etc validation commands.
+    exact_mode: bool = false, // Exact matching mode for select.
     key_i: usize = 0,
     key: []const u8 = S_DTOP,
     val: JsonValue = .null,
@@ -1880,6 +1882,8 @@ pub const Injection = struct {
             .dpath = new_dpath,
             .meta = self.meta,
             .modify = self.modify,
+            .validate_mode = self.validate_mode,
+            .exact_mode = self.exact_mode,
             .errs = self.errs,
         };
         return c;
@@ -2005,6 +2009,8 @@ pub fn injectVal(allocator: Allocator, val: JsonValue, store: JsonValue, inj_opt
             if (existing.dpath.len > 0) inj.dpath = existing.dpath;
             if (existing.modify != null) inj.modify = existing.modify;
             if (existing.meta != .null) inj.meta = existing.meta;
+            if (existing.validate_mode) inj.validate_mode = true;
+            if (existing.exact_mode) inj.exact_mode = true;
         }
     } else {
         inj = inj_opt.?;
@@ -2248,6 +2254,24 @@ fn dispatchCmd(allocator: Allocator, cmd: []const u8, store: JsonValue, inj: *In
     if (std.mem.eql(u8, cmd, "$REF")) return try cmdRef(allocator, inj, store);
     if (std.mem.eql(u8, cmd, "$APPLY")) return try cmdApply(allocator, inj);
 
+    // Validation commands — only active when validate_mode is set.
+    if (inj.validate_mode) {
+        if (std.mem.eql(u8, cmd, "$STRING")) return try cmdValidateType(allocator, inj, S_string, T_string);
+        if (std.mem.eql(u8, cmd, "$NUMBER")) return try cmdValidateType(allocator, inj, S_number, T_number);
+        if (std.mem.eql(u8, cmd, "$INTEGER")) return try cmdValidateType(allocator, inj, S_integer, T_integer);
+        if (std.mem.eql(u8, cmd, "$DECIMAL")) return try cmdValidateType(allocator, inj, S_decimal, T_decimal);
+        if (std.mem.eql(u8, cmd, "$BOOLEAN")) return try cmdValidateType(allocator, inj, S_boolean, T_boolean);
+        if (std.mem.eql(u8, cmd, "$NULL")) return try cmdValidateType(allocator, inj, S_null, T_null);
+        if (std.mem.eql(u8, cmd, "$OBJECT") or std.mem.eql(u8, cmd, "$MAP"))
+            return try cmdValidateType(allocator, inj, S_map, T_map);
+        if (std.mem.eql(u8, cmd, "$ARRAY") or std.mem.eql(u8, cmd, "$LIST"))
+            return try cmdValidateType(allocator, inj, S_list, T_list);
+        if (std.mem.eql(u8, cmd, "$ANY")) return cmdValidateAny(inj);
+        if (std.mem.eql(u8, cmd, "$ONE")) return try cmdValidateOne(allocator, inj, store);
+        if (std.mem.eql(u8, cmd, "$EXACT")) return try cmdValidateExactCmd(allocator, inj);
+        if (std.mem.eql(u8, cmd, "$CHILD")) return try cmdValidateChildCmd(allocator, inj, store);
+    }
+
     // Unknown $ key — check if the store has it as a function value.
     if (store == .object) {
         if (store.object.get(cmd)) |val| {
@@ -2350,6 +2374,172 @@ fn cmdMerge(allocator: Allocator, inj: *Injection, store: JsonValue) !JsonValue 
 
 fn cmdAnno(inj: *Injection) JsonValue {
     if (inj.parent == .object) _ = inj.parent.object.fetchOrderedRemove(S_BANNO);
+    return .null;
+}
+
+// ============================================================================
+// Validation commands — fire inside the injection pipeline when validate_mode.
+// ============================================================================
+
+fn cmdValidateType(allocator: Allocator, inj: *Injection, tname: []const u8, tbit: i32) anyerror!JsonValue {
+    if (inj.mode != M_VAL) return .null;
+    const out = getprop(allocator, inj.dparent, JsonValue{ .string = inj.key }, .null) catch .null;
+    const t = typify(out);
+
+    // $STRING: also reject empty strings.
+    if (tbit == T_string) {
+        if (0 == (@as(i64, T_string) & t)) {
+            try inj.errs.append(try invalidTypeMsg(allocator, inj.path, tname, out));
+            return .null;
+        }
+        if (out == .string and out.string.len == 0) {
+            try inj.errs.append(try std.fmt.allocPrint(allocator, "Empty string at {s}", .{try pathifySlice(allocator, inj.path[1..])}));
+            return .null;
+        }
+        _ = try inj.setval(out, 0);
+        return out;
+    }
+
+    if (0 == (@as(i64, tbit) & t)) {
+        try inj.errs.append(try invalidTypeMsg(allocator, inj.path, tname, out));
+        return .null;
+    }
+    _ = try inj.setval(out, 0);
+    return out;
+}
+
+fn cmdValidateAny(inj: *Injection) JsonValue {
+    if (inj.mode != M_VAL) return .null;
+    const out = getprop(inj.allocator, inj.dparent, JsonValue{ .string = inj.key }, .null) catch .null;
+    _ = inj.setval(out, 0) catch {};
+    return out;
+}
+
+fn cmdValidateOne(allocator: Allocator, inj: *Injection, _: JsonValue) anyerror!JsonValue {
+    if (inj.mode != M_VAL) return .null;
+    if (inj.parent != .array) return .null;
+
+    // Skip remaining keys in the list.
+    inj.key_i = inj.keys.len;
+
+    const parent_items = inj.parent.array.data.items;
+    if (parent_items.len < 2) return .null;
+
+    // Get data value at this position.
+    const data_val = getprop(allocator, inj.dparent, JsonValue{ .string = inj.key }, .null) catch inj.dparent;
+
+    // Replace [$ONE, alt0, alt1, ...] with the data value in the grandparent.
+    _ = try inj.setval(data_val, 2);
+
+    // Try each alternative.
+    const alts = parent_items[1..];
+    for (alts) |alt| {
+        const terrs = std.ArrayList([]const u8).init(allocator);
+        const terrs_ptr = try allocator.create(std.ArrayList([]const u8));
+        terrs_ptr.* = terrs;
+        _ = try validateWalk(allocator, alt, data_val, terrs_ptr, if (inj.path.len > 1) inj.path[1..] else inj.path);
+        if (terrs_ptr.items.len == 0) return .null;
+    }
+
+    // No match — build error message.
+    var desc = std.ArrayList(u8).init(allocator);
+    for (alts, 0..) |alt, i| {
+        if (i > 0) try desc.appendSlice(", ");
+        try desc.appendSlice(try stringify(allocator, alt, null));
+    }
+    const prefix = if (alts.len > 1) "one of " else "";
+    try inj.errs.append(try invalidTypeMsg(allocator, inj.path, try std.fmt.allocPrint(allocator, "{s}{s}", .{ prefix, desc.items }), data_val));
+    return .null;
+}
+
+fn cmdValidateExactCmd(allocator: Allocator, inj: *Injection) anyerror!JsonValue {
+    if (inj.mode != M_VAL) return .null;
+    if (inj.parent != .array) return .null;
+
+    inj.key_i = inj.keys.len;
+
+    const parent_items = inj.parent.array.data.items;
+    if (parent_items.len < 2) return .null;
+
+    const data_val = getprop(allocator, inj.dparent, JsonValue{ .string = inj.key }, .null) catch inj.dparent;
+    _ = try inj.setval(data_val, 2);
+
+    const alts = parent_items[1..];
+    for (alts) |alt| {
+        const a = try toStdJson(allocator, alt);
+        const b = try toStdJson(allocator, data_val);
+        if (stdJsonEqual(a, b)) return .null;
+        // Also try string comparison.
+        const sa = try stringify(allocator, alt, null);
+        const sb = try stringify(allocator, data_val, null);
+        if (std.mem.eql(u8, sa, sb)) return .null;
+    }
+
+    var desc = std.ArrayList(u8).init(allocator);
+    for (alts, 0..) |alt, i| {
+        if (i > 0) try desc.appendSlice(", ");
+        try desc.appendSlice(try stringify(allocator, alt, null));
+    }
+    const prefix = if (alts.len > 1) "one of " else "";
+    try inj.errs.append(try invalidTypeMsg(allocator, inj.path, try std.fmt.allocPrint(allocator, "exactly equal to {s}{s}", .{ prefix, desc.items }), data_val));
+    return .null;
+}
+
+fn cmdValidateChildCmd(allocator: Allocator, inj: *Injection, store: JsonValue) anyerror!JsonValue {
+    _ = store;
+    if (inj.mode == M_KEYPRE and inj.parent == .object) {
+        // Map mode: expand $CHILD for each key in the data.
+        const child = getprop(allocator, inj.parent, JsonValue{ .string = inj.key }, .null) catch .null;
+        const pkey = if (inj.path.len >= 2) inj.path[inj.path.len - 2] else S_DTOP;
+        const tval = getprop(allocator, inj.dparent, JsonValue{ .string = pkey }, .null) catch .null;
+
+        if (tval == .object) {
+            // For each key in data, clone the child spec into the parent.
+            const ckeys = try keysof(allocator, tval);
+            if (ckeys == .array) {
+                for (ckeys.array.data.items) |ck| {
+                    if (ck == .string) {
+                        try inj.parent.object.put(ck.string, try clone(allocator, child));
+                        // Append to keys for further processing.
+                        inj.keys = appendSlice(allocator, []const u8, inj.keys, ck.string) catch inj.keys;
+                    }
+                }
+            }
+        } else if (tval != .null) {
+            try inj.errs.append(try invalidTypeMsg(allocator, if (inj.path.len > 1) inj.path[0 .. inj.path.len - 1] else inj.path, S_object, tval));
+        }
+
+        // Remove the $CHILD key.
+        _ = inj.parent.object.fetchOrderedRemove(inj.key);
+        return .null;
+    }
+
+    if (inj.mode == M_VAL and inj.parent == .array) {
+        // List mode: [$CHILD, template] — expand for each element.
+        if (inj.parent.array.data.items.len < 2) return .null;
+        const child = inj.parent.array.data.items[1];
+        const dparent_val = inj.dparent;
+
+        if (dparent_val == .null) {
+            inj.parent.array.data.items.len = 0;
+            return .null;
+        }
+
+        if (dparent_val != .array) {
+            try inj.errs.append(try invalidTypeMsg(allocator, if (inj.path.len > 1) inj.path[0 .. inj.path.len - 1] else inj.path, S_list, dparent_val));
+            return dparent_val;
+        }
+
+        const dlen = dparent_val.array.data.items.len;
+        inj.parent.array.data.items.len = 0;
+        var li: usize = 0;
+        while (li < dlen) : (li += 1) {
+            try inj.parent.array.append(try clone(allocator, child));
+        }
+        inj.key_i = 0;
+        return if (dlen > 0) dparent_val.array.data.items[0] else .null;
+    }
+
     return .null;
 }
 
@@ -3033,31 +3223,133 @@ pub fn validate(allocator: Allocator, data: JsonValue, spec: JsonValue) anyerror
     const orig_spec = try clone(allocator, spec);
 
     // Build store with data and spec.
-    var store = try JsonValue.makeMap(allocator);
-    try store.object.put(S_DTOP, data_clone);
-    try store.object.put(S_DSPEC, orig_spec);
+    const store = try allocator.create(MapRef);
+    store.* = .{ .data = MapData.init(allocator) };
+    try store.put(S_DTOP, data_clone);
+    try store.put(S_DSPEC, orig_spec);
+    const store_val = JsonValue{ .object = store };
 
-    // Run injection with validation commands handled inline.
-    const errs = std.ArrayList([]const u8).init(allocator);
-    const errs_ptr = try allocator.create(std.ArrayList([]const u8));
-    errs_ptr.* = errs;
+    // Create root injection with validate_mode enabled.
+    // This causes dispatchCmd to handle $STRING, $NUMBER, etc.
+    const errs = try allocator.create(std.ArrayList([]const u8));
+    errs.* = std.ArrayList([]const u8).init(allocator);
 
-    // Create root injection with validation mode.
-    const result = try injectVal(allocator, spec_clone, store, null);
+    const inj_init = try allocator.create(Injection);
+    inj_init.* = Injection{
+        .allocator = allocator,
+        .mode = 0, // triggers root init
+        .validate_mode = true,
+        .modify = validationModify,
+        .keys = try allocator.alloc([]const u8, 0),
+        .path = try allocator.alloc([]const u8, 0),
+        .nodes = try allocator.alloc(JsonValue, 0),
+        .dpath = try allocator.alloc([]const u8, 0),
+        .errs = errs,
+    };
 
-    // Apply validation logic: walk the result and check types against data.
-    const validated = try validateWalk(allocator, result, data_clone, errs_ptr, &[_][]const u8{});
+    const result = try injectVal(allocator, spec_clone, store_val, inj_init);
 
-    if (errs_ptr.items.len > 0) {
+    if (errs.items.len > 0) {
         var msg = std.ArrayList(u8).init(allocator);
         try msg.appendSlice("Invalid data: ");
-        for (errs_ptr.items, 0..) |e, i| {
+        for (errs.items, 0..) |e, i| {
             if (i > 0) try msg.appendSlice(" | ");
             try msg.appendSlice(e);
         }
-        return .{ .out = validated, .err = msg.items };
+        return .{ .out = result, .err = msg.items };
     }
-    return .{ .out = validated, .err = null };
+    return .{ .out = result, .err = null };
+}
+
+// Validation modify callback — runs after each injection step.
+// Matches TS's makeValidation(false) behavior.
+fn validationModify(allocator: Allocator, _: JsonValue, key: []const u8, parent: JsonValue, inj: *Injection, _: JsonValue) void {
+    // Get the actual data value at this path.
+    const cval = getprop(allocator, inj.dparent, JsonValue{ .string = key }, .null) catch .null;
+    if (cval == .null and !inj.exact_mode) return;
+
+    const pval = getprop(allocator, parent, JsonValue{ .string = key }, .null) catch .null;
+    const ptype = typify(pval);
+
+    // Skip remaining $ command strings.
+    if (0 < (@as(i64, T_string) & ptype) and pval == .string) {
+        if (std.mem.indexOf(u8, pval.string, S_DS) != null) return;
+    }
+
+    const ctype = typify(cval);
+
+    // Type mismatch between spec and data.
+    if (ptype != ctype and pval != .null) {
+        inj.errs.append(invalidTypeMsg(allocator, inj.path, typename(ptype), cval) catch "type error") catch {};
+        return;
+    }
+
+    if (ismap(cval)) {
+        if (!ismap(pval)) return;
+
+        // Check for unexpected keys (closed-world assumption).
+        const pkeys = keysof(allocator, pval) catch return;
+        if (pkeys == .array and pkeys.array.data.items.len > 0) {
+            // Check for $OPEN flag.
+            if (pval == .object) {
+                if (pval.object.get(S_BOPEN)) |ov| {
+                    if (ov == .bool and ov.bool) {
+                        // Open mode: merge data into spec result.
+                        const ml = [_]JsonValue{ pval, cval };
+                        const ml_lr = allocator.create(ListRef) catch return;
+                        ml_lr.* = .{ .data = ListData.init(allocator) };
+                        for (ml) |item| ml_lr.append(item) catch {};
+                        _ = merge(allocator, JsonValue{ .array = ml_lr }, MAXDEPTH) catch {};
+                        if (pval == .object) _ = pval.object.fetchOrderedRemove(S_BOPEN);
+                        return;
+                    }
+                }
+            }
+
+            // Closed: report unexpected keys.
+            const ckeys = keysof(allocator, cval) catch return;
+            if (ckeys == .array) {
+                var bad = std.ArrayList([]const u8).init(allocator);
+                for (ckeys.array.data.items) |ck| {
+                    if (ck != .string) continue;
+                    if (!((haskey(allocator, pval, ck) catch false))) {
+                        bad.append(ck.string) catch {};
+                    }
+                }
+                if (bad.items.len > 0) {
+                    var badmsg = std.ArrayList(u8).init(allocator);
+                    badmsg.appendSlice("Unexpected keys at field ") catch {};
+                    badmsg.appendSlice(pathifySlice(allocator, if (inj.path.len > 1) inj.path[1..] else inj.path) catch "<root>") catch {};
+                    badmsg.appendSlice(": ") catch {};
+                    for (bad.items, 0..) |bk, bi| {
+                        if (bi > 0) badmsg.appendSlice(", ") catch {};
+                        badmsg.appendSlice(bk) catch {};
+                    }
+                    inj.errs.append(badmsg.items) catch {};
+                }
+            }
+        } else {
+            // Empty spec object {} = open, merge in data.
+            const ml = [_]JsonValue{ pval, cval };
+            const ml_lr = allocator.create(ListRef) catch return;
+            ml_lr.* = .{ .data = ListData.init(allocator) };
+            for (ml) |item| ml_lr.append(item) catch {};
+            _ = merge(allocator, JsonValue{ .array = ml_lr }, MAXDEPTH) catch {};
+        }
+    } else if (!isnode(cval)) {
+        if (inj.exact_mode) {
+            // Exact matching for select.
+            const a = toStdJson(allocator, cval) catch return;
+            const b = toStdJson(allocator, pval) catch return;
+            if (!stdJsonEqual(a, b)) {
+                const p = pathifySlice(allocator, if (inj.path.len > 1) inj.path[1..] else inj.path) catch "<root>";
+                inj.errs.append(std.fmt.allocPrint(allocator, "Value at {s}: {s} should equal {s}.", .{ p, stringify(allocator, cval, null) catch "?", stringify(allocator, pval, null) catch "?" }) catch "exact match error") catch {};
+            }
+        } else {
+            // Non-exact: copy data value into spec result.
+            _ = setprop(allocator, parent, JsonValue{ .string = key }, cval) catch {};
+        }
+    }
 }
 
 fn validateWalk(
