@@ -318,7 +318,10 @@ pub fn typify(val: JsonValue) i64 {
         .array => @as(i64, T_node | T_list),
         .integer => @as(i64, T_scalar | T_number | T_integer),
         .float => |f| {
-            if (!std.math.isNan(f) and !std.math.isInf(f) and f == @trunc(f)) {
+            if (std.math.isNan(f)) {
+                return @as(i64, T_noval);
+            }
+            if (!std.math.isInf(f) and f == @trunc(f)) {
                 return @as(i64, T_scalar | T_number | T_integer);
             }
             return @as(i64, T_scalar | T_number | T_decimal);
@@ -360,9 +363,9 @@ pub fn strkey(allocator: Allocator, key: JsonValue) ![]const u8 {
 
 // Get a list element by integer index. Only works on lists.
 pub fn getelem(allocator: Allocator, val: JsonValue, key: JsonValue, alt: JsonValue) !JsonValue {
-    if (val == .null or key == .null) return alt;
+    if (val == .null or key == .null) return resolveAlt(allocator, alt);
 
-    if (val != .array) return alt;
+    if (val != .array) return resolveAlt(allocator, alt);
 
     const list = val.array.data.items;
 
@@ -370,7 +373,7 @@ pub fn getelem(allocator: Allocator, val: JsonValue, key: JsonValue, alt: JsonVa
     const ks = try strkey(allocator, key);
 
     // Parse as integer
-    const nkey_raw = std.fmt.parseInt(i64, ks, 10) catch return alt;
+    const nkey_raw = std.fmt.parseInt(i64, ks, 10) catch return resolveAlt(allocator, alt);
     var nkey = nkey_raw;
 
     if (nkey < 0) {
@@ -381,6 +384,12 @@ pub fn getelem(allocator: Allocator, val: JsonValue, key: JsonValue, alt: JsonVa
         return list[@intCast(nkey)];
     }
 
+    return resolveAlt(allocator, alt);
+}
+
+// If alt is a function, call it to get the default value.
+fn resolveAlt(allocator: Allocator, alt: JsonValue) !JsonValue {
+    if (alt == .function) return try alt.function(allocator);
     return alt;
 }
 
@@ -692,8 +701,9 @@ pub fn escurl(allocator: Allocator, s: []const u8) ![]const u8 {
 }
 
 fn isUrlSafe(c: u8) bool {
+    // Match encodeURIComponent: unreserved chars per RFC 3986 plus !*'()
     return switch (c) {
-        'A'...'Z', 'a'...'z', '0'...'9', '-', '_', '.', '~' => true,
+        'A'...'Z', 'a'...'z', '0'...'9', '-', '_', '.', '~', '!', '*', '\'', '(', ')' => true,
         else => false,
     };
 }
@@ -1086,7 +1096,7 @@ pub fn pathify(allocator: Allocator, val: JsonValue, from: usize, end: usize) ![
     // Unknown path — always include colon and stringified value
     var result = std.ArrayList(u8).init(allocator);
     try result.appendSlice("<unknown-path:");
-    const s = try stringify(allocator, val, 33);
+    const s = try stringify(allocator, val, 47);
     try result.appendSlice(s);
     try result.append('>');
     return result.items;
@@ -1723,6 +1733,7 @@ pub const Injection = struct {
     allocator: Allocator,
     mode: i32 = M_VAL,
     full: bool = false,
+    skip: bool = false, // Set by handlers to suppress setval.
     key_i: usize = 0,
     key: []const u8 = S_DTOP,
     val: JsonValue = .null,
@@ -1997,18 +2008,21 @@ pub fn injectVal(allocator: Allocator, val: JsonValue, store: JsonValue, inj_opt
         // Inject paths into string scalars.
         inj.mode = M_VAL;
         const result = try injectStr(allocator, val.string, store, inj);
-        if (result != .null or val != .null) {
+        if (!inj.skip and (result != .null or val != .null)) {
             _ = try inj.setval(result, 0);
         }
+        inj.skip = false;
         current = result;
     }
 
     inj.val = current;
 
-    // Call modify callback if set.
-    if (inj.modify) |modify_fn| {
-        const mval = getprop(allocator, inj.parent, JsonValue{ .string = inj.key }, .null) catch .null;
-        modify_fn(allocator, mval, inj.key, inj.parent, inj, store);
+    // Call modify callback if set (skip suppresses modify too).
+    if (!inj.skip) {
+        if (inj.modify) |modify_fn| {
+            const mval = getprop(allocator, inj.parent, JsonValue{ .string = inj.key }, .null) catch .null;
+            modify_fn(allocator, mval, inj.key, inj.parent, inj, store);
+        }
     }
 
     // Return value is the top-level result.
@@ -3221,10 +3235,14 @@ fn validateChildMap(
 fn invalidTypeMsg(allocator: Allocator, path: []const []const u8, expected: []const u8, val: JsonValue) anyerror![]const u8 {
     const p = try pathifySlice(allocator, path);
     const actual = typename(typify(val));
+    const val_str = try stringify(allocator, val, 33);
     if (path.len == 0) {
-        return try std.fmt.allocPrint(allocator, "Expected {s}, but found {s}.", .{ expected, actual });
+        if (val == .null) {
+            return try std.fmt.allocPrint(allocator, "Expected {s}, but found no value.", .{expected});
+        }
+        return try std.fmt.allocPrint(allocator, "Expected {s}, but found {s}: {s}.", .{ expected, actual, val_str });
     }
-    return try std.fmt.allocPrint(allocator, "Expected {s} at {s}, but found {s}.", .{ expected, p, actual });
+    return try std.fmt.allocPrint(allocator, "Expected {s}, field {s} to be {s}, but found {s}: {s}.", .{ expected, p, expected, actual, val_str });
 }
 
 fn pathifySlice(allocator: Allocator, path: []const []const u8) anyerror![]const u8 {
@@ -3506,9 +3524,9 @@ fn selectCmp(
     } else if (std.mem.eql(u8, op, "$LTE")) {
         if (pf != null and tf != null) pass = pf.? <= tf.?;
     } else if (std.mem.eql(u8, op, "$LIKE")) {
-        // Simple substring match (not full regex).
-        if (term == .string and data_val == .string) {
-            pass = std.mem.indexOf(u8, data_val.string, term.string) != null;
+        if (term == .string) {
+            const subject = try stringify(allocator, data_val, null);
+            pass = regexMatch(term.string, subject);
         }
     }
 
@@ -3526,3 +3544,24 @@ fn toFloat(val: JsonValue) ?f64 {
     };
 }
 
+// POSIX regex matching via libc.
+const posix_regex = @cImport(@cInclude("regex.h"));
+
+fn regexMatch(pattern: []const u8, subject: []const u8) bool {
+    var pat_buf: [512]u8 = undefined;
+    var sub_buf: [4096]u8 = undefined;
+    if (pattern.len >= pat_buf.len or subject.len >= sub_buf.len) return false;
+    @memcpy(pat_buf[0..pattern.len], pattern);
+    pat_buf[pattern.len] = 0;
+    @memcpy(sub_buf[0..subject.len], subject);
+    sub_buf[subject.len] = 0;
+
+    // Allocate regex_t as raw bytes since it's opaque in Zig's C import.
+    var regex_buf: [256]u8 align(@alignOf(usize)) = std.mem.zeroes([256]u8);
+    const regex: *posix_regex.regex_t = @ptrCast(&regex_buf);
+    const comp_result = posix_regex.regcomp(regex, &pat_buf, posix_regex.REG_EXTENDED | posix_regex.REG_NOSUB);
+    if (comp_result != 0) return false;
+    defer posix_regex.regfree(regex);
+
+    return posix_regex.regexec(regex, &sub_buf, 0, null, 0) == 0;
+}
