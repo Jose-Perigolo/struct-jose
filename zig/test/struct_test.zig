@@ -883,6 +883,33 @@ test "getpath-special" {
     try r.runsetAllocFlags(try getSubSpec(r, "getpath", "special"), .{ .null_flag = false }, wrap_getpath_special);
 }
 
+// ---- GetPath handler test ----
+
+fn fooHandler(_: Allocator) anyerror!JsonValue {
+    return JsonValue{ .string = "foo" };
+}
+
+fn wrap_getpath_handler(allocator: Allocator, val: JsonValue) JsonValue {
+    // in: { path, store }
+    if (val != .object) return .null;
+    const m = val.object;
+    const path_v = m.get("path") orelse return .null;
+
+    // Build a store that has $FOO as a function returning "foo".
+    const handler_store = allocator.create(voxgig_struct.MapRef) catch return .null;
+    handler_store.* = .{ .data = voxgig_struct.MapData.init(allocator) };
+    handler_store.put("$TOP", .null) catch {};
+    handler_store.put("$FOO", JsonValue{ .function = fooHandler }) catch {};
+
+    return voxgig_struct.getpath(allocator, path_v, JsonValue{ .object = handler_store }) catch return .null;
+}
+
+test "getpath-handler" {
+    var r = try runner.makeRunner(testing.allocator);
+    defer r.deinit();
+    try r.runsetAllocFlags(try getSubSpec(r, "getpath", "handler"), .{ .null_flag = false }, wrap_getpath_handler);
+}
+
 // ---- Inject tests ----
 
 fn wrap_inject(allocator: Allocator, val: JsonValue) JsonValue {

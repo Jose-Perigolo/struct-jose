@@ -60,6 +60,9 @@ pub const ListRef = struct {
     }
 };
 
+// Function signature for values stored in the JSON tree.
+pub const JsonFunc = *const fn (allocator: Allocator) anyerror!JsonValue;
+
 // Custom value type with pointer-stable containers.
 pub const JsonValue = union(enum) {
     null,
@@ -70,6 +73,7 @@ pub const JsonValue = union(enum) {
     number_string: []const u8,
     object: *MapRef,
     array: *ListRef,
+    function: JsonFunc,
 
     pub fn makeMap(allocator: Allocator) !JsonValue {
         const mr = try allocator.create(MapRef);
@@ -137,6 +141,7 @@ pub fn toStdJson(allocator: Allocator, v: JsonValue) anyerror!StdJsonValue {
             }
             return StdJsonValue{ .array = arr };
         },
+        .function => StdJsonValue{ .null = {} },
     };
 }
 
@@ -283,8 +288,8 @@ pub fn isempty(val: JsonValue) bool {
 }
 
 // Value is a function. JSON values are never functions.
-pub fn isfunc(_: JsonValue) bool {
-    return false;
+pub fn isfunc(val: JsonValue) bool {
+    return val == .function;
 }
 
 // Return a defined value, or an alternative if the value is null.
@@ -322,6 +327,7 @@ pub fn typify(val: JsonValue) i64 {
         .bool => @as(i64, T_scalar | T_boolean),
         .null => @as(i64, T_scalar | T_null),
         .number_string => @as(i64, T_scalar | T_number),
+        .function => @as(i64, T_scalar | T_function),
     };
 }
 
@@ -336,6 +342,7 @@ pub fn size(val: JsonValue) i64 {
         .bool => |b| if (b) @as(i64, 1) else @as(i64, 0),
         .null => 0,
         .number_string => 0,
+        .function => 0,
     };
 }
 
@@ -882,6 +889,7 @@ fn jsonifyWrite(val: JsonValue, writer: anytype, indent_size: usize, offset: usi
             try writer.writeByte('}');
         },
         .number_string => |s| try writer.writeAll(s),
+        .function => try writer.writeAll("null"),
     }
 }
 
@@ -941,6 +949,7 @@ fn jsonifyCompactWrite(val: JsonValue, writer: anytype) !void {
             try writer.writeByte('}');
         },
         .number_string => |s| try writer.writeAll(s),
+        .function => try writer.writeAll("null"),
     }
 }
 
@@ -1016,6 +1025,7 @@ fn stringifyInner(allocator: Allocator, val: JsonValue) ![]const u8 {
             return result.items;
         },
         .number_string => |s| s,
+        .function => "",
     };
 }
 
@@ -1442,6 +1452,8 @@ pub fn getpathInj(allocator: Allocator, path_val: JsonValue, store: JsonValue, i
     if (numparts == 1) {
         if (store == .object) {
             if (store.object.get(parts[0])) |v| {
+                // If the value is a function, call it.
+                if (v == .function) return try v.function(allocator);
                 return v;
             }
         }
@@ -2139,6 +2151,16 @@ fn dispatchCmd(allocator: Allocator, cmd: []const u8, store: JsonValue, inj: *In
     if (std.mem.eql(u8, cmd, "$PACK")) return try cmdPack(allocator, inj, store);
     if (std.mem.eql(u8, cmd, "$REF")) return try cmdRef(allocator, inj, store);
     if (std.mem.eql(u8, cmd, "$APPLY")) return try cmdApply(allocator, inj);
+
+    // Unknown $ key — check if the store has it as a function value.
+    if (store == .object) {
+        if (store.object.get(cmd)) |val| {
+            if (val == .function) {
+                return try val.function(allocator);
+            }
+            return val;
+        }
+    }
     return .null;
 }
 
