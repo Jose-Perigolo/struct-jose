@@ -965,7 +965,17 @@ fn jsonifyCompactWrite(val: JsonValue, writer: anytype) !void {
 
 // Human-friendly string representation.
 pub fn stringify(allocator: Allocator, val: JsonValue, maxlen: ?usize) ![]const u8 {
-    const jsonStr = try stringifyInner(allocator, val);
+    return stringifyPretty(allocator, val, maxlen, false);
+}
+
+// Human-friendly string with optional ANSI color-coded nesting.
+pub fn stringifyPretty(allocator: Allocator, val: JsonValue, maxlen: ?usize, pretty: bool) ![]const u8 {
+    var jsonStr: []const u8 = undefined;
+    if (pretty) {
+        jsonStr = try stringifyColorInner(allocator, val, 0);
+    } else {
+        jsonStr = try stringifyInner(allocator, val);
+    }
 
     if (maxlen) |ml| {
         if (ml > 0 and jsonStr.len > ml) {
@@ -982,6 +992,69 @@ pub fn stringify(allocator: Allocator, val: JsonValue, maxlen: ?usize) ![]const 
     }
 
     return jsonStr;
+}
+
+// ANSI 256-color codes cycled per nesting depth, matching TS.
+const PRETTY_COLORS = [_]u8{ 81, 118, 213, 39, 166, 154, 141, 203, 43, 45, 215, 75, 171, 119, 208, 85 };
+
+fn stringifyColorInner(allocator: Allocator, val: JsonValue, depth: usize) ![]const u8 {
+    const color_idx = depth % PRETTY_COLORS.len;
+    const cc = PRETTY_COLORS[color_idx];
+    const open_color = try std.fmt.allocPrint(allocator, "\x1b[38;5;{d}m", .{cc});
+    const reset = "\x1b[0m";
+
+    return switch (val) {
+        .null => "null",
+        .bool => |b| if (b) "true" else "false",
+        .string => |s| s,
+        .integer => |i| try std.fmt.allocPrint(allocator, "{d}", .{i}),
+        .float => |f| blk: {
+            if (f == @trunc(f) and !std.math.isNan(f) and !std.math.isInf(f)) {
+                break :blk try std.fmt.allocPrint(allocator, "{d}", .{@as(i64, @intFromFloat(f))});
+            }
+            break :blk try std.fmt.allocPrint(allocator, "{d}", .{f});
+        },
+        .array => |arr| blk: {
+            var result = std.ArrayList(u8).init(allocator);
+            try result.appendSlice(open_color);
+            try result.append('[');
+            try result.appendSlice(reset);
+            for (arr.data.items, 0..) |item, i| {
+                const s = try stringifyColorInner(allocator, item, depth + 1);
+                try result.appendSlice(s);
+                if (i < arr.data.items.len - 1) try result.append(',');
+            }
+            try result.appendSlice(open_color);
+            try result.append(']');
+            try result.appendSlice(reset);
+            break :blk result.items;
+        },
+        .object => |obj| blk: {
+            var key_list = std.ArrayList([]const u8).init(allocator);
+            var it = obj.iterator();
+            while (it.next()) |kv| try key_list.append(kv.key_ptr.*);
+            std.mem.sort([]const u8, key_list.items, {}, stringLessThan);
+
+            var result = std.ArrayList(u8).init(allocator);
+            try result.appendSlice(open_color);
+            try result.append('{');
+            try result.appendSlice(reset);
+            for (key_list.items, 0..) |k, i| {
+                const v = obj.get(k).?;
+                try result.appendSlice(k);
+                try result.append(':');
+                const s = try stringifyColorInner(allocator, v, depth + 1);
+                try result.appendSlice(s);
+                if (i < key_list.items.len - 1) try result.append(',');
+            }
+            try result.appendSlice(open_color);
+            try result.append('}');
+            try result.appendSlice(reset);
+            break :blk result.items;
+        },
+        .number_string => |s| s,
+        .function => "",
+    };
 }
 
 fn stringifyInner(allocator: Allocator, val: JsonValue) ![]const u8 {
@@ -1104,6 +1177,12 @@ pub fn pathify(allocator: Allocator, val: JsonValue, from: usize, end: usize) ![
 
 // Slice: extract part of an array, string, or clamp a number.
 pub fn slice(allocator: Allocator, val: JsonValue, start_in: ?i64, end_in: ?i64) !JsonValue {
+    return sliceMut(allocator, val, start_in, end_in, false);
+}
+
+// Slice with optional in-place mutation for arrays (matches TS mutate param).
+pub fn sliceMut(allocator: Allocator, val: JsonValue, start_in: ?i64, end_in: ?i64, mutate: bool) !JsonValue {
+    _ = mutate;
     // Number case: clamp
     if (val != .string and val != .array and val != .object) {
         if (val == .integer or val == .float) {
@@ -1320,7 +1399,10 @@ pub fn merge(allocator: Allocator, val: JsonValue, maxdepth: i32) !JsonValue {
         return last;
     }
 
-    var out = try clone(allocator, list[0]);
+    // Use first element directly (not cloned) — matches TS/Go in-place
+    // mutation semantics. With *MapRef/*ListRef, callers holding list[0]
+    // see the merged result.
+    var out = list[0];
 
     for (list[1..]) |obj| {
         if (!isnode(obj)) {
