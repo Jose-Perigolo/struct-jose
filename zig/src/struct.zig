@@ -1673,6 +1673,16 @@ pub fn setpath(allocator: Allocator, store: JsonValue, path_val: JsonValue, val:
 // Mirrors the Go/TS Injection struct for three-phase key processing.
 // ============================================================================
 
+// Modify callback — called after each injection step to post-process values.
+pub const ModifyFn = *const fn (
+    allocator: Allocator,
+    val: JsonValue,
+    key: []const u8,
+    parent: JsonValue,
+    inj: *Injection,
+    store: JsonValue,
+) void;
+
 pub const Injection = struct {
     allocator: Allocator,
     mode: i32 = M_VAL,
@@ -1693,6 +1703,9 @@ pub const Injection = struct {
 
     // Metadata for injection context.
     meta: JsonValue = .null,
+
+    // Optional modify callback — called after each injection step.
+    modify: ?ModifyFn = null,
 
     // Shared error collector (pointer so all children share it).
     errs: *std.ArrayList([]const u8),
@@ -1737,6 +1750,7 @@ pub const Injection = struct {
             .nodes = new_nodes,
             .dpath = new_dpath,
             .meta = self.meta,
+            .modify = self.modify,
             .errs = self.errs,
         };
         return c;
@@ -1860,6 +1874,8 @@ pub fn injectVal(allocator: Allocator, val: JsonValue, store: JsonValue, inj_opt
         if (inj_opt) |existing| {
             if (existing.dparent != .null) inj.dparent = existing.dparent;
             if (existing.dpath.len > 0) inj.dpath = existing.dpath;
+            if (existing.modify != null) inj.modify = existing.modify;
+            if (existing.meta != .null) inj.meta = existing.meta;
         }
     } else {
         inj = inj_opt.?;
@@ -1953,8 +1969,11 @@ pub fn injectVal(allocator: Allocator, val: JsonValue, store: JsonValue, inj_opt
 
     inj.val = current;
 
-    // With pointer-stable MapRef/ListRef, mutations through any holder
-    // are visible everywhere. No explicit propagation needed.
+    // Call modify callback if set.
+    if (inj.modify) |modify_fn| {
+        const mval = getprop(allocator, inj.parent, JsonValue{ .string = inj.key }, .null) catch .null;
+        modify_fn(allocator, mval, inj.key, inj.parent, inj, store);
+    }
 
     // Return value is the top-level result.
     return try getprop(allocator, inj.parent, JsonValue{ .string = S_DTOP }, .null);
@@ -2772,6 +2791,42 @@ pub fn transform(allocator: Allocator, data: JsonValue, spec: JsonValue) !JsonVa
     const store_val = JsonValue{ .object = store };
 
     return try injectVal(allocator, spec_clone, store_val, null);
+}
+
+// Transform with a modify callback applied after each injection step.
+pub fn transformModify(allocator: Allocator, data: JsonValue, spec: JsonValue, modify: ?ModifyFn) !JsonValue {
+    if (spec == .null) return spec;
+
+    const spec_clone = try clone(allocator, spec);
+    const data_clone = if (data == .null) JsonValue{ .null = {} } else try clone(allocator, data);
+    const orig_spec = try clone(allocator, spec);
+
+    const store = try allocator.create(MapRef);
+    store.* = .{ .data = MapData.init(allocator) };
+    try store.put(S_DTOP, data_clone);
+    try store.put(S_DSPEC, orig_spec);
+    const store_val = JsonValue{ .object = store };
+
+    // Create a partial injection with modify set.
+    const inj_init = try allocator.create(Injection);
+    const empty_keys = try allocator.alloc([]const u8, 0);
+    const empty_path = try allocator.alloc([]const u8, 0);
+    const empty_nodes = try allocator.alloc(JsonValue, 0);
+    const empty_dpath = try allocator.alloc([]const u8, 0);
+    const errs = try allocator.create(std.ArrayList([]const u8));
+    errs.* = std.ArrayList([]const u8).init(allocator);
+    inj_init.* = Injection{
+        .allocator = allocator,
+        .mode = 0, // triggers root initialization in injectVal
+        .modify = modify,
+        .keys = empty_keys,
+        .path = empty_path,
+        .nodes = empty_nodes,
+        .dpath = empty_dpath,
+        .errs = errs,
+    };
+
+    return try injectVal(allocator, spec_clone, store_val, inj_init);
 }
 
 // ============================================================================

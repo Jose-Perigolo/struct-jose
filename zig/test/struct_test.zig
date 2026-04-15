@@ -938,6 +938,29 @@ test "transform-apply" {
     try r.runsetAllocFlags(try getSubSpec(r, "transform", "apply"), .{ .null_flag = false }, wrap_transform);
 }
 
+// ---- Transform modify test ----
+
+fn modifyPrependAt(_: Allocator, val: JsonValue, key: []const u8, parent: JsonValue, _: *voxgig_struct.Injection, _: JsonValue) void {
+    if (val == .string and parent == .object) {
+        const new_val = std.fmt.allocPrint(std.heap.page_allocator, "@{s}", .{val.string}) catch return;
+        parent.object.put(key, JsonValue{ .string = new_val }) catch {};
+    }
+}
+
+fn wrap_transform_modify(allocator: Allocator, val: JsonValue) JsonValue {
+    if (val != .object) return .null;
+    const m = val.object;
+    const data = m.get("data") orelse .null;
+    const spec = m.get("spec") orelse return .null;
+    return voxgig_struct.transformModify(allocator, data, spec, modifyPrependAt) catch return .null;
+}
+
+test "transform-modify" {
+    var r = try runner.makeRunner(testing.allocator);
+    defer r.deinit();
+    try r.runsetAllocFlags(try getSubSpec(r, "transform", "modify"), .{ .null_flag = false }, wrap_transform_modify);
+}
+
 // ---- Validate tests ----
 
 fn wrap_validate(allocator: Allocator, val: JsonValue) JsonValue {
