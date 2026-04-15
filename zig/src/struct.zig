@@ -1529,12 +1529,15 @@ pub fn getpathInj(allocator: Allocator, path_val: JsonValue, store: JsonValue, i
                     }
                     if (ascends <= dpath.len) {
                         // Walk the fullpath array against the store directly.
-                        // First element may be $TOP which is a store key.
                         var resolved = store;
+                        var prev_fp: []const u8 = "";
                         for (fullpath.items) |fp| {
                             if (resolved == .null) break;
                             // Skip synthetic $: markers.
                             if (fp.len > 2 and std.mem.startsWith(u8, fp, "$:")) continue;
+                            // Skip duplicate consecutive $TOP entries.
+                            if (std.mem.eql(u8, fp, S_DTOP) and std.mem.eql(u8, prev_fp, S_DTOP)) continue;
+                            prev_fp = fp;
                             if (resolved == .object) {
                                 if (resolved.object.get(fp)) |v| {
                                     resolved = v;
