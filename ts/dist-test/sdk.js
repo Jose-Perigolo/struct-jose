@@ -22,6 +22,7 @@ class SDK {
         __classPrivateFieldSet(this, _SDK_utility, {
             struct: new StructUtility_1.StructUtility(),
             contextify: (ctxmap) => ctxmap,
+            makeContext: (ctxmap) => ctxmap,
             check: (ctx) => {
                 return {
                     zed: 'ZED' +
