@@ -734,7 +734,7 @@ func MatchScalar(check, base any, structUtil *StructUtility) bool {
 	if s, ok := check.(string); ok && s == UNDEFMARK {
 		return base == nil || reflect.ValueOf(base).IsZero()
 	}
-	
+
 	// Handle EXISTSMARK - value exists and is not undefined
 	if s, ok := check.(string); ok && s == EXISTSMARK {
 		return base != nil
@@ -745,22 +745,7 @@ func MatchScalar(check, base any, structUtil *StructUtility) bool {
 	if !pass {
 		if checkStr, ok := check.(string); ok {
 			basestr := structUtil.Stringify(base)
-
-			if len(checkStr) > 2 && checkStr[0] == '/' && checkStr[len(checkStr)-1] == '/' {
-				pat := checkStr[1 : len(checkStr)-1]
-				if rx, err := regexp.Compile(pat); err == nil {
-					pass = rx.MatchString(basestr)
-				} else {
-					pass = false
-				}
-			} else {
-				basenorm := strings.ToLower(basestr)
-				checknorm := strings.ToLower(structUtil.Stringify(checkStr))
-				pass = strings.Contains(
-					basenorm,
-					checknorm,
-				)
-			}
+			pass = MatchString(checkStr, basestr, structUtil)
 		} else {
 			cv := reflect.ValueOf(check)
 			isf := cv.Kind() == reflect.Func
@@ -771,6 +756,24 @@ func MatchScalar(check, base any, structUtil *StructUtility) bool {
 	}
 
 	return pass
+}
+
+// MatchString compares an expected `check` string against the stringified base.
+// If `check` is wrapped in slashes (e.g. "/\\w+SDK/"), the inner text is
+// treated as a Go regular expression and tested with regexp.MatchString.
+// Otherwise the comparison falls back to a case-insensitive substring match,
+// matching the JS test runner's matchval behaviour.
+func MatchString(check, base string, structUtil *StructUtility) bool {
+	if len(check) > 2 && check[0] == '/' && check[len(check)-1] == '/' {
+		pat := check[1 : len(check)-1]
+		if rx, err := regexp.Compile(pat); err == nil {
+			return rx.MatchString(base)
+		}
+		return false
+	}
+	basenorm := strings.ToLower(base)
+	checknorm := strings.ToLower(structUtil.Stringify(check))
+	return strings.Contains(basenorm, checknorm)
 }
 
 func subjectify(fn any) Subject {
