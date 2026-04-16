@@ -1504,7 +1504,7 @@ const transform_EACH: Injector = (
   let rval = []
 
   if (0 < size(tval)) {
-    tcur = null == src ? NONE : Object.values(src)
+    tcur = null == src ? NONE : items(src, (n: [string, any]) => n[1])
 
     const ckey = getelem(inj.path, -2)
 
