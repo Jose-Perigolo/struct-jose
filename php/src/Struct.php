@@ -187,6 +187,9 @@ class Struct
         if ($val === self::UNDEF || $val === null) {
             return false;
         }
+        if ($val instanceof \Closure) {
+            return false;
+        }
         if ($val instanceof ListRef) {
             return true;
         }
@@ -204,6 +207,9 @@ class Struct
     public static function ismap(mixed $val): bool
     {
         if ($val instanceof ListRef) {
+            return false;
+        }
+        if ($val instanceof \Closure) {
             return false;
         }
         if (is_object($val)) {
@@ -911,7 +917,10 @@ class Struct
         }
         $refs = [];
         $replacer = function (mixed $v) use (&$refs, &$replacer): mixed {
-            if (is_callable($v) && !is_array($v) && !($v instanceof ListRef)) {
+            if ($v instanceof \Closure) {
+                $refs[] = $v;
+                return '`$FUNCTION:' . (count($refs) - 1) . '`';
+            } elseif (is_callable($v) && !is_array($v) && !($v instanceof ListRef)) {
                 $refs[] = $v;
                 return '`$FUNCTION:' . (count($refs) - 1) . '`';
             } elseif ($v instanceof ListRef) {

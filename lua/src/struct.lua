@@ -1394,7 +1394,17 @@ local function merge(val, maxdepth)
   end
 
   local list = val
+
+  -- Use rawlen or find max integer key to handle nil gaps in arrays.
   local lenlist = #list
+  if lenlist == 0 then
+    -- Check for nil gaps: find the actual max integer key.
+    for k in pairs(list) do
+      if type(k) == S_number and k > lenlist then
+        lenlist = k
+      end
+    end
+  end
 
   if lenlist == 0 then
     return NONE
