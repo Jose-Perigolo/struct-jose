@@ -53,7 +53,7 @@ class StructTest extends TestCase
                     $inForMsg = $entry->args;
                     $result = $apply(...$entry->args);
                 } else {
-                    $in = property_exists($entry, 'in') ? $entry->in : Struct::UNDEF;
+                    $in = property_exists($entry, 'in') ? $entry->in : Struct::undef();
                     $inForMsg = $in;
                     $result = $apply($in);
                 }
@@ -209,9 +209,9 @@ class StructTest extends TestCase
         $this->testSet(
             $this->testSpec->minor->getprop,
             function ($input) {
-                $val = property_exists($input, 'val') ? $input->val : Struct::UNDEF;
-                $key = property_exists($input, 'key') ? $input->key : Struct::UNDEF;
-                $alt = property_exists($input, 'alt') ? $input->alt : Struct::UNDEF;
+                $val = property_exists($input, 'val') ? $input->val : Struct::undef();
+                $key = property_exists($input, 'key') ? $input->key : Struct::undef();
+                $alt = property_exists($input, 'alt') ? $input->alt : Struct::undef();
                 return Struct::getprop($val, $key, $alt);
             }
         );
@@ -222,10 +222,10 @@ class StructTest extends TestCase
         $this->testSet(
             $this->testSpec->minor->getelem,
             function ($input) {
-                $val = property_exists($input, 'val') ? $input->val : Struct::UNDEF;
-                $key = property_exists($input, 'key') ? $input->key : Struct::UNDEF;
-                $alt = property_exists($input, 'alt') ? $input->alt : Struct::UNDEF;
-                return $alt === Struct::UNDEF ? 
+                $val = property_exists($input, 'val') ? $input->val : Struct::undef();
+                $key = property_exists($input, 'key') ? $input->key : Struct::undef();
+                $alt = property_exists($input, 'alt') ? $input->alt : Struct::undef();
+                return $alt === Struct::undef() ? 
                     Struct::getelem($val, $key) : 
                     Struct::getelem($val, $key, $alt);
             }
@@ -242,8 +242,8 @@ class StructTest extends TestCase
         $this->testSet(
             $this->testSpec->minor->haskey,
             function ($input) {
-                $src = property_exists($input, 'src') ? $input->src : Struct::UNDEF;
-                $key = property_exists($input, 'key') ? $input->key : Struct::UNDEF;
+                $src = property_exists($input, 'src') ? $input->src : Struct::undef();
+                $key = property_exists($input, 'key') ? $input->key : Struct::undef();
                 return Struct::haskey($src, $key);
             }
         );
@@ -303,7 +303,7 @@ class StructTest extends TestCase
         $this->testSet(
             $this->testSpec->minor->jsonify,
             function ($input) {
-                $val = property_exists($input, 'val') ? $input->val : Struct::UNDEF;
+                $val = property_exists($input, 'val') ? $input->val : Struct::undef();
                 $flags = property_exists($input, 'flags') ? $input->flags : null;
                 return Struct::jsonify($val, $flags);
             }
@@ -320,7 +320,7 @@ class StructTest extends TestCase
         $this->testSet(
             $this->testSpec->minor->slice,
             function ($input) {
-                $val = property_exists($input, 'val') ? $input->val : Struct::UNDEF;
+                $val = property_exists($input, 'val') ? $input->val : Struct::undef();
                 $start = property_exists($input, 'start') ? $input->start : null;
                 $end = property_exists($input, 'end') ? $input->end : null;
                 return Struct::slice($val, $start, $end);
@@ -333,7 +333,7 @@ class StructTest extends TestCase
         $this->testSet(
             $this->testSpec->minor->pad,
             function ($input) {
-                $val = property_exists($input, 'val') ? $input->val : Struct::UNDEF;
+                $val = property_exists($input, 'val') ? $input->val : Struct::undef();
                 $pad = property_exists($input, 'pad') ? $input->pad : null;
                 $char = property_exists($input, 'char') ? $input->char : null;
                 return Struct::pad($val, $pad, $char);
@@ -347,7 +347,7 @@ class StructTest extends TestCase
         $this->testSet(
             $this->testSpec->minor->stringify,
             function ($input) {
-                $val = property_exists($input, 'val') ? $input->val : Struct::UNDEF;
+                $val = property_exists($input, 'val') ? $input->val : Struct::undef();
                 if ($val === null) {
                     $val = 'null';
                 }
@@ -369,11 +369,11 @@ class StructTest extends TestCase
                 //    Otherwise take whatever value was there (could be null).
                 $raw = property_exists($entry, 'path')
                     ? $entry->path
-                    : Struct::UNDEF;
+                    : Struct::undef();
 
                 // 2) TS does: path = (vin.path === NULLMARK ? undefined : vin.path)
                 //    Our "undefined" is PHP null, so:
-                $path = ($raw === Struct::UNDEF) ? null : $raw;
+                $path = ($raw === Struct::undef()) ? null : $raw;
 
                 // 3) Optional slice offset
                 $from = property_exists($entry, 'from')
@@ -383,8 +383,7 @@ class StructTest extends TestCase
                 // 4) Run PHP port of pathify
                 $s = Struct::pathify($path, $from);
 
-                // 5) Strip out any "__NULL__." fragments (TS's replace)
-                $s = str_replace(Struct::UNDEF . '.', '', $s);
+                // 5) Strip out any UNDEF fragments (no-op with sentinel object)
 
                 // 6) TS does: if vin.path === NULLMARK then add ":null>"
                 //    In our convention, JSON null => raw === null (not UNDEF),
@@ -465,7 +464,7 @@ class StructTest extends TestCase
             function ($input) {
                 $parent = property_exists($input, 'parent') ? $input->parent : [];
                 $key = property_exists($input, 'key') ? $input->key : null;
-                $val = property_exists($input, 'val') ? $input->val : Struct::UNDEF;
+                $val = property_exists($input, 'val') ? $input->val : Struct::undef();
                 return Struct::setprop($parent, $key, $val);
             },
             true
@@ -627,8 +626,8 @@ class StructTest extends TestCase
         $this->testSet(
             $this->testSpec->getpath->basic,
             function ($input) {
-                $path = property_exists($input, 'path') ? $input->path : Struct::UNDEF;
-                $store = property_exists($input, 'store') ? $input->store : Struct::UNDEF;
+                $path = property_exists($input, 'path') ? $input->path : Struct::undef();
+                $store = property_exists($input, 'store') ? $input->store : Struct::undef();
                 $result = Struct::getpath($store, $path);
                 return $result;
             },
@@ -641,8 +640,8 @@ class StructTest extends TestCase
         $this->testSet(
             $this->testSpec->getpath->relative,
             function ($input) {
-                $path = property_exists($input, 'path') ? $input->path : Struct::UNDEF;
-                $store = property_exists($input, 'store') ? $input->store : Struct::UNDEF;
+                $path = property_exists($input, 'path') ? $input->path : Struct::undef();
+                $store = property_exists($input, 'store') ? $input->store : Struct::undef();
                 $state = new \stdClass();
                 if (property_exists($input, 'dparent')) {
                     $state->dparent = $input->dparent;
@@ -662,8 +661,8 @@ class StructTest extends TestCase
         $this->testSet(
             $this->testSpec->getpath->special,
             function ($input) {
-                $path = property_exists($input, 'path') ? $input->path : Struct::UNDEF;
-                $store = property_exists($input, 'store') ? $input->store : Struct::UNDEF;
+                $path = property_exists($input, 'path') ? $input->path : Struct::undef();
+                $store = property_exists($input, 'store') ? $input->store : Struct::undef();
                 $state = property_exists($input, 'inj') ? $input->inj : null;
                 $result = Struct::getpath($store, $path, $state);
                 return $result;
@@ -991,7 +990,7 @@ class StructTest extends TestCase
             function ($input) {
                 $store = property_exists($input, 'store') ? $input->store : (object) [];
                 $path = property_exists($input, 'path') ? $input->path : '';
-                $val = property_exists($input, 'val') ? $input->val : Struct::UNDEF;
+                $val = property_exists($input, 'val') ? $input->val : Struct::undef();
                 return Struct::setpath($store, $path, $val);
             },
             true
@@ -1121,7 +1120,7 @@ class StructTest extends TestCase
 
     public function testMinorEdgeTypify(): void
     {
-        $this->assertEquals(Struct::T_noval, Struct::typify(Struct::UNDEF));
+        $this->assertEquals(Struct::T_noval, Struct::typify(Struct::undef()));
         $this->assertEquals(Struct::T_scalar | Struct::T_null, Struct::typify(null));
         $this->assertEquals(Struct::T_scalar | Struct::T_function, Struct::typify(function () { return null; }));
     }
