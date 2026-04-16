@@ -911,7 +911,7 @@ class Struct
         }
         $refs = [];
         $replacer = function (mixed $v) use (&$refs, &$replacer): mixed {
-            if (is_callable($v) && !is_array($v) && !($v instanceof ListRef)) {
+            if ($v instanceof \Closure || (is_object($v) && !($v instanceof \stdClass) && !($v instanceof ListRef) && method_exists($v, '__invoke'))) {
                 $refs[] = $v;
                 return '`$FUNCTION:' . (count($refs) - 1) . '`';
             } elseif ($v instanceof ListRef) {
@@ -941,7 +941,10 @@ class Struct
         $reviver = function (mixed $v) use (&$refs, &$reviver): mixed {
             if (is_string($v)) {
                 if (preg_match('/^`\$FUNCTION:([0-9]+)`$/', $v, $matches)) {
-                    return $refs[(int) $matches[1]];
+                    $idx = (int) $matches[1];
+                    if (isset($refs[$idx])) {
+                        return $refs[$idx];
+                    }
                 }
                 return $v;
             } elseif ($v instanceof ListRef) {
@@ -979,7 +982,7 @@ class Struct
         if ($val === null || $val === self::UNDEF) {
             return $val;
         }
-        if (is_callable($val) && !is_array($val) && !is_object($val)) {
+        if ($val instanceof \Closure) {
             return $val;
         }
         if ($val instanceof ListRef) {
