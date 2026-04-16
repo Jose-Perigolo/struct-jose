@@ -17,13 +17,17 @@ build:
 # after all tests pass, due to *MapRef/*ListRef cross-references in arena
 # teardown. We filter the output: if "N/N tests passed" with N==total, success.
 test:
-	@out=$$(zig build test 2>&1); \
+	@out=$$(zig build test 2>&1 || true); \
 	echo "$$out"; \
-	if echo "$$out" | grep -qE '([0-9]+)/\1 tests passed'; then \
-		exit 0; \
-	else \
-		exit 1; \
-	fi
+	passed=$$(echo "$$out" | grep -oE '[0-9]+/[0-9]+ tests passed' | head -1); \
+	if [ -n "$$passed" ]; then \
+		x=$$(echo "$$passed" | cut -d/ -f1); \
+		y=$$(echo "$$passed" | cut -d/ -f2 | cut -d' ' -f1); \
+		if [ "$$x" = "$$y" ] && [ "$$x" -gt 0 ]; then \
+			exit 0; \
+		fi; \
+	fi; \
+	exit 1
 
 # Clean build artifacts
 clean:
