@@ -1206,7 +1206,7 @@ const transform_EACH = (inj, _val, _ref, store) => {
     }
     let rval = [];
     if (0 < size(tval)) {
-        tcur = null == src ? NONE : Object.values(src);
+        tcur = null == src ? NONE : items(src, (n) => n[1]);
         const ckey = getelem(inj.path, -2);
         const tpath = slice(inj.path, -1);
         const dpath = flatten([S_DTOP, srcpath.split(S_DT), '$:' + ckey]);
