@@ -3918,24 +3918,132 @@ fn toFloat(val: JsonValue) ?f64 {
     };
 }
 
-// POSIX regex matching via libc.
-const posix_regex = @cImport(@cInclude("regex.h"));
-
+// Pure Zig regex matcher — supports: [] character classes, . any char,
+// ^ start anchor, $ end anchor, *, +, ?, \ escape. No C dependency.
 fn regexMatch(pattern: []const u8, subject: []const u8) bool {
-    var pat_buf: [512]u8 = undefined;
-    var sub_buf: [4096]u8 = undefined;
-    if (pattern.len >= pat_buf.len or subject.len >= sub_buf.len) return false;
-    @memcpy(pat_buf[0..pattern.len], pattern);
-    pat_buf[pattern.len] = 0;
-    @memcpy(sub_buf[0..subject.len], subject);
-    sub_buf[subject.len] = 0;
+    // Anchored at start?
+    if (pattern.len > 0 and pattern[0] == '^') {
+        return regexMatchAt(pattern[1..], subject);
+    }
+    // Try matching at every position.
+    var i: usize = 0;
+    while (i <= subject.len) : (i += 1) {
+        if (regexMatchAt(pattern, subject[i..])) return true;
+    }
+    return false;
+}
 
-    // Allocate regex_t as raw bytes since it's opaque in Zig's C import.
-    var regex_buf: [256]u8 align(@alignOf(usize)) = std.mem.zeroes([256]u8);
-    const regex: *posix_regex.regex_t = @ptrCast(&regex_buf);
-    const comp_result = posix_regex.regcomp(regex, &pat_buf, posix_regex.REG_EXTENDED | posix_regex.REG_NOSUB);
-    if (comp_result != 0) return false;
-    defer posix_regex.regfree(regex);
+fn regexMatchAt(pattern: []const u8, subject: []const u8) bool {
+    var pi: usize = 0;
+    var si: usize = 0;
 
-    return posix_regex.regexec(regex, &sub_buf, 0, null, 0) == 0;
+    while (pi < pattern.len) {
+        // End anchor.
+        if (pattern[pi] == '$' and pi + 1 == pattern.len) {
+            return si == subject.len;
+        }
+
+        // Parse one pattern element (char, class, dot, or escaped char).
+        const elem = parseElement(pattern, pi) orelse return false;
+
+        // Check for quantifier after the element.
+        const after = elem.end;
+        const quant: u8 = if (after < pattern.len and (pattern[after] == '*' or pattern[after] == '+' or pattern[after] == '?'))
+            pattern[after]
+        else
+            0;
+
+        if (quant == '*') {
+            // Zero or more: greedy.
+            var count: usize = 0;
+            while (si + count < subject.len and matchElement(elem, subject[si + count])) count += 1;
+            // Try from longest to shortest.
+            while (true) {
+                if (regexMatchAt(pattern[after + 1 ..], subject[si + count ..])) return true;
+                if (count == 0) break;
+                count -= 1;
+            }
+            return false;
+        } else if (quant == '+') {
+            var count: usize = 0;
+            while (si + count < subject.len and matchElement(elem, subject[si + count])) count += 1;
+            if (count == 0) return false;
+            while (count > 0) {
+                if (regexMatchAt(pattern[after + 1 ..], subject[si + count ..])) return true;
+                count -= 1;
+            }
+            return false;
+        } else if (quant == '?') {
+            // Zero or one.
+            if (si < subject.len and matchElement(elem, subject[si])) {
+                if (regexMatchAt(pattern[after + 1 ..], subject[si + 1 ..])) return true;
+            }
+            return regexMatchAt(pattern[after + 1 ..], subject[si..]);
+        }
+
+        // No quantifier: must match exactly one character.
+        if (si >= subject.len) return false;
+        if (!matchElement(elem, subject[si])) return false;
+        pi = after;
+        si += 1;
+    }
+
+    return true; // Pattern exhausted = match (unanchored tail).
+}
+
+const Element = struct {
+    const Kind = enum { literal, dot, class, neg_class };
+    kind: Kind,
+    ch: u8, // For literal.
+    class_start: usize, // For class: start in pattern.
+    class_end: usize, // For class: end in pattern (exclusive, after ']').
+    end: usize, // Index after this element in the pattern.
+    pattern: []const u8, // Reference to full pattern.
+};
+
+fn parseElement(pattern: []const u8, pos: usize) ?Element {
+    if (pos >= pattern.len) return null;
+    const c = pattern[pos];
+
+    if (c == '.') {
+        return Element{ .kind = .dot, .ch = 0, .class_start = 0, .class_end = 0, .end = pos + 1, .pattern = pattern };
+    }
+    if (c == '\\' and pos + 1 < pattern.len) {
+        return Element{ .kind = .literal, .ch = pattern[pos + 1], .class_start = 0, .class_end = 0, .end = pos + 2, .pattern = pattern };
+    }
+    if (c == '[') {
+        const negated = pos + 1 < pattern.len and pattern[pos + 1] == '^';
+        const start = if (negated) pos + 2 else pos + 1;
+        var end = start;
+        while (end < pattern.len and pattern[end] != ']') : (end += 1) {}
+        if (end >= pattern.len) return null;
+        const kind: Element.Kind = if (negated) .neg_class else .class;
+        return Element{ .kind = kind, .ch = 0, .class_start = start, .class_end = end, .end = end + 1, .pattern = pattern };
+    }
+    return Element{ .kind = .literal, .ch = c, .class_start = 0, .class_end = 0, .end = pos + 1, .pattern = pattern };
+}
+
+fn matchElement(elem: Element, ch: u8) bool {
+    return switch (elem.kind) {
+        .dot => true,
+        .literal => elem.ch == ch,
+        .class => matchClass(elem.pattern[elem.class_start..elem.class_end], ch, false),
+        .neg_class => matchClass(elem.pattern[elem.class_start..elem.class_end], ch, true),
+    };
+}
+
+fn matchClass(class: []const u8, ch: u8, negated: bool) bool {
+    var i: usize = 0;
+    var found = false;
+    while (i < class.len) {
+        if (i + 2 < class.len and class[i + 1] == '-') {
+            // Range: a-z.
+            if (ch >= class[i] and ch <= class[i + 2]) found = true;
+            i += 3;
+        } else {
+            if (class[i] == ch) found = true;
+            i += 1;
+        }
+    }
+    return if (negated) !found else found;
 }

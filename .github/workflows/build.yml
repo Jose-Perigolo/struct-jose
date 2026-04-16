@@ -148,3 +148,19 @@ jobs:
       - name: Run tests
         working-directory: ./lua
         run: make test
+
+  test-zig:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        zig-version: ['0.13.0']
+    steps:
+      - uses: actions/checkout@v3
+      - name: Setup Zig ${{ matrix.zig-version }}
+        uses: mlugg/setup-zig@v1
+        with:
+          version: ${{ matrix.zig-version }}
+      - name: Build and test
+        working-directory: ./zig
+        run: zig build test

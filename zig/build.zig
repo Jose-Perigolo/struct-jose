@@ -9,7 +9,6 @@ pub fn build(b: *std.Build) void {
         .root_source_file = b.path("src/struct.zig"),
         .target = target,
         .optimize = optimize,
-        .link_libc = true,
     });
 
     // Static library artifact
