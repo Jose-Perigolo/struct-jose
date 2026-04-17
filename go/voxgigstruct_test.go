@@ -7,6 +7,7 @@ package voxgigstruct_test
 
 import (
 	"fmt"
+	"math"
 	"reflect"
 	"strings"
 	"testing"
@@ -553,6 +554,67 @@ func TestStruct(t *testing.T) {
 	})
 
 
+	t.Run("minor-edge-clone", func(t *testing.T) {
+		// Functions are preserved (same reference, not deep-cloned).
+		f0 := func() int { return 22 }
+		src := map[string]any{"a": 1, "f": f0}
+		cloned := voxgigstruct.Clone(src).(map[string]any)
+
+		// Plain values are deep cloned.
+		if cloned["a"] != 1 {
+			t.Errorf("Expected cloned a=1, Got: %v", cloned["a"])
+		}
+
+		// Function is same reference.
+		clonedF, ok := cloned["f"].(func() int)
+		if !ok {
+			t.Errorf("Expected cloned f to be a function")
+		} else if clonedF() != 22 {
+			t.Errorf("Expected cloned f() = 22, Got: %v", clonedF())
+		}
+
+		// Modifying clone does not affect original.
+		cloned["a"] = 2
+		if src["a"] != 1 {
+			t.Errorf("Expected original a=1 after clone modification, Got: %v", src["a"])
+		}
+
+		// Nested maps are deep cloned (different reference).
+		nested := map[string]any{"b": map[string]any{"c": 3}}
+		clonedNested := voxgigstruct.Clone(nested).(map[string]any)
+		innerClone := clonedNested["b"].(map[string]any)
+		innerClone["c"] = 99
+		origInner := nested["b"].(map[string]any)
+		if origInner["c"] != 3 {
+			t.Errorf("Expected original nested c=3 after clone modification, Got: %v", origInner["c"])
+		}
+	})
+
+
+	t.Run("minor-edge-typify", func(t *testing.T) {
+		// nil → T_scalar | T_null
+		tNil := voxgigstruct.Typify(nil)
+		expected0 := voxgigstruct.T_scalar | voxgigstruct.T_null
+		if tNil != expected0 {
+			t.Errorf("Typify(nil): Expected: %v, Got: %v", expected0, tNil)
+		}
+
+		// math.NaN → T_noval
+		tNaN := voxgigstruct.Typify(math.NaN())
+		expected1 := voxgigstruct.T_noval
+		if tNaN != expected1 {
+			t.Errorf("Typify(NaN): Expected: %v, Got: %v", expected1, tNaN)
+		}
+
+		// function → T_scalar | T_function
+		tFunc := voxgigstruct.Typify(func() {})
+		expected2 := voxgigstruct.T_scalar | voxgigstruct.T_function
+		if tFunc != expected2 {
+			t.Errorf("Typify(func): Expected: %v, Got: %v", expected2, tFunc)
+		}
+	})
+
+
 	// walk tests
 	// ==========
 
@@ -847,9 +909,6 @@ func TestStruct(t *testing.T) {
 
 
 	t.Run("getpath-relative", func(t *testing.T) {
-		if getpathSpec["relative"] == nil {
-			t.Skip("No test data for getpath-relative")
-		}
 		runset(t, getpathSpec["relative"], func(v any) any {
 			m := v.(map[string]any)
 			path := m["path"]
@@ -862,20 +921,17 @@ func TestStruct(t *testing.T) {
 				dpath = strings.Split(dpathStr, ".")
 			}
 
-			state := &voxgigstruct.Injection{
+			inj := &voxgigstruct.Injection{
 				Dparent: dparent,
 				Dpath:   dpath,
 			}
 
-			return voxgigstruct.GetPathState(path, store, nil, state)
+			return voxgigstruct.GetPath(path, store, inj)
 		})
 	})
 
 
 	t.Run("getpath-special", func(t *testing.T) {
-		if getpathSpec["special"] == nil {
-			t.Skip("No test data for getpath-special")
-		}
 		runset(t, getpathSpec["special"], func(v any) any {
 			m := v.(map[string]any)
 			path := m["path"]
@@ -884,74 +940,19 @@ func TestStruct(t *testing.T) {
 
 			if inj != nil {
 				injMap, _ := inj.(map[string]any)
-				state := &voxgigstruct.Injection{}
+				inj := &voxgigstruct.Injection{}
 				if key, ok := injMap["key"]; ok {
-					state.Key = fmt.Sprint(key)
+					inj.Key = fmt.Sprint(key)
 				}
 				if meta, ok := injMap["meta"]; ok {
 					if metaMap, ok := meta.(map[string]any); ok {
-						state.Meta = metaMap
+						inj.Meta = metaMap
 					}
 				}
-				return voxgigstruct.GetPathState(path, store, nil, state)
+				return voxgigstruct.GetPath(path, store, inj)
 			}
 
 			return voxgigstruct.GetPath(path, store)
-		})
-	})
-
-
-	t.Run("getpath-current", func(t *testing.T) {
-		if getpathSpec["current"] == nil {
-			t.Skip("No test data for getpath-current")
-		}
-		runset(t, getpathSpec["current"], func(v any) any {
-			m := v.(map[string]any)
-			path := m["path"]
-			store := m["store"]
-			current := m["current"]
-			return voxgigstruct.GetPathState(path, store, current, nil)
-		})
-	})
-
-  
-	t.Run("getpath-state", func(t *testing.T) {
-		state := &voxgigstruct.Injection{
-			Handler: func(
-				s *voxgigstruct.Injection,
-				val any,
-				cur any,
-				ref *string,
-				st any,
-			) any {
-				out := voxgigstruct.Stringify(s.Meta["step"]) + ":" + voxgigstruct.Stringify(val)
-				s.Meta["step"] = 1 + s.Meta["step"].(int)
-				return out
-			},
-			Mode:   "val",
-			Full:   false,
-			KeyI:   0,
-			Keys:   &voxgigstruct.ListRef[string]{List: []string{"$TOP"}},
-			Key:    "$TOP",
-			Val:    "",
-			Parent: nil,
-			Path:   &voxgigstruct.ListRef[string]{List: []string{"$TOP"}},
-			Nodes:  &voxgigstruct.ListRef[any]{List: make([]any, 1)},
-			Base:   "$TOP",
-			Errs:   voxgigstruct.ListRefCreate[any](),
-			Meta:   map[string]any{"step": 0},
-		}
-
-		if getpathSpec["state"] == nil {
-			t.Skip("No test data for getpath-state")
-		}
-		runset(t, getpathSpec["state"], func(v any) any {
-			m := v.(map[string]any)
-			path := m["path"]
-			store := m["store"]
-			current := m["current"]
-
-			return voxgigstruct.GetPathState(path, store, current, state)
 		})
 	})
 
@@ -984,9 +985,8 @@ func TestStruct(t *testing.T) {
 			m := v.(map[string]any)
 			val := m["val"]
 			store := m["store"]
-			current := m["current"]
 
-			return voxgigstruct.InjectDescend(val, store, runner.NullModifier, current, nil)
+			return voxgigstruct.Inject(val, store, &voxgigstruct.Injection{Modify: runner.NullModifier})
 		})
 	})
 
@@ -1087,8 +1087,18 @@ func TestStruct(t *testing.T) {
 	})
 
 
-	// NOTE: transform-apply skipped - all entries test error cases and
-	// Go Transform does not return errors (TS throws).
+	t.Run("transform-apply", func(t *testing.T) {
+		runset(t, transformSpec["apply"], func(v any) (any, error) {
+			m := v.(map[string]any)
+			data := m["data"]
+			spec := m["spec"]
+			result, errs := voxgigstruct.TransformCollect(data, spec)
+			if len(errs) > 0 {
+				return result, fmt.Errorf("%s", errs[0])
+			}
+			return result, nil
+		})
+	})
 
 	t.Run("transform-edge-apply", func(t *testing.T) {
 		result := voxgigstruct.Transform(
@@ -1110,8 +1120,7 @@ func TestStruct(t *testing.T) {
 				val any,
 				key any,
 				parent any,
-				state *voxgigstruct.Injection,
-				current any,
+				inj *voxgigstruct.Injection,
 				store any,
 			) {
 				if key != nil && parent != nil {
@@ -1138,7 +1147,6 @@ func TestStruct(t *testing.T) {
 		upper := voxgigstruct.Injector(func(
 			s *voxgigstruct.Injection,
 			val any,
-			current any,
 			ref *string,
 			store any,
 		) any {
@@ -1284,7 +1292,7 @@ func TestStruct(t *testing.T) {
 				}
 
 				// Pass nil for collecterrs so errors are returned, not collected.
-				return voxgigstruct.ValidateCollect(data, spec, extra, nil)
+				return voxgigstruct.Validate(data, spec, &voxgigstruct.Injection{Extra: extra})
 			}
 
 			return voxgigstruct.Validate(data, spec)
@@ -1296,21 +1304,20 @@ func TestStruct(t *testing.T) {
 		errs := voxgigstruct.ListRefCreate[any]() // make([]any,0)
 
 		integerCheck := voxgigstruct.Injector(func(
-			state *voxgigstruct.Injection,
+			inj *voxgigstruct.Injection,
 			val any,
-			current any,
 			ref *string,
 			store any,
 		) any {
-			out := voxgigstruct.GetProp(current, state.Key)
+			out := voxgigstruct.GetProp(inj.Dparent, inj.Key)
       
       switch x := out.(type) {
 			case int:
 				return x
 			default:
 				msg := fmt.Sprintf("Not an integer at %s: %v",
-					voxgigstruct.Pathify(state.Path.List, 1), out)
-				state.Errs.Append(msg)
+					voxgigstruct.Pathify(inj.Path.List, 1), out)
+				inj.Errs.Append(msg)
 				return nil
 			}
 		})
@@ -1323,11 +1330,10 @@ func TestStruct(t *testing.T) {
 			"a": "`$INTEGER`",
 		}
 
-		out, err := voxgigstruct.ValidateCollect(
+		out, err := voxgigstruct.Validate(
 			map[string]any{"a": 1},
 			shape,
-			extra,
-			errs,
+			&voxgigstruct.Injection{Extra: extra, Errs: errs},
 		)
 		if nil != err {
 			t.Error(err)
@@ -1342,11 +1348,10 @@ func TestStruct(t *testing.T) {
 			t.Errorf("Expected Error: %v, Got: %v", errs0, errs.List)
 		}
 
-		out, err = voxgigstruct.ValidateCollect(
+		out, err = voxgigstruct.Validate(
 			map[string]any{"a": "A"},
 			shape,
-			extra,
-			errs,
+			&voxgigstruct.Injection{Extra: extra, Errs: errs},
 		)
 		if nil != err {
 			t.Error(err)
@@ -1362,6 +1367,39 @@ func TestStruct(t *testing.T) {
 			t.Errorf("Expected Error: %v, Got: %v", errs1, errs.List)
 		}
 
+	})
+
+
+	t.Run("validate-edge", func(t *testing.T) {
+		// $INSTANCE validator should fail for integer, map, and list values.
+		spec := map[string]any{"x": "`$INSTANCE`"}
+
+		// Integer should fail $INSTANCE.
+		out0, err0 := voxgigstruct.Validate(map[string]any{"x": 1}, spec)
+		if err0 == nil {
+			t.Errorf("Expected error for $INSTANCE with integer, Got: %v", out0)
+		}
+		if err0 != nil && !strings.Contains(err0.Error(), "instance") {
+			t.Errorf("Expected instance error message, Got: %v", err0.Error())
+		}
+
+		// Map should fail $INSTANCE.
+		out1, err1 := voxgigstruct.Validate(map[string]any{"x": map[string]any{"a": 1}}, spec)
+		if err1 == nil {
+			t.Errorf("Expected error for $INSTANCE with map, Got: %v", out1)
+		}
+		if err1 != nil && !strings.Contains(err1.Error(), "instance") {
+			t.Errorf("Expected instance error message, Got: %v", err1.Error())
+		}
+
+		// List should fail $INSTANCE.
+		out2, err2 := voxgigstruct.Validate(map[string]any{"x": []any{1, 2}}, spec)
+		if err2 == nil {
+			t.Errorf("Expected error for $INSTANCE with list, Got: %v", out2)
+		}
+		if err2 != nil && !strings.Contains(err2.Error(), "instance") {
+			t.Errorf("Expected instance error message, Got: %v", err2.Error())
+		}
 	})
 
 
@@ -1450,11 +1488,10 @@ func TestStruct(t *testing.T) {
 				"$FOO": func() string { return "foo" },
 			}
 
-			state := &voxgigstruct.Injection{
+			inj := &voxgigstruct.Injection{
 				Handler: func(
 					s *voxgigstruct.Injection,
 					val any,
-					cur any,
 					ref *string,
 					st any,
 				) any {
@@ -1465,7 +1502,7 @@ func TestStruct(t *testing.T) {
 				},
 			}
 
-			return voxgigstruct.GetPathState(path, store, nil, state)
+			return voxgigstruct.GetPath(path, store, inj)
 		})
 	})
 }

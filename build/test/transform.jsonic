@@ -55,6 +55,12 @@ paths: {
 
     { in: { data: {hold:{'`$COPY`':111, '$TOP':222}},
             spec: {a:'`hold.$BT$COPY$BT`', b:'`hold.$TOP`'} }, out: {a:111,b:222} }
+
+    { in: { data: {a:1}, spec: {a:'`a`',b:'`a`'} }, out: {a:1,b:1} }
+    { in: { data: {a:'X'}, spec: ['`a`'] }, out: ['X'] }
+    { in: { data: {a:1,b:2}, spec: {c:'`a`',d:'`b`'} }, out: {c:1,d:2} }
+    { in: { data: {}, spec: {a:99} }, out: {a:99} }
+    { in: { data: {a:1}, spec: {} }, out: {} }
   ]
 }
 

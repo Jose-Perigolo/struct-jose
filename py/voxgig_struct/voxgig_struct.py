@@ -57,10 +57,11 @@ M_KEYPOST = 2
 M_VAL = 4
 _MODE_TO_NUM = {S_MKEYPRE: M_KEYPRE, S_MKEYPOST: M_KEYPOST, S_MVAL: M_VAL}
 _PLACEMENT = {M_VAL: 'value', M_KEYPRE: S_MKEY, M_KEYPOST: S_MKEY}
+MODENAME = {M_VAL: 'val', M_KEYPRE: 'key:pre', M_KEYPOST: 'key:post'}
 
 # Special keys.
 S_DKEY =  '$KEY'
-S_DMETA =  '`$META`'
+S_BANNO =  '`$ANNO`'
 S_DTOP =  '$TOP'
 S_DERRS =  '$ERRS'
 S_DSPEC =  '$SPEC'
@@ -148,7 +149,7 @@ SKIP = {'`$SKIP`': True}
 DELETE = {'`$DELETE`': True}
 
 
-class InjectState:
+class Injection:
     """
     Injection state used for recursive injection into JSON-like data structures.
     """
@@ -212,12 +213,12 @@ class InjectState:
 
         return self.dparent
 
-    def child(self, keyI: int, keys: List[str]) -> 'InjectState':
+    def child(self, keyI: int, keys: List[str]) -> 'Injection':
         """Create a child state object with the given key index and keys."""
         key = strkey(keys[keyI])
         val = self.val
         
-        cinj = InjectState(
+        cinj = Injection(
             mode=self.mode,
             full=self.full,
             keyI=keyI,
@@ -247,6 +248,13 @@ class InjectState:
             return setprop(self.parent, self.key, val)
         else:
             return setprop(getelem(self.nodes, 0 - ancestor), getelem(self.path, 0 - ancestor), val)
+
+
+def getdef(val, alt):
+    "Get a defined value. Returns alt if val is undefined."
+    if val is UNDEF or val is None:
+        return alt
+    return val
 
 
 def isnode(val: Any = UNDEF) -> bool:
@@ -569,6 +577,22 @@ def escurl(s: Any):
     return urllib.parse.quote(s, safe="")
 
 
+def replace(s, from_pat, to_str):
+    "Replace a search string (all), or a regexp, in a source string."
+    rs = s
+    ts = typify(s)
+    if 0 == (T_string & ts):
+        rs = stringify(s)
+    elif 0 < ((T_noval | T_null) & ts):
+        rs = S_MT
+    else:
+        rs = stringify(s)
+    if isinstance(from_pat, str):
+        return rs.replace(from_pat, str(to_str))
+    else:
+        return re.sub(from_pat, str(to_str), rs)
+
+
 def join(arr, sep=UNDEF, url=UNDEF):
     if not islist(arr):
         return S_MT
@@ -697,6 +721,11 @@ def ja(*v: Any) -> List[Any]:
         a[i] = v[i] if i < vsize else None
     
     return a
+
+
+# Aliases to match TS canonical names
+jm = jo
+jt = ja
 
 
 def select_AND(state, _val, _ref, store):
@@ -1199,8 +1228,8 @@ def getpath(store, path, injdef=UNDEF):
         return UNDEF
     
     val = store
-    # Support both dict-style injdef and InjectState instance
-    if isinstance(injdef, InjectState):
+    # Support both dict-style injdef and Injection instance
+    if isinstance(injdef, Injection):
         base = injdef.base
         dparent = injdef.dparent
         inj_meta = injdef.meta
@@ -1287,7 +1316,7 @@ def getpath(store, path, injdef=UNDEF):
                     val = getprop(val, part)
     
     # Injdef may provide a custom handler to modify found value.
-    handler = injdef.handler if isinstance(injdef, InjectState) else (getprop(injdef, 'handler') if injdef else UNDEF)
+    handler = injdef.handler if isinstance(injdef, Injection) else (getprop(injdef, 'handler') if injdef else UNDEF)
     if handler and isfunc(handler):
         ref = pathify(path)
         val = handler(injdef, val, ref, store)
@@ -1335,14 +1364,14 @@ def inject(val, store, injdef=UNDEF):
     valtype = type(val)
 
     # Reuse existing injection state during recursion; otherwise create a new one.
-    if isinstance(injdef, InjectState):
+    if isinstance(injdef, Injection):
         inj = injdef
     else:
         inj = injdef  # may be dict/UNDEF; used below via getprop
         # Create state if at root of injection. The input value is placed
         # inside a virtual parent holder to simplify edge cases.
         parent = {S_DTOP: val}
-        inj = InjectState(
+        inj = Injection(
             mode=S_MVAL,
             full=False,
             keyI=0,
@@ -1555,16 +1584,16 @@ def transform_KEY(inj, val, ref, store):
     if ismap(inj.dparent) and inj.key is not UNDEF and haskey(inj.dparent, inj.key):
         return getprop(inj.dparent, inj.key)
 
-    meta = getprop(parent, S_DMETA)
+    meta = getprop(parent, S_BANNO)
     return getprop(meta, S_KEY, getprop(path, len(path) - 2))
 
 
-def transform_META(inj, val, ref, store):
+def transform_ANNO(inj, val, ref, store):
     """
-    Injection handler that removes the `'$META'` key (after capturing if needed).
+    Annotate node. Does nothing itself, just used by other injectors, and is removed when called.
     """
     parent = inj.parent
-    setprop(parent, S_DMETA, UNDEF)
+    setprop(parent, S_BANNO, UNDEF)
     return UNDEF
 
 
@@ -1658,7 +1687,7 @@ def transform_EACH(inj, val, ref, store):
                 # Keep key in meta for usage by `$KEY`
                 copy_child = clone(child_template)
                 if ismap(copy_child):
-                    setprop(copy_child, S_DMETA, {S_KEY: k})
+                    setprop(copy_child, S_BANNO, {S_KEY: k})
                 tval.append(copy_child)
         tcurrent = list(src.values()) if ismap(src) else src
         
@@ -1734,7 +1763,7 @@ def transform_PACK(inj, val, ref, store):
             src_items = items(src)
             new_src = []
             for item in src_items:
-                setprop(item[1], S_DMETA, {S_KEY: item[0]})
+                setprop(item[1], S_BANNO, {S_KEY: item[0]})
                 new_src.append(item[1])
             src = new_src
         else:
@@ -1763,11 +1792,11 @@ def transform_PACK(inj, val, ref, store):
         tchild = clone(child)
         setprop(tval, k, tchild)
 
-        anno = getprop(srcnode, S_DMETA)
+        anno = getprop(srcnode, S_BANNO)
         if anno is UNDEF:
-            delprop(tchild, S_DMETA)
+            delprop(tchild, S_BANNO)
         else:
-            setprop(tchild, S_DMETA, anno)
+            setprop(tchild, S_BANNO, anno)
 
     rval = {}
 
@@ -1955,7 +1984,7 @@ def injectorArgs(argTypes, args):
     return found
 
 
-def _injectChild(child, store, inj):
+def injectChild(child, store, inj):
     cinj = inj
     if inj.prior is not UNDEF and inj.prior is not None:
         if inj.prior.prior is not UNDEF and inj.prior.prior is not None:
@@ -1982,7 +2011,7 @@ def transform_FORMAT(inj, _val, _ref, store):
     tkey = getelem(inj.path, -2)
     target = getelem(inj.nodes, -2, lambda: getelem(inj.nodes, -1))
 
-    cinj = _injectChild(child, store, inj)
+    cinj = injectChild(child, store, inj)
     resolved = cinj.val
 
     formatter = name if 0 < (T_function & typify(name)) else getprop(FORMATTER, name)
@@ -2016,7 +2045,7 @@ def transform_APPLY(inj, _val, _ref, store):
     tkey = getelem(inj.path, -2)
     target = getelem(inj.nodes, -2, lambda: getelem(inj.nodes, -1))
 
-    cinj = _injectChild(child, store, inj)
+    cinj = injectChild(child, store, inj)
     resolved = cinj.val
 
     try:
@@ -2087,7 +2116,7 @@ def transform(
         '$DELETE': transform_DELETE,
         '$COPY': transform_COPY,
         '$KEY': transform_KEY,
-        '$META': transform_META,
+        '$ANNO': transform_ANNO,
         '$MERGE': transform_MERGE,
         '$EACH': transform_EACH,
         '$PACK': transform_PACK,
@@ -2604,6 +2633,7 @@ class StructUtility:
         self.escurl = escurl
         self.filter = filter
         self.flatten = flatten
+        self.getdef = getdef
         self.getelem = getelem
         self.getpath = getpath
         self.getprop = getprop
@@ -2616,8 +2646,10 @@ class StructUtility:
         self.ismap = ismap
         self.isnode = isnode
         self.items = items
-        self.ja = ja
+        self.jm = jm
+        self.jt = jt
         self.jo = jo
+        self.ja = ja
         self.join = join
         self.joinurl = joinurl
         self.jsonify = jsonify
@@ -2625,7 +2657,7 @@ class StructUtility:
         self.merge = merge
         self.pad = pad
         self.pathify = pathify
-        self.DELETE = DELETE
+        self.replace = replace
         self.select = select
         self.setpath = setpath
         self.setprop = setprop
@@ -2638,19 +2670,50 @@ class StructUtility:
         self.typename = typename
         self.validate = validate
         self.walk = walk
+
+        self.SKIP = SKIP
+        self.DELETE = DELETE
+        self.tn = typename
+
+        self.T_any = T_any
+        self.T_noval = T_noval
+        self.T_boolean = T_boolean
+        self.T_decimal = T_decimal
+        self.T_integer = T_integer
+        self.T_number = T_number
+        self.T_string = T_string
+        self.T_function = T_function
+        self.T_symbol = T_symbol
+        self.T_null = T_null
+        self.T_list = T_list
+        self.T_map = T_map
+        self.T_instance = T_instance
+        self.T_scalar = T_scalar
+        self.T_node = T_node
+
+        self.checkPlacement = checkPlacement
+        self.injectorArgs = injectorArgs
+        self.injectChild = injectChild
     
 
 __all__ = [
-    'InjectState',
+    'Injection',
     'StructUtility',
+    'checkPlacement',
     'clone',
+    'delprop',
     'escre',
     'escurl',
+    'filter',
+    'flatten',
+    'getdef',
     'getelem',
     'getpath',
     'getprop',
     'haskey',
     'inject',
+    'injectChild',
+    'injectorArgs',
     'isempty',
     'isfunc',
     'iskey',
@@ -2658,19 +2721,50 @@ __all__ = [
     'ismap',
     'isnode',
     'items',
+    'ja',
+    'jm',
+    'jo',
+    'join',
     'joinurl',
+    'jsonify',
+    'jt',
     'keysof',
     'merge',
     'pad',
     'pathify',
+    'replace',
+    'select',
+    'setpath',
     'setprop',
     'size',
     'slice',
     'stringify',
     'strkey',
     'transform',
+    'typename',
     'typify',
     'validate',
     'walk',
+    'SKIP',
+    'DELETE',
+    'T_any',
+    'T_noval',
+    'T_boolean',
+    'T_decimal',
+    'T_integer',
+    'T_number',
+    'T_string',
+    'T_function',
+    'T_symbol',
+    'T_null',
+    'T_list',
+    'T_map',
+    'T_instance',
+    'T_scalar',
+    'T_node',
+    'M_KEYPRE',
+    'M_KEYPOST',
+    'M_VAL',
+    'MODENAME',
 ]
 

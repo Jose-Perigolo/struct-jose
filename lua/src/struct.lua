@@ -1,6 +1,6 @@
 -- Copyright (c) 2025-2026 Voxgig Ltd. MIT LICENSE.
 
--- VERSION: @voxgig/struct 0.0.9
+-- VERSION: @voxgig/struct 0.0.10
 
 --[[
   Voxgig Struct
@@ -55,10 +55,16 @@
 -- String constants are explicitly defined.
 ----------------------------------------------------------
 
--- Mode value for inject step.
-local S_MKEYPRE = 'key:pre'
-local S_MKEYPOST = 'key:post'
-local S_MVAL = 'val'
+-- Mode value for inject step (bitfield).
+local M_KEYPRE = 1
+local M_KEYPOST = 2
+local M_VAL = 4
+
+local MODENAME = {
+  [M_VAL] = 'val',
+  [M_KEYPRE] = 'key:pre',
+  [M_KEYPOST] = 'key:post',
+}
 
 -- Special strings.
 local S_BKEY = '`$KEY`'
@@ -594,6 +600,27 @@ local function escurl(s)
 end
 
 
+-- Replace a search string (all), or a pattern, in a source string.
+local function replace(s, from, to)
+  local rs = s
+  local ts = typify(s)
+  if 0 == (T_string & ts) then
+    rs = stringify(s)
+  elseif 0 < ((T_noval | T_null) & ts) then
+    rs = S_MT
+  else
+    rs = stringify(s)
+  end
+  if type(from) == 'string' then
+    -- Plain string replacement (all occurrences)
+    return (rs:gsub(escre(from), to))
+  else
+    -- Pattern replacement
+    return (rs:gsub(from, to))
+  end
+end
+
+
 -- Return a sub-array. Start and end are 0-based, end is exclusive.
 -- For numbers: clamp between start and end-1.
 -- For strings: substring from start to end.
@@ -747,36 +774,30 @@ end
 
 -- Build a JSON map from alternating key, value arguments.
 local function jm(...)
-  local args = { ... }
-  local out = {}
-  local i = 1
-  while i <= #args do
-    local k = args[i]
-    local v = nil
-    if i + 1 <= #args then
-      v = args[i + 1]
-    end
-    -- Keys must be strings
-    if type(k) ~= S_string then
-      -- Stringify non-string keys
-      k = tostring(k)
-    end
-    out[k] = v
+  local kv = { ... }
+  local kvsize = size(kv)
+  local o = {}
+  local i = 0
+  while i < kvsize do
+    local k = getprop(kv, i, '$KEY' .. i)
+    k = S_string == type(k) and k or stringify(k)
+    o[k] = getprop(kv, i + 1, nil)
     i = i + 2
   end
-  return out
+  return o
 end
 
 
--- Build a JSON tuple (list) from arguments.
+-- Define a JSON Array using function arguments.
 local function jt(...)
-  local args = { ... }
-  local out = {}
-  setmetatable(out, { __jsontype = "array" })
-  for _, v in ipairs(args) do
-    table.insert(out, v)
+  local v = { ... }
+  local vsize = size(v)
+  local a = {}
+  setmetatable(a, { __jsontype = "array" })
+  for i = 0, vsize - 1 do
+    a[i + 1] = getprop(v, i, nil)
   end
-  return out
+  return a
 end
 
 
@@ -1373,7 +1394,17 @@ local function merge(val, maxdepth)
   end
 
   local list = val
+
+  -- Use rawlen or find max integer key to handle nil gaps in arrays.
   local lenlist = #list
+  if lenlist == 0 then
+    -- Check for nil gaps: find the actual max integer key.
+    for k in pairs(list) do
+      if type(k) == S_number and k > lenlist then
+        lenlist = k
+      end
+    end
+  end
 
   if lenlist == 0 then
     return NONE
@@ -1610,7 +1641,7 @@ Injection.__index = Injection
 
 function Injection:new(val, parent)
   local o = {
-    mode = S_MVAL,
+    mode = M_VAL,
     full = false,
     keyI = 0,
     keys = { S_DTOP },
@@ -1631,6 +1662,18 @@ function Injection:new(val, parent)
   }
   setmetatable(o, self)
   return o
+end
+
+
+function Injection:__tostring()
+  return 'INJ' .. S_CN ..
+    pad(pathify(self.path, 1)) ..
+    (MODENAME[self.mode] or '') .. (self.full and '/full' or '') .. S_CN ..
+    'key=' .. self.keyI .. S_FS .. tostring(self.key) .. S_FS .. S_OS .. table.concat(self.keys, ',') .. S_CS ..
+    '  p=' .. stringify(self.parent, -1, 1) ..
+    '  m=' .. stringify(self.meta, -1, 1) ..
+    '  d/' .. pathify(self.dpath, 1) .. '=' .. stringify(self.dparent, -1, 1) ..
+    '  r=' .. stringify(getprop(getprop(self.nodes, 0), S_DTOP), -1, 1)
 end
 
 
@@ -1765,7 +1808,7 @@ local function inject(val, store, injdef)
     while nkI < #nodekeys do
       local childinj = inj:child(nkI, nodekeys)
       local nodekey = childinj.key
-      childinj.mode = S_MKEYPRE
+      childinj.mode = M_KEYPRE
 
       -- Perform key:pre mode injection
       local prekey = _injectstr(nodekey, store, childinj)
@@ -1777,7 +1820,7 @@ local function inject(val, store, injdef)
       -- Prevent further processing by returning undefined prekey
       if prekey ~= NONE then
         childinj.val = getprop(val, prekey)
-        childinj.mode = S_MVAL
+        childinj.mode = M_VAL
 
         -- Perform val mode injection
         inject(childinj.val, store, childinj)
@@ -1787,7 +1830,7 @@ local function inject(val, store, injdef)
         nodekeys = childinj.keys
 
         -- Perform key:post mode injection
-        childinj.mode = S_MKEYPOST
+        childinj.mode = M_KEYPOST
         _injectstr(nodekey, store, childinj)
 
         nkI = childinj.keyI
@@ -1798,7 +1841,7 @@ local function inject(val, store, injdef)
     end
 
   elseif S_string == valtype then
-    inj.mode = S_MVAL
+    inj.mode = M_VAL
     val = _injectstr(val, store, inj)
     if SKIP ~= val then
       inj:setval(val)
@@ -1830,7 +1873,7 @@ end
 local function transform_COPY(inj, _val)
   local ijname = 'COPY'
 
-  if not checkPlacement({ S_MVAL }, ijname, T_any, inj) then
+  if not checkPlacement(M_VAL, ijname, T_any, inj) then
     return NONE
   end
 
@@ -1844,7 +1887,7 @@ end
 local function transform_KEY(inj)
   local mode, path, parent = inj.mode, inj.path, inj.parent
 
-  if S_MVAL ~= mode then
+  if M_VAL ~= mode then
     return NONE
   end
 
@@ -1872,10 +1915,10 @@ local function transform_MERGE(inj)
 
   local out = NONE
 
-  if S_MKEYPRE == mode then
+  if M_KEYPRE == mode then
     out = key
 
-  elseif S_MKEYPOST == mode then
+  elseif M_KEYPOST == mode then
     out = key
 
     local args = getprop(parent, key)
@@ -1922,7 +1965,7 @@ end
 local function transform_EACH(inj, _val, _ref, store)
   local ijname = 'EACH'
 
-  if not checkPlacement({ S_MVAL }, ijname, T_list, inj) then
+  if not checkPlacement(M_VAL, ijname, T_list, inj) then
     return NONE
   end
 
@@ -2029,7 +2072,7 @@ local function transform_PACK(inj, _val, _ref, store)
 
   local ijname = 'EACH'
 
-  if not checkPlacement({ S_MKEYPRE }, ijname, T_map, inj) then
+  if not checkPlacement(M_KEYPRE, ijname, T_map, inj) then
     return NONE
   end
 
@@ -2165,25 +2208,24 @@ end
 
 -- Placement labels for error messages.
 local PLACEMENT = {
-  [S_MVAL] = 'value',
-  [S_MKEYPRE] = S_key,
-  [S_MKEYPOST] = S_key,
+  [M_VAL] = 'value',
+  [M_KEYPRE] = S_key,
+  [M_KEYPOST] = S_key,
 }
 
 
 -- Check that a transform is used in the correct mode and parent type.
 checkPlacement = function(modes, ijname, parentTypes, inj)
-  local modeOk = false
-  for _, m in ipairs(modes) do
-    if m == inj.mode then modeOk = true; break end
-  end
-  if not modeOk then
+  if 0 == (modes & inj.mode) then
     local expected = {}
-    for _, m in ipairs(modes) do
-      table.insert(expected, PLACEMENT[m] or m)
+    local allModes = { M_KEYPRE, M_KEYPOST, M_VAL }
+    for _, m in ipairs(allModes) do
+      if 0 ~= (modes & m) then
+        table.insert(expected, PLACEMENT[m])
+      end
     end
     table.insert(inj.errs, '$' .. ijname .. ': invalid placement as ' ..
-      (PLACEMENT[inj.mode] or inj.mode) .. ', expected: ' ..
+      PLACEMENT[inj.mode] .. ', expected: ' ..
       table.concat(expected, ',') .. '.')
     return false
   end
@@ -2224,7 +2266,7 @@ end
 local function transform_REF(inj, val, _ref, store)
   local nodes = inj.nodes
 
-  if S_MVAL ~= inj.mode then
+  if M_VAL ~= inj.mode then
     return NONE
   end
 
@@ -2331,7 +2373,7 @@ local function transform_FORMAT(inj, _val, _ref, store)
   -- Remove remaining keys to avoid spurious processing.
   slice(inj.keys, 0, 1, true)
 
-  if S_MVAL ~= inj.mode then
+  if M_VAL ~= inj.mode then
     return NONE
   end
 
@@ -2366,7 +2408,7 @@ end
 local function transform_APPLY(inj, _val, _ref, store)
   local ijname = 'APPLY'
 
-  if not checkPlacement({ S_MVAL }, ijname, T_list, inj) then
+  if not checkPlacement(M_VAL, ijname, T_list, inj) then
     return NONE
   end
 
@@ -2528,7 +2570,7 @@ local function validate_CHILD(inj)
       inj.keys, inj.path
 
   -- Map syntax.
-  if S_MKEYPRE == mode then
+  if M_KEYPRE == mode then
     local childtm = getprop(parent, key)
 
     -- Get corresponding current object.
@@ -2557,7 +2599,7 @@ local function validate_CHILD(inj)
   end
 
   -- List syntax.
-  if S_MVAL == mode then
+  if M_VAL == mode then
     if not islist(parent) then
       -- $CHILD was not inside a list.
       table.insert(inj.errs, 'Invalid $CHILD as value')
@@ -2607,7 +2649,7 @@ local function validate_ONE(inj, _val, _ref, store)
   local mode, parent, keyI = inj.mode, inj.parent, inj.keyI
 
   -- Only operate in val mode, since parent is a list.
-  if S_MVAL == mode then
+  if M_VAL == mode then
     if not islist(parent) or 0 ~= keyI then
       table.insert(inj.errs,
         'The $ONE validator at field ' .. pathify(inj.path, 1, 1) ..
@@ -2677,7 +2719,7 @@ local function validate_EXACT(inj)
   local mode, parent, key, keyI = inj.mode, inj.parent, inj.key, inj.keyI
 
   -- Only operate in val mode, since parent is a list.
-  if S_MVAL == mode then
+  if M_VAL == mode then
     if not islist(parent) or 0 ~= keyI then
       table.insert(inj.errs, 'The $EXACT validator at field ' ..
         pathify(inj.path, 1, 1) ..
@@ -2907,7 +2949,7 @@ end
 
 
 local function select_AND(inj, _val, _ref, store)
-  if S_MKEYPRE == inj.mode then
+  if M_KEYPRE == inj.mode then
     local terms = getprop(inj.parent, inj.key)
 
     local ppath = slice(inj.path, 0, -1)
@@ -2939,7 +2981,7 @@ end
 
 
 local function select_OR(inj, _val, _ref, store)
-  if S_MKEYPRE == inj.mode then
+  if M_KEYPRE == inj.mode then
     local terms = getprop(inj.parent, inj.key)
 
     local ppath = slice(inj.path, 0, -1)
@@ -2973,7 +3015,7 @@ end
 
 
 local function select_NOT(inj, _val, _ref, store)
-  if S_MKEYPRE == inj.mode then
+  if M_KEYPRE == inj.mode then
     local term = getprop(inj.parent, inj.key)
 
     local ppath = slice(inj.path, 0, -1)
@@ -3003,7 +3045,7 @@ end
 
 
 local function select_CMP(inj, _val, ref, store)
-  if S_MKEYPRE == inj.mode then
+  if M_KEYPRE == inj.mode then
     local term = getprop(inj.parent, inj.key)
     local gkey = getelem(inj.path, -2)
 
@@ -3123,7 +3165,7 @@ _injecthandler = function(inj, val, ref, store)
     out = val(inj, val, ref, store)
 
   -- Update parent with value. Ensures references remain in node tree.
-  elseif S_MVAL == inj.mode and inj.full then
+  elseif M_VAL == inj.mode and inj.full then
     inj:setval(val)
   end
 
@@ -3234,6 +3276,7 @@ local StructUtility = {
   delprop = delprop,
   escre = escre,
   escurl = escurl,
+  filter = filter,
   flatten = flatten,
   getdef = getdef,
   getelem = getelem,
@@ -3248,13 +3291,13 @@ local StructUtility = {
   ismap = ismap,
   isnode = isnode,
   items = items,
-  filter = filter,
   join = join,
   jsonify = jsonify,
   keysof = keysof,
   merge = merge,
   pad = pad,
   pathify = pathify,
+  replace = replace,
   select = select_fn,
   setpath = setpath,
   setprop = setprop,
@@ -3263,10 +3306,42 @@ local StructUtility = {
   strkey = strkey,
   stringify = stringify,
   transform = transform,
-  typename = typename,
   typify = typify,
+  typename = typename,
   validate = validate,
   walk = walk,
+
+  SKIP = SKIP,
+  DELETE = DELETE,
+
+  jm = jm,
+  jt = jt,
+  tn = typename,
+
+  T_any = T_any,
+  T_noval = T_noval,
+  T_boolean = T_boolean,
+  T_decimal = T_decimal,
+  T_integer = T_integer,
+  T_number = T_number,
+  T_string = T_string,
+  T_function = T_function,
+  T_symbol = T_symbol,
+  T_null = T_null,
+  T_list = T_list,
+  T_map = T_map,
+  T_instance = T_instance,
+  T_scalar = T_scalar,
+  T_node = T_node,
+
+  checkPlacement = checkPlacement,
+  injectorArgs = injectorArgs,
+  injectChild = injectChild,
+
+  M_KEYPRE = M_KEYPRE,
+  M_KEYPOST = M_KEYPOST,
+  M_VAL = M_VAL,
+  MODENAME = MODENAME,
 }
 StructUtility.__index = StructUtility
 
@@ -3283,6 +3358,7 @@ return {
   delprop = delprop,
   escre = escre,
   escurl = escurl,
+  filter = filter,
   flatten = flatten,
   getdef = getdef,
   getelem = getelem,
@@ -3297,13 +3373,13 @@ return {
   ismap = ismap,
   isnode = isnode,
   items = items,
-  filter = filter,
   join = join,
   jsonify = jsonify,
   keysof = keysof,
   merge = merge,
   pad = pad,
   pathify = pathify,
+  replace = replace,
   select = select_fn,
   setpath = setpath,
   setprop = setprop,
@@ -3312,12 +3388,17 @@ return {
   strkey = strkey,
   stringify = stringify,
   transform = transform,
-  typename = typename,
   typify = typify,
+  typename = typename,
   validate = validate,
   walk = walk,
 
-  -- Type flag constants
+  SKIP = SKIP,
+  DELETE = DELETE,
+
+  jm = jm,
+  jt = jt,
+
   T_any = T_any,
   T_noval = T_noval,
   T_boolean = T_boolean,
@@ -3326,6 +3407,7 @@ return {
   T_number = T_number,
   T_string = T_string,
   T_function = T_function,
+  T_symbol = T_symbol,
   T_null = T_null,
   T_list = T_list,
   T_map = T_map,
@@ -3333,7 +3415,13 @@ return {
   T_scalar = T_scalar,
   T_node = T_node,
 
-  -- Markers
-  DELETE = DELETE,
-  SKIP = SKIP,
+  M_KEYPRE = M_KEYPRE,
+  M_KEYPOST = M_KEYPOST,
+  M_VAL = M_VAL,
+
+  MODENAME = MODENAME,
+
+  checkPlacement = checkPlacement,
+  injectorArgs = injectorArgs,
+  injectChild = injectChild,
 }

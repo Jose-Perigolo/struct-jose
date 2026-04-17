@@ -50,21 +50,60 @@ public class Struct {
         public static final String DTOP = "$TOP";
         public static final String DERRS = "$ERRS";
         public static final String DMETA = "`$META`";
+        public static final String ANY = "any";
         public static final String ARRAY = "array";
         public static final String BASE = "base";
         public static final String BOOLEAN = "boolean";
+        public static final String DECIMAL = "decimal";
         public static final String EMPTY = "";
         public static final String FUNCTION = "function";
+        public static final String INSTANCE = "instance";
+        public static final String INTEGER = "integer";
+        public static final String LIST = "list";
+        public static final String MAP = "map";
+        public static final String NIL = "nil";
+        public static final String NODE = "node";
+        public static final String NULL = "null";
         public static final String NUMBER = "number";
         public static final String OBJECT = "object";
+        public static final String SCALAR = "scalar";
         public static final String STRING = "string";
+        public static final String SYMBOL = "symbol";
         public static final String KEY = "key";
         public static final String PARENT = "parent";
         public static final String BT = "`";
         public static final String DS = "$";
         public static final String DT = ".";
+        public static final String SP = " ";
+        public static final String VIZ = ": ";
         public static final String KEY_NAME = "KEY";
     }
+
+    // Type constants - bitfield integers matching TypeScript canonical.
+    public static final int T_any      = (1 << 31) - 1;
+    public static final int T_noval    = 1 << 30;
+    public static final int T_boolean  = 1 << 29;
+    public static final int T_decimal  = 1 << 28;
+    public static final int T_integer  = 1 << 27;
+    public static final int T_number   = 1 << 26;
+    public static final int T_string   = 1 << 25;
+    public static final int T_function = 1 << 24;
+    public static final int T_symbol   = 1 << 23;
+    public static final int T_null     = 1 << 22;
+    public static final int T_list     = 1 << 14;
+    public static final int T_map      = 1 << 13;
+    public static final int T_instance = 1 << 12;
+    public static final int T_scalar   = 1 << 7;
+    public static final int T_node     = 1 << 6;
+
+    private static final String[] TYPENAME = {
+        S.ANY, S.NIL, S.BOOLEAN, S.DECIMAL, S.INTEGER, S.NUMBER, S.STRING,
+        S.FUNCTION, S.SYMBOL, S.NULL,
+        "", "", "", "", "", "", "",
+        S.LIST, S.MAP, S.INSTANCE,
+        "", "", "", "",
+        S.SCALAR, S.NODE,
+    };
     
     @FunctionalInterface
     public interface WalkApply {
@@ -101,7 +140,62 @@ public class Struct {
     }
 
     public static boolean isFunc(Object val) {
-        return val instanceof Runnable;
+        return val instanceof Runnable || val instanceof Function;
+    }
+
+    // Get type name string from type bitfield value.
+    public static String typename(int t) {
+        String tname = "";
+        for (int tI = 0; tI < TYPENAME.length; tI++) {
+            if (!TYPENAME[tI].isEmpty() && 0 < (t & (1 << (31 - tI)))) {
+                tname = TYPENAME[tI];
+            }
+        }
+        return tname;
+    }
+
+    // Determine the type of a value as a bitfield integer.
+    public static int typify(Object value) {
+        if (value == null) {
+            return T_noval;
+        }
+
+        if (value instanceof Boolean) {
+            return T_scalar | T_boolean;
+        }
+
+        if (value instanceof Integer || value instanceof Long) {
+            return T_scalar | T_number | T_integer;
+        }
+
+        if (value instanceof Float || value instanceof Double) {
+            double d = ((Number) value).doubleValue();
+            if (Double.isNaN(d)) {
+                return T_noval;
+            }
+            if (d == Math.floor(d) && !Double.isInfinite(d)) {
+                return T_scalar | T_number | T_integer;
+            }
+            return T_scalar | T_number | T_decimal;
+        }
+
+        if (value instanceof String) {
+            return T_scalar | T_string;
+        }
+
+        if (value instanceof Runnable || value instanceof Function) {
+            return T_scalar | T_function;
+        }
+
+        if (value instanceof List) {
+            return T_node | T_list;
+        }
+
+        if (value instanceof Map) {
+            return T_node | T_map;
+        }
+
+        return T_any;
     }
 
     @SuppressWarnings("unchecked")

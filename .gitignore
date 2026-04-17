@@ -157,3 +157,8 @@ package-lock.json
 # .NET / C# (cs port)
 cs/**/bin/
 cs/**/obj/
+
+# Zig
+.zig-cache/
+zig-cache/
+zig-out/

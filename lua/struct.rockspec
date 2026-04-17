@@ -1,7 +1,8 @@
 package = "voxgig-struct"
 version = "0.0-1"
 source = {
-   url = "git://github.com/voxgig/struct/lua/struct.lua"
+   url = "git://github.com/voxgig/struct.git",
+   dir = "struct/lua"
 }
 description = {
    summary = "Utility functions for JSON-like data structures",
@@ -21,7 +22,7 @@ dependencies = {
 build = {
    type = "builtin",
    modules = {
-      struct = "struct.lua"
+      struct = "src/struct.lua"
    },
    copy_directories = {"test"}
 }

@@ -34,11 +34,52 @@ type StructUtility struct {
 	IsNode     func(val any) bool
 	Clone      func(val any) any
 	CloneFlags func(val any, flags map[string]bool) any
-	GetPath    func(path any, store any) any
-	Inject     func(val any, store any) any
+	GetPath    func(path any, store any, injdefs ...*voxgigstruct.Injection) any
+	Inject     func(val any, store any, injdefs ...*voxgigstruct.Injection) any
 	Items      func(val any) [][2]any
 	Stringify  func(val any, maxlen ...int) string
 	Walk       func(val any, apply voxgigstruct.WalkApply, opts ...any) any
+
+	DelProp    func(parent any, key any) any
+	EscRe      func(s string) string
+	EscUrl     func(s string) string
+	Filter     func(val any, check func([2]any) bool) []any
+	Flatten    func(list any, depths ...int) any
+	GetDef     func(val any, alt any) any
+	GetElem    func(val any, key any, alts ...any) any
+	GetProp    func(val any, key any, alts ...any) any
+	HasKey     func(val any, key any) bool
+	IsEmpty    func(val any) bool
+	IsFunc     func(val any) bool
+	IsKey      func(val any) bool
+	IsList     func(val any) bool
+	IsMap      func(val any) bool
+	Join       func(arr []any, args ...any) string
+	Jsonify    func(val any, flags ...map[string]any) string
+	KeysOf     func(val any) []string
+	Merge      func(val any, maxdepths ...int) any
+	Pad        func(str any, args ...any) string
+	Pathify    func(val any, from ...int) string
+	Select     func(children any, query any) []any
+	SetPath    func(store any, path any, val any, injdefs ...map[string]any) any
+	SetProp    func(parent any, key any, newval any) any
+	Size       func(val any) int
+	Slice      func(val any, args ...any) any
+	StrKey     func(key any) string
+	Transform  func(data any, spec any, injdefs ...*voxgigstruct.Injection) any
+	Typify     func(value any) int
+	Typename   func(t int) string
+	Validate   func(data any, spec any, injdefs ...*voxgigstruct.Injection) (any, error)
+
+	SKIP   any
+	DELETE any
+
+	Jo func(kv ...any) map[string]any
+	Ja func(v ...any) []any
+
+	CheckPlacement func(modes int, ijname string, parentTypes int, inj *voxgigstruct.Injection) bool
+	InjectorArgs   func(argTypes []int, args []any) []any
+	InjectChild    func(child any, store any, inj *voxgigstruct.Injection) *voxgigstruct.Injection
 }
 
 
@@ -693,7 +734,7 @@ func MatchScalar(check, base any, structUtil *StructUtility) bool {
 	if s, ok := check.(string); ok && s == UNDEFMARK {
 		return base == nil || reflect.ValueOf(base).IsZero()
 	}
-	
+
 	// Handle EXISTSMARK - value exists and is not undefined
 	if s, ok := check.(string); ok && s == EXISTSMARK {
 		return base != nil
@@ -704,22 +745,7 @@ func MatchScalar(check, base any, structUtil *StructUtility) bool {
 	if !pass {
 		if checkStr, ok := check.(string); ok {
 			basestr := structUtil.Stringify(base)
-
-			if len(checkStr) > 2 && checkStr[0] == '/' && checkStr[len(checkStr)-1] == '/' {
-				pat := checkStr[1 : len(checkStr)-1]
-				if rx, err := regexp.Compile(pat); err == nil {
-					pass = rx.MatchString(basestr)
-				} else {
-					pass = false
-				}
-			} else {
-				basenorm := strings.ToLower(basestr)
-				checknorm := strings.ToLower(structUtil.Stringify(checkStr))
-				pass = strings.Contains(
-					basenorm,
-					checknorm,
-				)
-			}
+			pass = MatchString(checkStr, basestr, structUtil)
 		} else {
 			cv := reflect.ValueOf(check)
 			isf := cv.Kind() == reflect.Func
@@ -730,6 +756,24 @@ func MatchScalar(check, base any, structUtil *StructUtility) bool {
 	}
 
 	return pass
+}
+
+// MatchString compares an expected `check` string against the stringified base.
+// If `check` is wrapped in slashes (e.g. "/\\w+SDK/"), the inner text is
+// treated as a Go regular expression and tested with regexp.MatchString.
+// Otherwise the comparison falls back to a case-insensitive substring match,
+// matching the JS test runner's matchval behaviour.
+func MatchString(check, base string, structUtil *StructUtility) bool {
+	if len(check) > 2 && check[0] == '/' && check[len(check)-1] == '/' {
+		pat := check[1 : len(check)-1]
+		if rx, err := regexp.Compile(pat); err == nil {
+			return rx.MatchString(base)
+		}
+		return false
+	}
+	basenorm := strings.ToLower(base)
+	checknorm := strings.ToLower(structUtil.Stringify(check))
+	return strings.Contains(basenorm, checknorm)
 }
 
 func subjectify(fn any) Subject {
@@ -890,8 +934,7 @@ func NullModifier(
 	val any,
 	key any,
 	parent any,
-	state *voxgigstruct.Injection,
-	current any,
+	inj *voxgigstruct.Injection,
 	store any,
 ) {
 	switch v := val.(type) {

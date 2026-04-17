@@ -7,7 +7,98 @@ namespace VoxgigStruct {
 
   namespace S {
     const std::string empty = "";
+    const std::string any = "any";
+    const std::string nil = "nil";
+    const std::string boolean_s = "boolean";
+    const std::string decimal = "decimal";
+    const std::string integer = "integer";
+    const std::string number = "number";
+    const std::string string_s = "string";
+    const std::string function_s = "function";
+    const std::string symbol = "symbol";
+    const std::string null_s = "null";
+    const std::string list = "list";
+    const std::string map = "map";
+    const std::string instance = "instance";
+    const std::string scalar = "scalar";
+    const std::string node = "node";
+    const std::string viz = ": ";
   };
+
+  // Type constants - bitfield integers matching TypeScript canonical.
+  constexpr int T_any      = (1 << 31) - 1;
+  constexpr int T_noval    = 1 << 30;
+  constexpr int T_boolean  = 1 << 29;
+  constexpr int T_decimal  = 1 << 28;
+  constexpr int T_integer  = 1 << 27;
+  constexpr int T_number   = 1 << 26;
+  constexpr int T_string   = 1 << 25;
+  constexpr int T_function = 1 << 24;
+  constexpr int T_symbol   = 1 << 23;
+  constexpr int T_null     = 1 << 22;
+  constexpr int T_list     = 1 << 14;
+  constexpr int T_map      = 1 << 13;
+  constexpr int T_instance = 1 << 12;
+  constexpr int T_scalar   = 1 << 7;
+  constexpr int T_node     = 1 << 6;
+
+  const std::string TYPENAME[] = {
+    S::any, S::nil, S::boolean_s, S::decimal, S::integer, S::number, S::string_s,
+    S::function_s, S::symbol, S::null_s,
+    "", "", "", "", "", "", "",
+    S::list, S::map, S::instance,
+    "", "", "", "",
+    S::scalar, S::node,
+  };
+  constexpr int TYPENAME_LEN = 26;
+
+  // Get type name string from type bitfield value.
+  inline std::string typename_of(int t) {
+    std::string tname = "";
+    for (int tI = 0; tI < TYPENAME_LEN; tI++) {
+      if (!TYPENAME[tI].empty() && 0 < (t & (1 << (31 - tI)))) {
+        tname = TYPENAME[tI];
+      }
+    }
+    return tname;
+  }
+
+  // Determine the type of a value as a bitfield integer.
+  inline int typify(const json& value) {
+    if (value.is_null()) {
+      return T_noval;
+    }
+
+    if (value.is_boolean()) {
+      return T_scalar | T_boolean;
+    }
+
+    if (value.is_number_integer()) {
+      return T_scalar | T_number | T_integer;
+    }
+
+    if (value.is_number_float()) {
+      double d = value.get<double>();
+      if (std::isnan(d)) {
+        return T_noval;
+      }
+      return T_scalar | T_number | T_decimal;
+    }
+
+    if (value.is_string()) {
+      return T_scalar | T_string;
+    }
+
+    if (value.is_array()) {
+      return T_node | T_list;
+    }
+
+    if (value.is_object()) {
+      return T_node | T_map;
+    }
+
+    return T_any;
+  }
 
   inline json isnode(args_container&& args) {
     json val = args.size() == 0 ? nullptr : std::move(args[0]);

@@ -29,7 +29,7 @@ module VoxgigRunner
         subject = testsubject || subject
         flags = resolve_flags(flags)
         testspecmap = fix_json(testspec, flags)
-        testset = (testspecmap && testspecmap["set"]) || []
+        testset = testspecmap["set"] || []
         testset.each do |entry|
           begin
             entry = resolve_entry(entry, flags)
@@ -41,13 +41,14 @@ module VoxgigRunner
             puts "DEBUG: Arguments for subject: #{args.inspect}" if ENV['DEBUG']
             # In Ruby we assume the subject is a Proc/lambda or a callable object.
             res = testpack[:subject].call(*args)
+            entry["args"] = args
             res = fix_json(res, flags)
             entry["res"] = res
             # Log the result obtained.
             puts "DEBUG: Result obtained: #{struct_utils.stringify(res)}" if ENV['DEBUG']
-            check_result(entry, args, res, struct_utils)
+            check_result(entry, res, struct_utils)
           rescue => err
-            handle_error(entry, args, err, struct_utils)
+            handle_error(entry, err, struct_utils)
           end
         end
       end
@@ -63,7 +64,7 @@ module VoxgigRunner
   # Loads the test JSON file and extracts the spec for the given name.
   # Follows the pattern: alltests.primary?[name] || alltests[name] || alltests.
   def self.resolve_spec(name, testfile)
-    full_path = File.expand_path(testfile, __dir__)
+    full_path = File.join(__dir__, testfile)
     all_tests = JSON.parse(File.read(full_path))
     if all_tests.key?("primary") && all_tests["primary"].key?(name)
       spec = all_tests["primary"][name]
@@ -119,10 +120,10 @@ module VoxgigRunner
 
   # Checks that the actual result matches the expected output.
   # Uses a deep equality check (via JSON round-trip) and may use a "match" clause.
-  def self.check_result(entry, args, res, struct_utils)
+  def self.check_result(entry, res, struct_utils)
     matched = false
     if entry.key?("match")
-      result = { "in" => entry["in"], "args" => args, "out" => entry["res"], "ctx" => entry["ctx"] }
+      result = { "in" => entry["in"], "out" => entry["res"], "ctx" => entry["ctx"], "args" => entry["args"] }
       match(entry["match"], result, struct_utils)
       matched = true
     end
@@ -144,12 +145,12 @@ module VoxgigRunner
   end
 
   # In case of error during test execution, handle it.
-  def self.handle_error(entry, args, err, struct_utils)
+  def self.handle_error(entry, err, struct_utils)
     entry["thrown"] = err
     if entry.key?("err")
       if entry["err"] === true || matchval(entry["err"], err.message, struct_utils)
         if entry.key?("match")
-          match(entry["match"], { "in" => entry["in"], "args" => args, "out" => entry["res"], "ctx" => entry["ctx"], "err" => err }, struct_utils)
+          match(entry["match"], { "in" => entry["in"], "out" => entry["res"], "ctx" => entry["ctx"], "err" => err }, struct_utils)
         end
         return
       end
@@ -161,18 +162,10 @@ module VoxgigRunner
 
   # Resolves arguments for the test subject.
   # By default, it passes a clone of entry["in"].
-  # When entry has no "in" key, pass struct UNDEF so typify etc. can return T_noval.
   # If entry["ctx"] or entry["args"] is provided, use that instead.
   # Also, if passing an object, inject client and utility.
   def self.resolve_args(entry, testpack, struct_utils)
-    first = if entry.key?("in")
-              struct_utils.clone(entry["in"])
-            elsif struct_utils.const_defined?(:UNDEF, false)
-              struct_utils.const_get(:UNDEF)
-            else
-              nil
-            end
-    args = [first]
+    args = entry.key?("in") ? [struct_utils.clone(entry["in"])] : [VoxgigStruct::UNDEF]
     if entry.key?("ctx")
       args = [entry["ctx"]]
     elsif entry.key?("args")
@@ -231,7 +224,7 @@ module VoxgigRunner
     walk(check) do |_key, val, _parent, path|
       scalar = !(val.is_a?(Hash) || val.is_a?(Array))
       if scalar
-        baseval = struct_utils.getpath(path, base)
+        baseval = struct_utils.getpath(base, path)
         next if baseval == val
         next if val == UNDEFMARK && baseval.nil?
         unless matchval(val, baseval, struct_utils)
@@ -263,13 +256,30 @@ module VoxgigRunner
 
   # Uses JSON round-trip to test deep equality.
   def self.deep_equal?(a, b)
-    JSON.generate(a) == JSON.generate(b)
+    normalize = lambda { |v|
+      case v
+      when Hash
+        sorted = {}
+        v.keys.sort.each { |k| sorted[k] = normalize.call(v[k]) }
+        sorted
+      when Array
+        v.map { |e| normalize.call(e) }
+      else
+        v
+      end
+    }
+    JSON.generate(normalize.call(a)) == JSON.generate(normalize.call(b))
+  rescue
+    a == b
   end
 
   # Returns a deep copy of a value via JSON round-trip.
   def self.fix_json(val, flags)
     return flags["null"] ? NULLMARK : val if val.nil?
+    return flags["null"] ? NULLMARK : val if val.equal?(VoxgigStruct::UNDEF)
     JSON.parse(JSON.generate(val))
+  rescue
+    val
   end
 
   # Applies a null modifier: if a value is "__NULL__", it replaces it with nil.
